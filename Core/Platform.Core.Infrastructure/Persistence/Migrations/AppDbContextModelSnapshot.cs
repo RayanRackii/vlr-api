@@ -41,6 +41,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("installation_date");
 
+                    b.Property<bool>("IsRentable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_rentable");
+
                     b.Property<string>("Location")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
@@ -51,6 +57,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
+
+                    b.Property<bool>("RequiresMaintenance")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requires_maintenance");
 
                     b.Property<DateTimeOffset?>("ScheduledDeletionAt")
                         .HasColumnType("timestamp with time zone")
@@ -101,6 +113,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "CategoryId")
                         .HasDatabaseName("ix_assets_tenant_id_category_id");
+
+                    b.HasIndex("TenantId", "IsRentable")
+                        .HasDatabaseName("ix_assets_tenant_id_is_rentable");
 
                     b.HasIndex("TenantId", "Tag")
                         .IsUnique()
@@ -161,6 +176,56 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_asset_categories_tenant_id_name");
 
                     b.ToTable("asset_categories", "assets");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Customer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("phone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_customers");
+
+                    b.HasIndex("TenantId", "Email")
+                        .IsUnique()
+                        .HasDatabaseName("ix_customers_tenant_id_email")
+                        .HasFilter("email IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Phone")
+                        .IsUnique()
+                        .HasDatabaseName("ix_customers_tenant_id_phone")
+                        .HasFilter("phone IS NOT NULL");
+
+                    b.ToTable("customers", "core");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.GlobalMaintenanceTemplate", b =>
@@ -417,6 +482,57 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("maintenance_plans", "pmoc");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.OtpCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("character(6)")
+                        .HasColumnName("code")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<bool>("IsUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_used");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_otp_codes");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_otp_codes_customer_id");
+
+                    b.HasIndex("TenantId", "CustomerId", "IsUsed", "ExpiresAt")
+                        .HasDatabaseName("ix_otp_codes_tenant_id_customer_id_is_used_expires_at");
+
+                    b.ToTable("otp_codes", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Permission", b =>
                 {
                     b.Property<Guid>("Id")
@@ -523,6 +639,253 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("plan_tasks", "pmoc");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.RentalAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("TotalQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_quantity");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_rental_assets");
+
+                    b.HasIndex("AssetId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_rental_assets_asset_id");
+
+                    b.HasIndex("TenantId", "IsActive")
+                        .HasDatabaseName("ix_rental_assets_tenant_id_is_active");
+
+                    b.ToTable("rental_assets", "rentals");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.RentalPricing", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("day_of_week");
+
+                    b.Property<decimal>("DepositPercentage")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("deposit_percentage");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("end_time");
+
+                    b.Property<decimal>("PricePerHour")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("price_per_hour");
+
+                    b.Property<Guid>("RentalAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rental_asset_id");
+
+                    b.Property<bool>("RequiresDeposit")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requires_deposit");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("start_time");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_rental_pricings");
+
+                    b.HasIndex("RentalAssetId")
+                        .HasDatabaseName("ix_rental_pricings_rental_asset_id");
+
+                    b.HasIndex("TenantId", "RentalAssetId", "DayOfWeek")
+                        .HasDatabaseName("ix_rental_pricings_tenant_id_rental_asset_id_day_of_week");
+
+                    b.ToTable("rental_pricings", "rentals");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Reservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("customer_name");
+
+                    b.Property<string>("CustomerWhatsApp")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("customer_whats_app");
+
+                    b.Property<decimal>("DepositPaid")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("deposit_paid");
+
+                    b.Property<DateTimeOffset>("EndDateTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("end_date_time");
+
+                    b.Property<DateTimeOffset>("StartDateTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_date_time");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("PendingDeposit")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("total_amount");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unit_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reservations");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_reservations_customer_id");
+
+                    b.HasIndex("UnitId")
+                        .HasDatabaseName("ix_reservations_unit_id");
+
+                    b.HasIndex("TenantId", "CustomerId")
+                        .HasDatabaseName("ix_reservations_tenant_id_customer_id");
+
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("ix_reservations_tenant_id_status");
+
+                    b.HasIndex("TenantId", "StartDateTime", "EndDateTime")
+                        .HasDatabaseName("ix_reservations_tenant_id_start_date_time_end_date_time");
+
+                    b.ToTable("reservations", "rentals");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid>("RentalAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rental_asset_id");
+
+                    b.Property<Guid>("ReservationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reservation_id");
+
+                    b.Property<decimal>("SubTotal")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("sub_total");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("unit_price");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reservation_items");
+
+                    b.HasIndex("RentalAssetId")
+                        .HasDatabaseName("ix_reservation_items_rental_asset_id");
+
+                    b.HasIndex("ReservationId")
+                        .HasDatabaseName("ix_reservation_items_reservation_id");
+
+                    b.HasIndex("TenantId", "ReservationId")
+                        .HasDatabaseName("ix_reservation_items_tenant_id_reservation_id");
+
+                    b.ToTable("reservation_items", "rentals");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
                 {
                     b.Property<Guid>("Id")
@@ -613,6 +976,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("legal_name");
 
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("logo_url");
+
+                    b.Property<string>("Subdomain")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("subdomain");
+
                     b.Property<string>("TaxId")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -631,11 +1004,56 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_tenants");
 
+                    b.HasIndex("Subdomain")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tenants_subdomain")
+                        .HasFilter("subdomain IS NOT NULL");
+
                     b.HasIndex("TaxId")
                         .IsUnique()
                         .HasDatabaseName("ix_tenants_tax_id");
 
                     b.ToTable("tenants", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantModule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("ModuleName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("module_name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tenant_modules");
+
+                    b.HasIndex("TenantId", "ModuleName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tenant_modules_tenant_id_module_name");
+
+                    b.ToTable("tenant_modules", "core");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Unit", b =>
@@ -959,6 +1377,18 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Unit");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.OtpCode", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
+                        .WithMany("OtpCodes")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_otp_codes_customers_customer_id");
+
+                    b.Navigation("Customer");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.PlanTask", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.MaintenancePlan", "MaintenancePlan")
@@ -969,6 +1399,72 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_plan_tasks_maintenance_plans_maintenance_plan_id");
 
                     b.Navigation("MaintenancePlan");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.RentalAsset", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Asset", "Asset")
+                        .WithOne("RentalConfiguration")
+                        .HasForeignKey("Platform.Core.Domain.Entities.RentalAsset", "AssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rental_assets_assets_asset_id");
+
+                    b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.RentalPricing", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.RentalAsset", "RentalAsset")
+                        .WithMany("Pricings")
+                        .HasForeignKey("RentalAssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_rental_pricings_rental_assets_rental_asset_id");
+
+                    b.Navigation("RentalAsset");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Reservation", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservations_customers_customer_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Unit", "Unit")
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservations_units_unit_id");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationItem", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.RentalAsset", "RentalAsset")
+                        .WithMany()
+                        .HasForeignKey("RentalAssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservation_items_rental_assets_rental_asset_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Reservation", "Reservation")
+                        .WithMany("Items")
+                        .HasForeignKey("ReservationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservation_items_reservations_reservation_id");
+
+                    b.Navigation("RentalAsset");
+
+                    b.Navigation("Reservation");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
@@ -1002,6 +1498,18 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Permission");
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantModule", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", "Tenant")
+                        .WithMany("Modules")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_tenant_modules_tenants_tenant_id");
+
+                    b.Navigation("Tenant");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Unit", b =>
@@ -1089,9 +1597,19 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("WorkOrder");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Asset", b =>
+                {
+                    b.Navigation("RentalConfiguration");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.AssetCategory", b =>
                 {
                     b.Navigation("Assets");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Customer", b =>
+                {
+                    b.Navigation("OtpCodes");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.GlobalMaintenanceTemplate", b =>
@@ -1109,6 +1627,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("RolePermissions");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.RentalAsset", b =>
+                {
+                    b.Navigation("Pricings");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Reservation", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
                 {
                     b.Navigation("RolePermissions");
@@ -1118,6 +1646,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Tenant", b =>
                 {
+                    b.Navigation("Modules");
+
                     b.Navigation("Roles");
 
                     b.Navigation("Units");

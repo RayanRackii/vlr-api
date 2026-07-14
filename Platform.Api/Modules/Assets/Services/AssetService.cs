@@ -19,6 +19,7 @@ public sealed class AssetService(
 
         var assets = await dbContext.Assets
             .AsNoTracking()
+            .Include(a => a.RentalConfiguration)
             .OrderBy(a => a.Tag)
             .ToListAsync(cancellationToken);
 
@@ -33,6 +34,7 @@ public sealed class AssetService(
 
         var asset = await dbContext.Assets
             .AsNoTracking()
+            .Include(a => a.RentalConfiguration)
             .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
 
         return asset is null ? null : ToResponse(asset);
@@ -44,6 +46,7 @@ public sealed class AssetService(
     {
         var tenantId = EnsureTenantContext();
 
+        ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
 
@@ -58,9 +61,17 @@ public sealed class AssetService(
             SerialNumber = NormalizeOptional(request.SerialNumber),
             InstallationDate = request.InstallationDate,
             Status = request.Status,
+            IsRentable = request.IsRentable,
+            RequiresMaintenance = request.RequiresMaintenance,
         };
 
         dbContext.Assets.Add(asset);
+        SyncRentalConfiguration(
+            asset,
+            request.IsRentable,
+            request.RentalType,
+            request.TotalQuantity);
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return ToResponse(asset);
@@ -73,7 +84,10 @@ public sealed class AssetService(
     {
         EnsureTenantContext();
 
+        ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
+
         var asset = await dbContext.Assets
+            .Include(a => a.RentalConfiguration)
             .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
 
         if (asset is null)
@@ -92,7 +106,15 @@ public sealed class AssetService(
         asset.SerialNumber = NormalizeOptional(request.SerialNumber);
         asset.InstallationDate = request.InstallationDate;
         asset.Status = request.Status;
+        asset.IsRentable = request.IsRentable;
+        asset.RequiresMaintenance = request.RequiresMaintenance;
         asset.Touch();
+
+        SyncRentalConfiguration(
+            asset,
+            request.IsRentable,
+            request.RentalType,
+            request.TotalQuantity);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -104,6 +126,7 @@ public sealed class AssetService(
         EnsureTenantContext();
 
         var asset = await dbContext.Assets
+            .Include(a => a.RentalConfiguration)
             .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
 
         if (asset is null)
@@ -179,7 +202,7 @@ public sealed class AssetService(
         {
             var tag = BuildTag(baseTag, number);
 
-            assets.Add(new Asset
+            var asset = new Asset
             {
                 TenantId = tenantId,
                 UnitId = request.UnitId,
@@ -188,7 +211,17 @@ public sealed class AssetService(
                 Tag = tag,
                 Location = $"{baseLocation} {number}",
                 Status = AssetStatus.Active,
-            });
+                IsRentable = request.IsRentable,
+                RequiresMaintenance = request.RequiresMaintenance,
+            };
+
+            SyncRentalConfiguration(
+                asset,
+                request.IsRentable,
+                RentalAssetType.Location,
+                totalQuantity: 1);
+
+            assets.Add(asset);
         }
 
         await dbContext.Assets.AddRangeAsync(assets, cancellationToken);
@@ -200,6 +233,63 @@ public sealed class AssetService(
             .ToList();
 
         return new BulkCreateAssetsResponse(responses.Count, responses);
+    }
+
+    private void SyncRentalConfiguration(
+        Asset asset,
+        bool isRentable,
+        RentalAssetType rentalType,
+        int totalQuantity)
+    {
+        if (!isRentable)
+        {
+            if (asset.RentalConfiguration is not null)
+            {
+                asset.RentalConfiguration.IsActive = false;
+                asset.RentalConfiguration.Touch();
+            }
+
+            return;
+        }
+
+        if (asset.RentalConfiguration is null)
+        {
+            asset.RentalConfiguration = new RentalAsset
+            {
+                TenantId = asset.TenantId,
+                AssetId = asset.Id,
+                Type = rentalType,
+                TotalQuantity = totalQuantity,
+                IsActive = true,
+            };
+            return;
+        }
+
+        asset.RentalConfiguration.Type = rentalType;
+        asset.RentalConfiguration.TotalQuantity = totalQuantity;
+        asset.RentalConfiguration.IsActive = true;
+        asset.RentalConfiguration.Touch();
+    }
+
+    private static void ValidateRentalFields(
+        bool isRentable,
+        RentalAssetType rentalType,
+        int totalQuantity)
+    {
+        if (!isRentable)
+        {
+            return;
+        }
+
+        if (totalQuantity < 1)
+        {
+            throw new ArgumentException("TotalQuantity must be at least 1 when IsRentable is true.");
+        }
+
+        if (rentalType == RentalAssetType.Location && totalQuantity != 1)
+        {
+            throw new ArgumentException("Location rentals must have TotalQuantity equal to 1.");
+        }
     }
 
     private async Task EnsureUnitExistsAsync(Guid unitId, CancellationToken cancellationToken)
@@ -253,8 +343,20 @@ public sealed class AssetService(
         return value.Trim();
     }
 
-    private static AssetResponse ToResponse(Asset asset) =>
-        new(
+    private static AssetResponse ToResponse(Asset asset)
+    {
+        AssetRentalConfigResponse? rentalConfig = null;
+
+        if (asset.RentalConfiguration is not null)
+        {
+            rentalConfig = new AssetRentalConfigResponse(
+                asset.RentalConfiguration.Id,
+                asset.RentalConfiguration.Type,
+                asset.RentalConfiguration.TotalQuantity,
+                asset.RentalConfiguration.IsActive);
+        }
+
+        return new(
             asset.Id,
             asset.TenantId,
             asset.UnitId,
@@ -265,7 +367,11 @@ public sealed class AssetService(
             asset.SerialNumber,
             asset.InstallationDate,
             asset.Status,
+            asset.IsRentable,
+            asset.RequiresMaintenance,
+            rentalConfig,
             asset.CreatedAt,
             asset.UpdatedAt,
             asset.ScheduledDeletionAt);
+    }
 }

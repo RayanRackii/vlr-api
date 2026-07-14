@@ -3,7 +3,7 @@ using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Domain.Entities;
 
-public class MaintenancePlan : Entity, ITenantScoped
+public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
 {
     public required Guid TenantId { get; set; }
 

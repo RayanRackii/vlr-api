@@ -3,7 +3,7 @@ using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Domain.Entities;
 
-public class WorkOrder : Entity, ITenantScoped
+public class WorkOrder : Entity, ITenantScoped, IMaintenanceModuleEntity
 {
     public required Guid TenantId { get; set; }
 

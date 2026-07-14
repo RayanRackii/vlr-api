@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Diagnostics;
 using Platform.Api.Authentication;
 using Platform.Api.Features.CreateTenant;
 using Platform.Api.Jobs;
+using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
+using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.Pmoc;
+using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
@@ -41,6 +44,9 @@ try
     builder.Services.AddPmocModule();
     builder.Services.AddWorkOrdersModule();
     builder.Services.AddDashboardModule();
+    builder.Services.AddRentalsModule();
+    builder.Services.AddCustomerAuthModule();
+    builder.Services.AddAdminModule();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
     builder.Services.AddPlatformHangfire(connectionString);
 

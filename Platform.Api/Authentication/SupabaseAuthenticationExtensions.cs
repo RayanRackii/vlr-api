@@ -1,11 +1,14 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Platform.Api.Authentication;
 
 public static class SupabaseAuthenticationExtensions
 {
+    public const string PlatformAdminPolicy = "PlatformAdmin";
+
     public static IServiceCollection AddSupabaseAuthentication(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -17,6 +20,11 @@ public static class SupabaseAuthenticationExtensions
             ?? throw new InvalidOperationException("Supabase:JwtSecret is not configured.");
 
         var issuer = $"{supabaseUrl.TrimEnd('/')}/auth/v1";
+
+        services.Configure<PlatformAdminOptions>(
+            configuration.GetSection(PlatformAdminOptions.SectionName));
+        services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>();
+        services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -32,11 +40,13 @@ public static class SupabaseAuthenticationExtensions
                 {
                     ValidateIssuerSigningKey = true,
                     // Legacy HS256 fallback when tokens are still signed with the JWT secret.
+                    // Also used to validate platform-issued B2C Customer OTPs.
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
                     ValidateIssuer = false,
                     ValidateAudience = false,
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(1),
+                    RoleClaimType = CustomerClaimTypes.Role,
                     ValidAlgorithms =
                     [
                         SecurityAlgorithms.EcdsaSha256,
@@ -46,7 +56,31 @@ public static class SupabaseAuthenticationExtensions
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            // Plain [Authorize] protects B2B panel routes: Customer B2C JWTs are rejected.
+            options.DefaultPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context =>
+                    !context.User.IsInRole(AuthRoles.Customer)
+                    && context.User.FindFirst(CustomerClaimTypes.CustomerId) is null)
+                .Build();
+
+            options.AddPolicy(
+                "Customer",
+                policy => policy
+                    .RequireAuthenticatedUser()
+                    .RequireRole(AuthRoles.Customer));
+
+            options.AddPolicy(
+                PlatformAdminPolicy,
+                policy => policy
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new PlatformAdminRequirement()));
+        });
+
+        services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
+        services.AddSingleton<ICustomerJwtIssuer, CustomerJwtIssuer>();
 
         return services;
     }

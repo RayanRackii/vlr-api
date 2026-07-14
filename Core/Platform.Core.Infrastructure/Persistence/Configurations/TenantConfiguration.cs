@@ -26,6 +26,12 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasMaxLength(20)
             .IsRequired();
 
+        builder.Property(t => t.Subdomain)
+            .HasMaxLength(100);
+
+        builder.Property(t => t.LogoUrl)
+            .HasMaxLength(2048);
+
         builder.Property(t => t.IsActive)
             .HasDefaultValue(true)
             .IsRequired();
@@ -35,6 +41,10 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
 
         builder.HasIndex(t => t.TaxId)
             .IsUnique();
+
+        builder.HasIndex(t => t.Subdomain)
+            .IsUnique()
+            .HasFilter("subdomain IS NOT NULL");
 
         builder.HasMany(t => t.Users)
             .WithOne(u => u.Tenant)
@@ -51,6 +61,11 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasForeignKey(r => r.TenantId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasMany(t => t.Modules)
+            .WithOne(m => m.Tenant)
+            .HasForeignKey(m => m.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.Navigation(t => t.Users)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
@@ -58,6 +73,9 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.Navigation(t => t.Roles)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.Navigation(t => t.Modules)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

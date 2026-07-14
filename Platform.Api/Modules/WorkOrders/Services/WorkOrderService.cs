@@ -12,14 +12,23 @@ public sealed class WorkOrderService(
     ITenantProvider tenantProvider) : IWorkOrderService
 {
     public async Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
+        Guid? assetId,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
 
-        var workOrders = await dbContext.WorkOrders
+        var query = dbContext.WorkOrders
             .AsNoTracking()
             .Include(w => w.Asset)
             .Include(w => w.Tasks)
+            .AsQueryable();
+
+        if (assetId is Guid filteredAssetId)
+        {
+            query = query.Where(w => w.AssetId == filteredAssetId);
+        }
+
+        var workOrders = await query
             .OrderByDescending(w => w.ScheduledDate)
             .ThenByDescending(w => w.CreatedAt)
             .ToListAsync(cancellationToken);

@@ -45,6 +45,14 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
             .HasDefaultValue(AssetStatus.Active)
             .IsRequired();
 
+        builder.Property(a => a.IsRentable)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(a => a.RequiresMaintenance)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 
@@ -57,6 +65,8 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
 
         builder.HasIndex(a => new { a.TenantId, a.CategoryId });
 
+        builder.HasIndex(a => new { a.TenantId, a.IsRentable });
+
         builder.HasIndex(a => a.ScheduledDeletionAt);
 
         builder.HasOne(a => a.Unit)
@@ -67,6 +77,11 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
         builder.HasOne(a => a.Category)
             .WithMany(c => c.Assets)
             .HasForeignKey(a => a.CategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(a => a.RentalConfiguration)
+            .WithOne(r => r.Asset)
+            .HasForeignKey<RentalAsset>(r => r.AssetId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

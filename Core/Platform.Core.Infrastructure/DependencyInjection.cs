@@ -19,6 +19,8 @@ public static class DependencyInjection
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", "core"))
             .UseSnakeCaseNamingConvention());
 
+        services.AddScoped<AmbientTenantContext>();
+
         return services;
     }
 

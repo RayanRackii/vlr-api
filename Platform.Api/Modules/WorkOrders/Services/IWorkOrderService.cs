@@ -4,7 +4,9 @@ namespace Platform.Api.Modules.WorkOrders.Services;
 
 public interface IWorkOrderService
 {
-    Task<IReadOnlyList<WorkOrderResponse>> ListAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
+        Guid? assetId,
+        CancellationToken cancellationToken);
 
     Task<WorkOrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 

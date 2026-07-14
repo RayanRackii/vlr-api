@@ -53,6 +53,14 @@ public sealed record CreateAssetRequest
     public DateOnly? InstallationDate { get; init; }
 
     public AssetStatus Status { get; init; } = AssetStatus.Active;
+
+    public bool IsRentable { get; init; }
+
+    public bool RequiresMaintenance { get; init; }
+
+    public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
+
+    public int TotalQuantity { get; init; } = 1;
 }
 
 public sealed record UpdateAssetRequest
@@ -72,7 +80,21 @@ public sealed record UpdateAssetRequest
     public DateOnly? InstallationDate { get; init; }
 
     public required AssetStatus Status { get; init; }
+
+    public bool IsRentable { get; init; }
+
+    public bool RequiresMaintenance { get; init; }
+
+    public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
+
+    public int TotalQuantity { get; init; } = 1;
 }
+
+public sealed record AssetRentalConfigResponse(
+    Guid RentalAssetId,
+    RentalAssetType Type,
+    int TotalQuantity,
+    bool IsActive);
 
 public sealed record AssetResponse(
     Guid Id,
@@ -85,6 +107,9 @@ public sealed record AssetResponse(
     string? SerialNumber,
     DateOnly? InstallationDate,
     AssetStatus Status,
+    bool IsRentable,
+    bool RequiresMaintenance,
+    AssetRentalConfigResponse? RentalConfig,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     DateTimeOffset? ScheduledDeletionAt);
@@ -106,6 +131,10 @@ public sealed record BulkCreateAssetsRequest
     public required int StartNumber { get; init; }
 
     public required int EndNumber { get; init; }
+
+    public bool IsRentable { get; init; }
+
+    public bool RequiresMaintenance { get; init; }
 }
 
 public sealed record BulkCreateAssetsResponse(

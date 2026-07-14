@@ -13,9 +13,10 @@ public sealed class WorkOrdersController(
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WorkOrderResponse>>> List(
+        [FromQuery] Guid? assetId,
         CancellationToken cancellationToken)
     {
-        var workOrders = await workOrderService.ListAsync(cancellationToken);
+        var workOrders = await workOrderService.ListAsync(assetId, cancellationToken);
         return Ok(workOrders);
     }
 

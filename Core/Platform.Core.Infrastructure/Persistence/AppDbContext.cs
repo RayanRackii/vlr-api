@@ -16,7 +16,10 @@ public sealed class AppDbContext : DbContext
         _tenantProvider = tenantProvider;
     }
 
+    // --- Schema: core ---
     public DbSet<Tenant> Tenants => Set<Tenant>();
+
+    public DbSet<TenantModule> TenantModules => Set<TenantModule>();
 
     public DbSet<User> Users => Set<User>();
 
@@ -30,10 +33,16 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
 
+    public DbSet<Customer> Customers => Set<Customer>();
+
+    public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
+
+    // --- Schema: assets (inventory module — full model; schema rename to inventory is deferred) ---
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
 
     public DbSet<Asset> Assets => Set<Asset>();
 
+    // --- Schema: pmoc / os (maintenance module — full model; schema rename to maintenance is deferred) ---
     public DbSet<MaintenancePlan> MaintenancePlans => Set<MaintenancePlan>();
 
     public DbSet<PlanTask> PlanTasks => Set<PlanTask>();
@@ -46,6 +55,15 @@ public sealed class AppDbContext : DbContext
         Set<GlobalMaintenanceTemplate>();
 
     public DbSet<GlobalTemplateTask> GlobalTemplateTasks => Set<GlobalTemplateTask>();
+
+    // --- Schema: rentals (isolated; no FKs to inventory/maintenance) ---
+    public DbSet<RentalAsset> RentalAssets => Set<RentalAsset>();
+
+    public DbSet<RentalPricing> RentalPricings => Set<RentalPricing>();
+
+    public DbSet<Reservation> Reservations => Set<Reservation>();
+
+    public DbSet<ReservationItem> ReservationItems => Set<ReservationItem>();
 
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
 
