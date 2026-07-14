@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Core/">
+    <Project Path="Core/Platform.Core.Domain/Platform.Core.Domain.csproj" />
+    <Project Path="Core/Platform.Core.Infrastructure/Platform.Core.Infrastructure.csproj" />
+  </Folder>
+  <Project Path="Platform.Api/Platform.Api.csproj" />
+</Solution>

@@ -1,0 +1,28 @@
+## Ignore Visual Studio / Visual Studio Code folder
+.vs/
+.vscode/
+
+## Build folders and files
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Publish output
+PublishOutput/
+out/
+
+## Environment variables and local settings
+appsettings.Development.json
+appsettings.Local.json
+.env
+
+## Logs
+logs/
+*.log
+
+## OS Files
+.DS_Store
+Thumbs.db

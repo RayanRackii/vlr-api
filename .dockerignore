@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/TestResults/
+**/*.user
+**/*.suo
+**/appsettings.Development.json
+**/.env
+**/.env.*
+!**/.env.example
+.git/
+.gitignore
+*.md
+.dockerignore
+Dockerfile

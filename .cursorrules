@@ -1,0 +1,16 @@
+# Persona e Arquitetura
+Atue como um Desenvolvedor .NET 10 Sênior e Arquiteto de Software.
+O projeto utiliza Vertical Slice Architecture. Organize o código por "Features" (ex: `CreateEquipment`, `GetPMOC`), e não por camadas técnicas (Controllers/Services/Repositories).
+
+# Regras Estritas C# e .NET 10
+1. **Injeção de Dependência:** Absolutamente todos os serviços, contextos de banco e integrações externas devem ser injetados via `IServiceCollection`. Nunca instancie classes de serviço com `new`.
+2. **Entity Framework Core & PostgreSQL:** - Utilize o EF Core focado em PostgreSQL.
+   - Todo acesso a dados deve ser assíncrono (`async`/`await` e `ToListAsync`, `FirstOrDefaultAsync`).
+   - É estritamente proibido retornar entidades de domínio diretamente nas APIs. Sempre mapeie para objetos DTO (Data Transfer Objects) ou Records.
+3. **Multi-Tenant (Isolamento de Dados):**
+   - O banco de dados é multi-tenant. Toda entidade relacionada a módulos deve possuir as propriedades `TenantId` e `UnitId`.
+   - Implemente "Global Query Filters" no `DbContext` do EF Core para garantir que consultas nunca vazem dados entre Tenants diferentes.
+4. **Respostas da API:**
+   - Padronize as respostas HTTP. Utilize retornos consistentes (ex: `IResult` em Minimal APIs ou `ActionResult` padronizado).
+5. **Tipagem e Nulos:**
+   - Habilite e respeite o `<Nullable>enable</Nullable>`. Trate todos os possíveis retornos nulos explicitamente.
