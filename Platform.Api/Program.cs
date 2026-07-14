@@ -8,117 +8,147 @@ using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
+using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
-
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
-builder.Services.AddCorePersistence(connectionString);
-builder.Services.AddSupabaseAdminClient(builder.Configuration);
-builder.Services.AddSupabaseAuthentication(builder.Configuration);
-builder.Services.AddAssetsModule();
-builder.Services.AddPmocModule();
-builder.Services.AddWorkOrdersModule();
-builder.Services.AddDashboardModule();
-builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
-builder.Services.AddPlatformHangfire(connectionString);
-
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.Converters.Add(
-            new System.Text.Json.Serialization.JsonStringEnumConverter());
-    });
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-var allowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration);
-
-builder.Services.AddCors(options =>
+try
 {
-    options.AddDefaultPolicy(policy =>
+    Log.Information("Starting Platform.Api host");
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Host.UseSerilog((context, services, configuration) => configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .Enrich.WithEnvironmentName()
+        .Enrich.WithProperty("Application", "Platform.Api")
+        .WriteTo.Console());
+
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
+
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
+    builder.Services.AddCorePersistence(connectionString);
+    builder.Services.AddSupabaseAdminClient(builder.Configuration);
+    builder.Services.AddSupabaseAuthentication(builder.Configuration);
+    builder.Services.AddAssetsModule();
+    builder.Services.AddPmocModule();
+    builder.Services.AddWorkOrdersModule();
+    builder.Services.AddDashboardModule();
+    builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
+    builder.Services.AddPlatformHangfire(connectionString);
+
+    builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.Converters.Add(
+                new System.Text.Json.Serialization.JsonStringEnumConverter());
+        });
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
+
+    var allowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration);
+
+    builder.Services.AddCors(options =>
     {
-        if (allowedOrigins.Length > 0)
+        options.AddDefaultPolicy(policy =>
         {
-            policy.WithOrigins(allowedOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-            return;
-        }
+            if (allowedOrigins.Length > 0)
+            {
+                policy.WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+                return;
+            }
 
-        if (builder.Environment.IsDevelopment())
-        {
-            policy.WithOrigins(
-                    "http://localhost:5173",
-                    "http://127.0.0.1:5173")
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-            return;
-        }
+            if (builder.Environment.IsDevelopment())
+            {
+                policy.WithOrigins(
+                        "http://localhost:5173",
+                        "http://127.0.0.1:5173")
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+                return;
+            }
 
-        throw new InvalidOperationException(
-            "Cors:AllowedOrigins must be configured outside Development (env Cors__AllowedOrigins).");
+            throw new InvalidOperationException(
+                "Cors:AllowedOrigins must be configured outside Development (env Cors__AllowedOrigins).");
+        });
     });
-});
 
-var app = builder.Build();
+    var app = builder.Build();
 
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
+    app.UseExceptionHandler(errorApp =>
     {
-        var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
-
-        if (exception is TenantResolutionException tenantResolutionException)
+        errorApp.Run(async context =>
         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { error = tenantResolutionException.Message });
-            return;
-        }
+            var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
 
-        if (exception is UnauthorizedAccessException unauthorizedAccessException)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { error = unauthorizedAccessException.Message });
-            return;
-        }
+            if (exception is TenantResolutionException tenantResolutionException)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(new { error = tenantResolutionException.Message });
+                return;
+            }
 
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        await context.Response.WriteAsJsonAsync(new { error = "An unexpected error occurred." });
+            if (exception is UnauthorizedAccessException unauthorizedAccessException)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await context.Response.WriteAsJsonAsync(new { error = unauthorizedAccessException.Message });
+                return;
+            }
+
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new { error = "An unexpected error occurred." });
+        });
     });
-});
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
+    if (app.Environment.IsDevelopment())
     {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Platform API v1");
-        options.RoutePrefix = "swagger";
-    });
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "Platform API v1");
+            options.RoutePrefix = "swagger";
+        });
 
-    app.UseHttpsRedirection();
+        app.UseHttpsRedirection();
+    }
+
+    app.UseCors();
+
+    app.UseSerilogRequestLogging();
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+
+    app.UsePlatformHangfireDashboard();
+
+    app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+        .AllowAnonymous();
+
+    app.MapCreateTenantEndpoint();
+    app.MapControllers();
+
+    app.MapPlatformRecurringJobs();
+
+    app.Run();
 }
-
-app.UseCors();
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.UsePlatformHangfireDashboard();
-
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
-    .AllowAnonymous();
-
-app.MapCreateTenantEndpoint();
-app.MapControllers();
-
-app.MapPlatformRecurringJobs();
-
-app.Run();
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Platform.Api host terminated unexpectedly");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 static string[] ResolveCorsAllowedOrigins(IConfiguration configuration)
 {

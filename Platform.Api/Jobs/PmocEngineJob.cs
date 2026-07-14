@@ -11,139 +11,154 @@ public sealed class PmocEngineJob(
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        logger.LogInformation("PmocEngineJob started for {ScheduledDate}.", today);
-
-        var activePlans = await dbContext.MaintenancePlans
-            .Include(plan => plan.Tasks)
-            .Where(plan => plan.IsActive)
-            .OrderBy(plan => plan.Name)
-            .ToListAsync(cancellationToken);
+        var today = HangfireExtensions.GetBrazilToday();
 
         logger.LogInformation(
-            "PmocEngineJob found {Count} active maintenance plan(s).",
-            activePlans.Count);
+            "Iniciando geração de OS para o dia {ScheduledDate} (fuso Brasil).",
+            today);
 
-        var createdCount = 0;
-
-        foreach (var plan in activePlans)
+        try
         {
-            if (!IsDueToday(plan.Frequency, today))
-            {
-                logger.LogInformation(
-                    "Skipping PMOC {PlanName}: frequency {Frequency} is not due on {ScheduledDate}.",
-                    plan.Name,
-                    plan.Frequency,
-                    today);
-                continue;
-            }
-
-            if (plan.Tasks.Count == 0)
-            {
-                logger.LogWarning(
-                    "Skipping PMOC {PlanName}: plan has no tasks.",
-                    plan.Name);
-                continue;
-            }
-
-            logger.LogInformation("Verificando PMOC: {PlanName}", plan.Name);
-
-            var assets = await dbContext.Assets
-                .Where(asset =>
-                    asset.CategoryId == plan.AssetCategoryId
-                    && asset.UnitId == plan.UnitId
-                    && asset.Status == AssetStatus.Active
-                    && asset.ScheduledDeletionAt == null)
+            var activePlans = await dbContext.MaintenancePlans
+                .Include(plan => plan.Tasks)
+                .Where(plan => plan.IsActive)
+                .OrderBy(plan => plan.Name)
                 .ToListAsync(cancellationToken);
 
-            if (assets.Count == 0)
+            logger.LogInformation(
+                "PmocEngineJob found {Count} active maintenance plan(s).",
+                activePlans.Count);
+
+            var createdCount = 0;
+
+            foreach (var plan in activePlans)
             {
-                logger.LogInformation(
-                    "PMOC {PlanName}: no eligible assets found for unit/category.",
-                    plan.Name);
-                continue;
-            }
-
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-            try
-            {
-                var planCreated = 0;
-
-                foreach (var asset in assets)
+                if (!IsDueToday(plan.Frequency, today))
                 {
-                    var alreadyExists = await dbContext.WorkOrders.AnyAsync(
-                        workOrder =>
-                            workOrder.AssetId == asset.Id
-                            && workOrder.MaintenancePlanId == plan.Id
-                            && workOrder.ScheduledDate == today
-                            && workOrder.Status != WorkOrderStatus.Canceled,
-                        cancellationToken);
+                    logger.LogInformation(
+                        "Skipping PMOC {PlanName}: frequency {Frequency} is not due on {ScheduledDate}.",
+                        plan.Name,
+                        plan.Frequency,
+                        today);
+                    continue;
+                }
 
-                    if (alreadyExists)
-                    {
-                        continue;
-                    }
+                if (plan.Tasks.Count == 0)
+                {
+                    logger.LogWarning(
+                        "Skipping PMOC {PlanName}: plan has no tasks.",
+                        plan.Name);
+                    continue;
+                }
 
-                    var workOrder = new WorkOrder
-                    {
-                        TenantId = plan.TenantId,
-                        AssetId = asset.Id,
-                        MaintenancePlanId = plan.Id,
-                        Status = WorkOrderStatus.Pending,
-                        ScheduledDate = today,
-                        Notes = null,
-                    };
+                logger.LogInformation("Verificando PMOC: {PlanName}", plan.Name);
 
-                    foreach (var planTask in plan.Tasks.OrderBy(task => task.Order))
+                var assets = await dbContext.Assets
+                    .Where(asset =>
+                        asset.CategoryId == plan.AssetCategoryId
+                        && asset.UnitId == plan.UnitId
+                        && asset.Status == AssetStatus.Active
+                        && asset.ScheduledDeletionAt == null)
+                    .ToListAsync(cancellationToken);
+
+                if (assets.Count == 0)
+                {
+                    logger.LogInformation(
+                        "PMOC {PlanName}: no eligible assets found for unit/category.",
+                        plan.Name);
+                    continue;
+                }
+
+                await using var transaction =
+                    await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+                try
+                {
+                    var planCreated = 0;
+
+                    foreach (var asset in assets)
                     {
-                        workOrder.AddTask(new WorkOrderTask
+                        var alreadyExists = await dbContext.WorkOrders.AnyAsync(
+                            workOrder =>
+                                workOrder.AssetId == asset.Id
+                                && workOrder.MaintenancePlanId == plan.Id
+                                && workOrder.ScheduledDate == today
+                                && workOrder.Status != WorkOrderStatus.Canceled,
+                            cancellationToken);
+
+                        if (alreadyExists)
+                        {
+                            continue;
+                        }
+
+                        var workOrder = new WorkOrder
                         {
                             TenantId = plan.TenantId,
-                            WorkOrderId = workOrder.Id,
-                            PlanTaskId = planTask.Id,
-                            Title = planTask.Title,
-                            InputType = planTask.InputType,
-                            Configuration = planTask.Configuration,
-                            IsMandatory = planTask.IsMandatory,
-                            Order = planTask.Order,
-                            Value = null,
-                        });
+                            AssetId = asset.Id,
+                            MaintenancePlanId = plan.Id,
+                            Status = WorkOrderStatus.Pending,
+                            ScheduledDate = today,
+                            Notes = null,
+                        };
+
+                        foreach (var planTask in plan.Tasks.OrderBy(task => task.Order))
+                        {
+                            workOrder.AddTask(new WorkOrderTask
+                            {
+                                TenantId = plan.TenantId,
+                                WorkOrderId = workOrder.Id,
+                                PlanTaskId = planTask.Id,
+                                Title = planTask.Title,
+                                InputType = planTask.InputType,
+                                Configuration = planTask.Configuration,
+                                IsMandatory = planTask.IsMandatory,
+                                Order = planTask.Order,
+                                Value = null,
+                            });
+                        }
+
+                        dbContext.WorkOrders.Add(workOrder);
+                        planCreated++;
                     }
 
-                    dbContext.WorkOrders.Add(workOrder);
-                    planCreated++;
-                }
+                    if (planCreated > 0)
+                    {
+                        await dbContext.SaveChangesAsync(cancellationToken);
+                    }
 
-                if (planCreated > 0)
+                    await transaction.CommitAsync(cancellationToken);
+
+                    createdCount += planCreated;
+
+                    logger.LogInformation(
+                        "PMOC {PlanName}: created {CreatedCount} work order(s) for {AssetCount} asset(s).",
+                        plan.Name,
+                        planCreated,
+                        assets.Count);
+                }
+                catch (Exception ex)
                 {
-                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.RollbackAsync(cancellationToken);
+                    logger.LogError(
+                        ex,
+                        "PMOC {PlanName}: failed while generating work orders.",
+                        plan.Name);
                 }
-
-                await transaction.CommitAsync(cancellationToken);
-
-                createdCount += planCreated;
-
-                logger.LogInformation(
-                    "PMOC {PlanName}: created {CreatedCount} work order(s) for {AssetCount} asset(s).",
-                    plan.Name,
-                    planCreated,
-                    assets.Count);
             }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                logger.LogError(
-                    ex,
-                    "PMOC {PlanName}: failed while generating work orders.",
-                    plan.Name);
-            }
+
+            logger.LogInformation(
+                "PmocEngineJob completed. Created {CreatedCount} work order(s) for {ScheduledDate}.",
+                createdCount,
+                today);
         }
-
-        logger.LogInformation(
-            "PmocEngineJob completed. Created {CreatedCount} work order(s).",
-            createdCount);
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "PmocEngineJob failed while generating work orders for {ScheduledDate}.",
+                today);
+            throw;
+        }
     }
 
     private static bool IsDueToday(MaintenanceFrequency frequency, DateOnly today) =>
