@@ -14,6 +14,20 @@ public sealed record CreateTenantRequestDto
     public required IReadOnlyList<string> ActiveModules { get; init; }
 }
 
+public sealed record UpdateTenantRequestDto
+{
+    public required string LegalName { get; init; }
+
+    public required string TaxId { get; init; }
+
+    public required string Subdomain { get; init; }
+
+    public string? LogoUrl { get; init; }
+
+    /// <summary>Module labels: Rentals, PMOC, Inventory, OS.</summary>
+    public required IReadOnlyList<string> ActiveModules { get; init; }
+}
+
 public sealed record TenantModuleResponseDto(
     string ModuleName,
     bool IsActive);
