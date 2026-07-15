@@ -65,26 +65,10 @@ try
     {
         options.AddDefaultPolicy(policy =>
         {
-            if (allowedOrigins.Length > 0)
-            {
-                policy.WithOrigins(allowedOrigins)
-                    .AllowAnyHeader()
-                    .AllowAnyMethod();
-                return;
-            }
-
-            if (builder.Environment.IsDevelopment())
-            {
-                policy.WithOrigins(
-                        "http://localhost:5173",
-                        "http://127.0.0.1:5173")
-                    .AllowAnyHeader()
-                    .AllowAnyMethod();
-                return;
-            }
-
-            throw new InvalidOperationException(
-                "Cors:AllowedOrigins must be configured outside Development (env Cors__AllowedOrigins).");
+            policy.WithOrigins(allowedOrigins)
+                .SetIsOriginAllowedToAllowWildcardSubdomains()
+                .AllowAnyHeader()
+                .AllowAnyMethod();
         });
     });
 
@@ -158,28 +142,35 @@ finally
 
 static string[] ResolveCorsAllowedOrigins(IConfiguration configuration)
 {
-    var fromChildren = configuration
+    string[] defaultOrigins =
+    [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://rolvix.com.br",
+        "https://www.rolvix.com.br",
+        "https://*.rolvix.com.br",
+    ];
+
+    var fromConfig = configuration
         .GetSection("Cors:AllowedOrigins")
         .GetChildren()
         .Select(child => child.Value)
         .Where(value => !string.IsNullOrWhiteSpace(value))
         .Select(value => value!.Trim())
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToArray();
+        .ToList();
 
-    if (fromChildren.Length > 0)
+    if (fromConfig.Count == 0)
     {
-        return fromChildren;
+        var csv = configuration["Cors:AllowedOrigins"];
+        if (!string.IsNullOrWhiteSpace(csv))
+        {
+            fromConfig.AddRange(
+                csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
     }
 
-    var csv = configuration["Cors:AllowedOrigins"];
-    if (string.IsNullOrWhiteSpace(csv))
-    {
-        return [];
-    }
-
-    return csv
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    return defaultOrigins
+        .Concat(fromConfig)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
 }
