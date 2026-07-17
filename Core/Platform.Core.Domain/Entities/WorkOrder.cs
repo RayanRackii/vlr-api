@@ -11,6 +11,8 @@ public class WorkOrder : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public Guid? MaintenancePlanId { get; set; }
 
+    public Guid? AssignedUserId { get; set; }
+
     public required WorkOrderStatus Status { get; set; }
 
     public required DateOnly ScheduledDate { get; set; }
@@ -22,6 +24,8 @@ public class WorkOrder : Entity, ITenantScoped, IMaintenanceModuleEntity
     public Asset Asset { get; set; } = null!;
 
     public MaintenancePlan? MaintenancePlan { get; set; }
+
+    public User? AssignedUser { get; set; }
 
     private readonly List<WorkOrderTask> _tasks = [];
 

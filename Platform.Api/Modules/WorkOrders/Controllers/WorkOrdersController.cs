@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Modules.Users.Dtos;
+using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
 using Platform.Api.Modules.WorkOrders.Services;
 
@@ -9,7 +11,8 @@ namespace Platform.Api.Modules.WorkOrders.Controllers;
 [Authorize]
 [Route("api/work-orders")]
 public sealed class WorkOrdersController(
-    IWorkOrderService workOrderService) : ControllerBase
+    IWorkOrderService workOrderService,
+    IUserDirectoryService userDirectoryService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<WorkOrderResponse>>> List(
@@ -42,6 +45,15 @@ public sealed class WorkOrdersController(
     {
         try
         {
+            var currentUser = await userDirectoryService.GetCurrentAsync(
+                User,
+                cancellationToken);
+
+            if (currentUser.Role != ApplicationRoles.Admin)
+            {
+                return Forbid();
+            }
+
             var workOrder = await workOrderService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = workOrder.Id }, workOrder);
         }

@@ -22,6 +22,8 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
         builder.Property(w => w.AssetId)
             .IsRequired();
 
+        builder.Property(w => w.AssignedUserId);
+
         builder.Property(w => w.Status)
             .HasConversion<string>()
             .HasMaxLength(32)
@@ -38,6 +40,8 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
 
         builder.HasIndex(w => new { w.TenantId, w.Status });
 
+        builder.HasIndex(w => new { w.TenantId, w.AssignedUserId, w.Status });
+
         builder.HasIndex(w => new { w.TenantId, w.AssetId, w.ScheduledDate });
 
         builder.HasIndex(w => new { w.TenantId, w.MaintenancePlanId, w.AssetId, w.ScheduledDate });
@@ -50,6 +54,11 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
         builder.HasOne(w => w.MaintenancePlan)
             .WithMany()
             .HasForeignKey(w => w.MaintenancePlanId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(w => w.AssignedUser)
+            .WithMany()
+            .HasForeignKey(w => w.AssignedUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasMany(w => w.Tasks)

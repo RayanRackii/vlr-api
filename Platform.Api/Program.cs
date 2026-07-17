@@ -8,6 +8,7 @@ using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.Users;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
@@ -45,6 +46,7 @@ try
     builder.Services.AddWorkOrdersModule();
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
+    builder.Services.AddUsersModule();
     builder.Services.AddCustomerAuthModule();
     builder.Services.AddAdminModule();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();

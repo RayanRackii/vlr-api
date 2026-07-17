@@ -23,6 +23,8 @@ public sealed record CreateWorkOrderRequest
 
     public Guid? MaintenancePlanId { get; init; }
 
+    public Guid? AssignedUserId { get; init; }
+
     public required DateOnly ScheduledDate { get; init; }
 
     public string? Notes { get; init; }
@@ -63,16 +65,23 @@ public sealed record WorkOrderTaskResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 
+public sealed record WorkOrderAssignedUserResponse(
+    Guid Id,
+    string FullName,
+    string Email);
+
 public sealed record WorkOrderResponse(
     Guid Id,
     Guid TenantId,
     Guid AssetId,
     Guid? MaintenancePlanId,
+    Guid? AssignedUserId,
     WorkOrderStatus Status,
     DateOnly ScheduledDate,
     DateTimeOffset? CompletedDate,
     string? Notes,
     WorkOrderAssetResponse Asset,
+    WorkOrderAssignedUserResponse? AssignedUser,
     IReadOnlyList<WorkOrderTaskResponse> Tasks,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);

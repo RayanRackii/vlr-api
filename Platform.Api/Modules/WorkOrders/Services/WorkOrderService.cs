@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Modules.Users.Dtos;
+using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -9,19 +12,28 @@ namespace Platform.Api.Modules.WorkOrders.Services;
 
 public sealed class WorkOrderService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IWorkOrderService
+    ITenantProvider tenantProvider,
+    IHttpContextAccessor httpContextAccessor,
+    IUserDirectoryService userDirectoryService) : IWorkOrderService
 {
     public async Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
         Guid? assetId,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
 
         var query = dbContext.WorkOrders
             .AsNoTracking()
             .Include(w => w.Asset)
+            .Include(w => w.AssignedUser)
             .Include(w => w.Tasks)
             .AsQueryable();
+
+        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        {
+            query = query.Where(w => w.AssignedUserId == currentUser.Id);
+        }
 
         if (assetId is Guid filteredAssetId)
         {
@@ -41,11 +53,21 @@ public sealed class WorkOrderService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
 
-        var workOrder = await dbContext.WorkOrders
+        var query = dbContext.WorkOrders
             .AsNoTracking()
             .Include(w => w.Asset)
+            .Include(w => w.AssignedUser)
             .Include(w => w.Tasks)
+            .AsQueryable();
+
+        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        {
+            query = query.Where(w => w.AssignedUserId == currentUser.Id);
+        }
+
+        var workOrder = await query
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
         return workOrder is null ? null : ToResponse(workOrder);
@@ -72,6 +94,31 @@ public sealed class WorkOrderService(
             }
         }
 
+        User? assignedUser = null;
+        if (request.AssignedUserId is Guid assignedUserId)
+        {
+            assignedUser = await dbContext.Users
+                .Include(user => user.UserRoles)
+                    .ThenInclude(userRole => userRole.Role)
+                .FirstOrDefaultAsync(
+                    user => user.Id == assignedUserId && user.IsActive,
+                    cancellationToken)
+                ?? throw new KeyNotFoundException(
+                    $"Assigned user '{assignedUserId}' was not found.");
+
+            var isTechnician = assignedUser.UserRoles.Any(userRole =>
+                string.Equals(
+                    userRole.Role.Name,
+                    SystemRoles.Technician,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (!isTechnician)
+            {
+                throw new ArgumentException(
+                    $"Assigned user '{assignedUserId}' does not have the Technician role.");
+            }
+        }
+
         ValidateTasks(request.Tasks);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -83,6 +130,7 @@ public sealed class WorkOrderService(
                 TenantId = tenantId,
                 AssetId = asset.Id,
                 MaintenancePlanId = request.MaintenancePlanId,
+                AssignedUserId = assignedUser?.Id,
                 Status = WorkOrderStatus.Pending,
                 ScheduledDate = request.ScheduledDate,
                 Notes = NormalizeOptional(request.Notes),
@@ -109,6 +157,7 @@ public sealed class WorkOrderService(
             await transaction.CommitAsync(cancellationToken);
 
             workOrder.Asset = asset;
+            workOrder.AssignedUser = assignedUser;
             return ToResponse(workOrder);
         }
         catch
@@ -125,10 +174,20 @@ public sealed class WorkOrderService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
 
-        var workOrder = await dbContext.WorkOrders
+        var query = dbContext.WorkOrders
             .Include(w => w.Asset)
+            .Include(w => w.AssignedUser)
             .Include(w => w.Tasks)
+            .AsQueryable();
+
+        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        {
+            query = query.Where(w => w.AssignedUserId == currentUser.Id);
+        }
+
+        var workOrder = await query
             .FirstOrDefaultAsync(w => w.Id == workOrderId, cancellationToken);
 
         if (workOrder is null)
@@ -164,10 +223,20 @@ public sealed class WorkOrderService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
 
-        var workOrder = await dbContext.WorkOrders
+        var query = dbContext.WorkOrders
             .Include(w => w.Asset)
+            .Include(w => w.AssignedUser)
             .Include(w => w.Tasks)
+            .AsQueryable();
+
+        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        {
+            query = query.Where(w => w.AssignedUserId == currentUser.Id);
+        }
+
+        var workOrder = await query
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
         if (workOrder is null)
@@ -214,6 +283,15 @@ public sealed class WorkOrderService(
     {
         return tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
+    }
+
+    private Task<CurrentUserResponse> GetCurrentUserAsync(
+        CancellationToken cancellationToken)
+    {
+        var principal = httpContextAccessor.HttpContext?.User
+            ?? throw new UnauthorizedAccessException("Authenticated user context is required.");
+
+        return userDirectoryService.GetCurrentAsync(principal, cancellationToken);
     }
 
     private static void ValidateTasks(IReadOnlyList<CreateWorkOrderTaskDto> tasks)
@@ -270,6 +348,7 @@ public sealed class WorkOrderService(
             workOrder.TenantId,
             workOrder.AssetId,
             workOrder.MaintenancePlanId,
+            workOrder.AssignedUserId,
             workOrder.Status,
             workOrder.ScheduledDate,
             workOrder.CompletedDate,
@@ -282,6 +361,12 @@ public sealed class WorkOrderService(
                 workOrder.Asset.Tag,
                 workOrder.Asset.Location,
                 workOrder.Asset.Status),
+            workOrder.AssignedUser is null
+                ? null
+                : new WorkOrderAssignedUserResponse(
+                    workOrder.AssignedUser.Id,
+                    workOrder.AssignedUser.FullName,
+                    workOrder.AssignedUser.Email),
             workOrder.Tasks
                 .OrderBy(t => t.Order)
                 .Select(ToTaskResponse)
