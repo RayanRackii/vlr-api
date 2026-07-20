@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Platform.Api.Authentication;
 using Platform.Api.Features.CreateTenant;
+using Platform.Api.Features.InviteUser;
 using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
@@ -10,6 +11,7 @@ using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Users;
 using Platform.Api.Modules.WorkOrders;
+using Platform.Api.Notifications;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
 using Serilog;
@@ -50,6 +52,9 @@ try
     builder.Services.AddCustomerAuthModule();
     builder.Services.AddAdminModule();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
+    builder.Services.AddMediatR(configuration =>
+        configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+    builder.Services.AddNotificationInfrastructure();
     builder.Services.AddPlatformHangfire(connectionString);
 
     builder.Services.AddControllers()
@@ -126,6 +131,7 @@ try
         .AllowAnonymous();
 
     app.MapCreateTenantEndpoint();
+    app.MapInviteUserEndpoint();
     app.MapControllers();
 
     app.MapPlatformRecurringJobs();
