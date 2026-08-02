@@ -54,10 +54,24 @@ public sealed class NotificationDispatcherService(
             case WhatsAppType:
             {
                 var whatsAppProvider = scope.ServiceProvider.GetRequiredService<IWhatsAppProvider>();
-                await whatsAppProvider.SendAsync(
-                    message.Recipient,
-                    message.Body,
-                    cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(message.TemplateName))
+                {
+                    await whatsAppProvider.SendTemplateAsync(
+                        message.Recipient,
+                        message.TemplateName,
+                        message.TemplateLanguage ?? "pt_BR",
+                        message.TemplateParameters ?? [],
+                        cancellationToken);
+                }
+                else
+                {
+                    await whatsAppProvider.SendAsync(
+                        message.Recipient,
+                        message.Body,
+                        cancellationToken);
+                }
+
                 break;
             }
 

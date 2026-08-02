@@ -1,0 +1,28 @@
+---
+description: Convenções de código C#/.NET e regras estritas da vlr-api
+alwaysApply: true
+---
+
+# Convenções de Código — vlr-api
+
+Atue como desenvolvedor .NET 10 sênior. C# moderno: records, pattern matching, `Nullable` habilitado (trate nulos explicitamente).
+
+## Regras estritas
+
+1. **Injeção de dependência:** todo serviço, contexto e integração externa entra via `IServiceCollection` (extensões `AddXxxModule`). Nunca instancie serviços com `new`.
+2. **EF Core:** todo acesso a dados é assíncrono (`ToListAsync`, `FirstOrDefaultAsync`, etc.).
+3. **DTOs obrigatórios:** é proibido retornar entidades de domínio nas APIs. Sempre mapeie para DTOs/records definidos no módulo.
+4. **Multi-tenant:** toda entidade nova de módulo implementa `ITenantScoped` e recebe Global Query Filter no `AppDbContext`. Verifique se a entidade também precisa de `UnitId`.
+5. **Respostas HTTP padronizadas:** `ActionResult` em Controllers, `IResult` em Minimal APIs. Erros no formato `{ "error": string }` (o frontend faz parse desse shape).
+6. **Módulos por tenant:** ao criar endpoints de um módulo, considere o gating por `TenantModule` (meta de arquitetura; ver ROADMAP.md).
+
+## Migrations
+
+- Criar: `dotnet ef migrations add <Nome> --project Core/Platform.Core.Infrastructure --startup-project Platform.Api`
+- Nunca edite migrations já aplicadas; crie uma nova.
+- Tabelas novas vão no schema do módulo correspondente (`core`, `assets`, `pmoc`, `os`, `rentals`).
+
+## Configuração
+
+- Segredos só via `appsettings.Development.json` (fora do git) ou variáveis de ambiente no Railway (`ConnectionStrings__DefaultConnection`, `Supabase__Url`, `Supabase__JwtSecret`, `Supabase__ServiceRoleKey`, etc.).
+- Nunca comite chaves reais em `appsettings.json`.

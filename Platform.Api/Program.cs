@@ -10,6 +10,7 @@ using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Users;
+using Platform.Api.Modules.Webhooks;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Notifications;
 using Platform.Core.Infrastructure;
@@ -54,7 +55,8 @@ try
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-    builder.Services.AddNotificationInfrastructure();
+    builder.Services.AddWebhooksModule();
+    builder.Services.AddNotificationInfrastructure(builder.Configuration);
     builder.Services.AddPlatformHangfire(connectionString);
 
     builder.Services.AddControllers()

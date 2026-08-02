@@ -1,0 +1,29 @@
+---
+description: Domínio e invariantes do módulo Rentals (aluguéis/reservas) — prioridade do cliente clube
+globs: **/Rentals/**,**/rentals/**
+alwaysApply: false
+---
+
+# Módulo Rentals — Domínio e Invariantes
+
+Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints em `Platform.Api/Modules/Rentals/`.
+
+## Modelo
+
+- **`RentalAsset`** (1:1 com `Asset` via flag `IsRentable`): `Type` = `Location` (quadra/espaço, exclusivo) ou `Good` (bem com `TotalQuantity`). A sincronização acontece em `AssetService.SyncRentalConfiguration`.
+- **`RentalPricing`**: preço por `DayOfWeek` + janela `Start`/`End` + `PricePerHour` + depósito.
+- **`Reservation`** → `Customer` + `Unit`, com snapshots `CustomerName`/`CustomerWhatsApp`, `TotalAmount`, `DepositPaid`.
+- **`ReservationItem`** → `RentalAsset` (quantidade, preço unitário, subtotal).
+- `ReservationStatus`: `PendingDeposit` → `Confirmed` → `Completed` (ou `Canceled`).
+
+## Invariantes (não quebrar)
+
+1. **Conflito de horário:** `Location` bloqueia se já houver reserva no intervalo; `Good` valida quantidade disponível contra `TotalQuantity`.
+2. Reserva nasce com status `PendingDeposit`.
+3. Cliente B2C autentica por OTP (policy `Customer`); disponibilidade é pública com header `X-Tenant-Subdomain`.
+4. Snapshots de nome/WhatsApp na reserva não são atualizados se o `Customer` mudar depois.
+
+## Estado atual e lacunas
+
+Implementado: pricing CRUD, availability pública, criação de reserva, auth B2C por OTP.
+Faltando (ver ROADMAP.md): confirmar/cancelar/completar reserva, pagamento de depósito (`DepositPaid` hoje sempre 0), listagem de reservas (admin e cliente), notificações reais de OTP e avisos de reserva/estado das quadras.

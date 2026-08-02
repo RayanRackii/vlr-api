@@ -1,0 +1,41 @@
+---
+description: Arquitetura real da vlr-api — organização, multi-tenancy, autenticação, background
+alwaysApply: true
+---
+
+# Arquitetura da vlr-api
+
+Monólito modular .NET 10, três projetos: `Platform.Api` (host) → `Core/Platform.Core.Infrastructure` (EF Core, Supabase Admin) → `Core/Platform.Core.Domain` (entidades, enums, constantes).
+
+## Organização do código
+
+- **Padrão dominante:** `Platform.Api/Modules/<Área>/` com Controller + Service + DTOs, registrados via extensão `AddXxxModule` no `Program.cs`. Novos endpoints seguem este padrão.
+- **Exceções históricas:** `Platform.Api/Features/` usa Minimal APIs + MediatR (`CreateTenant`, `InviteUser`). Não expandir MediatR para novos módulos sem decisão explícita.
+- Módulos existentes: Admin, Assets, CustomerAuth, Dashboard, Pmoc, Rentals, Users, Units, WorkOrders.
+
+## Multi-tenancy
+
+- Entidades de módulo implementam `ITenantScoped` (`TenantId`); o `AppDbContext` aplica **Global Query Filter** (`TenantId == CurrentTenantId`). Com `CurrentTenantId` nulo (jobs Hangfire, Platform Admin) o filtro desliga.
+- Tenant B2B vem do claim `app_metadata.tenant_id` do JWT Supabase; B2C vem do claim `tenant_id` do JWT próprio; rotas públicas usam o header `X-Tenant-Subdomain` (via `PublicTenantBinder` → `AmbientTenantContext`).
+- Nunca consulte dados de tenant sem passar pelo `AppDbContext` com filtro ativo.
+
+## Autenticação
+
+- **B2B (painel):** JWT do Supabase Auth (OIDC metadata + fallback HS256 com `Supabase:JwtSecret`).
+- **B2C (cliente final, ex.: sócio do clube):** OTP de 6 dígitos (10 min, `core.otp_codes`) → JWT próprio (`CustomerJwtIssuer`, issuer `platform.b2c`, role `Customer`, 30 dias). Policy `"Customer"`.
+- **Platform Admin:** e-mails em `PlatformAdmin:Emails`, policy `PlatformAdmin`.
+- Roles de aplicação: `SUPER_ADMIN`, `ADMIN`, `TECHNICIAN`, `USER`, `CLIENT`.
+
+## Background e notificações
+
+- **Hangfire** (storage Postgres): jobs `data-retention-gc` (00:00) e `pmoc-engine` (06:00), dashboard em `/hangfire`.
+- **Notificações:** handlers enfileiram no `NotificationQueue` (`System.Threading.Channels`); `NotificationDispatcherService` consome em background. **Nunca envie e-mail/WhatsApp sincronamente dentro de uma request HTTP.**
+- Providers em `Notifications/Providers/`: `Resend/` (e-mail), `Meta/` (WhatsApp Cloud API, texto + template), `Dev/` (fallback que loga no console quando as credenciais não estão configuradas). Seleção na DI em `NotificationsServiceCollectionExtensions`.
+- **WhatsApp iniciado pela empresa exige template aprovado no Meta** (`NotificationMessage.TemplateName`); texto livre só é entregue na janela de 24h aberta pelo cliente.
+- **Webhook Meta:** `GET/POST /api/webhooks/whatsapp` (`Modules/Webhooks/`) — handshake com `WhatsApp:VerifyToken` e assinatura `X-Hub-Signature-256` validada com `WhatsApp:AppSecret`.
+
+## Persistência
+
+- EF Core 10 + Npgsql, naming snake_case (`EFCore.NamingConventions`), Postgres no Supabase.
+- Schemas: `core`, `assets`, `pmoc`, `os`, `rentals`. History table: `core.__ef_migrations_history`.
+- Migrations em `Core/Platform.Core.Infrastructure/Persistence/Migrations/`.

@@ -1,4 +1,4 @@
-namespace Platform.Api.Notifications;
+namespace Platform.Api.Notifications.Providers.Dev;
 
 public sealed class DevEmailProvider(ILogger<DevEmailProvider> logger) : IEmailProvider
 {
