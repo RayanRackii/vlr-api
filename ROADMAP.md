@@ -54,3 +54,5 @@ Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se m
 | 2026-08-03 | Beachhead clube/Rentals; WA/Resend adiados; portal como foco. |
 | 2026-08-03 | Portal: login e-mail+senha; SMS no celular; branding mínimo. |
 | 2026-08-03 | **Executado:** branding Tenant + Customer portal APIs (register/verify-phone/login) + ViaCEP + Dev SMS + migrations. Frontend portal `/t/:subdomain`. |
+| 2026-08-03 | WhatsApp webhook **validado em produção** (inbound messages OK). Diagnóstico: logs duplicados (Serilog Console 2x); `libgssapi_krb5` cosmético; DataProtection sem volume persistente. |
+| 2026-08-03 | Fix Serilog: removido `WriteTo.Console()` duplicado em `Program.cs` (sink só via appsettings). |

@@ -27,14 +27,14 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
+    // Console sink comes only from Serilog:WriteTo in appsettings — do not add
+    // WriteTo.Console() here or every log line is duplicated in Railway/Docker.
     builder.Host.UseSerilog((context, services, configuration) => configuration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
         .Enrich.WithMachineName()
-        .Enrich.WithEnvironmentName()
-        .Enrich.WithProperty("Application", "Platform.Api")
-        .WriteTo.Console());
+        .Enrich.WithEnvironmentName());
 
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
