@@ -7,6 +7,7 @@ public sealed class NotificationDispatcherService(
 {
     private const string EmailType = "Email";
     private const string WhatsAppType = "WhatsApp";
+    private const string SmsType = "Sms";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -72,6 +73,16 @@ public sealed class NotificationDispatcherService(
                         cancellationToken);
                 }
 
+                break;
+            }
+
+            case SmsType:
+            {
+                var smsProvider = scope.ServiceProvider.GetRequiredService<ISmsProvider>();
+                await smsProvider.SendAsync(
+                    message.Recipient,
+                    message.Body,
+                    cancellationToken);
                 break;
             }
 

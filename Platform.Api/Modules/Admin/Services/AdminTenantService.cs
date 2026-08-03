@@ -84,7 +84,10 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
                 taxId,
                 tradeName: null,
                 subdomain: subdomain,
-                logoUrl: request.LogoUrl);
+                logoUrl: request.LogoUrl,
+                primaryColor: request.PrimaryColor,
+                accentColor: request.AccentColor,
+                welcomeTagline: request.WelcomeTagline);
 
             dbContext.Tenants.Add(tenant);
 
@@ -178,7 +181,10 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
                 taxId,
                 tradeName: null,
                 subdomain: subdomain,
-                logoUrl: request.LogoUrl);
+                logoUrl: request.LogoUrl,
+                primaryColor: request.PrimaryColor,
+                accentColor: request.AccentColor,
+                welcomeTagline: request.WelcomeTagline);
 
             SyncTenantModules(tenant, modules);
 
@@ -352,6 +358,9 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
             tenant.TaxId,
             tenant.Subdomain,
             tenant.LogoUrl,
+            tenant.PrimaryColor,
+            tenant.AccentColor,
+            tenant.WelcomeTagline,
             tenant.IsActive,
             tenant.CreatedAt,
             activeModules);

@@ -25,6 +25,17 @@ A ativação por tenant é persistida em `core.tenant_modules` (`TenantModule`).
 
 O primeiro cliente é um **clube** cuja necessidade central é: avisar clientes sobre o estado das quadras e permitir **reserva de horários**. O módulo `rentals` é a prioridade de desenvolvimento.
 
+**Ordem do ciclo atual (ver CONTEXT.md + ROADMAP.md):**
+1. Resend + WhatsApp (config externa) — etapa principal de infra, **adiada** enquanto o Meta é finalizado.
+2. **Próximo foco:** portal B2C branded (`{subdomain}.…`) — login **e-mail + senha** + cadastro (foto, nome, e-mail, senha, CPF, CEP, celular via SMS). Celular ≠ login. Branding mínimo no Tenant (cores/tagline).
+3. Demais itens de Rentals / convite / gating.
+
+Cadastrar `Tenant.Subdomain` **não** entrega a página personalizada — só a chave de roteamento.
+
+## ROADMAP (obrigatório)
+
+Em toda tarefa relevante: atualizar `ROADMAP.md`. Se a prioridade/escopo mudar, registrar na seção **Histórico** (data + o quê + por quê). Não apagar decisões sem rastreio.
+
 ## Regra de ouro de segurança
 
 **Administradores nunca definem a senha de outros usuários.** O fluxo alvo é convite por token (`InviteUser` → e-mail/WhatsApp com link `/invite?token=`), onde o próprio usuário define a senha. O onboarding público atual que coleta senha do admin é temporário e deve ser substituído.

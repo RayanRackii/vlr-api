@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Platform.Core.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Platform.Core.Infrastructure.Persistence;
 namespace Platform.Core.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803172641_AddTenantBrandingAndCustomerPortal")]
+    partial class AddTenantBrandingAndCustomerPortal
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -239,7 +242,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("phone_verified_at");
 
                     b.Property<string>("PhotoUrl")
-                        .HasColumnType("text")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
                         .HasColumnName("photo_url");
 
                     b.Property<string>("PostalCode")

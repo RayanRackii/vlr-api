@@ -9,4 +9,20 @@ public interface ICustomerAuthService
     Task<AuthResponseDto> VerifyOtpAsync(
         VerifyOtpDto request,
         CancellationToken cancellationToken);
+
+    Task<RegisterCustomerResponseDto> RegisterAsync(
+        RegisterCustomerRequestDto request,
+        CancellationToken cancellationToken);
+
+    Task<AuthResponseDto> VerifyPhoneAsync(
+        VerifyPhoneRequestDto request,
+        CancellationToken cancellationToken);
+
+    Task<AuthResponseDto> LoginAsync(
+        CustomerLoginRequestDto request,
+        CancellationToken cancellationToken);
+
+    Task<TenantBrandingResponseDto> GetBrandingAsync(
+        string subdomain,
+        CancellationToken cancellationToken);
 }

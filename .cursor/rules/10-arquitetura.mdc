@@ -22,7 +22,7 @@ Monólito modular .NET 10, três projetos: `Platform.Api` (host) → `Core/Platf
 ## Autenticação
 
 - **B2B (painel):** JWT do Supabase Auth (OIDC metadata + fallback HS256 com `Supabase:JwtSecret`).
-- **B2C (cliente final, ex.: sócio do clube):** OTP de 6 dígitos (10 min, `core.otp_codes`) → JWT próprio (`CustomerJwtIssuer`, issuer `platform.b2c`, role `Customer`, 30 dias). Policy `"Customer"`.
+- **B2C (cliente final, ex.: sócio do clube):** alvo = cadastro + **login e-mail/senha** → JWT próprio (`CustomerJwtIssuer`, issuer `platform.b2c`, role `Customer`). Celular verificado por SMS (não autentica). **Legado atual:** OTP de 6 dígitos (`core.otp_codes`) — aposentar quando o login por senha estiver no ar. Policy `"Customer"`.
 - **Platform Admin:** e-mails em `PlatformAdmin:Emails`, policy `PlatformAdmin`.
 - Roles de aplicação: `SUPER_ADMIN`, `ADMIN`, `TECHNICIAN`, `USER`, `CLIENT`.
 

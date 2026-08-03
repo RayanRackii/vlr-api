@@ -13,6 +13,90 @@ public sealed class CustomerAuthController(
     ICustomerAuthService customerAuthService,
     IPublicTenantBinder publicTenantBinder) : ControllerBase
 {
+    [HttpGet("~/api/public/tenants/{subdomain}/branding")]
+    public async Task<ActionResult<TenantBrandingResponseDto>> GetBranding(
+        string subdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var branding = await customerAuthService.GetBrandingAsync(
+                subdomain,
+                cancellationToken);
+            return Ok(branding);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("register")]
+    public async Task<ActionResult<RegisterCustomerResponseDto>> Register(
+        [FromBody] RegisterCustomerRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            var response = await customerAuthService.RegisterAsync(request, cancellationToken);
+            return Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("verify-phone")]
+    public async Task<ActionResult<AuthResponseDto>> VerifyPhone(
+        [FromBody] VerifyPhoneRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            var response = await customerAuthService.VerifyPhoneAsync(request, cancellationToken);
+            return Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("login")]
+    public async Task<ActionResult<AuthResponseDto>> Login(
+        [FromBody] CustomerLoginRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            var response = await customerAuthService.LoginAsync(request, cancellationToken);
+            return Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
     [HttpPost("request-otp")]
     public async Task<IActionResult> RequestOtp(
         [FromBody] RequestOtpDto request,

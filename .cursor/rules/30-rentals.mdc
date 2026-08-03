@@ -20,10 +20,10 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 
 1. **Conflito de horário:** `Location` bloqueia se já houver reserva no intervalo; `Good` valida quantidade disponível contra `TotalQuantity`.
 2. Reserva nasce com status `PendingDeposit`.
-3. Cliente B2C autentica por OTP (policy `Customer`); disponibilidade é pública com header `X-Tenant-Subdomain`.
+3. Cliente B2C autentica com **e-mail + senha** (policy `Customer`); disponibilidade é pública com header `X-Tenant-Subdomain`. Celular é para SMS/WhatsApp, não login.
 4. Snapshots de nome/WhatsApp na reserva não são atualizados se o `Customer` mudar depois.
 
 ## Estado atual e lacunas
 
-Implementado: pricing CRUD, availability pública, criação de reserva, auth B2C por OTP.
-Faltando (ver ROADMAP.md): confirmar/cancelar/completar reserva, pagamento de depósito (`DepositPaid` hoje sempre 0), listagem de reservas (admin e cliente), notificações reais de OTP e avisos de reserva/estado das quadras.
+Implementado: pricing CRUD, availability pública, criação de reserva, auth B2C legado por OTP.
+Faltando (ver ROADMAP.md): login/cadastro e-mail+senha, confirmar/cancelar/completar reserva, pagamento de depósito (`DepositPaid` hoje sempre 0), listagem de reservas (admin e cliente), SMS de verificação e avisos WhatsApp de reserva/estado das quadras.

@@ -45,6 +45,8 @@ public static class NotificationsServiceCollectionExtensions
             services.AddScoped<IWhatsAppProvider, DevWhatsAppProvider>();
         }
 
+        services.AddScoped<ISmsProvider, DevSmsProvider>();
+
         return services;
     }
 }

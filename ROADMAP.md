@@ -1,41 +1,56 @@
 # ROADMAP — vlr-api
 
-Prioridade geral: deixar o módulo **Rentals** operacional para o primeiro cliente (clube: avisos sobre estado das quadras + reserva de horários).
+Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e `frontend/ROADMAP.md`.
 
-## 1. Notificações reais (bloqueia o restante)
+**Foco de produto agora:** portal B2C branded — login e-mail+senha + cadastro + SMS (em andamento / primeira fatia entregue).  
+**Adiado:** fechar configuração externa Resend + WhatsApp (Meta).
 
-Providers reais implementados em `Platform.Api/Notifications/Providers/` (`Resend/`, `Meta/`, `Dev/`). A DI ativa o provider real quando as credenciais existem na config; sem credenciais, cai no provider Dev (log no console).
+## 0. Disciplina
 
-- [x] **E-mail (Resend):** `ResendEmailProvider` via `HttpClientFactory`, config `Resend:ApiKey/FromEmail/FromName`.
-- [x] **WhatsApp (Meta Cloud API):** `MetaWhatsAppProvider` (texto + template), config `WhatsApp:GraphApiUrl/PhoneNumberId/AccessToken/VerifyToken/AppSecret`.
-- [x] **Webhook WhatsApp:** `GET/POST /api/webhooks/whatsapp` — handshake `hub.verify_token`, validação de assinatura `X-Hub-Signature-256` (AppSecret), ingestão de status/mensagens com 200 imediato (`WhatsAppWebhookProcessor` hoje só loga).
-- [ ] **Template de autenticação no Meta:** criar e aprovar um template categoria *Authentication* (o Meta só entrega mensagem iniciada pela empresa via template aprovado; texto livre só dentro da janela de 24h).
-- [ ] **OTP B2C via WhatsApp:** `CustomerAuthService.RequestOtpAsync` ainda só loga o código; enfileirar `NotificationMessage` com `TemplateName` do template de autenticação quando aprovado.
-- [ ] **Persistir status de entrega:** o webhook loga `sent/delivered/read/failed`; futuramente correlacionar com as mensagens enviadas.
+Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
 
-## 2. Ciclo de vida da reserva (Rentals)
+## 1. Notificações reais (Resend + WhatsApp) — ETAPA PRINCIPAL DE INFRA · ADIADA
 
-- [ ] Endpoints de listagem: reservas do tenant (admin B2B) e reservas do cliente (B2C).
-- [ ] Confirmar reserva (registro do pagamento de depósito — `DepositPaid` hoje é sempre 0).
-- [ ] Cancelar e completar reserva (com regras de prazo a definir).
-- [ ] Notificar cliente nas transições (confirmação, cancelamento, lembrete).
-- [ ] **Estado das quadras:** marcar `RentalAsset`/`Asset` como indisponível (manutenção/chuva) e avisar clientes com reservas afetadas.
+- [x] Providers Resend / Meta / Dev + webhook WhatsApp.
+- [x] `ISmsProvider` + `DevSmsProvider` + tipo `Sms` no dispatcher (verificação de celular).
+- [ ] Config externa Meta **retomada (2026-08-03)**: falta token permanente de System User, Phone Number ID, App Secret e Verify Token nas variáveis do Railway (`WhatsApp__*`) + webhook verificado.
+- [ ] Template Meta Authentication (aprovar para OTP).
+- [ ] Provider SMS real (Twilio/Zenvia/etc.) quando sair do Dev.
+- [ ] Persistência de status de entrega WhatsApp.
+
+## 2. Portal do tenant / Customer B2C — EM ANDAMENTO
+
+- [x] Branding no Tenant: `PrimaryColor`, `AccentColor`, `WelcomeTagline`.
+- [x] `GET /api/public/tenants/{subdomain}/branding`.
+- [x] Customer: password hash, CPF, CEP/endereço (ViaCEP), foto, `PhoneVerifiedAt`.
+- [x] Validação CPF (dígitos) + CEP (ViaCEP) no back; phone BR normalizado.
+- [x] `POST /api/auth/customer/register` | `verify-phone` | `login` (e-mail+senha).
+- [x] SMS de verificação enfileirado (Dev log).
+- [ ] Admin UI para editar cores/tagline (API já aceita no create/update).
+- [ ] Aposentar OTP-only legado quando estável em produção.
+- [ ] Ciclo de vida reserva / estado das quadras (próxima fatia).
 
 ## 3. Enforcement de módulos por tenant
 
-`core.tenant_modules` existe mas nada é aplicado. Implementar middleware/filtro que bloqueia endpoints de módulos inativos para o tenant (retornar 403 com `{ "error": ... }`).
+`core.tenant_modules` existe mas nada é aplicado. Middleware/filtro → 403.
 
-## 4. Fluxo de convite real
+## 4. Fluxo de convite B2B real
 
-- [ ] Modelar tabela de tokens de convite; `InviteUserCommand` hoje é simulado (não persiste nada).
-- [ ] Criar usuário no Supabase na ativação; endpoint que o frontend `/invite` consome.
-- [ ] Substituir o onboarding público que coleta senha do admin (viola a regra de ouro).
+- [ ] Tabela de tokens; `InviteUser` ainda simulado.
+- [ ] Endpoint para frontend `/invite`.
+- [ ] Substituir onboarding com senha do admin.
 
 ## Dívidas técnicas conhecidas
 
-- Permissions/RolePermission modelados sem seed nem uso na autorização.
-- `PmocEngineJob` não filtra `RequiresMaintenance`.
-- Hangfire dashboard em produção exige só "autenticado" (sem role PlatformAdmin).
-- Sem `.sln`; READMEs vazios; sem testes automatizados.
-- Rename de schemas `assets`→`inventory` e `pmoc`/`os`→`maintenance` adiado (marcadores `IInventoryModuleEntity`/`IMaintenanceModuleEntity`).
-- Dois fluxos de criação de tenant (onboarding público vs admin) precisam convergir.
+- Permissions/RolePermission sem uso.
+- Hangfire dashboard auth fraco em produção.
+- Sem testes automatizados.
+- Consulta CPF “Receita/Serpro” ainda não plugada (só algoritmo + estrutura para API externa).
+
+## Histórico
+
+| Data | Mudança |
+|------|---------|
+| 2026-08-03 | Beachhead clube/Rentals; WA/Resend adiados; portal como foco. |
+| 2026-08-03 | Portal: login e-mail+senha; SMS no celular; branding mínimo. |
+| 2026-08-03 | **Executado:** branding Tenant + Customer portal APIs (register/verify-phone/login) + ViaCEP + Dev SMS + migrations. Frontend portal `/t/:subdomain`. |

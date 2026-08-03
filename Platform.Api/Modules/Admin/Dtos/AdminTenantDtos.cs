@@ -10,6 +10,12 @@ public sealed record CreateTenantRequestDto
 
     public string? LogoUrl { get; init; }
 
+    public string? PrimaryColor { get; init; }
+
+    public string? AccentColor { get; init; }
+
+    public string? WelcomeTagline { get; init; }
+
     /// <summary>Module labels: Rentals, PMOC, Inventory, OS.</summary>
     public required IReadOnlyList<string> ActiveModules { get; init; }
 }
@@ -23,6 +29,12 @@ public sealed record UpdateTenantRequestDto
     public required string Subdomain { get; init; }
 
     public string? LogoUrl { get; init; }
+
+    public string? PrimaryColor { get; init; }
+
+    public string? AccentColor { get; init; }
+
+    public string? WelcomeTagline { get; init; }
 
     /// <summary>Module labels: Rentals, PMOC, Inventory, OS.</summary>
     public required IReadOnlyList<string> ActiveModules { get; init; }
@@ -38,6 +50,9 @@ public sealed record TenantAdminResponseDto(
     string TaxId,
     string? Subdomain,
     string? LogoUrl,
+    string? PrimaryColor,
+    string? AccentColor,
+    string? WelcomeTagline,
     bool IsActive,
     DateTimeOffset CreatedAt,
     IReadOnlyList<TenantModuleResponseDto> ActiveModules);

@@ -32,6 +32,15 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.LogoUrl)
             .HasMaxLength(2048);
 
+        builder.Property(t => t.PrimaryColor)
+            .HasMaxLength(7);
+
+        builder.Property(t => t.AccentColor)
+            .HasMaxLength(7);
+
+        builder.Property(t => t.WelcomeTagline)
+            .HasMaxLength(120);
+
         builder.Property(t => t.IsActive)
             .HasDefaultValue(true)
             .IsRequired();
