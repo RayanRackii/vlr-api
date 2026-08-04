@@ -39,6 +39,8 @@ public class Tenant : Entity
 
     private readonly List<TenantRegistrationField> _registrationFields = [];
 
+    private readonly List<TenantModuleMenuItem> _moduleMenuItems = [];
+
     public IReadOnlyCollection<User> Users => _users.AsReadOnly();
 
     public IReadOnlyCollection<Unit> Units => _units.AsReadOnly();
@@ -49,6 +51,9 @@ public class Tenant : Entity
 
     public IReadOnlyCollection<TenantRegistrationField> RegistrationFields =>
         _registrationFields.AsReadOnly();
+
+    public IReadOnlyCollection<TenantModuleMenuItem> ModuleMenuItems =>
+        _moduleMenuItems.AsReadOnly();
 
     private Tenant()
     {

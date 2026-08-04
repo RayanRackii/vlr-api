@@ -2,7 +2,7 @@
 
 Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e `frontend/ROADMAP.md`.
 
-**Foco de produto agora:** **agenda B2C** (disponibilidade + reserva + minhas reservas).  
+**Foco de produto agora:** **shell B2C + menu multi-item** (itens configuráveis por módulo) + agenda ligada aos itens.  
 **Adiado:** fechar configuração externa Resend + WhatsApp (Meta).
 
 ## 0. Disciplina
@@ -13,56 +13,35 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e `fro
 
 ## 1. Registro dinâmico por tenant — FEITO (código)
 
-Decisões (2026-08-03):
-- Configurável por **Platform Admin** e **Admin do tenant**.
-- Direto ao modelo dinâmico.
-- Core obrigatório (colunas): `Name`, `Email`, `PasswordHash`, `Phone` (+ verify SMS).
-- Extras: definição em `core.tenant_registration_fields` + valores em `Customer.ExtraAttributes` (JSONB).
-- Índice de listagem: `(tenant_id, name)`.
-- Tipos v1: `text`, `email`, `phone`, `cpf`, `cep`, `boolean`, `number`, `select`, `photo`, `date`.
-- CPF: índice único `(tenant_id, cpf)` WHERE cpf IS NOT NULL; duplicados FICC removidos na migration `CleanupFiccDuplicateCpfsAndSeedRegistrationFields`.
-
-- [x] Entidade `TenantRegistrationField` + migration `AddTenantRegistrationFields` + `ExtraAttributes` JSONB + índice nome.
-- [x] `GET /api/public/tenants/{subdomain}/registration-schema`.
-- [x] CRUD campos (`/api/registration-fields` tenant admin + `/api/admin/tenants/{id}/registration-fields` platform).
-- [x] `POST /api/auth/customer/register` valida core + schema; grava extras no JSONB (CEP→ViaCEP se presente).
-- [x] Migration limpa CPF duplicado FICC + seed cpf/cep/photo + unique index.
+- [x] Entidade `TenantRegistrationField` + migrations + register dinâmico + CRUD.
+- [x] CPF único por tenant; limpeza duplicados FICC + seed cpf/cep/photo.
 - [ ] Aplicar migrations no Railway/Supabase (`dotnet ef database update`).
 
-## 2. Agenda B2C — EM ANDAMENTO
+## 2. Menu B2C multi-item + shell — FEITO (código)
 
-- [x] `GET /api/public/tenants/{subdomain}/rental-assets`.
-- [x] `GET /api/reservations/availability` (público com tenant header).
-- [x] `POST /api/reservations` (Customer JWT).
-- [x] `GET /api/reservations/mine` (Customer JWT).
-- [ ] Garantir assets/pricing cadastrados no tenant FICC para demo.
+Decisões: sidebar estilo admin; vários itens por módulo com label livre; herança = módulos ativos do tenant.
+
+- [x] Entidade `TenantModuleMenuItem` + migration `AddTenantModuleMenuItems` (+ seed FICC “Alugar quadra”).
+- [x] `GET /api/public/tenants/{subdomain}/menu`.
+- [x] CRUD tenant `/api/module-menu-items` + platform `/api/admin/tenants/{id}/module-menu-items`.
+- [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).
+- [ ] Aplicar migration menu no Railway.
+- [ ] Garantir assets/pricing no FICC para demo.
 - [ ] Admin B2B de reservas (listar/confirmar/cancelar).
 
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
-- [x] `ISmsProvider` + `DevSmsProvider` + tipo `Sms` no dispatcher.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [ ] Provider SMS real quando sair do Dev.
-- [ ] Persistência de status de entrega WhatsApp.
 
-## 4. Portal do tenant / Customer B2C
+## 4. Enforcement de módulos por tenant
 
-- [x] Branding Tenant + `GET .../branding`.
-- [x] Customer password/CPF/CEP/foto/PhoneVerified (legado; CPF/CEP/foto migram para schema dinâmico).
-- [x] register | verify-phone | login (dinâmico).
-- [x] Validação branding admin hex/tagline.
-- [ ] Aposentar OTP-only legado quando estável.
+`core.tenant_modules` existe; menu B2C já filtra por ativos. Falta middleware/filtro API → 403.
 
-## 5. Enforcement de módulos por tenant
+## 5. Fluxo de convite B2B real
 
-`core.tenant_modules` existe mas nada é aplicado. Middleware/filtro → 403.
-
-## 6. Fluxo de convite B2B real
-
-- [ ] Tabela de tokens; `InviteUser` ainda simulado.
-- [ ] Endpoint para frontend `/invite`.
-- [ ] Substituir onboarding com senha do admin.
+- [ ] Tabela de tokens; endpoint `/invite`; onboarding sem senha do admin.
 
 ## Dívidas técnicas conhecidas
 
@@ -75,12 +54,6 @@ Decisões (2026-08-03):
 
 | Data | Mudança |
 |------|---------|
-| 2026-08-03 | Beachhead clube/Rentals; WA/Resend adiados; portal como foco. |
-| 2026-08-03 | Portal: login e-mail+senha; SMS no celular; branding mínimo. |
-| 2026-08-03 | **Executado:** branding Tenant + Customer portal APIs + ViaCEP + Dev SMS. |
-| 2026-08-03 | WhatsApp webhook validado em produção. |
-| 2026-08-03 | Fix Serilog Console duplicado. |
-| 2026-08-03 | Branding admin: validação hex/tagline; UI no frontend. |
-| 2026-08-03 | **Prioridade:** registro dinâmico (core + JSONB extras + registration_fields). Agenda adiada. |
-| 2026-08-03 | **Executado:** registration fields + register dinâmico + migration. |
-| 2026-08-04 | CPF único por tenant; limpeza duplicados FICC + seed campos; início agenda B2C (assets públicos + mine). |
+| 2026-08-03 | Beachhead clube/Rentals; portal e registro dinâmico. |
+| 2026-08-04 | CPF único FICC; início agenda B2C. |
+| 2026-08-04 | **Executado:** `tenant_module_menu_items` + APIs públicas/admin; seed FICC. Shell B2C no frontend. |

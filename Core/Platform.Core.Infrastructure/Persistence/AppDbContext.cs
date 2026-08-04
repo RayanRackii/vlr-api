@@ -40,6 +40,9 @@ public sealed class AppDbContext : DbContext
     public DbSet<TenantRegistrationField> TenantRegistrationFields =>
         Set<TenantRegistrationField>();
 
+    public DbSet<TenantModuleMenuItem> TenantModuleMenuItems =>
+        Set<TenantModuleMenuItem>();
+
     // --- Schema: assets (inventory module — full model; schema rename to inventory is deferred) ---
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
 
