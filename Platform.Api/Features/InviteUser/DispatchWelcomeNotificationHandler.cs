@@ -5,31 +5,23 @@ namespace Platform.Api.Features.InviteUser;
 
 public sealed class DispatchWelcomeNotificationHandler(
     NotificationQueue queue,
-    IConfiguration configuration) : INotificationHandler<UserInvitedEvent>
+    IConfiguration configuration,
+    IHostEnvironment environment) : INotificationHandler<UserInvitedEvent>
 {
     public async Task Handle(UserInvitedEvent notification, CancellationToken cancellationToken)
     {
-        var frontendBaseUrl = configuration["App:FrontendBaseUrl"]?.TrimEnd('/')
-            ?? "http://localhost:5173";
-
+        var frontendBaseUrl = FrontendBaseUrlResolver.Resolve(configuration, environment);
         var inviteUrl = $"{frontendBaseUrl}/invite?token={Uri.EscapeDataString(notification.InviteToken)}";
 
-        var htmlBody =
-            $"""
-            <html>
-              <body>
-                <p>Bem-vindo ao Rolvix.</p>
-                <p>Para ativar sua conta, defina sua senha neste link:</p>
-                <p><a href="{inviteUrl}">{inviteUrl}</a></p>
-              </body>
-            </html>
-            """;
+        var htmlBody = RolvixEmailLayout.Wrap(
+            notification.Email,
+            RolvixEmailLayout.InviteBody(inviteUrl));
 
         await queue.EnqueueAsync(
             new NotificationMessage(
                 Type: "Email",
                 Recipient: notification.Email,
-                Subject: "Convite Rolvix",
+                Subject: "Convite Rolvix — defina sua senha",
                 Body: htmlBody),
             cancellationToken);
     }

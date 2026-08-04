@@ -61,7 +61,7 @@ Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
 - [x] Wizard Super-Admin: passo “Admin” (nome/e-mail, sem senha)
 - [x] Edit tenant: seção usuários/convites
 - [x] FE `/invite` chama API real
-- [ ] Confirmar e-mail (Resend) em produção + `App:FrontendBaseUrl`
+- [x] E-mail (Resend) com layout Rolvix + `App:FrontendBaseUrl` (prod nunca emite localhost)
 - [ ] Migrar onboarding público para invite (remover senha do admin)
 
 ## Dívidas técnicas conhecidas

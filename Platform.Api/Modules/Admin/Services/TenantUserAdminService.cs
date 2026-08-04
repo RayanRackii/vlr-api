@@ -40,7 +40,8 @@ public sealed class TenantUserAdminService(
     AppDbContext dbContext,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     NotificationQueue notificationQueue,
-    IConfiguration configuration) : ITenantUserAdminService
+    IConfiguration configuration,
+    IHostEnvironment environment) : ITenantUserAdminService
 {
     private static readonly TimeSpan InviteTtl = TimeSpan.FromDays(7);
     private const int MinimumPasswordLength = 8;
@@ -352,22 +353,12 @@ public sealed class TenantUserAdminService(
 
     private async Task EnqueueInviteEmailAsync(UserInvite invite, CancellationToken cancellationToken)
     {
-        var frontendBaseUrl = configuration["App:FrontendBaseUrl"]?.TrimEnd('/')
-            ?? "http://localhost:5173";
-
+        var frontendBaseUrl = FrontendBaseUrlResolver.Resolve(configuration, environment);
         var inviteUrl = $"{frontendBaseUrl}/invite?token={Uri.EscapeDataString(invite.Token)}";
 
-        var htmlBody =
-            $"""
-            <html>
-              <body>
-                <p>Olá {System.Net.WebUtility.HtmlEncode(invite.FullName)},</p>
-                <p>Você foi convidado(a) para o Rolvix.</p>
-                <p>Defina sua senha neste link (válido por 7 dias):</p>
-                <p><a href="{inviteUrl}">{inviteUrl}</a></p>
-              </body>
-            </html>
-            """;
+        var htmlBody = RolvixEmailLayout.Wrap(
+            invite.FullName,
+            RolvixEmailLayout.InviteBody(inviteUrl));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(
