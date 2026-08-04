@@ -53,9 +53,16 @@ Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
 
 `core.tenant_modules` existe; menu B2C já filtra por ativos. Falta middleware/filtro API → 403.
 
-## 5. Fluxo de convite B2B real
+## 5. Fluxo de convite B2B real — EM ANDAMENTO
 
-- [ ] Tabela de tokens; endpoint `/invite`; onboarding sem senha do admin.
+- [x] Tabela `core.user_invites` + migration `AddUserInvites`
+- [x] `POST /api/admin/tenants/{id}/invites` + list users + promote + resend/revoke
+- [x] `POST /api/invites/accept` (anonymous) → Supabase user + `User` + role
+- [x] Wizard Super-Admin: passo “Admin” (nome/e-mail, sem senha)
+- [x] Edit tenant: seção usuários/convites
+- [x] FE `/invite` chama API real
+- [ ] Confirmar e-mail (Resend) em produção + `App:FrontendBaseUrl`
+- [ ] Migrar onboarding público para invite (remover senha do admin)
 
 ## Dívidas técnicas conhecidas
 
@@ -75,3 +82,4 @@ Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
 | 2026-08-04 | **Executado:** `tenant_module_menu_items` + APIs públicas/admin; seed FICC. Shell B2C no frontend. |
 | 2026-08-04 | **Executado:** `LogoSvg` no Tenant + validação SVG + branding API; `LogoUrl` legado zera em writes. |
 | 2026-08-04 | **Iniciado:** escala SlotGrid/OpenHours, OccupancyKind, templates, slots, layouts (API); ADR 0001. |
+| 2026-08-04 | **Executado:** convite admin B2B real (user_invites + accept + UI wizard/edit). |

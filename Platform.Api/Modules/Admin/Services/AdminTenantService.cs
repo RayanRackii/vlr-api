@@ -8,7 +8,9 @@ using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Admin.Services;
 
-public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantService
+public sealed class AdminTenantService(
+    AppDbContext dbContext,
+    ITenantUserAdminService tenantUserAdminService) : IAdminTenantService
 {
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
         CancellationToken cancellationToken)
@@ -93,6 +95,8 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
 
             dbContext.Tenants.Add(tenant);
 
+            dbContext.Units.Add(new Unit(tenant.Id, "Headquarters", "HQ"));
+
             foreach (var moduleName in modules)
             {
                 dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
@@ -100,6 +104,23 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(request.AdminEmail))
+            {
+                var adminName = string.IsNullOrWhiteSpace(request.AdminFullName)
+                    ? request.AdminEmail.Trim()
+                    : request.AdminFullName.Trim();
+
+                await tenantUserAdminService.InviteAsync(
+                    tenant.Id,
+                    new InviteTenantUserRequestDto
+                    {
+                        FullName = adminName,
+                        Email = request.AdminEmail,
+                        RoleName = SystemRoles.Admin,
+                    },
+                    cancellationToken);
+            }
 
             var created = await dbContext.Tenants
                 .AsNoTracking()

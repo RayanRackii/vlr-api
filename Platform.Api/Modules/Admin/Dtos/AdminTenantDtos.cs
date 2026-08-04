@@ -19,6 +19,11 @@ public sealed record CreateTenantRequestDto
 
     /// <summary>Module labels: Rentals, PMOC, Inventory, OS.</summary>
     public required IReadOnlyList<string> ActiveModules { get; init; }
+
+    /// <summary>Optional first B2B admin invite (no password — golden rule).</summary>
+    public string? AdminFullName { get; init; }
+
+    public string? AdminEmail { get; init; }
 }
 
 public sealed record UpdateTenantRequestDto

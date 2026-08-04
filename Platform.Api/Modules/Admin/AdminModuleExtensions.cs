@@ -7,6 +7,7 @@ public static class AdminModuleExtensions
     public static IServiceCollection AddAdminModule(this IServiceCollection services)
     {
         services.AddScoped<IAdminTenantService, AdminTenantService>();
+        services.AddScoped<ITenantUserAdminService, TenantUserAdminService>();
 
         return services;
     }
