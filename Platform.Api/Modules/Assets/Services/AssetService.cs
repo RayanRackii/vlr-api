@@ -261,6 +261,7 @@ public sealed class AssetService(
                 Type = rentalType,
                 TotalQuantity = totalQuantity,
                 IsActive = true,
+                SchedulePolicy = SchedulePolicy.SlotGrid,
             };
             return;
         }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Infrastructure.Persistence.Configurations;
 
@@ -32,6 +33,19 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
         builder.Property(a => a.IsActive)
             .HasDefaultValue(true)
             .IsRequired();
+
+        builder.Property(a => a.SchedulePolicy)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(SchedulePolicy.SlotGrid)
+            .IsRequired();
+
+        builder.Property(a => a.OpenTime);
+
+        builder.Property(a => a.CloseTime);
+
+        builder.Property(a => a.AllowedDurationMinutes)
+            .HasMaxLength(128);
 
         builder.Property(a => a.CreatedAt)
             .IsRequired();

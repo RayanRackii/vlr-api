@@ -11,6 +11,12 @@ public sealed record RentalAssetResponse(
     RentalAssetType Type,
     int TotalQuantity,
     bool IsActive,
+    SchedulePolicy SchedulePolicy,
+    TimeOnly? OpenTime,
+    TimeOnly? CloseTime,
+    string? AllowedDurationMinutes,
+    Guid? CategoryId,
+    string? CategoryName,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 

@@ -71,6 +71,16 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<ReservationItem> ReservationItems => Set<ReservationItem>();
 
+    public DbSet<OccupancyKind> OccupancyKinds => Set<OccupancyKind>();
+
+    public DbSet<ScheduleTemplate> ScheduleTemplates => Set<ScheduleTemplate>();
+
+    public DbSet<Slot> Slots => Set<Slot>();
+
+    public DbSet<RentalLayout> RentalLayouts => Set<RentalLayout>();
+
+    public DbSet<RentalLayoutItem> RentalLayoutItems => Set<RentalLayoutItem>();
+
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

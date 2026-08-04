@@ -29,12 +29,19 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [ ] Garantir assets/pricing no FICC para demo.
 - [ ] Admin B2B de reservas (listar/confirmar/cancelar).
 
-## 2.5. Branding LogoSvg — FEITO (código)
+## 2.6. Escala diária / Slots / Layout — EM ANDAMENTO (código backend)
 
-- [x] `Tenant.LogoSvg` + migration `AddTenantLogoSvg`; writes clear obsolete `LogoUrl`.
-- [x] `SvgMarkupValidator` (size + no script/handlers) on admin create/update.
-- [x] Branding DTO público retorna `LogoSvg`.
-- [ ] Aplicar migration no Railway/Supabase (`logo_svg` text em `core.tenants`).
+Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
+
+- [x] `OccupancyKind` (catálogo do tenant) + defaults open/closed/lesson
+- [x] `ScheduleTemplate` + `Slot` + PublishDay + UpsertSlot + BookSlot
+- [x] `SchedulePolicy` SlotGrid | OpenHours em `RentalAsset`
+- [x] `RentalLayout` + items (API; canvas UI pendente)
+- [x] Migration `AddRentalsScheduleAndLayouts` + SQL script
+- [ ] Aplicar migration no Supabase
+- [ ] Admin UI: kinds, templates, dia da escala
+- [ ] B2C: escolher slot do dia (substituir hora manual)
+- [ ] Canvas de Layout no admin
 
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
@@ -67,3 +74,4 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 | 2026-08-04 | CPF único FICC; início agenda B2C. |
 | 2026-08-04 | **Executado:** `tenant_module_menu_items` + APIs públicas/admin; seed FICC. Shell B2C no frontend. |
 | 2026-08-04 | **Executado:** `LogoSvg` no Tenant + validação SVG + branding API; `LogoUrl` legado zera em writes. |
+| 2026-08-04 | **Iniciado:** escala SlotGrid/OpenHours, OccupancyKind, templates, slots, layouts (API); ADR 0001. |

@@ -17,6 +17,7 @@ public sealed class RentalAssetService(
         var configs = await dbContext.RentalAssets
             .AsNoTracking()
             .Include(r => r.Asset)
+                .ThenInclude(a => a.Category)
             .Where(r => r.IsActive && r.Asset.IsRentable && r.Asset.Status != Platform.Core.Domain.Enums.AssetStatus.Inactive)
             .OrderBy(r => r.Asset.Name)
             .ToListAsync(cancellationToken);
@@ -33,6 +34,7 @@ public sealed class RentalAssetService(
         var config = await dbContext.RentalAssets
             .AsNoTracking()
             .Include(r => r.Asset)
+                .ThenInclude(a => a.Category)
             .FirstOrDefaultAsync(
                 r => r.AssetId == assetId && r.IsActive && r.Asset.IsRentable,
                 cancellationToken);
@@ -56,6 +58,12 @@ public sealed class RentalAssetService(
             rental.Type,
             rental.TotalQuantity,
             rental.IsActive,
+            rental.SchedulePolicy,
+            rental.OpenTime,
+            rental.CloseTime,
+            rental.AllowedDurationMinutes,
+            rental.Asset.CategoryId,
+            rental.Asset.Category?.Name,
             rental.CreatedAt,
             rental.UpdatedAt);
 }

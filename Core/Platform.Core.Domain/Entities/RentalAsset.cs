@@ -18,6 +18,18 @@ public class RentalAsset : Entity, ITenantScoped
 
     public required bool IsActive { get; set; }
 
+    /// <summary>Default SlotGrid; OpenHours derives bookable windows from open/close.</summary>
+    public required SchedulePolicy SchedulePolicy { get; set; }
+
+    public TimeOnly? OpenTime { get; set; }
+
+    public TimeOnly? CloseTime { get; set; }
+
+    /// <summary>
+    /// Comma-separated allowed booking durations in minutes for OpenHours (e.g. "60,120,180").
+    /// </summary>
+    public string? AllowedDurationMinutes { get; set; }
+
     public Asset Asset { get; set; } = null!;
 
     private readonly List<RentalPricing> _pricings = [];
