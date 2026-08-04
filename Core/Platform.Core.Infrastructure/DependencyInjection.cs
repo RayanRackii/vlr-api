@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.Supabase;
 
@@ -13,9 +14,16 @@ public static class DependencyInjection
         this IServiceCollection services,
         string connectionString)
     {
+        // Dictionary/POCO → jsonb requires explicit opt-in (Npgsql 8+).
+        var dataSource = new NpgsqlDataSourceBuilder(connectionString)
+            .EnableDynamicJson()
+            .Build();
+
+        services.AddSingleton(dataSource);
+
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(
-                connectionString,
+                dataSource,
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", "core"))
             .UseSnakeCaseNamingConvention());
 

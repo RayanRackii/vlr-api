@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 
 namespace Platform.Core.Infrastructure.Persistence;
 
@@ -19,11 +20,15 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             ?? throw new InvalidOperationException(
                 "Connection string 'DefaultConnection' was not found.");
 
+        var dataSource = new NpgsqlDataSourceBuilder(connectionString)
+            .EnableDynamicJson()
+            .Build();
+
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
 
         optionsBuilder
             .UseNpgsql(
-                connectionString,
+                dataSource,
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", "core"))
             .UseSnakeCaseNamingConvention();
 
