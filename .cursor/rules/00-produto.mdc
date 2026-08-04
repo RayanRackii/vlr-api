@@ -34,7 +34,9 @@ Cadastrar `Tenant.Subdomain` **não** entrega a página personalizada — só a 
 
 ## ROADMAP (obrigatório)
 
-Em toda tarefa relevante: atualizar `ROADMAP.md`. Se a prioridade/escopo mudar, registrar na seção **Histórico** (data + o quê + por quê). Não apagar decisões sem rastreio.
+1. Em toda tarefa relevante: atualizar `ROADMAP.md`. Se a prioridade/escopo mudar, registrar na seção **Histórico** (data + o quê + por quê). Não apagar decisões sem rastreio.
+2. Ao **encerrar** uma tarefa (ou ao responder após progresso relevante), descrever no chat o **próximo passo previsto** lendo os roadmaps — **backend** (este `ROADMAP.md`) **e** **frontend** (`frontend/vlr-web/ROADMAP.md`). Incluir os dois lados mesmo quando a sessão for só neste repo.
+3. Em toda etapa concluída, descrever no chat **como testar** a funcionalidade entregue: passos concretos de UI (ex.: “abra o portal do tenant e clique em…”) e/ou como invocar o back (endpoint, botão da tela que dispara, header necessário). Sem jargão vago.
 
 ## Regra de ouro de segurança
 

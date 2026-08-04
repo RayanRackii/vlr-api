@@ -7,7 +7,9 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e `fro
 
 ## 0. Disciplina
 
-Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
+1. Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
+2. Ao encerrar uma tarefa (ou após progresso relevante), o agente deve descrever no chat o **próximo passo previsto** deste roadmap **e** do `frontend/vlr-web/ROADMAP.md`.
+3. Em toda etapa concluída, descrever no chat **como testar** (passos de UI e/ou como disparar o endpoint).
 
 ## 1. Notificações reais (Resend + WhatsApp) — ETAPA PRINCIPAL DE INFRA · ADIADA
 
@@ -26,7 +28,7 @@ Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se m
 - [x] Validação CPF (dígitos) + CEP (ViaCEP) no back; phone BR normalizado.
 - [x] `POST /api/auth/customer/register` | `verify-phone` | `login` (e-mail+senha).
 - [x] SMS de verificação enfileirado (Dev log).
-- [ ] Admin UI para editar cores/tagline (API já aceita no create/update).
+- [x] Admin create/update aceita branding; validação antecipada de hex/tagline → 400 (`ValidateBrandingFields`).
 - [ ] Aposentar OTP-only legado quando estável em produção.
 - [ ] Ciclo de vida reserva / estado das quadras (próxima fatia).
 
@@ -56,3 +58,4 @@ Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se m
 | 2026-08-03 | **Executado:** branding Tenant + Customer portal APIs (register/verify-phone/login) + ViaCEP + Dev SMS + migrations. Frontend portal `/t/:subdomain`. |
 | 2026-08-03 | WhatsApp webhook **validado em produção** (inbound messages OK). Diagnóstico: logs duplicados (Serilog Console 2x); `libgssapi_krb5` cosmético; DataProtection sem volume persistente. |
 | 2026-08-03 | Fix Serilog: removido `WriteTo.Console()` duplicado em `Program.cs` (sink só via appsettings). |
+| 2026-08-03 | Branding admin: validação hex/tagline no create/update; UI no frontend. Disciplina “como testar”. |

@@ -75,6 +75,11 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
             throw new ArgumentException("LogoUrl must be a valid absolute URL.");
         }
 
+        ValidateBrandingFields(
+            request.PrimaryColor,
+            request.AccentColor,
+            request.WelcomeTagline);
+
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
@@ -162,6 +167,11 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
         {
             throw new ArgumentException("LogoUrl must be a valid absolute URL.");
         }
+
+        ValidateBrandingFields(
+            request.PrimaryColor,
+            request.AccentColor,
+            request.WelcomeTagline);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -336,6 +346,41 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
         }
 
         return subdomain.All(c => char.IsAsciiLetterOrDigit(c) || c == '-');
+    }
+
+    /// <summary>
+    /// Early validation so bad branding returns ArgumentException → 400
+    /// before EF, with the same rules as <see cref="Tenant"/> normalize.
+    /// </summary>
+    private static void ValidateBrandingFields(
+        string? primaryColor,
+        string? accentColor,
+        string? welcomeTagline)
+    {
+        ValidateOptionalHexColor(primaryColor, nameof(primaryColor));
+        ValidateOptionalHexColor(accentColor, nameof(accentColor));
+
+        if (!string.IsNullOrWhiteSpace(welcomeTagline) && welcomeTagline.Trim().Length > 120)
+        {
+            throw new ArgumentException("WelcomeTagline must be at most 120 characters.");
+        }
+    }
+
+    private static void ValidateOptionalHexColor(string? color, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+        {
+            return;
+        }
+
+        var trimmed = color.Trim();
+        var hex = trimmed.StartsWith('#') ? trimmed[1..] : trimmed;
+
+        if (hex.Length != 6 || !hex.All(Uri.IsHexDigit))
+        {
+            throw new ArgumentException(
+                $"{fieldName} must be a hex color like #1A2B3C.");
+        }
     }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)
