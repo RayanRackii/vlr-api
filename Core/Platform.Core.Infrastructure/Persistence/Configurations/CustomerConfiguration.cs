@@ -52,10 +52,17 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.PhotoUrl)
             .HasColumnType("text");
 
+        builder.Property(c => c.ExtraAttributes)
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'{}'::jsonb")
+            .IsRequired();
+
         builder.Property(c => c.PhoneVerifiedAt);
 
         builder.Property(c => c.CreatedAt)
             .IsRequired();
+
+        builder.HasIndex(c => new { c.TenantId, c.Name });
 
         builder.HasIndex(c => new { c.TenantId, c.Phone })
             .IsUnique()

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.Services;
+using Platform.Api.Modules.RegistrationFields.Dtos;
+using Platform.Api.Modules.RegistrationFields.Services;
 
 namespace Platform.Api.Modules.CustomerAuth.Controllers;
 
@@ -11,6 +13,7 @@ namespace Platform.Api.Modules.CustomerAuth.Controllers;
 [Route("api/auth/customer")]
 public sealed class CustomerAuthController(
     ICustomerAuthService customerAuthService,
+    IRegistrationFieldService registrationFieldService,
     IPublicTenantBinder publicTenantBinder) : ControllerBase
 {
     [HttpGet("~/api/public/tenants/{subdomain}/branding")]
@@ -24,6 +27,24 @@ public sealed class CustomerAuthController(
                 subdomain,
                 cancellationToken);
             return Ok(branding);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("~/api/public/tenants/{subdomain}/registration-schema")]
+    public async Task<ActionResult<RegistrationSchemaResponseDto>> GetRegistrationSchema(
+        string subdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var schema = await registrationFieldService.GetSchemaBySubdomainAsync(
+                subdomain,
+                cancellationToken);
+            return Ok(schema);
         }
         catch (KeyNotFoundException ex)
         {

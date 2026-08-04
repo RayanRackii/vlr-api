@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Dtos;
+using Platform.Api.Modules.RegistrationFields.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Entities;
@@ -16,6 +17,7 @@ public sealed class CustomerAuthService(
     ITenantProvider tenantProvider,
     ICustomerJwtIssuer customerJwtIssuer,
     IViaCepClient viaCepClient,
+    IRegistrationFieldService registrationFieldService,
     NotificationQueue notificationQueue,
     ILogger<CustomerAuthService> logger) : ICustomerAuthService
 {
@@ -114,28 +116,59 @@ public sealed class CustomerAuthService(
                 $"Password must be at least {MinimumPasswordLength} characters.");
         }
 
-        var cpf = BrazilianDocumentValidator.NormalizeCpf(request.Cpf);
         var phone = BrazilianDocumentValidator.NormalizePhoneBr(request.Phone);
-        var photoUrl = (request.PhotoUrl ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(photoUrl) || photoUrl.Length > 400_000)
+
+        var schema = await registrationFieldService.ListForTenantAsync(tenantId, cancellationToken);
+        var extras = RegistrationAttributeValidator.ValidateAndNormalize(
+            schema,
+            request.Attributes);
+
+        if (extras.TryGetValue("cpf", out var cpfValue) && !string.IsNullOrWhiteSpace(cpfValue))
         {
-            throw new ArgumentException("Photo is required (max ~300KB).");
+            cpfValue = BrazilianDocumentValidator.NormalizeCpf(cpfValue);
+            extras["cpf"] = cpfValue;
+
+            var cpfTaken = await dbContext.Customers
+                .AnyAsync(c => c.Cpf == cpfValue, cancellationToken);
+            if (cpfTaken)
+            {
+                throw new InvalidOperationException("A customer with this CPF already exists.");
+            }
         }
 
-        var address = await viaCepClient.LookupAsync(request.PostalCode, cancellationToken);
+        string? postalCode = null;
+        string? street = null;
+        string? neighborhood = null;
+        string? city = null;
+        string? state = null;
+
+        var cepKey = extras.Keys.FirstOrDefault(k =>
+            string.Equals(k, "cep", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(k, "postalCode", StringComparison.OrdinalIgnoreCase));
+
+        if (cepKey is not null && !string.IsNullOrWhiteSpace(extras[cepKey]))
+        {
+            var address = await viaCepClient.LookupAsync(extras[cepKey]!, cancellationToken);
+            postalCode = address.PostalCode;
+            street = address.Street;
+            neighborhood = address.Neighborhood;
+            city = address.City;
+            state = address.State;
+            extras[cepKey] = postalCode;
+        }
+
+        string? photoUrl = null;
+        if (extras.TryGetValue("photo", out var photo)
+            || extras.TryGetValue("photoUrl", out photo))
+        {
+            photoUrl = photo;
+        }
 
         var emailTaken = await dbContext.Customers
             .AnyAsync(c => c.Email == email, cancellationToken);
         if (emailTaken)
         {
             throw new InvalidOperationException("A customer with this email already exists.");
-        }
-
-        var cpfTaken = await dbContext.Customers
-            .AnyAsync(c => c.Cpf == cpf, cancellationToken);
-        if (cpfTaken)
-        {
-            throw new InvalidOperationException("A customer with this CPF already exists.");
         }
 
         var phoneTaken = await dbContext.Customers
@@ -151,13 +184,14 @@ public sealed class CustomerAuthService(
             Name = name,
             Email = email,
             Phone = phone,
-            Cpf = cpf,
-            PostalCode = address.PostalCode,
-            AddressStreet = address.Street,
-            AddressNeighborhood = address.Neighborhood,
-            AddressCity = address.City,
-            AddressState = address.State,
+            Cpf = extras.GetValueOrDefault("cpf"),
+            PostalCode = postalCode,
+            AddressStreet = street,
+            AddressNeighborhood = neighborhood,
+            AddressCity = city,
+            AddressState = state,
             PhotoUrl = photoUrl,
+            ExtraAttributes = extras,
         };
 
         customer.PasswordHash = PasswordHasher.HashPassword(customer, password);
@@ -343,7 +377,8 @@ public sealed class CustomerAuthService(
                 customer.Email,
                 customer.CreatedAt,
                 customer.IsPhoneVerified,
-                customer.PhotoUrl));
+                customer.PhotoUrl,
+                customer.ExtraAttributes));
     }
 
     private async Task<Customer?> FindCustomerByContactAsync(

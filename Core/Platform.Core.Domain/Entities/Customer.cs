@@ -37,8 +37,13 @@ public class Customer : Entity, ITenantScoped
 
     public string? AddressState { get; set; }
 
-    /// <summary>Profile photo URL or data URL.</summary>
+    /// <summary>Profile photo URL or data URL (legacy column; prefer ExtraAttributes).</summary>
     public string? PhotoUrl { get; set; }
+
+    /// <summary>
+    /// Tenant-defined registration extras (cpf, cep, temBagagem, …) as JSON object.
+    /// </summary>
+    public Dictionary<string, string?> ExtraAttributes { get; set; } = new(StringComparer.Ordinal);
 
     private readonly List<OtpCode> _otpCodes = [];
 

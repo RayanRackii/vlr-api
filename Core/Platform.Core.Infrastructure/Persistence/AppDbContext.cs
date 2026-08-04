@@ -37,6 +37,9 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
 
+    public DbSet<TenantRegistrationField> TenantRegistrationFields =>
+        Set<TenantRegistrationField>();
+
     // --- Schema: assets (inventory module — full model; schema rename to inventory is deferred) ---
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
 

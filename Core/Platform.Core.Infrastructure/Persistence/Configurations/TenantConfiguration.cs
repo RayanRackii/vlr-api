@@ -75,6 +75,11 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasForeignKey(m => m.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasMany(t => t.RegistrationFields)
+            .WithOne(f => f.Tenant)
+            .HasForeignKey(f => f.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.Navigation(t => t.Users)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
@@ -85,6 +90,9 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.Navigation(t => t.Modules)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.Navigation(t => t.RegistrationFields)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

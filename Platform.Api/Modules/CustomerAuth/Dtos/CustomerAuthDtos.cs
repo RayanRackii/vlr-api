@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Platform.Api.Modules.CustomerAuth.Dtos;
 
 public sealed record RequestOtpDto
@@ -22,13 +24,10 @@ public sealed record RegisterCustomerRequestDto
 
     public required string Password { get; init; }
 
-    public required string Cpf { get; init; }
-
-    public required string PostalCode { get; init; }
-
     public required string Phone { get; init; }
 
-    public required string PhotoUrl { get; init; }
+    /// <summary>Values for tenant-defined registration fields.</summary>
+    public Dictionary<string, JsonElement>? Attributes { get; init; }
 }
 
 public sealed record RegisterCustomerResponseDto(
@@ -57,7 +56,8 @@ public sealed record CustomerAuthProfileDto(
     string? Email,
     DateTimeOffset CreatedAt,
     bool PhoneVerified,
-    string? PhotoUrl);
+    string? PhotoUrl,
+    IReadOnlyDictionary<string, string?> ExtraAttributes);
 
 public sealed record AuthResponseDto(
     string Token,

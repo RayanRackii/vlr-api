@@ -8,6 +8,7 @@ using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.Pmoc;
+using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Users;
 using Platform.Api.Modules.Webhooks;
@@ -51,6 +52,7 @@ try
     builder.Services.AddRentalsModule();
     builder.Services.AddUsersModule();
     builder.Services.AddCustomerAuthModule();
+    builder.Services.AddRegistrationFieldsModule();
     builder.Services.AddAdminModule();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
     builder.Services.AddMediatR(configuration =>
