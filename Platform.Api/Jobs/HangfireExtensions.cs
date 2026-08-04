@@ -1,5 +1,6 @@
 using Hangfire;
 using Hangfire.PostgreSql;
+using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Jobs;
 
@@ -9,18 +10,28 @@ public static class HangfireExtensions
 
     public const string PmocEngineJobId = "pmoc-engine";
 
+    private const int HangfireMaxPoolSize = 3;
+
     public static IServiceCollection AddPlatformHangfire(
         this IServiceCollection services,
         string connectionString)
     {
+        var bounded = NpgsqlConnectionStringHelper.WithBoundedPoolSize(
+            connectionString,
+            HangfireMaxPoolSize);
+
         services.AddHangfire(configuration => configuration
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
             .UseRecommendedSerializerSettings()
             .UsePostgreSqlStorage(
-                options => options.UseNpgsqlConnection(connectionString)));
+                options => options.UseNpgsqlConnection(bounded)));
 
-        services.AddHangfireServer();
+        // One worker keeps Hangfire from opening many parallel DB sessions.
+        services.AddHangfireServer(options =>
+        {
+            options.WorkerCount = 1;
+        });
 
         return services;
     }

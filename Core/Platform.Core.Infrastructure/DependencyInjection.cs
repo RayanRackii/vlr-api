@@ -10,12 +10,20 @@ namespace Platform.Core.Infrastructure;
 
 public static class DependencyInjection
 {
+    /// <summary>EF pool budget — keep low for Supabase session pooler (pool_size ≈ 15).</summary>
+    private const int EfMaxPoolSize = 5;
+
     public static IServiceCollection AddCorePersistence(
         this IServiceCollection services,
         string connectionString)
     {
+        var bounded = NpgsqlConnectionStringHelper.WithBoundedPoolSize(
+            connectionString,
+            EfMaxPoolSize);
+
         // Dictionary/POCO → jsonb requires explicit opt-in (Npgsql 8+).
-        var dataSource = new NpgsqlDataSourceBuilder(connectionString)
+        // Build the data source ONCE (singleton) — a new builder per request leaks pool slots.
+        var dataSource = new NpgsqlDataSourceBuilder(bounded)
             .EnableDynamicJson()
             .Build();
 
