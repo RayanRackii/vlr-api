@@ -27,7 +27,7 @@ O primeiro cliente é um **clube** cuja necessidade central é: avisar clientes 
 
 **Ordem do ciclo atual (ver CONTEXT.md + ROADMAP.md):**
 1. Resend + WhatsApp (config externa) — etapa principal de infra, **adiada** enquanto o Meta é finalizado.
-2. **Próximo foco:** portal B2C branded (`{subdomain}.…`) — login **e-mail + senha** + cadastro (foto, nome, e-mail, senha, CPF, CEP, celular via SMS). Celular ≠ login. Branding mínimo no Tenant (cores/tagline).
+2. **Próximo foco:** portal B2C branded (`{subdomain}.…`) — login **e-mail + senha** + cadastro (foto, nome, e-mail, senha, CPF, CEP, celular via SMS). Celular ≠ login. Branding no Tenant: **`LogoSvg`** (sanitizado no API) + cores/tagline; coluna `LogoUrl` obsoleta.
 3. Demais itens de Rentals / convite / gating.
 
 Cadastrar `Tenant.Subdomain` **não** entrega a página personalizada — só a chave de roteamento.

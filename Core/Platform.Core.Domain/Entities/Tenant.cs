@@ -15,8 +15,14 @@ public class Tenant : Entity
     /// <summary>Optional subdomain / custom domain used to resolve this Tenant.</summary>
     public string? Subdomain { get; private set; }
 
-    /// <summary>Optional public URL for the tenant logo.</summary>
+    /// <summary>
+    /// Obsolete: image/URL logos are no longer used. Prefer <see cref="LogoSvg"/>.
+    /// Column kept for backward compatibility until dropped in a later migration.
+    /// </summary>
     public string? LogoUrl { get; private set; }
+
+    /// <summary>Inline SVG markup for the tenant brand mark (B2C portal).</summary>
+    public string? LogoSvg { get; private set; }
 
     /// <summary>Primary brand color as #RRGGBB for the B2C portal.</summary>
     public string? PrimaryColor { get; private set; }
@@ -64,7 +70,7 @@ public class Tenant : Entity
         string taxId,
         string? tradeName = null,
         string? subdomain = null,
-        string? logoUrl = null,
+        string? logoSvg = null,
         string? primaryColor = null,
         string? accentColor = null,
         string? welcomeTagline = null)
@@ -73,7 +79,8 @@ public class Tenant : Entity
         TaxId = taxId;
         TradeName = tradeName;
         Subdomain = NormalizeSubdomain(subdomain);
-        LogoUrl = NormalizeOptionalUrl(logoUrl);
+        LogoUrl = null;
+        LogoSvg = logoSvg;
         PrimaryColor = NormalizeHexColor(primaryColor);
         AccentColor = NormalizeHexColor(accentColor);
         WelcomeTagline = NormalizeTagline(welcomeTagline);
@@ -85,7 +92,7 @@ public class Tenant : Entity
         string taxId,
         string? tradeName,
         string? subdomain = null,
-        string? logoUrl = null,
+        string? logoSvg = null,
         string? primaryColor = null,
         string? accentColor = null,
         string? welcomeTagline = null)
@@ -94,7 +101,8 @@ public class Tenant : Entity
         TaxId = taxId;
         TradeName = tradeName;
         Subdomain = NormalizeSubdomain(subdomain);
-        LogoUrl = NormalizeOptionalUrl(logoUrl);
+        LogoUrl = null;
+        LogoSvg = logoSvg;
         PrimaryColor = NormalizeHexColor(primaryColor);
         AccentColor = NormalizeHexColor(accentColor);
         WelcomeTagline = NormalizeTagline(welcomeTagline);
@@ -121,16 +129,6 @@ public class Tenant : Entity
         }
 
         return subdomain.Trim().ToLowerInvariant();
-    }
-
-    private static string? NormalizeOptionalUrl(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return null;
-        }
-
-        return url.Trim();
     }
 
     private static string? NormalizeHexColor(string? color)

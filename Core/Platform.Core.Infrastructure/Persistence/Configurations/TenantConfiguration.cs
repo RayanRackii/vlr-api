@@ -32,6 +32,9 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.LogoUrl)
             .HasMaxLength(2048);
 
+        builder.Property(t => t.LogoSvg)
+            .HasColumnType("text");
+
         builder.Property(t => t.PrimaryColor)
             .HasMaxLength(7);
 

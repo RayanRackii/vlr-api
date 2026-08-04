@@ -8,7 +8,8 @@ public sealed record CreateTenantRequestDto
 
     public required string Subdomain { get; init; }
 
-    public string? LogoUrl { get; init; }
+    /// <summary>Inline SVG brand mark (preferred). Image URLs are no longer accepted.</summary>
+    public string? LogoSvg { get; init; }
 
     public string? PrimaryColor { get; init; }
 
@@ -28,7 +29,7 @@ public sealed record UpdateTenantRequestDto
 
     public required string Subdomain { get; init; }
 
-    public string? LogoUrl { get; init; }
+    public string? LogoSvg { get; init; }
 
     public string? PrimaryColor { get; init; }
 
@@ -49,7 +50,7 @@ public sealed record TenantAdminResponseDto(
     string LegalName,
     string TaxId,
     string? Subdomain,
-    string? LogoUrl,
+    string? LogoSvg,
     string? PrimaryColor,
     string? AccentColor,
     string? WelcomeTagline,

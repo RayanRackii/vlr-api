@@ -292,7 +292,7 @@ public sealed class CustomerAuthService(
         return new TenantBrandingResponseDto(
             tenant.Subdomain!,
             displayName,
-            tenant.LogoUrl,
+            tenant.LogoSvg,
             tenant.PrimaryColor,
             tenant.AccentColor,
             tenant.WelcomeTagline);

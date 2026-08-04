@@ -66,7 +66,7 @@ public sealed record AuthResponseDto(
 public sealed record TenantBrandingResponseDto(
     string Subdomain,
     string DisplayName,
-    string? LogoUrl,
+    string? LogoSvg,
     string? PrimaryColor,
     string? AccentColor,
     string? WelcomeTagline);

@@ -29,6 +29,13 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [ ] Garantir assets/pricing no FICC para demo.
 - [ ] Admin B2B de reservas (listar/confirmar/cancelar).
 
+## 2.5. Branding LogoSvg — FEITO (código)
+
+- [x] `Tenant.LogoSvg` + migration `AddTenantLogoSvg`; writes clear obsolete `LogoUrl`.
+- [x] `SvgMarkupValidator` (size + no script/handlers) on admin create/update.
+- [x] Branding DTO público retorna `LogoSvg`.
+- [ ] Aplicar migration no Railway/Supabase (`logo_svg` text em `core.tenants`).
+
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
@@ -49,6 +56,8 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - Hangfire dashboard auth fraco em produção.
 - Sem testes automatizados.
 - Consulta CPF “Receita/Serpro” ainda não plugada.
+- Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
+- Ver `docs/code-hygiene-findings.md` (sweep 2026-08-04).
 
 ## Histórico
 
@@ -57,3 +66,4 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 | 2026-08-03 | Beachhead clube/Rentals; portal e registro dinâmico. |
 | 2026-08-04 | CPF único FICC; início agenda B2C. |
 | 2026-08-04 | **Executado:** `tenant_module_menu_items` + APIs públicas/admin; seed FICC. Shell B2C no frontend. |
+| 2026-08-04 | **Executado:** `LogoSvg` no Tenant + validação SVG + branding API; `LogoUrl` legado zera em writes. |

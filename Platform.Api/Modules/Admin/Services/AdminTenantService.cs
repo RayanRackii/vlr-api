@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Modules.Admin.Dtos;
+using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -69,11 +70,7 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
             throw new ArgumentException("At least one active module is required.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.LogoUrl)
-            && !Uri.TryCreate(request.LogoUrl.Trim(), UriKind.Absolute, out _))
-        {
-            throw new ArgumentException("LogoUrl must be a valid absolute URL.");
-        }
+        var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
 
         ValidateBrandingFields(
             request.PrimaryColor,
@@ -89,7 +86,7 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
                 taxId,
                 tradeName: null,
                 subdomain: subdomain,
-                logoUrl: request.LogoUrl,
+                logoSvg: logoSvg,
                 primaryColor: request.PrimaryColor,
                 accentColor: request.AccentColor,
                 welcomeTagline: request.WelcomeTagline);
@@ -162,11 +159,7 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
             throw new ArgumentException("At least one active module is required.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.LogoUrl)
-            && !Uri.TryCreate(request.LogoUrl.Trim(), UriKind.Absolute, out _))
-        {
-            throw new ArgumentException("LogoUrl must be a valid absolute URL.");
-        }
+        var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
 
         ValidateBrandingFields(
             request.PrimaryColor,
@@ -191,7 +184,7 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
                 taxId,
                 tradeName: null,
                 subdomain: subdomain,
-                logoUrl: request.LogoUrl,
+                logoSvg: logoSvg,
                 primaryColor: request.PrimaryColor,
                 accentColor: request.AccentColor,
                 welcomeTagline: request.WelcomeTagline);
@@ -402,7 +395,7 @@ public sealed class AdminTenantService(AppDbContext dbContext) : IAdminTenantSer
             tenant.LegalName,
             tenant.TaxId,
             tenant.Subdomain,
-            tenant.LogoUrl,
+            tenant.LogoSvg,
             tenant.PrimaryColor,
             tenant.AccentColor,
             tenant.WelcomeTagline,
