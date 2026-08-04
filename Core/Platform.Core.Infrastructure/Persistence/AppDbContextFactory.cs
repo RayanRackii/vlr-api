@@ -16,9 +16,14 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException(
-                "Connection string 'DefaultConnection' was not found.");
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString)
+            || !connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase))
+        {
+            // Design-time fallback so `dotnet ef migrations add` works without local secrets.
+            connectionString =
+                "Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=postgres";
+        }
 
         var dataSource = new NpgsqlDataSourceBuilder(connectionString)
             .EnableDynamicJson()

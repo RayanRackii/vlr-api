@@ -12,4 +12,8 @@ public interface IReservationService
         Guid customerId,
         CreateReservationRequestDto request,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
+        Guid customerId,
+        CancellationToken cancellationToken);
 }

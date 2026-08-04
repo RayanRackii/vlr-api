@@ -10,6 +10,7 @@ namespace Platform.Api.Modules.Rentals.Controllers;
 [Route("api/reservations")]
 public sealed class ReservationsController(
     IReservationService reservationService,
+    IRentalAssetService rentalAssetService,
     IPublicTenantBinder publicTenantBinder) : ControllerBase
 {
     /// <summary>
@@ -32,6 +33,43 @@ public sealed class ReservationsController(
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Catalog of rentable assets for the tenant portal (B2C).</summary>
+    [AllowAnonymous]
+    [HttpGet("~/api/public/tenants/{subdomain}/rental-assets")]
+    public async Task<ActionResult<IReadOnlyList<RentalAssetResponse>>> ListPublicAssets(
+        string subdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(subdomain, cancellationToken);
+            var assets = await rentalAssetService.ListRentableAsync(cancellationToken);
+            return Ok(assets);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Reservations of the authenticated B2C customer.</summary>
+    [Authorize(Policy = "Customer")]
+    [HttpGet("mine")]
+    public async Task<ActionResult<IReadOnlyList<ReservationResponseDto>>> ListMine(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var customerId = ResolveCustomerId();
+            var items = await reservationService.ListMineAsync(customerId, cancellationToken);
+            return Ok(items);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
         }
     }
 

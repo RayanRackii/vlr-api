@@ -225,6 +225,33 @@ public sealed class ReservationService(
         }
     }
 
+    public async Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
+        Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var reservations = await dbContext.Reservations
+            .AsNoTracking()
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .Where(r => r.CustomerId == customerId)
+            .OrderByDescending(r => r.StartDateTime)
+            .ToListAsync(cancellationToken);
+
+        return reservations
+            .Select(r => ToResponse(
+                r,
+                r.Items
+                    .Select(i => (
+                        i,
+                        i.RentalAsset.AssetId,
+                        i.RentalAsset.Asset.Name))
+                    .ToList()))
+            .ToList();
+    }
+
     private async Task<int> GetReservedQuantityAsync(
         Guid rentalAssetId,
         DateTimeOffset start,
