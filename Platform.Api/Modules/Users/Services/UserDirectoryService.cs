@@ -20,8 +20,9 @@ public sealed class UserDirectoryService(
         {
             var email = ResolveEmail(principal) ?? string.Empty;
 
-            if (tenantProvider.TenantId is Guid)
+            if (tenantProvider.TenantId is Guid tenantId)
             {
+                var modules = await LoadActiveModulesAsync(tenantId, cancellationToken);
                 var supabaseAuthId = principal.FindFirst("sub")?.Value
                     ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -39,7 +40,9 @@ public sealed class UserDirectoryService(
                             membership.Id,
                             membership.FullName,
                             membership.Email,
-                            ApplicationRoles.Admin);
+                            ApplicationRoles.Admin,
+                            tenantId,
+                            modules);
                     }
                 }
 
@@ -47,13 +50,21 @@ public sealed class UserDirectoryService(
                     null,
                     email,
                     email,
-                    ApplicationRoles.Admin);
+                    ApplicationRoles.Admin,
+                    tenantId,
+                    modules);
             }
 
-            return new CurrentUserResponse(null, email, email, ApplicationRoles.SuperAdmin);
+            return new CurrentUserResponse(
+                null,
+                email,
+                email,
+                ApplicationRoles.SuperAdmin,
+                null,
+                []);
         }
 
-        _ = tenantProvider.TenantId
+        var scopedTenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
         var authId = principal.FindFirst("sub")?.Value
@@ -70,8 +81,15 @@ public sealed class UserDirectoryService(
             ?? throw new KeyNotFoundException("The authenticated user profile was not found.");
 
         var role = ResolveApplicationRole(user.UserRoles.Select(userRole => userRole.Role.Name));
+        var activeModules = await LoadActiveModulesAsync(scopedTenantId, cancellationToken);
 
-        return new CurrentUserResponse(user.Id, user.FullName, user.Email, role);
+        return new CurrentUserResponse(
+            user.Id,
+            user.FullName,
+            user.Email,
+            role,
+            scopedTenantId,
+            activeModules);
     }
 
     public async Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
@@ -91,6 +109,18 @@ public sealed class UserDirectoryService(
                 user.Id,
                 user.FullName,
                 user.Email))
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<string>> LoadActiveModulesAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.TenantModules
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(module => module.TenantId == tenantId && module.IsActive)
+            .Select(module => module.ModuleName.ToLowerInvariant())
             .ToListAsync(cancellationToken);
     }
 

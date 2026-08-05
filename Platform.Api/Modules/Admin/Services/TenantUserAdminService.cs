@@ -264,14 +264,30 @@ public sealed class TenantUserAdminService(
         }
 
         string? supabaseUserId = null;
+        var createdAuthUser = false;
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            supabaseUserId = await supabaseAuthAdminClient.CreateUserAsync(
+            supabaseUserId = await supabaseAuthAdminClient.FindUserIdByEmailAsync(
                 invite.Email,
-                request.Password,
                 cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(supabaseUserId))
+            {
+                supabaseUserId = await supabaseAuthAdminClient.CreateUserAsync(
+                    invite.Email,
+                    request.Password,
+                    cancellationToken);
+                createdAuthUser = true;
+            }
+            else
+            {
+                await supabaseAuthAdminClient.SetUserPasswordAsync(
+                    supabaseUserId,
+                    request.Password,
+                    cancellationToken);
+            }
 
             await supabaseAuthAdminClient.UpdateUserAppMetadataAsync(
                 supabaseUserId,
@@ -280,14 +296,47 @@ public sealed class TenantUserAdminService(
 
             var role = await EnsureRoleAsync(invite.TenantId, invite.RoleName, cancellationToken);
 
-            var user = new User(
-                invite.TenantId,
-                supabaseUserId,
-                invite.FullName,
-                invite.Email);
+            var user = await dbContext.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(
+                    u => u.TenantId == invite.TenantId
+                        && (u.SupabaseAuthId == supabaseUserId || u.Email == invite.Email),
+                    cancellationToken);
 
-            dbContext.Users.Add(user);
-            dbContext.UserRoles.Add(new UserRole(user.Id, role.Id));
+            if (user is null)
+            {
+                user = new User(
+                    invite.TenantId,
+                    supabaseUserId,
+                    invite.FullName,
+                    invite.Email);
+                dbContext.Users.Add(user);
+                dbContext.UserRoles.Add(new UserRole(user.Id, role.Id));
+            }
+            else
+            {
+                user.UpdateProfile(invite.FullName, invite.Email);
+                if (!string.Equals(user.SupabaseAuthId, supabaseUserId, StringComparison.Ordinal))
+                {
+                    user.LinkSupabaseAuthId(supabaseUserId);
+                }
+
+                if (!user.IsActive)
+                {
+                    user.Activate();
+                }
+
+                var hasRole = await dbContext.UserRoles
+                    .AnyAsync(
+                        ur => ur.UserId == user.Id && ur.RoleId == role.Id,
+                        cancellationToken);
+
+                if (!hasRole)
+                {
+                    dbContext.UserRoles.Add(new UserRole(user.Id, role.Id));
+                }
+            }
+
             invite.MarkAccepted(user.Id);
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -299,7 +348,7 @@ public sealed class TenantUserAdminService(
         {
             await transaction.RollbackAsync(cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(supabaseUserId))
+            if (createdAuthUser && !string.IsNullOrWhiteSpace(supabaseUserId))
             {
                 try
                 {

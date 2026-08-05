@@ -40,6 +40,17 @@ public class User : Entity, ITenantScoped
         MarkAsUpdated();
     }
 
+    public void LinkSupabaseAuthId(string supabaseAuthId)
+    {
+        if (string.IsNullOrWhiteSpace(supabaseAuthId))
+        {
+            throw new ArgumentException("SupabaseAuthId is required.", nameof(supabaseAuthId));
+        }
+
+        SupabaseAuthId = supabaseAuthId.Trim();
+        MarkAsUpdated();
+    }
+
     public void Activate()
     {
         IsActive = true;

@@ -26,6 +26,11 @@ public interface ISupabaseAuthAdminClient
         string supabaseUserId,
         CancellationToken cancellationToken = default);
 
+    Task SetUserPasswordAsync(
+        string supabaseUserId,
+        string password,
+        CancellationToken cancellationToken = default);
+
     Task DeleteUserAsync(
         string supabaseUserId,
         CancellationToken cancellationToken = default);

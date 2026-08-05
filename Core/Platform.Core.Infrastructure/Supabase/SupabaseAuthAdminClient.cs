@@ -130,6 +130,31 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             cancellationToken);
     }
 
+    public async Task SetUserPasswordAsync(
+        string supabaseUserId,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateAdminRequest(HttpMethod.Put, $"admin/users/{supabaseUserId}");
+        request.Content = JsonContent.Create(
+            new
+            {
+                password,
+                email_confirm = true,
+            },
+            options: JsonOptions);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new SupabaseAuthAdminException(
+                $"Failed to update Supabase user password. Response: {responseBody}",
+                (int)response.StatusCode);
+        }
+    }
+
     public async Task DeleteUserAsync(
         string supabaseUserId,
         CancellationToken cancellationToken = default)
