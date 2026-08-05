@@ -40,6 +40,10 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(u => u.SupabaseAuthId)
             .IsUnique();
 
+        builder.HasIndex(u => u.TenantId);
+
+        builder.HasIndex(u => u.FullName);
+
         builder.HasIndex(u => new { u.TenantId, u.Email })
             .IsUnique();
 

@@ -8,6 +8,7 @@ public static class AdminModuleExtensions
     {
         services.AddScoped<IAdminTenantService, AdminTenantService>();
         services.AddScoped<ITenantUserAdminService, TenantUserAdminService>();
+        services.AddScoped<IPlatformUserAdminService, PlatformUserAdminService>();
 
         return services;
     }
