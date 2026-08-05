@@ -5,12 +5,15 @@ using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Supabase;
 
 namespace Platform.Api.Modules.Admin.Services;
 
 public sealed class AdminTenantService(
     AppDbContext dbContext,
-    ITenantUserAdminService tenantUserAdminService) : IAdminTenantService
+    ITenantUserAdminService tenantUserAdminService,
+    ISupabaseAuthAdminClient supabaseAuthAdminClient,
+    ILogger<AdminTenantService> logger) : IAdminTenantService
 {
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
         CancellationToken cancellationToken)
@@ -238,63 +241,140 @@ public sealed class AdminTenantService(
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        List<string> supabaseAuthIds;
 
-        try
+        await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
-            var tenant = await dbContext.Tenants
-                .Include(t => t.Modules)
-                .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
-
-            if (tenant is null)
+            try
             {
-                throw new KeyNotFoundException("Tenant not found.");
+                var tenantExists = await dbContext.Tenants
+                    .AnyAsync(t => t.Id == id, cancellationToken);
+
+                if (!tenantExists)
+                {
+                    throw new KeyNotFoundException("Tenant not found.");
+                }
+
+                supabaseAuthIds = await dbContext.Users
+                    .AsNoTracking()
+                    .Where(u => u.TenantId == id)
+                    .Select(u => u.SupabaseAuthId)
+                    .ToListAsync(cancellationToken);
+
+                // Rentals / scheduling (children before parents with Restrict FKs)
+                await dbContext.Slots
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.ReservationItems
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.Reservations
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.ScheduleTemplates
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.RentalLayoutItems
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.RentalLayouts
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.RentalPricings
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.OccupancyKinds
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.RentalAssets
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                // Work orders / PMOC / inventory
+                await dbContext.WorkOrderTasks
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.WorkOrders
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.PlanTasks
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.MaintenancePlans
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.Assets
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.AssetCategories
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                // B2C portal
+                await dbContext.OtpCodes
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.Customers
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.TenantModuleMenuItems
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.TenantRegistrationFields
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.UserInvites
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                // Identity (UserRoles cascade from users; RolePermissions cascade from roles)
+                await dbContext.Users
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.Roles
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.Units
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.TenantModules
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                await dbContext.Tenants
+                    .Where(t => t.Id == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
             }
-
-            var hasUsers = await dbContext.Users
-                .AnyAsync(u => u.TenantId == id, cancellationToken);
-
-            if (hasUsers)
+            catch (DbUpdateException ex)
             {
+                await transaction.RollbackAsync(cancellationToken);
                 throw new InvalidOperationException(
-                    "Cannot delete a tenant that has users. Remove all users first.");
+                    "Cannot delete this tenant because it still has linked data.",
+                    ex);
             }
-
-            var hasUnits = await dbContext.Units
-                .AnyAsync(u => u.TenantId == id, cancellationToken);
-
-            if (hasUnits)
+            catch
             {
-                throw new InvalidOperationException(
-                    "Cannot delete a tenant that has units. Remove all units first.");
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
             }
-
-            var hasRoles = await dbContext.Roles
-                .AnyAsync(r => r.TenantId == id, cancellationToken);
-
-            if (hasRoles)
-            {
-                throw new InvalidOperationException(
-                    "Cannot delete a tenant that has roles. Remove all roles first.");
-            }
-
-            dbContext.TenantModules.RemoveRange(tenant.Modules);
-            dbContext.Tenants.Remove(tenant);
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
         }
-        catch (DbUpdateException ex)
+
+        foreach (var authId in supabaseAuthIds)
         {
-            await transaction.RollbackAsync(cancellationToken);
-            throw new InvalidOperationException(
-                "Cannot delete this tenant because it still has linked data.",
-                ex);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
+            try
+            {
+                await supabaseAuthAdminClient.DeleteUserAsync(authId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Tenant {TenantId} deleted, but Supabase auth delete failed for {SupabaseAuthId}.",
+                    id,
+                    authId);
+            }
         }
     }
 
