@@ -59,6 +59,7 @@ Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
 - [x] `POST /api/admin/tenants/{id}/invites` + list users + promote + resend/revoke
 - [x] `POST /api/invites/accept` (anonymous) → Supabase user + `User` + role
 - [x] `GET/DELETE /api/admin/users` (lista global Super-Admin + exclusão; índices `full_name` / `tenant_id`)
+- [x] Modo suporte Super-Admin: `X-Support-Tenant-Id` → AmbientTenantContext (produto do tenant em aba separada)
 - [x] Wizard Super-Admin: passo “Admin” (nome/e-mail, sem senha)
 - [x] Edit tenant: seção usuários/convites
 - [x] FE `/invite` chama API real

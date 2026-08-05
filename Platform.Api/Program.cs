@@ -130,6 +130,7 @@ try
 
     app.UseAuthentication();
     app.UseAuthorization();
+    app.UseMiddleware<SupportTenantMiddleware>();
 
     app.UsePlatformHangfireDashboard();
 

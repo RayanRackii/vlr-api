@@ -19,6 +19,17 @@ public sealed class UserDirectoryService(
         if (platformAdminChecker.IsPlatformAdmin(principal))
         {
             var email = ResolveEmail(principal) ?? string.Empty;
+
+            // Support mode: ambient tenant is set via X-Support-Tenant-Id.
+            if (tenantProvider.TenantId is not null)
+            {
+                return new CurrentUserResponse(
+                    null,
+                    email,
+                    email,
+                    ApplicationRoles.Admin);
+            }
+
             return new CurrentUserResponse(null, email, email, ApplicationRoles.SuperAdmin);
         }
 
