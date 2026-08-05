@@ -96,4 +96,41 @@ public sealed class AdminTenantsController(IAdminTenantService adminTenantServic
             return Conflict(new { error = ex.Message });
         }
     }
+
+    [HttpPost("{id:guid}/enter")]
+    public async Task<ActionResult<EnterTenantEnvironmentResponseDto>> Enter(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await adminTenantService.EnterEnvironmentAsync(
+                id,
+                User,
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("exit")]
+    public async Task<IActionResult> Exit(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await adminTenantService.ExitEnvironmentAsync(User, cancellationToken);
+            return NoContent();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
 }

@@ -56,31 +56,78 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         return userId;
     }
 
-    public async Task UpdateUserAppMetadataAsync(
-        string supabaseUserId,
-        Guid tenantId,
+    public async Task<string?> FindUserIdByEmailAsync(
+        string email,
         CancellationToken cancellationToken = default)
     {
-        using var request = CreateAdminRequest(HttpMethod.Put, $"admin/users/{supabaseUserId}");
-        request.Content = JsonContent.Create(
-            new
-            {
-                app_metadata = new
-                {
-                    tenant_id = tenantId.ToString(),
-                },
-            },
-            options: JsonOptions);
+        var normalized = email.Trim().ToLowerInvariant();
+        var relativeUri =
+            $"admin/users?email={Uri.EscapeDataString(normalized)}";
 
+        using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
             throw new SupabaseAuthAdminException(
-                $"Failed to update Supabase user app_metadata. Response: {responseBody}",
+                $"Failed to look up Supabase user by email. Response: {responseBody}",
                 (int)response.StatusCode);
         }
+
+        using var document = JsonDocument.Parse(responseBody);
+
+        if (!document.RootElement.TryGetProperty("users", out var usersElement)
+            || usersElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var userElement in usersElement.EnumerateArray())
+        {
+            if (!userElement.TryGetProperty("email", out var emailElement))
+            {
+                continue;
+            }
+
+            var candidate = emailElement.GetString();
+            if (!string.Equals(candidate, normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var id = userElement.TryGetProperty("id", out var idElement)
+                ? idElement.GetString()
+                : null;
+
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                return id;
+            }
+        }
+
+        return null;
+    }
+
+    public async Task UpdateUserAppMetadataAsync(
+        string supabaseUserId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        await PutAppMetadataAsync(
+            supabaseUserId,
+            new { tenant_id = tenantId.ToString() },
+            cancellationToken);
+    }
+
+    public async Task ClearUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await PutAppMetadataAsync(
+            supabaseUserId,
+            new { tenant_id = (string?)null },
+            cancellationToken);
     }
 
     public async Task DeleteUserAsync(
@@ -95,6 +142,27 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             throw new SupabaseAuthAdminException(
                 $"Failed to delete Supabase user during compensation. Response: {responseBody}",
+                (int)response.StatusCode);
+        }
+    }
+
+    private async Task PutAppMetadataAsync(
+        string supabaseUserId,
+        object appMetadata,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateAdminRequest(HttpMethod.Put, $"admin/users/{supabaseUserId}");
+        request.Content = JsonContent.Create(
+            new { app_metadata = appMetadata },
+            options: JsonOptions);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new SupabaseAuthAdminException(
+                $"Failed to update Supabase user app_metadata. Response: {responseBody}",
                 (int)response.StatusCode);
         }
     }

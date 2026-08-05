@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Modules.Admin.Dtos;
@@ -12,6 +13,7 @@ namespace Platform.Api.Modules.Admin.Services;
 public sealed class AdminTenantService(
     AppDbContext dbContext,
     ITenantUserAdminService tenantUserAdminService,
+    IPlatformAdminMembershipService platformAdminMembershipService,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     ILogger<AdminTenantService> logger) : IAdminTenantService
 {
@@ -108,21 +110,35 @@ public sealed class AdminTenantService(
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
+            await platformAdminMembershipService.ProvisionPlatformAdminsAsync(
+                tenant.Id,
+                cancellationToken);
+
             if (!string.IsNullOrWhiteSpace(request.AdminEmail))
             {
-                var adminName = string.IsNullOrWhiteSpace(request.AdminFullName)
-                    ? request.AdminEmail.Trim()
-                    : request.AdminFullName.Trim();
+                var adminEmail = request.AdminEmail.Trim().ToLowerInvariant();
+                var alreadyMember = await dbContext.Users
+                    .IgnoreQueryFilters()
+                    .AnyAsync(
+                        u => u.TenantId == tenant.Id && u.Email == adminEmail,
+                        cancellationToken);
 
-                await tenantUserAdminService.InviteAsync(
-                    tenant.Id,
-                    new InviteTenantUserRequestDto
-                    {
-                        FullName = adminName,
-                        Email = request.AdminEmail,
-                        RoleName = SystemRoles.Admin,
-                    },
-                    cancellationToken);
+                if (!alreadyMember)
+                {
+                    var adminName = string.IsNullOrWhiteSpace(request.AdminFullName)
+                        ? request.AdminEmail.Trim()
+                        : request.AdminFullName.Trim();
+
+                    await tenantUserAdminService.InviteAsync(
+                        tenant.Id,
+                        new InviteTenantUserRequestDto
+                        {
+                            FullName = adminName,
+                            Email = request.AdminEmail,
+                            RoleName = SystemRoles.Admin,
+                        },
+                        cancellationToken);
+                }
             }
 
             var created = await dbContext.Tenants
@@ -377,6 +393,29 @@ public sealed class AdminTenantService(
             }
         }
     }
+
+    public async Task<EnterTenantEnvironmentResponseDto> EnterEnvironmentAsync(
+        Guid tenantId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await dbContext.Tenants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.IsActive, cancellationToken)
+            ?? throw new KeyNotFoundException("Tenant not found or inactive.");
+
+        await platformAdminMembershipService.EnterTenantAsync(
+            tenantId,
+            principal,
+            cancellationToken);
+
+        return new EnterTenantEnvironmentResponseDto(tenant.Id, tenant.LegalName);
+    }
+
+    public Task ExitEnvironmentAsync(
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken) =>
+        platformAdminMembershipService.ExitTenantAsync(principal, cancellationToken);
 
     private void SyncTenantModules(Tenant tenant, IReadOnlyList<string> desiredModules)
     {

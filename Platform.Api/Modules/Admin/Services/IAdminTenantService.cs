@@ -1,4 +1,5 @@
 using Platform.Api.Modules.Admin.Dtos;
+using System.Security.Claims;
 
 namespace Platform.Api.Modules.Admin.Services;
 
@@ -18,4 +19,13 @@ public interface IAdminTenantService
         CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<EnterTenantEnvironmentResponseDto> EnterEnvironmentAsync(
+        Guid tenantId,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken);
+
+    Task ExitEnvironmentAsync(
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken);
 }

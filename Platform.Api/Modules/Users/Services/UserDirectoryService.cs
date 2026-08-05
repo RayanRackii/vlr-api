@@ -20,9 +20,29 @@ public sealed class UserDirectoryService(
         {
             var email = ResolveEmail(principal) ?? string.Empty;
 
-            // Support mode: ambient tenant is set via X-Support-Tenant-Id.
-            if (tenantProvider.TenantId is not null)
+            if (tenantProvider.TenantId is Guid)
             {
+                var supabaseAuthId = principal.FindFirst("sub")?.Value
+                    ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                if (!string.IsNullOrWhiteSpace(supabaseAuthId))
+                {
+                    var membership = await dbContext.Users
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(
+                            item => item.SupabaseAuthId == supabaseAuthId && item.IsActive,
+                            cancellationToken);
+
+                    if (membership is not null)
+                    {
+                        return new CurrentUserResponse(
+                            membership.Id,
+                            membership.FullName,
+                            membership.Email,
+                            ApplicationRoles.Admin);
+                    }
+                }
+
                 return new CurrentUserResponse(
                     null,
                     email,

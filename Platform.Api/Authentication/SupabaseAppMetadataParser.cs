@@ -5,51 +5,54 @@ namespace Platform.Api.Authentication;
 
 internal static class SupabaseAppMetadataParser
 {
-    public static Guid ExtractTenantId(ClaimsPrincipal user)
+    public static Guid? TryExtractTenantId(ClaimsPrincipal user)
     {
         var appMetadataClaim = user.FindFirst(TenantClaimTypes.AppMetadata)?.Value;
 
         if (string.IsNullOrWhiteSpace(appMetadataClaim))
         {
-            throw new TenantResolutionException(
-                "The access token is missing the app_metadata claim.");
+            return null;
         }
 
-        JsonDocument document;
         try
         {
-            document = JsonDocument.Parse(appMetadataClaim);
-        }
-        catch (JsonException ex)
-        {
-            throw new TenantResolutionException(
-                "The app_metadata claim contains invalid JSON.",
-                ex);
-        }
+            using var document = JsonDocument.Parse(appMetadataClaim);
 
-        using (document)
-        {
             if (!document.RootElement.TryGetProperty(TenantClaimTypes.TenantId, out var tenantIdElement))
             {
-                throw new TenantResolutionException(
-                    "The app_metadata claim does not contain tenant_id.");
+                return null;
+            }
+
+            if (tenantIdElement.ValueKind == JsonValueKind.Null)
+            {
+                return null;
             }
 
             if (tenantIdElement.ValueKind != JsonValueKind.String)
             {
-                throw new TenantResolutionException(
-                    "The tenant_id value in app_metadata must be a string.");
+                return null;
             }
 
             var tenantIdValue = tenantIdElement.GetString();
 
-            if (!Guid.TryParse(tenantIdValue, out var tenantId))
+            if (string.IsNullOrWhiteSpace(tenantIdValue)
+                || !Guid.TryParse(tenantIdValue, out var tenantId))
             {
-                throw new TenantResolutionException(
-                    "The tenant_id value in app_metadata is not a valid GUID.");
+                return null;
             }
 
             return tenantId;
         }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static Guid ExtractTenantId(ClaimsPrincipal user)
+    {
+        return TryExtractTenantId(user)
+            ?? throw new TenantResolutionException(
+                "The access token is missing a valid app_metadata.tenant_id.");
     }
 }

@@ -62,3 +62,8 @@ public sealed record TenantAdminResponseDto(
     bool IsActive,
     DateTimeOffset CreatedAt,
     IReadOnlyList<TenantModuleResponseDto> ActiveModules);
+
+public sealed record EnterTenantEnvironmentResponseDto(
+    Guid TenantId,
+    string LegalName);
+

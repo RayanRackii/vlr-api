@@ -36,10 +36,11 @@ public sealed class HttpContextTenantProvider : ITenantProvider
 
             var user = httpContext.User;
 
-            // Platform Super-Admins operate across all tenants (disable EF tenant filter).
+            // Platform Super-Admins: no tenant_id → cross-tenant platform mode.
+            // With tenant_id in JWT → operating inside that tenant as admin.
             if (_platformAdminChecker.IsPlatformAdmin(user))
             {
-                return null;
+                return SupabaseAppMetadataParser.TryExtractTenantId(user);
             }
 
             if (user.IsInRole(AuthRoles.Customer)

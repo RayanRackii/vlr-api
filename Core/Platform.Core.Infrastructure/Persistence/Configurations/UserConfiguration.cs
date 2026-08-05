@@ -37,7 +37,8 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.CreatedAt)
             .IsRequired();
 
-        builder.HasIndex(u => u.SupabaseAuthId)
+        // Membership: same Auth account can belong to many tenants.
+        builder.HasIndex(u => new { u.TenantId, u.SupabaseAuthId })
             .IsUnique();
 
         builder.HasIndex(u => u.TenantId);
