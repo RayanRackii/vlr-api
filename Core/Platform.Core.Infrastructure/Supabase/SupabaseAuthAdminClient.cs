@@ -61,8 +61,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         CancellationToken cancellationToken = default)
     {
         var normalized = email.Trim().ToLowerInvariant();
+
+        // GoTrue Admin API: use `filter`, not `email` (email alone is ignored).
         var relativeUri =
-            $"admin/users?email={Uri.EscapeDataString(normalized)}";
+            $"admin/users?page=1&per_page=50&filter={Uri.EscapeDataString(normalized)}";
 
         using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
         using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -107,6 +109,15 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
 
         return null;
+    }
+
+    public async Task<bool> UserExistsAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateAdminRequest(HttpMethod.Get, $"admin/users/{supabaseUserId}");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        return response.IsSuccessStatusCode;
     }
 
     public async Task UpdateUserAppMetadataAsync(

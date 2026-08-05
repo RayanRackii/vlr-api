@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
+using Platform.Core.Infrastructure.Supabase;
 
 namespace Platform.Api.Modules.Admin.Controllers;
 
@@ -117,6 +118,16 @@ public sealed class AdminTenantsController(IAdminTenantService adminTenantServic
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (SupabaseAuthAdminException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new { error = ex.Message });
         }
     }
 

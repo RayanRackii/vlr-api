@@ -111,10 +111,37 @@ public sealed class PlatformAdminMembershipService(
             throw new KeyNotFoundException("Tenant not found or inactive.");
         }
 
-        await EnsureMembershipAsync(tenantId, principal, cancellationToken);
+        var email = ResolveEmail(principal)
+            ?? throw new UnauthorizedAccessException("Authenticated email is required.");
 
-        var authId = ResolveAuthId(principal)
-            ?? throw new UnauthorizedAccessException("Authenticated user identifier is missing.");
+        // Prefer Admin API lookup by email — more reliable than JWT `sub` when claims differ.
+        var authId = await supabaseAuthAdminClient.FindUserIdByEmailAsync(
+            email,
+            cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(authId))
+        {
+            authId = ResolveAuthId(principal);
+        }
+
+        if (string.IsNullOrWhiteSpace(authId))
+        {
+            throw new InvalidOperationException(
+                "Could not resolve your Supabase Auth user. Confirm PlatformAdmin email matches the logged-in account.");
+        }
+
+        if (!await supabaseAuthAdminClient.UserExistsAsync(authId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "Supabase Auth user was not found for this account. Check that API Supabase:Url / ServiceRoleKey match the frontend project.");
+        }
+
+        await EnsureUserMembershipAsync(
+            tenantId,
+            authId,
+            fullName: DeriveFullName(email),
+            email.Trim().ToLowerInvariant(),
+            cancellationToken);
 
         await supabaseAuthAdminClient.UpdateUserAppMetadataAsync(
             authId,
@@ -126,7 +153,17 @@ public sealed class PlatformAdminMembershipService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
-        var authId = ResolveAuthId(principal)
+        var email = ResolveEmail(principal);
+        string? authId = null;
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            authId = await supabaseAuthAdminClient.FindUserIdByEmailAsync(
+                email,
+                cancellationToken);
+        }
+
+        authId ??= ResolveAuthId(principal)
             ?? throw new UnauthorizedAccessException("Authenticated user identifier is missing.");
 
         await supabaseAuthAdminClient.ClearUserTenantAppMetadataAsync(

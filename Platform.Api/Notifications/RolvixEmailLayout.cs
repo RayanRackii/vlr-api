@@ -50,12 +50,14 @@ public static class RolvixEmailLayout
             """;
     }
 
-    public static string InviteBody(string inviteUrl)
+    public static string InviteBody(string inviteUrl, string companyName)
     {
         var safeUrl = WebUtility.HtmlEncode(inviteUrl);
+        var safeCompany = WebUtility.HtmlEncode(companyName);
         return
             $"""
-            <p style="margin:0 0 16px;">Você foi convidado(a) para o Rolvix.</p>
+            <p style="margin:0 0 16px;">Você foi convidado(a) para administrar <strong>{safeCompany}</strong> no console Rolvix.</p>
+            <p style="margin:0 0 12px;">Este acesso é o <strong>painel operacional</strong> (ativos, agenda, etc.) em <strong>rolvix.com.br</strong> — não o site público do clube (ex.: ficc.rolvix.com.br), que é só para sócios/clientes.</p>
             <p style="margin:0 0 20px;">Defina sua senha neste link (válido por 7 dias):</p>
             <p style="margin:0 0 8px;">
               <a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">

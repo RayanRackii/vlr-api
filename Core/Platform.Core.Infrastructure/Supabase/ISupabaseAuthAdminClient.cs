@@ -14,6 +14,10 @@ public interface ISupabaseAuthAdminClient
         string email,
         CancellationToken cancellationToken = default);
 
+    Task<bool> UserExistsAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken = default);
+
     Task UpdateUserAppMetadataAsync(
         string supabaseUserId,
         Guid tenantId,

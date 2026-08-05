@@ -405,15 +405,22 @@ public sealed class TenantUserAdminService(
         var frontendBaseUrl = FrontendBaseUrlResolver.Resolve(configuration, environment);
         var inviteUrl = $"{frontendBaseUrl}/invite?token={Uri.EscapeDataString(invite.Token)}";
 
+        var companyName = await dbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == invite.TenantId)
+            .Select(t => t.LegalName)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? "sua empresa";
+
         var htmlBody = RolvixEmailLayout.Wrap(
             invite.FullName,
-            RolvixEmailLayout.InviteBody(inviteUrl));
+            RolvixEmailLayout.InviteBody(inviteUrl, companyName));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(
                 Type: "Email",
                 Recipient: invite.Email,
-                Subject: "Convite Rolvix — defina sua senha",
+                Subject: $"Convite Rolvix — admin de {companyName}",
                 Body: htmlBody),
             cancellationToken);
     }
