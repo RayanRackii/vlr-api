@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.Supabase;
@@ -21,6 +23,7 @@ public interface IPlatformUserAdminService
 public sealed class PlatformUserAdminService(
     AppDbContext dbContext,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
+    IOptions<PlatformAdminOptions> platformAdminOptions,
     ILogger<PlatformUserAdminService> logger) : IPlatformUserAdminService
 {
     public async Task<IReadOnlyList<PlatformUserResponseDto>> ListAsync(
@@ -103,9 +106,30 @@ public sealed class PlatformUserAdminService(
         }
 
         var supabaseAuthId = user.SupabaseAuthId;
+        var email = user.Email.Trim().ToLowerInvariant();
+
+        var isPlatformAdmin = platformAdminOptions.Value.Emails.Any(e =>
+            string.Equals(e.Trim(), email, StringComparison.OrdinalIgnoreCase));
+
+        var stillUsedElsewhere = await dbContext.Users
+            .AsNoTracking()
+            .AnyAsync(
+                u => u.Id != userId && u.SupabaseAuthId == supabaseAuthId,
+                cancellationToken);
 
         dbContext.Users.Remove(user);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (isPlatformAdmin || stillUsedElsewhere)
+        {
+            logger.LogInformation(
+                "Platform user {UserId} removed from database; kept Supabase Auth {SupabaseAuthId} (platformAdmin={IsPlatformAdmin}, usedElsewhere={UsedElsewhere}).",
+                userId,
+                supabaseAuthId,
+                isPlatformAdmin,
+                stillUsedElsewhere);
+            return;
+        }
 
         try
         {

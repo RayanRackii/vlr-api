@@ -87,13 +87,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
 
         foreach (var userElement in usersElement.EnumerateArray())
         {
-            if (!userElement.TryGetProperty("email", out var emailElement))
-            {
-                continue;
-            }
-
-            var candidate = emailElement.GetString();
-            if (!string.Equals(candidate, normalized, StringComparison.OrdinalIgnoreCase))
+            if (!EmailMatches(userElement, normalized))
             {
                 continue;
             }
@@ -109,6 +103,48 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
 
         return null;
+    }
+
+    private static bool EmailMatches(JsonElement userElement, string normalizedEmail)
+    {
+        if (userElement.TryGetProperty("email", out var emailElement))
+        {
+            var candidate = emailElement.GetString();
+            if (string.Equals(candidate, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (!userElement.TryGetProperty("identities", out var identities)
+            || identities.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var identity in identities.EnumerateArray())
+        {
+            if (!identity.TryGetProperty("identity_data", out var identityData)
+                || identityData.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (!identityData.TryGetProperty("email", out var identityEmail))
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    identityEmail.GetString(),
+                    normalizedEmail,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public async Task<bool> UserExistsAsync(

@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Npgsql;
+using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Constants;
@@ -15,6 +17,7 @@ public sealed class AdminTenantService(
     ITenantUserAdminService tenantUserAdminService,
     IPlatformAdminMembershipService platformAdminMembershipService,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
+    IOptions<PlatformAdminOptions> platformAdminOptions,
     ILogger<AdminTenantService> logger) : IAdminTenantService
 {
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
@@ -271,11 +274,45 @@ public sealed class AdminTenantService(
                     throw new KeyNotFoundException("Tenant not found.");
                 }
 
-                supabaseAuthIds = await dbContext.Users
+                var tenantUsers = await dbContext.Users
                     .AsNoTracking()
                     .Where(u => u.TenantId == id)
-                    .Select(u => u.SupabaseAuthId)
+                    .Select(u => new { u.SupabaseAuthId, u.Email })
                     .ToListAsync(cancellationToken);
+
+                var candidateAuthIds = tenantUsers
+                    .Select(u => u.SupabaseAuthId)
+                    .Where(authId => !string.IsNullOrWhiteSpace(authId))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                var platformAdminEmails = platformAdminOptions.Value.Emails
+                    .Where(e => !string.IsNullOrWhiteSpace(e))
+                    .Select(e => e.Trim().ToLowerInvariant())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var authIdsStillUsedElsewhere = candidateAuthIds.Count == 0
+                    ? new HashSet<string>(StringComparer.Ordinal)
+                    : (await dbContext.Users
+                        .AsNoTracking()
+                        .Where(u =>
+                            u.TenantId != id
+                            && candidateAuthIds.Contains(u.SupabaseAuthId))
+                        .Select(u => u.SupabaseAuthId)
+                        .Distinct()
+                        .ToListAsync(cancellationToken))
+                        .ToHashSet(StringComparer.Ordinal);
+
+                var platformAdminAuthIds = tenantUsers
+                    .Where(u => platformAdminEmails.Contains(u.Email.Trim().ToLowerInvariant()))
+                    .Select(u => u.SupabaseAuthId)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                supabaseAuthIds = candidateAuthIds
+                    .Where(authId =>
+                        !authIdsStillUsedElsewhere.Contains(authId)
+                        && !platformAdminAuthIds.Contains(authId))
+                    .ToList();
 
                 // Rentals / scheduling (children before parents with Restrict FKs)
                 await dbContext.Slots
