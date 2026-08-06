@@ -40,8 +40,9 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] `RentalLayout` + items (API; canvas UI pendente)
 - [x] Migration `AddRentalsScheduleAndLayouts` + SQL script
 - [ ] Aplicar migration no Supabase
-- [ ] Admin UI: kinds, templates, dia da escala
-- [ ] B2C: escolher slot do dia (substituir hora manual)
+- [x] Admin UI mínima: seed templates + publish day (no `vlr-web`)
+- [x] B2C: escolher slot do dia / book por `slotId` (no `vlr-web`)
+- [ ] Admin UI completa: kinds, editor fino de templates
 - [ ] Canvas de Layout no admin
 
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
@@ -88,3 +89,4 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 | 2026-08-04 | **Executado:** convite admin B2B real (user_invites + accept + UI wizard/edit). |
 | 2026-08-05 | **Executado:** cascade delete seguro; users globais + índices; membership `(TenantId, SupabaseAuthId)`; enter/exit ambiente; e-mail convite sem localhost; accept find-or-create; recreate Auth órfão. Diário: [`docs/sessions/2026-08-05-platform-admin-membership.md`](./docs/sessions/2026-08-05-platform-admin-membership.md). |
 | 2026-08-06 | **Docs:** `CONTEXT.md` canônico neste repo; espelho no `vlr-web`; ADR/sessions/runbooks sob `docs/`; `AGENTS.md`; rules sem paths monorepo inventados. |
+| 2026-08-06 | FE (`vlr-web`): agenda B2C por Slot + admin mínimo de escala consumindo APIs já existentes. |
