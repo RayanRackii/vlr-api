@@ -25,5 +25,5 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 
 ## Estado atual e lacunas
 
-Implementado: pricing CRUD, availability pública, criação de reserva, auth B2C legado por OTP.
-Faltando (ver ROADMAP.md): login/cadastro e-mail+senha, confirmar/cancelar/completar reserva, pagamento de depósito (`DepositPaid` hoje sempre 0), listagem de reservas (admin e cliente), SMS de verificação e avisos WhatsApp de reserva/estado das quadras.
+Implementado: pricing CRUD, availability pública, criação de reserva, auth B2C e-mail+senha (+ OTP legado), API de OccupancyKind / ScheduleTemplate / Slot / Layout (ver `docs/adr/0001-rentals-slot-schedule.md`).
+Faltando (ver `ROADMAP.md`): UI admin/B2C de slots no `vlr-web`, confirmar/cancelar/completar reserva, pagamento de depósito (`DepositPaid` hoje sempre 0), listagem de reservas (admin e cliente), SMS real e avisos WhatsApp.

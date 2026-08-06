@@ -7,6 +7,8 @@ alwaysApply: true
 
 O Rolvix é um **SaaS modular multi-tenant** de gestão operacional. Cada empresa (tenant) contrata apenas os módulos de que precisa; módulos podem ser adicionados/removidos/alterados por tenant sem afetar os demais.
 
+Leia primeiro [`CONTEXT.md`](../../CONTEXT.md) e [`AGENTS.md`](../../AGENTS.md).
+
 ## Módulos da plataforma
 
 Chaves canônicas em `Core/Platform.Core.Domain/Constants/PlatformModules.cs`:
@@ -19,31 +21,33 @@ Chaves canônicas em `Core/Platform.Core.Domain/Constants/PlatformModules.cs`:
 | `os` | Ordens de serviço |
 | `rentals` | Aluguéis/Reservas |
 
-A ativação por tenant é persistida em `core.tenant_modules` (`TenantModule`). **Meta de arquitetura:** a API deve bloquear endpoints de módulos inativos para o tenant (enforcement ainda não implementado — ver ROADMAP.md).
+A ativação por tenant é persistida em `core.tenant_modules` (`TenantModule`). **Meta de arquitetura:** a API deve bloquear endpoints de módulos inativos para o tenant (enforcement ainda não implementado — ver `ROADMAP.md`).
 
 ## Cliente atual e prioridade
 
 O primeiro cliente é um **clube** cuja necessidade central é: avisar clientes sobre o estado das quadras e permitir **reserva de horários**. O módulo `rentals` é a prioridade de desenvolvimento.
 
-**Ordem do ciclo atual (ver CONTEXT.md + ROADMAP.md):**
-1. Resend + WhatsApp (config externa) — etapa principal de infra, **adiada** enquanto o Meta é finalizado.
-2. **Próximo foco:** escala Rentals (Slots / OpenHours / Layout) — APIs no backend; FE admin + agenda B2C por slot; beachhead FICC.
-3. Demais itens de convite / gating.
+**Ordem do ciclo atual (ver `CONTEXT.md` + `ROADMAP.md`):**
+1. Resend + WhatsApp (config externa) — **adiada**.
+2. Portal B2C branded — shell/login e-mail+senha em código; fechar ops/DNS.
+3. **Próximo salto de produto:** escala Rentals (Slots / OpenHours / Layout) — APIs neste repo; UI no `vlr-web`.
+4. Demais: convite legado / gating API.
 
-Cadastrar `Tenant.Subdomain` **não** entrega a página personalizada — só a chave de roteamento.
+Cadastrar `Tenant.Subdomain` **não** entrega a página personalizada sozinha — só roteamento + branding; o portal é a UI B2C.
 
 ## ROADMAP (obrigatório)
 
-1. Em toda tarefa relevante: atualizar `ROADMAP.md`. Se a prioridade/escopo mudar, registrar na seção **Histórico** (data + o quê + por quê). Não apagar decisões sem rastreio.
-2. Ao **encerrar** uma tarefa (ou ao responder após progresso relevante), descrever no chat o **próximo passo previsto** lendo os roadmaps — **backend** (este `ROADMAP.md`) **e** **frontend** (`frontend/vlr-web/ROADMAP.md`). Incluir os dois lados mesmo quando a sessão for só neste repo.
-3. Em toda etapa concluída, descrever no chat **como testar** a funcionalidade entregue: passos concretos de UI (ex.: “abra o portal do tenant e clique em…”) e/ou como invocar o back (endpoint, botão da tela que dispara, header necessário). Sem jargão vago.
+1. Em toda tarefa relevante: atualizar `ROADMAP.md` **neste repo**. Se a prioridade/escopo mudar, registrar na seção **Histórico** (data + o quê + por quê). Não apagar decisões sem rastreio.
+2. Ao **encerrar** uma tarefa, descrever no chat o **próximo passo previsto** deste `ROADMAP.md` **e** do `ROADMAP.md` do repo irmão **`vlr-web`**.
+3. Em toda etapa concluída, descrever **como testar** (UI e/ou endpoint). Sem jargão vago.
+4. Glossário/beachhead: atualizar `CONTEXT.md` aqui **e** o espelho em `vlr-web`.
 
 ## Regra de ouro de segurança
 
-**Administradores nunca definem a senha de outros usuários.** O fluxo alvo é convite por token (`InviteUser` → e-mail/WhatsApp com link `/invite?token=`), onde o próprio usuário define a senha. O onboarding público atual que coleta senha do admin é temporário e deve ser substituído.
+**Administradores nunca definem a senha de outros usuários.** Fluxo: convite por token → `/invite?token=` → o convidado define a senha. Onboarding público que ainda coleta senha do admin é legado.
 
 ## Ecossistema
 
 - **Este repo (`vlr-api`):** API .NET 10, deploy via Docker no **Railway**.
-- **Banco e Auth:** **Supabase** (Postgres + Supabase Auth para usuários B2B).
-- **Frontend (`vlr-web`):** repo separado, React + Vite, deploy na **Vercel**. Consome esta API via JWT Bearer.
+- **Banco e Auth:** **Supabase** (Postgres + Supabase Auth para Users B2B).
+- **Frontend (`vlr-web`):** repo Git **separado**, React + Vite, deploy na **Vercel**. Consome esta API via JWT Bearer.

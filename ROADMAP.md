@@ -1,15 +1,16 @@
 # ROADMAP — vlr-api
 
-Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e `frontend/ROADMAP.md`.
+Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `ROADMAP.md` do repo irmão **`vlr-web`**.
 
-**Foco de produto agora:** **shell B2C + menu multi-item** (itens configuráveis por módulo) + agenda ligada aos itens.  
+**Foco de produto agora:** portal B2C estável + **agenda por Slot** (API pronta; UI no `vlr-web`).  
 **Adiado:** fechar configuração externa Resend + WhatsApp (Meta).
 
 ## 0. Disciplina
 
 1. Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
-2. Ao encerrar uma tarefa (ou após progresso relevante), o agente deve descrever no chat o **próximo passo previsto** deste roadmap **e** do `frontend/vlr-web/ROADMAP.md`.
+2. Ao encerrar uma tarefa (ou após progresso relevante), o agente deve descrever no chat o **próximo passo previsto** deste roadmap **e** do `ROADMAP.md` do **`vlr-web`**.
 3. Em toda etapa concluída, descrever no chat **como testar** (passos de UI e/ou como disparar o endpoint).
+4. Ordem de leitura do agente: `AGENTS.md` → `CONTEXT.md` → este arquivo → `.cursor/rules/`.
 
 ## 1. Registro dinâmico por tenant — FEITO (código)
 
@@ -31,7 +32,7 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 
 ## 2.6. Escala diária / Slots / Layout — EM ANDAMENTO (código backend)
 
-Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
+Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rentals-slot-schedule.md). Glossário em `CONTEXT.md`.
 
 - [x] `OccupancyKind` (catálogo do tenant) + defaults open/closed/lesson
 - [x] `ScheduleTemplate` + `Slot` + PublishDay + UpsertSlot + BookSlot
@@ -73,7 +74,7 @@ Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
 - Sem testes automatizados.
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
-- Ver `docs/code-hygiene-findings.md` (sweep 2026-08-04).
+- Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
 
 ## Histórico
 
@@ -85,3 +86,5 @@ Decisões: ADR `docs/adr/0001-rentals-slot-schedule.md`. Glossário em CONTEXT.
 | 2026-08-04 | **Executado:** `LogoSvg` no Tenant + validação SVG + branding API; `LogoUrl` legado zera em writes. |
 | 2026-08-04 | **Iniciado:** escala SlotGrid/OpenHours, OccupancyKind, templates, slots, layouts (API); ADR 0001. |
 | 2026-08-04 | **Executado:** convite admin B2B real (user_invites + accept + UI wizard/edit). |
+| 2026-08-05 | **Executado:** cascade delete seguro; users globais + índices; membership `(TenantId, SupabaseAuthId)`; enter/exit ambiente; e-mail convite sem localhost; accept find-or-create; recreate Auth órfão. Diário: [`docs/sessions/2026-08-05-platform-admin-membership.md`](./docs/sessions/2026-08-05-platform-admin-membership.md). |
+| 2026-08-06 | **Docs:** `CONTEXT.md` canônico neste repo; espelho no `vlr-web`; ADR/sessions/runbooks sob `docs/`; `AGENTS.md`; rules sem paths monorepo inventados. |

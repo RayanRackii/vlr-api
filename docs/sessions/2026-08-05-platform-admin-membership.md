@@ -3,7 +3,8 @@
 > Documento especial de trabalho do dia **05 de agosto de 2026** (UTC−3).
 > Objetivo: registrar **tudo** o que foi discutido, decidido, implementado, quebrado e corrigido neste dia, sem omitir decisões de produto, detalhes técnicos, endpoints, migrations, bugs de produção e caminhos descartados.
 >
-> Não substitui `CONTEXT.md` (domínio/produto) nem `backend/ROADMAP.md` (estado de fases). Este arquivo é o **diário operacional da sessão**.
+> Não substitui `CONTEXT.md` (domínio/produto) nem `ROADMAP.md` (estado de fases). Este arquivo é o **diário operacional da sessão**.
+> Runbook curto: [`../runbooks/platform-admin-enter.md`](../runbooks/platform-admin-enter.md).
 
 ---
 
@@ -369,7 +370,7 @@ Atalho: criar o user manualmente no dashboard Auth **antes** do recreate automá
 | Migrations | `20260805171718_AddUserFullNameAndTenantIndexes`, `20260805185352_UserMembershipPerTenant` |
 | Script SQL | `backend/scripts/UserMembershipPerTenant.sql` |
 | Options | `PlatformAdminOptions.cs` (Emails allowlist) |
-| Docs produto | `CONTEXT.md` (modo suporte atualizado), `backend/ROADMAP.md` (checks de users/membership/enter) |
+| Docs produto | `CONTEXT.md` (modo suporte atualizado), `ROADMAP.md` (checks de users/membership/enter) |
 
 ### Frontend (mesmo dia, acoplado)
 
@@ -445,8 +446,8 @@ Todos os `/api/admin/*` (exceto accept de invite, que é anônimo em outra rota)
 ## 15. Como um agente futuro deve usar este arquivo
 
 1. Ler **este** arquivo para entender o *porquê* das mudanças de 2026-08-05.
-2. Conferir `CONTEXT.md` para regras de domínio vigentes (modo suporte já consolidado lá).
-3. Conferir `backend/ROADMAP.md` para o que ainda está aberto.
+2. Conferir `CONTEXT.md` (raiz deste repo) para regras de domínio vigentes (modo suporte já consolidado lá).
+3. Conferir `ROADMAP.md` para o que ainda está aberto.
 4. **Não** reintroduzir `X-Support-Tenant-Id` / abrir tenant em nova aba como modo suporte.
 5. **Nunca** deletar Auth de PlatformAdmin ao limpar um tenant.
 6. Se enter falhar com 400 + Auth 404 no `sub`, suspeitar JWT órfão e seguir o runbook da §9.
