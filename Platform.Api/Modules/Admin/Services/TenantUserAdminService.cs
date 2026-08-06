@@ -405,16 +405,23 @@ public sealed class TenantUserAdminService(
         var frontendBaseUrl = FrontendBaseUrlResolver.Resolve(configuration, environment);
         var inviteUrl = $"{frontendBaseUrl}/invite?token={Uri.EscapeDataString(invite.Token)}";
 
-        var companyName = await dbContext.Tenants
+        var tenant = await dbContext.Tenants
             .AsNoTracking()
             .Where(t => t.Id == invite.TenantId)
-            .Select(t => t.LegalName)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? "sua empresa";
+            .Select(t => new { t.LegalName, t.Subdomain })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var companyName = string.IsNullOrWhiteSpace(tenant?.LegalName)
+            ? "sua empresa"
+            : tenant.LegalName;
+
+        var portalHost = string.IsNullOrWhiteSpace(tenant?.Subdomain)
+            ? null
+            : $"{tenant.Subdomain.Trim().ToLowerInvariant()}.rolvix.com.br";
 
         var htmlBody = RolvixEmailLayout.Wrap(
             invite.FullName,
-            RolvixEmailLayout.InviteBody(inviteUrl, companyName));
+            RolvixEmailLayout.InviteBody(inviteUrl, companyName, portalHost));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(

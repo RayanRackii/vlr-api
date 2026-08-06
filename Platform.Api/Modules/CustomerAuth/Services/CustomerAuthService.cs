@@ -266,6 +266,10 @@ public sealed class CustomerAuthService(
                 "Phone number is not verified. Complete SMS verification first.");
         }
 
+        customer.LastLoginAt = DateTimeOffset.UtcNow;
+        customer.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+
         return BuildAuthResponse(customer);
     }
 

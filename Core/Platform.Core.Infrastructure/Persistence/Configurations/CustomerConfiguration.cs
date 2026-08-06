@@ -59,10 +59,14 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
 
         builder.Property(c => c.PhoneVerifiedAt);
 
+        builder.Property(c => c.LastLoginAt);
+
         builder.Property(c => c.CreatedAt)
             .IsRequired();
 
         builder.HasIndex(c => new { c.TenantId, c.Name });
+
+        builder.HasIndex(c => new { c.TenantId, c.LastLoginAt });
 
         builder.HasIndex(c => new { c.TenantId, c.Phone })
             .IsUnique()

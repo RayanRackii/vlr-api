@@ -23,6 +23,9 @@ public class Customer : Entity, ITenantScoped
 
     public DateTimeOffset? PhoneVerifiedAt { get; set; }
 
+    /// <summary>Last successful portal (B2C) login.</summary>
+    public DateTimeOffset? LastLoginAt { get; set; }
+
     /// <summary>Brazilian CPF digits only (11).</summary>
     public string? Cpf { get; set; }
 

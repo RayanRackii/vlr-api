@@ -50,14 +50,26 @@ public static class RolvixEmailLayout
             """;
     }
 
-    public static string InviteBody(string inviteUrl, string companyName)
+    public static string InviteBody(
+        string inviteUrl,
+        string companyName,
+        string? portalHost = null)
     {
         var safeUrl = WebUtility.HtmlEncode(inviteUrl);
         var safeCompany = WebUtility.HtmlEncode(companyName);
+        var portalLine = string.IsNullOrWhiteSpace(portalHost)
+            ? """
+              <p style="margin:0 0 12px;">Este acesso é o <strong>painel operacional</strong> em <strong>rolvix.com.br</strong> (ativos, agenda, configurações). O site público do clube (<em>seu-subdominio</em>.rolvix.com.br) é só para sócios/clientes e usa outro login.</p>
+              """
+            : $"""
+              <p style="margin:0 0 12px;">Este acesso é o <strong>painel operacional</strong> em <strong>rolvix.com.br</strong> (ativos, agenda, configurações).</p>
+              <p style="margin:0 0 12px;">O site público do clube para sócios/clientes é <strong>{WebUtility.HtmlEncode(portalHost)}</strong> — login diferente (não use a senha de admin lá).</p>
+              """;
+
         return
             $"""
             <p style="margin:0 0 16px;">Você foi convidado(a) para administrar <strong>{safeCompany}</strong> no console Rolvix.</p>
-            <p style="margin:0 0 12px;">Este acesso é o <strong>painel operacional</strong> (ativos, agenda, etc.) em <strong>rolvix.com.br</strong> — não o site público do clube (ex.: ficc.rolvix.com.br), que é só para sócios/clientes.</p>
+            {portalLine}
             <p style="margin:0 0 20px;">Defina sua senha neste link (válido por 7 dias):</p>
             <p style="margin:0 0 8px;">
               <a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">
@@ -65,7 +77,8 @@ public static class RolvixEmailLayout
               </a>
             </p>
             <p style="margin:16px 0 0;font-size:12px;color:#71717a;word-break:break-all;">
-              Ou copie e cole no navegador:<br />{safeUrl}
+              Depois, entre em <strong>https://rolvix.com.br/login</strong> com este e-mail.<br /><br />
+              Ou copie e cole o link no navegador:<br />{safeUrl}
             </p>
             """;
     }

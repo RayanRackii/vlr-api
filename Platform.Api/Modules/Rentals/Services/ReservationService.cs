@@ -252,6 +252,163 @@ public sealed class ReservationService(
             .ToList();
     }
 
+    public async Task<IReadOnlyList<ReservationResponseDto>> ListAdminAsync(
+        DateOnly? from,
+        DateOnly? to,
+        ReservationStatus? status,
+        Guid? assetId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var query = dbContext.Reservations
+            .AsNoTracking()
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .AsQueryable();
+
+        if (from is DateOnly fromDate)
+        {
+            var fromStart = new DateTimeOffset(
+                fromDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
+                TimeSpan.Zero);
+            query = query.Where(r => r.EndDateTime >= fromStart);
+        }
+
+        if (to is DateOnly toDate)
+        {
+            var toEnd = new DateTimeOffset(
+                toDate.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Unspecified),
+                TimeSpan.Zero);
+            query = query.Where(r => r.StartDateTime <= toEnd);
+        }
+
+        if (status is ReservationStatus statusFilter)
+        {
+            query = query.Where(r => r.Status == statusFilter);
+        }
+
+        if (assetId is Guid filterAssetId)
+        {
+            query = query.Where(r =>
+                r.Items.Any(i => i.RentalAsset.AssetId == filterAssetId));
+        }
+
+        var reservations = await query
+            .OrderByDescending(r => r.StartDateTime)
+            .ToListAsync(cancellationToken);
+
+        return reservations
+            .Select(r => ToResponse(
+                r,
+                r.Items
+                    .Select(i => (
+                        i,
+                        i.RentalAsset.AssetId,
+                        i.RentalAsset.Asset.Name))
+                    .ToList()))
+            .ToList();
+    }
+
+    public async Task<ReservationResponseDto> ConfirmAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var reservation = await dbContext.Reservations
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+        if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
+        {
+            throw new InvalidOperationException(
+                $"Cannot confirm a reservation in status '{reservation.Status}'.");
+        }
+
+        if (reservation.Status == ReservationStatus.Confirmed)
+        {
+            return ToResponseFromEntity(reservation);
+        }
+
+        if (reservation.Status != ReservationStatus.PendingDeposit)
+        {
+            throw new InvalidOperationException(
+                $"Only pending reservations can be confirmed (current: '{reservation.Status}').");
+        }
+
+        reservation.Status = ReservationStatus.Confirmed;
+        reservation.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return ToResponseFromEntity(reservation);
+    }
+
+    public async Task<ReservationResponseDto> CancelAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var reservation = await dbContext.Reservations
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+        if (reservation.Status == ReservationStatus.Canceled)
+        {
+            return ToResponseFromEntity(reservation);
+        }
+
+        if (reservation.Status == ReservationStatus.Completed)
+        {
+            throw new InvalidOperationException("Cannot cancel a completed reservation.");
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            reservation.Status = ReservationStatus.Canceled;
+            reservation.Touch();
+
+            var linkedSlots = await dbContext.Slots
+                .Where(s => s.ReservationId == reservationId)
+                .ToListAsync(cancellationToken);
+
+            foreach (var slot in linkedSlots)
+            {
+                slot.MarkAvailable();
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return ToResponseFromEntity(reservation);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private static ReservationResponseDto ToResponseFromEntity(Reservation reservation) =>
+        ToResponse(
+            reservation,
+            reservation.Items
+                .Select(i => (
+                    i,
+                    i.RentalAsset.AssetId,
+                    i.RentalAsset.Asset.Name))
+                .ToList());
+
     private async Task<int> GetReservedQuantityAsync(
         Guid rentalAssetId,
         DateTimeOffset start,

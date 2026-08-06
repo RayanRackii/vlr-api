@@ -314,6 +314,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("phone_verified_at");
 
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_login_at");
+
                     b.Property<string>("PhotoUrl")
                         .HasColumnType("text")
                         .HasColumnName("photo_url");
@@ -343,6 +347,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_customers_tenant_id_email")
                         .HasFilter("email IS NOT NULL");
+
+                    b.HasIndex("TenantId", "LastLoginAt")
+                        .HasDatabaseName("ix_customers_tenant_id_last_login_at");
 
                     b.HasIndex("TenantId", "Name")
                         .HasDatabaseName("ix_customers_tenant_id_name");

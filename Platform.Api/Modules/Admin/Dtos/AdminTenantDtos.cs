@@ -20,8 +20,11 @@ public sealed record CreateTenantRequestDto
     /// <summary>Module labels: Rentals, PMOC, Inventory, OS.</summary>
     public required IReadOnlyList<string> ActiveModules { get; init; }
 
-    /// <summary>Asset family keys from the platform catalog (spaces, electrical, goods, …).</summary>
-    public required IReadOnlyList<string> AssetFamilyKeys { get; init; }
+    /// <summary>
+    /// Asset family keys (spaces, electrical, goods, …).
+    /// Optional for rolling deploys; defaults to <c>generic</c> when omitted/empty.
+    /// </summary>
+    public IReadOnlyList<string>? AssetFamilyKeys { get; init; }
 
     /// <summary>Optional first B2B admin invite (no password — golden rule).</summary>
     public string? AdminFullName { get; init; }
@@ -48,8 +51,11 @@ public sealed record UpdateTenantRequestDto
     /// <summary>Module labels: Rentals, PMOC, Inventory, OS.</summary>
     public required IReadOnlyList<string> ActiveModules { get; init; }
 
-    /// <summary>Asset family keys from the platform catalog (spaces, electrical, goods, …).</summary>
-    public required IReadOnlyList<string> AssetFamilyKeys { get; init; }
+    /// <summary>
+    /// Asset family keys (spaces, electrical, goods, …).
+    /// Optional for rolling deploys; defaults to <c>generic</c> when omitted/empty.
+    /// </summary>
+    public IReadOnlyList<string>? AssetFamilyKeys { get; init; }
 }
 
 public sealed record TenantModuleResponseDto(

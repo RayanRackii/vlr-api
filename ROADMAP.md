@@ -28,7 +28,13 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).
 - [ ] Aplicar migration menu no Railway.
 - [ ] Garantir assets/pricing no FICC para demo.
-- [ ] Admin B2B de reservas (listar/confirmar/cancelar).
+- [x] Admin B2B de reservas (listar/confirmar/cancelar).
+
+## 2.8. Dashboard B2B dinâmico — FEITO (código)
+
+- [x] `Customer.LastLoginAt` + migration `AddCustomerLastLoginAt` (set no login B2C).
+- [x] `GET /api/dashboard/metrics` por módulo: `customerActivity` + seções nullable (`assets`, `workOrders`, `pmoc`, `maintenance`, `rentals`).
+- [ ] Aplicar migration `AddCustomerLastLoginAt` no Supabase/Railway.
 
 ## 2.6. Escala diária / Slots / Layout — EM ANDAMENTO (código backend)
 
@@ -42,7 +48,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [ ] Aplicar migration no Supabase
 - [x] Admin UI mínima: seed templates + publish day (no `vlr-web`)
 - [x] B2C: escolher slot do dia / book por `slotId` (no `vlr-web`)
-- [ ] Admin UI completa: kinds, editor fino de templates
+- [x] Admin UI completa: kinds, editor fino de templates
 - [ ] Canvas de Layout no admin
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
@@ -102,3 +108,6 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-06 | **Docs:** `CONTEXT.md` canônico neste repo; espelho no `vlr-web`; ADR/sessions/runbooks sob `docs/`; `AGENTS.md`; rules sem paths monorepo inventados. |
 | 2026-08-06 | FE (`vlr-web`): agenda B2C por Slot + admin mínimo de escala consumindo APIs já existentes. |
 | 2026-08-06 | **Executado:** catálogo AssetFamily + TenantAssetFamily + Attributes JSONB; APIs + validação; ADR 0002. |
+| 2026-08-06 | **Executado:** Admin B2B de reservas — `GET /api/reservations` + confirm/cancel (libera Slots). |
+| 2026-08-06 | **Executado:** Dashboard dinâmico por módulo — `LastLoginAt` B2C + metrics condicionais. |
+| 2026-08-06 | **Executado (FE):** Admin agenda completo — occupancy kinds CRUD + editor de templates semanais. |

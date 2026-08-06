@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
 
@@ -52,6 +53,82 @@ public sealed class ReservationsController(
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Admin list of tenant reservations (B2B).</summary>
+    [Authorize]
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<ReservationResponseDto>>> ListAdmin(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] ReservationStatus? status,
+        [FromQuery] Guid? assetId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var items = await reservationService.ListAdminAsync(
+                from,
+                to,
+                status,
+                assetId,
+                cancellationToken);
+            return Ok(items);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Confirm a pending reservation (B2B staff).</summary>
+    [Authorize]
+    [HttpPost("{id:guid}/confirm")]
+    public async Task<ActionResult<ReservationResponseDto>> Confirm(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await reservationService.ConfirmAsync(id, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Cancel a reservation and free linked slots (B2B staff).</summary>
+    [Authorize]
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<ActionResult<ReservationResponseDto>> Cancel(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await reservationService.CancelAsync(id, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
         }
     }
 

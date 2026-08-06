@@ -544,20 +544,16 @@ public sealed class AdminTenantService(
         IReadOnlyList<string>? assetFamilyKeys,
         CancellationToken cancellationToken)
     {
-        if (assetFamilyKeys is null || assetFamilyKeys.Count == 0)
-        {
-            throw new ArgumentException("At least one asset family is required.");
-        }
-
-        var normalized = assetFamilyKeys
+        var normalized = (assetFamilyKeys ?? [])
             .Where(k => !string.IsNullOrWhiteSpace(k))
             .Select(k => k.Trim().ToLowerInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
+        // Rolling deploy: older FE omit this field — keep tenants creatable.
         if (normalized.Count == 0)
         {
-            throw new ArgumentException("At least one asset family is required.");
+            normalized.Add(AssetFamilyKeys.Generic);
         }
 
         var families = await dbContext.AssetFamilies
@@ -570,7 +566,8 @@ public sealed class AdminTenantService(
             var found = families.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
             var missing = normalized.Where(k => !found.Contains(k));
             throw new ArgumentException(
-                $"Unknown or inactive asset family: {string.Join(", ", missing)}");
+                $"Unknown or inactive asset family: {string.Join(", ", missing)}. "
+                + "Apply the AddAssetFamilies migration if the catalog is empty.");
         }
 
         return families
