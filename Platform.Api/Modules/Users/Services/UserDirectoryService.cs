@@ -23,6 +23,7 @@ public sealed class UserDirectoryService(
             if (tenantProvider.TenantId is Guid tenantId)
             {
                 var modules = await LoadActiveModulesAsync(tenantId, cancellationToken);
+                var families = await LoadActiveAssetFamiliesAsync(tenantId, cancellationToken);
                 var supabaseAuthId = principal.FindFirst("sub")?.Value
                     ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -42,7 +43,8 @@ public sealed class UserDirectoryService(
                             membership.Email,
                             ApplicationRoles.Admin,
                             tenantId,
-                            modules);
+                            modules,
+                            families);
                     }
                 }
 
@@ -52,7 +54,8 @@ public sealed class UserDirectoryService(
                     email,
                     ApplicationRoles.Admin,
                     tenantId,
-                    modules);
+                    modules,
+                    families);
             }
 
             return new CurrentUserResponse(
@@ -61,6 +64,7 @@ public sealed class UserDirectoryService(
                 email,
                 ApplicationRoles.SuperAdmin,
                 null,
+                [],
                 []);
         }
 
@@ -82,6 +86,7 @@ public sealed class UserDirectoryService(
 
         var role = ResolveApplicationRole(user.UserRoles.Select(userRole => userRole.Role.Name));
         var activeModules = await LoadActiveModulesAsync(scopedTenantId, cancellationToken);
+        var activeFamilies = await LoadActiveAssetFamiliesAsync(scopedTenantId, cancellationToken);
 
         return new CurrentUserResponse(
             user.Id,
@@ -89,7 +94,8 @@ public sealed class UserDirectoryService(
             user.Email,
             role,
             scopedTenantId,
-            activeModules);
+            activeModules,
+            activeFamilies);
     }
 
     public async Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
@@ -121,6 +127,24 @@ public sealed class UserDirectoryService(
             .IgnoreQueryFilters()
             .Where(module => module.TenantId == tenantId && module.IsActive)
             .Select(module => module.ModuleName.ToLowerInvariant())
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<string>> LoadActiveAssetFamiliesAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.TenantAssetFamilies
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(t => t.TenantId == tenantId)
+            .Join(
+                dbContext.AssetFamilies.AsNoTracking().Where(f => f.IsActive),
+                t => t.FamilyId,
+                f => f.Id,
+                (_, f) => f)
+            .OrderBy(f => f.SortOrder)
+            .Select(f => f.Key)
             .ToListAsync(cancellationToken);
     }
 

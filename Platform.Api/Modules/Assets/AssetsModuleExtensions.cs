@@ -8,6 +8,7 @@ public static class AssetsModuleExtensions
     {
         services.AddScoped<IAssetCategoryService, AssetCategoryService>();
         services.AddScoped<IAssetService, AssetService>();
+        services.AddScoped<IAssetFamilyService, AssetFamilyService>();
 
         return services;
     }

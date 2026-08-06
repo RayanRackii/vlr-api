@@ -42,6 +42,8 @@ public sealed record CreateAssetRequest
 
     public required Guid CategoryId { get; init; }
 
+    public required Guid FamilyId { get; init; }
+
     public required string Name { get; init; }
 
     public required string Tag { get; init; }
@@ -61,6 +63,8 @@ public sealed record CreateAssetRequest
     public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
 
     public int TotalQuantity { get; init; } = 1;
+
+    public Dictionary<string, string?>? Attributes { get; init; }
 }
 
 public sealed record UpdateAssetRequest
@@ -68,6 +72,8 @@ public sealed record UpdateAssetRequest
     public required Guid UnitId { get; init; }
 
     public required Guid CategoryId { get; init; }
+
+    public required Guid FamilyId { get; init; }
 
     public required string Name { get; init; }
 
@@ -88,6 +94,8 @@ public sealed record UpdateAssetRequest
     public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
 
     public int TotalQuantity { get; init; } = 1;
+
+    public Dictionary<string, string?>? Attributes { get; init; }
 }
 
 public sealed record AssetRentalConfigResponse(
@@ -101,6 +109,7 @@ public sealed record AssetResponse(
     Guid TenantId,
     Guid UnitId,
     Guid CategoryId,
+    Guid FamilyId,
     string Name,
     string Tag,
     string? Location,
@@ -109,6 +118,7 @@ public sealed record AssetResponse(
     AssetStatus Status,
     bool IsRentable,
     bool RequiresMaintenance,
+    IReadOnlyDictionary<string, string?> Attributes,
     AssetRentalConfigResponse? RentalConfig,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
@@ -124,6 +134,8 @@ public sealed record BulkCreateAssetsRequest
 
     public required Guid CategoryId { get; init; }
 
+    public required Guid FamilyId { get; init; }
+
     public required string BaseLocationName { get; init; }
 
     public required string BaseTag { get; init; }
@@ -135,6 +147,8 @@ public sealed record BulkCreateAssetsRequest
     public bool IsRentable { get; init; }
 
     public bool RequiresMaintenance { get; init; }
+
+    public Dictionary<string, string?>? Attributes { get; init; }
 }
 
 public sealed record BulkCreateAssetsResponse(

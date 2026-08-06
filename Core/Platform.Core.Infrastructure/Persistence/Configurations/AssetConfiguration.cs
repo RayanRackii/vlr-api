@@ -25,6 +25,9 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
         builder.Property(a => a.CategoryId)
             .IsRequired();
 
+        builder.Property(a => a.FamilyId)
+            .IsRequired();
+
         builder.Property(a => a.Name)
             .HasMaxLength(200)
             .IsRequired();
@@ -53,6 +56,11 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
             .HasDefaultValue(false)
             .IsRequired();
 
+        builder.Property(a => a.Attributes)
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'{}'::jsonb")
+            .IsRequired();
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 
@@ -64,6 +72,8 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
         builder.HasIndex(a => new { a.TenantId, a.UnitId });
 
         builder.HasIndex(a => new { a.TenantId, a.CategoryId });
+
+        builder.HasIndex(a => new { a.TenantId, a.FamilyId });
 
         builder.HasIndex(a => new { a.TenantId, a.IsRentable });
 
@@ -78,6 +88,11 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
             .WithMany(c => c.Assets)
             .HasForeignKey(a => a.CategoryId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(a => a.Family)
+            .WithMany()
+            .HasForeignKey(a => a.FamilyId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(a => a.RentalConfiguration)
             .WithOne(r => r.Asset)

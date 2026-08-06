@@ -19,7 +19,8 @@ public sealed record CurrentUserResponse(
     string Email,
     string Role,
     Guid? TenantId,
-    IReadOnlyList<string> ActiveModules);
+    IReadOnlyList<string> ActiveModules,
+    IReadOnlyList<string> ActiveAssetFamilies);
 
 public sealed record TechnicianUserResponse(
     Guid Id,

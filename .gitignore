@@ -19,6 +19,9 @@ appsettings.Development.json
 appsettings.Local.json
 .env
 
+## Local tooling
+.tools/
+
 ## Logs
 logs/
 *.log

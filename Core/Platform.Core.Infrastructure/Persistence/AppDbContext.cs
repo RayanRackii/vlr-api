@@ -48,6 +48,10 @@ public sealed class AppDbContext : DbContext
     // --- Schema: assets (inventory module — full model; schema rename to inventory is deferred) ---
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
 
+    public DbSet<AssetFamily> AssetFamilies => Set<AssetFamily>();
+
+    public DbSet<TenantAssetFamily> TenantAssetFamilies => Set<TenantAssetFamily>();
+
     public DbSet<Asset> Assets => Set<Asset>();
 
     // --- Schema: pmoc / os (maintenance module — full model; schema rename to maintenance is deferred) ---

@@ -29,7 +29,14 @@ public sealed class AdminTenantService(
             .OrderBy(t => t.LegalName)
             .ToListAsync(cancellationToken);
 
-        return tenants.Select(ToResponse).ToList();
+        var tenantIds = tenants.Select(t => t.Id).ToList();
+        var familyKeysByTenant = await LoadFamilyKeysByTenantAsync(tenantIds, cancellationToken);
+
+        return tenants
+            .Select(t => ToResponse(
+                t,
+                familyKeysByTenant.GetValueOrDefault(t.Id) ?? []))
+            .ToList();
     }
 
     public async Task<TenantAdminResponseDto?> GetByIdAsync(
@@ -41,7 +48,13 @@ public sealed class AdminTenantService(
             .Include(t => t.Modules)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
-        return tenant is null ? null : ToResponse(tenant);
+        if (tenant is null)
+        {
+            return null;
+        }
+
+        var familyKeys = await LoadFamilyKeysAsync(tenant.Id, cancellationToken);
+        return ToResponse(tenant, familyKeys);
     }
 
     public async Task<TenantAdminResponseDto> CreateAsync(
@@ -80,6 +93,8 @@ public sealed class AdminTenantService(
             throw new ArgumentException("At least one active module is required.");
         }
 
+        var familyIds = await ResolveFamilyIdsAsync(request.AssetFamilyKeys, cancellationToken);
+
         var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
 
         ValidateBrandingFields(
@@ -109,6 +124,13 @@ public sealed class AdminTenantService(
             {
                 dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
             }
+
+            foreach (var familyId in familyIds)
+            {
+                dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenant.Id, familyId));
+            }
+
+            SeedExampleCategories(tenant.Id, familyIds);
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -149,7 +171,8 @@ public sealed class AdminTenantService(
                 .Include(t => t.Modules)
                 .FirstAsync(t => t.Id == tenant.Id, cancellationToken);
 
-            return ToResponse(created);
+            var familyKeys = await LoadFamilyKeysAsync(tenant.Id, cancellationToken);
+            return ToResponse(created, familyKeys);
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
@@ -202,6 +225,8 @@ public sealed class AdminTenantService(
             throw new ArgumentException("At least one active module is required.");
         }
 
+        var familyIds = await ResolveFamilyIdsAsync(request.AssetFamilyKeys, cancellationToken);
+
         var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
 
         ValidateBrandingFields(
@@ -233,6 +258,7 @@ public sealed class AdminTenantService(
                 welcomeTagline: request.WelcomeTagline);
 
             SyncTenantModules(tenant, modules);
+            await SyncTenantAssetFamiliesAsync(tenant.Id, familyIds, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -242,7 +268,8 @@ public sealed class AdminTenantService(
                 .Include(t => t.Modules)
                 .FirstAsync(t => t.Id == id, cancellationToken);
 
-            return ToResponse(updated);
+            var familyKeys = await LoadFamilyKeysAsync(id, cancellationToken);
+            return ToResponse(updated, familyKeys);
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
@@ -357,6 +384,9 @@ public sealed class AdminTenantService(
                     .Where(x => x.TenantId == id)
                     .ExecuteDeleteAsync(cancellationToken);
                 await dbContext.Assets
+                    .Where(x => x.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+                await dbContext.TenantAssetFamilies
                     .Where(x => x.TenantId == id)
                     .ExecuteDeleteAsync(cancellationToken);
                 await dbContext.AssetCategories
@@ -481,6 +511,146 @@ public sealed class AdminTenantService(
         }
     }
 
+    private async Task SyncTenantAssetFamiliesAsync(
+        Guid tenantId,
+        IReadOnlyList<Guid> desiredFamilyIds,
+        CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.TenantAssetFamilies
+            .Where(t => t.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        var desired = desiredFamilyIds.ToHashSet();
+
+        foreach (var row in existing)
+        {
+            if (!desired.Contains(row.FamilyId))
+            {
+                dbContext.TenantAssetFamilies.Remove(row);
+            }
+        }
+
+        var existingIds = existing.Select(e => e.FamilyId).ToHashSet();
+        foreach (var familyId in desired)
+        {
+            if (!existingIds.Contains(familyId))
+            {
+                dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenantId, familyId));
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<Guid>> ResolveFamilyIdsAsync(
+        IReadOnlyList<string>? assetFamilyKeys,
+        CancellationToken cancellationToken)
+    {
+        if (assetFamilyKeys is null || assetFamilyKeys.Count == 0)
+        {
+            throw new ArgumentException("At least one asset family is required.");
+        }
+
+        var normalized = assetFamilyKeys
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Select(k => k.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (normalized.Count == 0)
+        {
+            throw new ArgumentException("At least one asset family is required.");
+        }
+
+        var families = await dbContext.AssetFamilies
+            .AsNoTracking()
+            .Where(f => f.IsActive && normalized.Contains(f.Key))
+            .ToListAsync(cancellationToken);
+
+        if (families.Count != normalized.Count)
+        {
+            var found = families.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+            var missing = normalized.Where(k => !found.Contains(k));
+            throw new ArgumentException(
+                $"Unknown or inactive asset family: {string.Join(", ", missing)}");
+        }
+
+        return families
+            .OrderBy(f => f.SortOrder)
+            .Select(f => f.Id)
+            .ToList();
+    }
+
+    private void SeedExampleCategories(Guid tenantId, IReadOnlyList<Guid> familyIds)
+    {
+        var seeds = new List<(Guid FamilyId, string Name)>
+        {
+            (AssetFamilyKeys.Ids.Spaces, "Quadra"),
+            (AssetFamilyKeys.Ids.Electrical, "Quadro elétrico"),
+            (AssetFamilyKeys.Ids.Goods, "Caçamba"),
+        };
+
+        foreach (var (familyId, name) in seeds)
+        {
+            if (!familyIds.Contains(familyId))
+            {
+                continue;
+            }
+
+            dbContext.AssetCategories.Add(new AssetCategory
+            {
+                TenantId = tenantId,
+                Name = name,
+                Description = null,
+                Manufacturer = null,
+            });
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> LoadFamilyKeysAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.TenantAssetFamilies
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(t => t.TenantId == tenantId)
+            .Join(
+                dbContext.AssetFamilies.AsNoTracking(),
+                t => t.FamilyId,
+                f => f.Id,
+                (_, f) => f)
+            .OrderBy(f => f.SortOrder)
+            .Select(f => f.Key)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<Dictionary<Guid, IReadOnlyList<string>>> LoadFamilyKeysByTenantAsync(
+        IReadOnlyList<Guid> tenantIds,
+        CancellationToken cancellationToken)
+    {
+        if (tenantIds.Count == 0)
+        {
+            return new Dictionary<Guid, IReadOnlyList<string>>();
+        }
+
+        var rows = await dbContext.TenantAssetFamilies
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.TenantId))
+            .Join(
+                dbContext.AssetFamilies.AsNoTracking(),
+                t => t.FamilyId,
+                f => f.Id,
+                (t, f) => new { t.TenantId, f.Key, f.SortOrder })
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(x => x.TenantId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(x => x.Key).ToList());
+    }
+
     private static IReadOnlyList<string> NormalizeModules(IReadOnlyList<string>? activeModules)
     {
         if (activeModules is null || activeModules.Count == 0)
@@ -559,7 +729,9 @@ public sealed class AdminTenantService(
             && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
     }
 
-    private static TenantAdminResponseDto ToResponse(Tenant tenant)
+    private static TenantAdminResponseDto ToResponse(
+        Tenant tenant,
+        IReadOnlyList<string> assetFamilyKeys)
     {
         var activeModules = tenant.Modules
             .Where(m => m.IsActive)
@@ -578,6 +750,7 @@ public sealed class AdminTenantService(
             tenant.WelcomeTagline,
             tenant.IsActive,
             tenant.CreatedAt,
-            activeModules);
+            activeModules,
+            assetFamilyKeys);
     }
 }

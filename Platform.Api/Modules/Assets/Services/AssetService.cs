@@ -49,12 +49,20 @@ public sealed class AssetService(
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
+        var family = await EnsureFamilyEnabledForTenantAsync(
+            tenantId,
+            request.FamilyId,
+            cancellationToken);
+        var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
+            family.FieldSchemaJson,
+            request.Attributes);
 
         var asset = new Asset
         {
             TenantId = tenantId,
             UnitId = request.UnitId,
             CategoryId = request.CategoryId,
+            FamilyId = family.Id,
             Name = request.Name.Trim(),
             Tag = request.Tag.Trim(),
             Location = NormalizeOptional(request.Location),
@@ -63,6 +71,7 @@ public sealed class AssetService(
             Status = request.Status,
             IsRentable = request.IsRentable,
             RequiresMaintenance = request.RequiresMaintenance,
+            Attributes = attributes,
         };
 
         dbContext.Assets.Add(asset);
@@ -82,7 +91,7 @@ public sealed class AssetService(
         UpdateAssetRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
 
@@ -97,9 +106,17 @@ public sealed class AssetService(
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
+        var family = await EnsureFamilyEnabledForTenantAsync(
+            tenantId,
+            request.FamilyId,
+            cancellationToken);
+        var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
+            family.FieldSchemaJson,
+            request.Attributes);
 
         asset.UnitId = request.UnitId;
         asset.CategoryId = request.CategoryId;
+        asset.FamilyId = family.Id;
         asset.Name = request.Name.Trim();
         asset.Tag = request.Tag.Trim();
         asset.Location = NormalizeOptional(request.Location);
@@ -108,6 +125,7 @@ public sealed class AssetService(
         asset.Status = request.Status;
         asset.IsRentable = request.IsRentable;
         asset.RequiresMaintenance = request.RequiresMaintenance;
+        asset.Attributes = attributes;
         asset.Touch();
 
         SyncRentalConfiguration(
@@ -174,6 +192,13 @@ public sealed class AssetService(
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         var category = await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
+        var family = await EnsureFamilyEnabledForTenantAsync(
+            tenantId,
+            request.FamilyId,
+            cancellationToken);
+        var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
+            family.FieldSchemaJson,
+            request.Attributes);
 
         var baseTag = request.BaseTag.Trim();
         var baseLocation = request.BaseLocationName.Trim();
@@ -207,12 +232,14 @@ public sealed class AssetService(
                 TenantId = tenantId,
                 UnitId = request.UnitId,
                 CategoryId = category.Id,
+                FamilyId = family.Id,
                 Name = $"{category.Name} {tag}",
                 Tag = tag,
                 Location = $"{baseLocation} {number}",
                 Status = AssetStatus.Active,
                 IsRentable = request.IsRentable,
                 RequiresMaintenance = request.RequiresMaintenance,
+                Attributes = new Dictionary<string, string?>(attributes, StringComparer.Ordinal),
             };
 
             SyncRentalConfiguration(
@@ -321,6 +348,33 @@ public sealed class AssetService(
         return category;
     }
 
+    private async Task<AssetFamily> EnsureFamilyEnabledForTenantAsync(
+        Guid tenantId,
+        Guid familyId,
+        CancellationToken cancellationToken)
+    {
+        var family = await dbContext.AssetFamilies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == familyId && f.IsActive, cancellationToken);
+
+        if (family is null)
+        {
+            throw new KeyNotFoundException($"Asset family '{familyId}' was not found.");
+        }
+
+        var enabled = await dbContext.TenantAssetFamilies
+            .AsNoTracking()
+            .AnyAsync(t => t.TenantId == tenantId && t.FamilyId == familyId, cancellationToken);
+
+        if (!enabled)
+        {
+            throw new ArgumentException(
+                $"Asset family '{family.Key}' is not enabled for this tenant.");
+        }
+
+        return family;
+    }
+
     private Guid EnsureTenantContext()
     {
         return tenantProvider.TenantId
@@ -362,6 +416,7 @@ public sealed class AssetService(
             asset.TenantId,
             asset.UnitId,
             asset.CategoryId,
+            asset.FamilyId,
             asset.Name,
             asset.Tag,
             asset.Location,
@@ -370,6 +425,7 @@ public sealed class AssetService(
             asset.Status,
             asset.IsRentable,
             asset.RequiresMaintenance,
+            asset.Attributes,
             rentalConfig,
             asset.CreatedAt,
             asset.UpdatedAt,

@@ -11,6 +11,9 @@ public class Asset : Entity, ITenantScoped, IInventoryModuleEntity
 
     public required Guid CategoryId { get; set; }
 
+    /// <summary>Platform asset family (spaces, electrical, goods, …).</summary>
+    public required Guid FamilyId { get; set; }
+
     public required string Name { get; set; }
 
     public required string Tag { get; set; }
@@ -29,11 +32,16 @@ public class Asset : Entity, ITenantScoped, IInventoryModuleEntity
     /// <summary>When true, this asset participates in PMOC / work-order maintenance flows.</summary>
     public bool RequiresMaintenance { get; set; }
 
+    /// <summary>Family-specific attribute values validated against AssetFamily.FieldSchemaJson.</summary>
+    public Dictionary<string, string?> Attributes { get; set; } = new(StringComparer.Ordinal);
+
     public DateTimeOffset? ScheduledDeletionAt { get; set; }
 
     public Unit Unit { get; set; } = null!;
 
     public AssetCategory Category { get; set; } = null!;
+
+    public AssetFamily Family { get; set; } = null!;
 
     public RentalAsset? RentalConfiguration { get; set; }
 }

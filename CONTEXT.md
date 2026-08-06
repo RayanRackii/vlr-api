@@ -98,8 +98,16 @@ _Avoid_: Booking, appointment, agendamento (in code)
 Anything a Tenant offers for time-based rental through the Rentals module — a space, court, room, vehicle, or physical good. In code this is the existing `RentalAsset` (typed as location/good; categories refine the label).
 _Avoid_: Court-only language in the module core; Quadra as the only product shape
 
+**Asset**:
+A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`.
+_Avoid_: One physical table per use case; dynamic per-tenant tables
+
+**AssetFamily**:
+A platform catalog entry (`spaces`, `electrical`, `goods`, `generic`, …) with a FieldSchema describing extra attribute fields. Tenants enable families at onboarding (`TenantAssetFamily`). Drives asset forms and copy tone.
+_Avoid_: STI / child tables per family; inventing new CREATE TABLE migrations for each vertical
+
 **ResourceCategory**:
-A Tenant-defined label for grouping Rentables (for example padel, society, tennis, meeting room, van). Used for filters, legends, and layout meaning — not a hard-coded enum in the platform.
+A Tenant-defined label for grouping Rentables (for example padel, society, tennis, meeting room, van). Used for filters, legends, and layout meaning — not a hard-coded enum in the platform. In inventory UI this is **AssetCategory** (Tipo) within an AssetFamily.
 _Avoid_: Fixed platform enum of sport types
 
 **OccupancyKind**:
