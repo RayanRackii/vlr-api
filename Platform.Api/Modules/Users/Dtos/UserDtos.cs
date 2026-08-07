@@ -20,7 +20,12 @@ public sealed record CurrentUserResponse(
     string Role,
     Guid? TenantId,
     IReadOnlyList<string> ActiveModules,
-    IReadOnlyList<string> ActiveAssetFamilies);
+    IReadOnlyList<string> ActiveAssetFamilies,
+    bool IsTrial = false,
+    DateTimeOffset? TrialEndsAt = null,
+    DateTimeOffset? TrialPurgeAt = null,
+    bool IsTrialReadOnly = false,
+    bool NotificationsEmailOnly = false);
 
 public sealed record TechnicianUserResponse(
     Guid Id,

@@ -15,6 +15,7 @@ using Platform.Api.Modules.Users;
 using Platform.Api.Modules.Webhooks;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Notifications;
+using Platform.Api.Services.Trial;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
 using Serilog;
@@ -43,6 +44,7 @@ try
 
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
+    builder.Services.AddScoped<ITrialGuard, TrialGuard>();
     builder.Services.AddCorePersistence(connectionString);
     builder.Services.AddSupabaseAdminClient(builder.Configuration);
     builder.Services.AddSupabaseAuthentication(builder.Configuration);

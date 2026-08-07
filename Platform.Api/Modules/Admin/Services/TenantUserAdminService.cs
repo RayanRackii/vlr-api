@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Notifications;
+using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -41,7 +42,8 @@ public sealed class TenantUserAdminService(
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     NotificationQueue notificationQueue,
     IConfiguration configuration,
-    IHostEnvironment environment) : ITenantUserAdminService
+    IHostEnvironment environment,
+    ITrialGuard trialGuard) : ITenantUserAdminService
 {
     private static readonly TimeSpan InviteTtl = TimeSpan.FromDays(7);
     private const int MinimumPasswordLength = 8;
@@ -92,6 +94,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken)
     {
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
+        await trialGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
 
         var fullName = request.FullName.Trim();
         var email = NormalizeEmail(request.Email);

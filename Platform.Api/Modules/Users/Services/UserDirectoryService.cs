@@ -24,6 +24,7 @@ public sealed class UserDirectoryService(
             {
                 var modules = await LoadActiveModulesAsync(tenantId, cancellationToken);
                 var families = await LoadActiveAssetFamiliesAsync(tenantId, cancellationToken);
+                var trial = await LoadTrialFlagsAsync(tenantId, cancellationToken);
                 var supabaseAuthId = principal.FindFirst("sub")?.Value
                     ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -44,7 +45,12 @@ public sealed class UserDirectoryService(
                             ApplicationRoles.Admin,
                             tenantId,
                             modules,
-                            families);
+                            families,
+                            trial.IsTrial,
+                            trial.TrialEndsAt,
+                            trial.TrialPurgeAt,
+                            trial.IsTrialReadOnly,
+                            trial.NotificationsEmailOnly);
                     }
                 }
 
@@ -55,7 +61,12 @@ public sealed class UserDirectoryService(
                     ApplicationRoles.Admin,
                     tenantId,
                     modules,
-                    families);
+                    families,
+                    trial.IsTrial,
+                    trial.TrialEndsAt,
+                    trial.TrialPurgeAt,
+                    trial.IsTrialReadOnly,
+                    trial.NotificationsEmailOnly);
             }
 
             return new CurrentUserResponse(
@@ -87,6 +98,7 @@ public sealed class UserDirectoryService(
         var role = ResolveApplicationRole(user.UserRoles.Select(userRole => userRole.Role.Name));
         var activeModules = await LoadActiveModulesAsync(scopedTenantId, cancellationToken);
         var activeFamilies = await LoadActiveAssetFamiliesAsync(scopedTenantId, cancellationToken);
+        var trialFlags = await LoadTrialFlagsAsync(scopedTenantId, cancellationToken);
 
         return new CurrentUserResponse(
             user.Id,
@@ -95,7 +107,12 @@ public sealed class UserDirectoryService(
             role,
             scopedTenantId,
             activeModules,
-            activeFamilies);
+            activeFamilies,
+            trialFlags.IsTrial,
+            trialFlags.TrialEndsAt,
+            trialFlags.TrialPurgeAt,
+            trialFlags.IsTrialReadOnly,
+            trialFlags.NotificationsEmailOnly);
     }
 
     public async Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
@@ -148,6 +165,27 @@ public sealed class UserDirectoryService(
             .ToListAsync(cancellationToken);
     }
 
+    private async Task<TrialFlags> LoadTrialFlagsAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var tenant = await dbContext.Tenants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        if (tenant is null)
+        {
+            return TrialFlags.Empty;
+        }
+
+        return new TrialFlags(
+            tenant.IsTrial,
+            tenant.TrialEndsAt,
+            tenant.TrialPurgeAt,
+            tenant.IsTrialReadOnly(DateTimeOffset.UtcNow),
+            tenant.NotificationsEmailOnly);
+    }
+
     private static string ResolveApplicationRole(IEnumerable<string> roleNames)
     {
         var normalizedRoles = roleNames
@@ -182,4 +220,14 @@ public sealed class UserDirectoryService(
         principal.FindFirst("email")?.Value
         ?? principal.FindFirst(ClaimTypes.Email)?.Value
         ?? principal.Identity?.Name;
+
+    private readonly record struct TrialFlags(
+        bool IsTrial,
+        DateTimeOffset? TrialEndsAt,
+        DateTimeOffset? TrialPurgeAt,
+        bool IsTrialReadOnly,
+        bool NotificationsEmailOnly)
+    {
+        public static TrialFlags Empty { get; } = new(false, null, null, false, false);
+    }
 }

@@ -1,4 +1,5 @@
 using Platform.Core.Domain.Common;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Core.Domain.Entities;
 
@@ -34,6 +35,16 @@ public class Tenant : Entity
     public string? WelcomeTagline { get; private set; }
 
     public bool IsActive { get; private set; }
+
+    /// <summary>Self-serve trial tenant (limits + lifecycle purge).</summary>
+    public bool IsTrial { get; private set; }
+
+    public DateTimeOffset? TrialEndsAt { get; private set; }
+
+    public DateTimeOffset? TrialPurgeAt { get; private set; }
+
+    /// <summary>When true, WhatsApp / non-email notification channels stay off.</summary>
+    public bool NotificationsEmailOnly { get; private set; }
 
     private readonly List<User> _users = [];
 
@@ -120,6 +131,27 @@ public class Tenant : Entity
         IsActive = false;
         MarkAsUpdated();
     }
+
+    /// <summary>
+    /// Marks this tenant as a self-serve trial. Call after construct when creating a trial.
+    /// </summary>
+    public void ConfigureAsTrial(DateTimeOffset createdAt)
+    {
+        IsTrial = true;
+        TrialEndsAt = createdAt.AddDays(TrialLimits.TrialDays);
+        TrialPurgeAt = createdAt.AddDays(TrialLimits.PurgeDays);
+        NotificationsEmailOnly = true;
+        MarkAsUpdated();
+    }
+
+    /// <summary>
+    /// Trial ended but not yet purged: writes should be blocked; reads remain allowed.
+    /// </summary>
+    public bool IsTrialReadOnly(DateTimeOffset utcNow) =>
+        IsTrial
+        && TrialEndsAt is not null
+        && utcNow >= TrialEndsAt
+        && (TrialPurgeAt is null || utcNow < TrialPurgeAt);
 
     private static string? NormalizeSubdomain(string? subdomain)
     {

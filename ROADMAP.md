@@ -111,3 +111,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-06 | **Executado:** Admin B2B de reservas — `GET /api/reservations` + confirm/cancel (libera Slots). |
 | 2026-08-06 | **Executado:** Dashboard dinâmico por módulo — `LastLoginAt` B2C + metrics condicionais. |
 | 2026-08-06 | **Executado (FE):** Admin agenda completo — occupancy kinds CRUD + editor de templates semanais. |
+| 2026-08-06 | **Executado:** Trial self-serve — campos Tenant + `trial_signup_claims`, subdomain 4 chars, limits 10/20, `TrialGuard`, Hangfire purge 30d, WhatsApp skip email-only. |

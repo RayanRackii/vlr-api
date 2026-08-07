@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using Platform.Core.Infrastructure.Persistence;
+
 namespace Platform.Api.Notifications;
 
 public sealed class NotificationDispatcherService(
@@ -54,6 +57,11 @@ public sealed class NotificationDispatcherService(
 
             case WhatsAppType:
             {
+                if (await ShouldSkipWhatsAppAsync(scope.ServiceProvider, message, cancellationToken))
+                {
+                    break;
+                }
+
                 var whatsAppProvider = scope.ServiceProvider.GetRequiredService<IWhatsAppProvider>();
 
                 if (!string.IsNullOrWhiteSpace(message.TemplateName))
@@ -93,5 +101,39 @@ public sealed class NotificationDispatcherService(
                     message.Recipient);
                 break;
         }
+    }
+
+    private async Task<bool> ShouldSkipWhatsAppAsync(
+        IServiceProvider services,
+        NotificationMessage message,
+        CancellationToken cancellationToken)
+    {
+        if (message.TenantId is not Guid tenantId)
+        {
+            return false;
+        }
+
+        var dbContext = services.GetRequiredService<AppDbContext>();
+        var flags = await dbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.NotificationsEmailOnly, t.IsTrial })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (flags is null)
+        {
+            return false;
+        }
+
+        if (!flags.NotificationsEmailOnly && !flags.IsTrial)
+        {
+            return false;
+        }
+
+        logger.LogInformation(
+            "Skipping WhatsApp for tenant {TenantId} (email-only/trial). Recipient {Recipient}.",
+            tenantId,
+            message.Recipient);
+        return true;
     }
 }

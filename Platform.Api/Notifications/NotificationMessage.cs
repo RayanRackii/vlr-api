@@ -12,4 +12,5 @@ public sealed record NotificationMessage(
     string Body,
     string? TemplateName = null,
     string? TemplateLanguage = null,
-    IReadOnlyList<string>? TemplateParameters = null);
+    IReadOnlyList<string>? TemplateParameters = null,
+    Guid? TenantId = null);

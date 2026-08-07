@@ -8,4 +8,6 @@ public sealed record CreateTenantRequest(
     string? HeadquartersUnitCode,
     string AdminFullName,
     string AdminEmail,
-    string AdminPassword);
+    string AdminPassword,
+    string? AdminPhone = null,
+    bool IsTrial = false);

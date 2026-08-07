@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -8,7 +9,8 @@ namespace Platform.Api.Modules.Rentals.Services;
 
 public sealed class ReservationService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IReservationService
+    ITenantProvider tenantProvider,
+    ITrialGuard trialGuard) : IReservationService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -316,6 +318,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
 
         var reservation = await dbContext.Reservations
             .Include(r => r.Items)
@@ -353,6 +356,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
 
         var reservation = await dbContext.Reservations
             .Include(r => r.Items)

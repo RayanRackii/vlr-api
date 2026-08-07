@@ -48,6 +48,18 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(t => t.IsTrial)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(t => t.TrialEndsAt);
+
+        builder.Property(t => t.TrialPurgeAt);
+
+        builder.Property(t => t.NotificationsEmailOnly)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.Property(t => t.CreatedAt)
             .IsRequired();
 

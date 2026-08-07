@@ -5,4 +5,5 @@ public sealed record CreateTenantResponse(
     Guid HeadquartersUnitId,
     Guid AdminUserId,
     Guid SuperAdminRoleId,
-    string SupabaseAuthId);
+    string SupabaseAuthId,
+    string? Subdomain = null);

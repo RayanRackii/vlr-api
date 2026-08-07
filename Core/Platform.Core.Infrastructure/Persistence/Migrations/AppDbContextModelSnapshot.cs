@@ -1449,6 +1449,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<bool>("IsTrial")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_trial");
+
                     b.Property<string>("LegalName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1463,6 +1469,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)")
                         .HasColumnName("logo_url");
+
+                    b.Property<bool>("NotificationsEmailOnly")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("notifications_email_only");
 
                     b.Property<string>("PrimaryColor")
                         .HasMaxLength(7)
@@ -1485,6 +1497,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("trade_name");
 
+                    b.Property<DateTimeOffset?>("TrialEndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("trial_ends_at");
+
+                    b.Property<DateTimeOffset?>("TrialPurgeAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("trial_purge_at");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -1496,7 +1516,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_tenants");
-
                     b.HasIndex("Subdomain")
                         .IsUnique()
                         .HasDatabaseName("ix_tenants_subdomain")
@@ -1702,6 +1721,50 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_tenant_registration_fields_tenant_id_sort_order");
 
                     b.ToTable("tenant_registration_fields", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TrialSignupClaim", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EmailNormalized")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email_normalized");
+
+                    b.Property<string>("PhoneNormalized")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("phone_normalized");
+
+                    b.Property<Guid?>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_trial_signup_claims");
+
+                    b.HasIndex("EmailNormalized")
+                        .IsUnique()
+                        .HasDatabaseName("ix_trial_signup_claims_email_normalized");
+
+                    b.HasIndex("PhoneNormalized")
+                        .IsUnique()
+                        .HasDatabaseName("ix_trial_signup_claims_phone_normalized");
+
+                    b.ToTable("trial_signup_claims", "core");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Unit", b =>

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -8,7 +9,8 @@ namespace Platform.Api.Modules.Assets.Services;
 
 public sealed class AssetService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IAssetService
+    ITenantProvider tenantProvider,
+    ITrialGuard trialGuard) : IAssetService
 {
     private const int MaxBulkCreateCount = 1000;
 
@@ -45,6 +47,7 @@ public sealed class AssetService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
+        await trialGuard.EnsureCanCreateAssetsAsync(1, cancellationToken);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
@@ -92,6 +95,7 @@ public sealed class AssetService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
 
@@ -142,6 +146,7 @@ public sealed class AssetService(
     public async Task<DeleteAssetResult?> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
 
         var asset = await dbContext.Assets
             .Include(a => a.RentalConfiguration)
@@ -189,6 +194,8 @@ public sealed class AssetService(
             throw new ArgumentException(
                 $"Bulk create is limited to {MaxBulkCreateCount} assets per request.");
         }
+
+        await trialGuard.EnsureCanCreateAssetsAsync(createCount, cancellationToken);
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         var category = await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);

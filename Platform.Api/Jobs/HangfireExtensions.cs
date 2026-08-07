@@ -10,6 +10,8 @@ public static class HangfireExtensions
 
     public const string PmocEngineJobId = "pmoc-engine";
 
+    public const string TrialLifecycleJobId = "trial-lifecycle-purge";
+
     private const int HangfireMaxPoolSize = 3;
 
     public static IServiceCollection AddPlatformHangfire(
@@ -66,6 +68,12 @@ public static class HangfireExtensions
 
         RecurringJob.AddOrUpdate<DataRetentionJob>(
             DataRetentionJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            "0 0 * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<TrialLifecycleJob>(
+            TrialLifecycleJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "0 0 * * *",
             recurringJobOptions);

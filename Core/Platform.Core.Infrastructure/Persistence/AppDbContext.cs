@@ -45,6 +45,8 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<UserInvite> UserInvites => Set<UserInvite>();
 
+    public DbSet<TrialSignupClaim> TrialSignupClaims => Set<TrialSignupClaim>();
+
     // --- Schema: assets (inventory module — full model; schema rename to inventory is deferred) ---
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
 
