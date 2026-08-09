@@ -218,7 +218,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
     }
 
-    public async Task<string> GenerateRecoveryLinkAsync(
+    public async Task<SupabaseRecoveryLink> GenerateRecoveryLinkAsync(
         string email,
         string redirectTo,
         CancellationToken cancellationToken = default)
@@ -248,30 +248,33 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
 
         using var document = JsonDocument.Parse(responseBody);
         var root = document.RootElement;
+        var properties = root.TryGetProperty("properties", out var props)
+            && props.ValueKind == JsonValueKind.Object
+                ? props
+                : root;
 
-        var actionLink = TryReadActionLink(root);
-        if (string.IsNullOrWhiteSpace(actionLink)
-            && root.TryGetProperty("properties", out var properties)
-            && properties.ValueKind == JsonValueKind.Object)
-        {
-            actionLink = TryReadActionLink(properties);
-        }
+        var hashedToken = TryReadString(properties, "hashed_token")
+            ?? TryReadString(root, "hashed_token");
 
-        if (string.IsNullOrWhiteSpace(actionLink))
+        if (string.IsNullOrWhiteSpace(hashedToken))
         {
             throw new SupabaseAuthAdminException(
-                "Supabase generate_link response did not include action_link.",
+                "Supabase generate_link response did not include hashed_token.",
                 502);
         }
 
-        return actionLink;
+        var actionLink = TryReadString(properties, "action_link")
+            ?? TryReadString(root, "action_link");
+
+        return new SupabaseRecoveryLink(hashedToken, actionLink);
     }
 
-    private static string? TryReadActionLink(JsonElement element)
+    private static string? TryReadString(JsonElement element, string propertyName)
     {
-        if (element.TryGetProperty("action_link", out var linkElement))
+        if (element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String)
         {
-            return linkElement.GetString();
+            return value.GetString();
         }
 
         return null;

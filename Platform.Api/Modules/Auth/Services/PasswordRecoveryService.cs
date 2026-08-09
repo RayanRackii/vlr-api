@@ -37,10 +37,18 @@ public sealed class PasswordRecoveryService(
             var frontendBaseUrl = FrontendBaseUrlResolver.Resolve(configuration, environment);
             var redirectTo = $"{frontendBaseUrl}/reset-password";
 
-            var actionLink = await supabaseAuthAdminClient.GenerateRecoveryLinkAsync(
+            var recovery = await supabaseAuthAdminClient.GenerateRecoveryLinkAsync(
                 normalized,
                 redirectTo,
                 cancellationToken);
+
+            // First-party URL — avoids Supabase Site URL fallback (often localhost:3000).
+            var resetUrl =
+                $"{frontendBaseUrl}/reset-password?token_hash={Uri.EscapeDataString(recovery.HashedToken)}&type=recovery";
+
+            logger.LogInformation(
+                "Password recovery link prepared for Auth user (frontend={FrontendBaseUrl}).",
+                frontendBaseUrl);
 
             var displayName = await dbContext.Users
                 .AsNoTracking()
@@ -57,7 +65,7 @@ public sealed class PasswordRecoveryService(
 
             var htmlBody = RolvixEmailLayout.Wrap(
                 displayName,
-                RolvixEmailLayout.RecoveryBody(actionLink));
+                RolvixEmailLayout.RecoveryBody(resetUrl));
 
             await notificationQueue.EnqueueAsync(
                 new NotificationMessage(

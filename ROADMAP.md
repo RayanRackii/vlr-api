@@ -114,3 +114,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-06 | **Executado (FE):** Admin agenda completo — occupancy kinds CRUD + editor de templates semanais. |
 | 2026-08-06 | **Executado:** Trial self-serve — campos Tenant + `trial_signup_claims`, subdomain 4 chars, limits 10/20, `TrialGuard`, Hangfire purge 30d, WhatsApp skip email-only. |
 | 2026-08-09 | **Executado:** recovery B2B via Resend (`generate_link` + layout Rolvix); runbook `docs/runbooks/password-recovery-resend.md`. |
+| 2026-08-09 | **Fix:** recovery e-mail usa URL first-party `?token_hash=` + `verifyOtp` (não `action_link` → Site URL `localhost:3000`). |
