@@ -38,4 +38,13 @@ public interface ISupabaseAuthAdminClient
     Task DeleteUserAsync(
         string supabaseUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds a Supabase Auth recovery <c>action_link</c> without sending Supabase's email.
+    /// Caller must deliver the link (e.g. via Resend + Rolvix layout).
+    /// </summary>
+    Task<string> GenerateRecoveryLinkAsync(
+        string email,
+        string redirectTo,
+        CancellationToken cancellationToken = default);
 }

@@ -82,4 +82,24 @@ public static class RolvixEmailLayout
             </p>
             """;
     }
+
+    public static string RecoveryBody(string resetUrl)
+    {
+        var safeUrl = WebUtility.HtmlEncode(resetUrl);
+
+        return
+            $"""
+            <p style="margin:0 0 16px;">Recebemos um pedido para redefinir a senha da sua conta no console Rolvix.</p>
+            <p style="margin:0 0 20px;">Clique no botão abaixo para escolher uma nova senha:</p>
+            <p style="margin:0 0 8px;">
+              <a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">
+                Redefinir senha
+              </a>
+            </p>
+            <p style="margin:16px 0 0;font-size:12px;color:#71717a;word-break:break-all;">
+              Se você não pediu isso, ignore este e-mail — sua senha permanece a mesma.<br /><br />
+              Ou copie e cole o link no navegador:<br />{safeUrl}
+            </p>
+            """;
+    }
 }

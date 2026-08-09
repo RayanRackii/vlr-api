@@ -5,6 +5,7 @@ using Platform.Api.Features.InviteUser;
 using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
+using Platform.Api.Modules.Auth;
 using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.ModuleMenuItems;
@@ -54,6 +55,7 @@ try
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
     builder.Services.AddUsersModule();
+    builder.Services.AddAuthModule();
     builder.Services.AddCustomerAuthModule();
     builder.Services.AddRegistrationFieldsModule();
     builder.Services.AddModuleMenuItemsModule();

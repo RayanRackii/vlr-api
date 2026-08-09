@@ -218,6 +218,65 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
     }
 
+    public async Task<string> GenerateRecoveryLinkAsync(
+        string email,
+        string redirectTo,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var normalizedRedirect = redirectTo.Trim();
+
+        using var request = CreateAdminRequest(HttpMethod.Post, "admin/generate_link");
+        request.Content = JsonContent.Create(
+            new
+            {
+                type = "recovery",
+                email = normalizedEmail,
+                redirect_to = normalizedRedirect,
+            },
+            options: JsonOptions);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new SupabaseAuthAdminException(
+                $"Failed to generate recovery link. Response: {responseBody}",
+                (int)response.StatusCode);
+        }
+
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+
+        var actionLink = TryReadActionLink(root);
+        if (string.IsNullOrWhiteSpace(actionLink)
+            && root.TryGetProperty("properties", out var properties)
+            && properties.ValueKind == JsonValueKind.Object)
+        {
+            actionLink = TryReadActionLink(properties);
+        }
+
+        if (string.IsNullOrWhiteSpace(actionLink))
+        {
+            throw new SupabaseAuthAdminException(
+                "Supabase generate_link response did not include action_link.",
+                502);
+        }
+
+        return actionLink;
+    }
+
+    private static string? TryReadActionLink(JsonElement element)
+    {
+        if (element.TryGetProperty("action_link", out var linkElement))
+        {
+            return linkElement.GetString();
+        }
+
+        return null;
+    }
+
     private async Task PutAppMetadataAsync(
         string supabaseUserId,
         object appMetadata,
