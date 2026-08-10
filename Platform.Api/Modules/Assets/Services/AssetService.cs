@@ -242,7 +242,7 @@ public sealed class AssetService(
                 FamilyId = family.Id,
                 Name = $"{category.Name} {tag}",
                 Tag = tag,
-                Location = $"{baseLocation} {number}",
+                Location = string.IsNullOrWhiteSpace(baseLocation) ? null : baseLocation,
                 Status = AssetStatus.Active,
                 IsRentable = request.IsRentable,
                 RequiresMaintenance = request.RequiresMaintenance,
