@@ -121,12 +121,16 @@ public sealed class UserDirectoryService(
         _ = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
+        var platformEmails = platformAdminChecker.GetNormalizedEmails();
+
         return await dbContext.Users
             .AsNoTracking()
             .Where(user =>
                 user.IsActive
                 && user.UserRoles.Any(userRole =>
                     EF.Functions.ILike(userRole.Role.Name, SystemRoles.Technician)))
+            .Where(user => platformEmails.Count == 0
+                || !platformEmails.Contains(user.Email.ToLower()))
             .OrderBy(user => user.FullName)
             .Select(user => new TechnicianUserResponse(
                 user.Id,

@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
@@ -43,7 +44,8 @@ public sealed class TenantUserAdminService(
     NotificationQueue notificationQueue,
     IConfiguration configuration,
     IHostEnvironment environment,
-    ITrialGuard trialGuard) : ITenantUserAdminService
+    ITrialGuard trialGuard,
+    IPlatformAdminChecker platformAdminChecker) : ITenantUserAdminService
 {
     private static readonly TimeSpan InviteTtl = TimeSpan.FromDays(7);
     private const int MinimumPasswordLength = 8;
@@ -63,17 +65,23 @@ public sealed class TenantUserAdminService(
     {
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
 
+        var platformEmails = platformAdminChecker.GetNormalizedEmails();
+
         var users = await dbContext.Users
             .AsNoTracking()
             .Include(u => u.UserRoles)
                 .ThenInclude(ur => ur.Role)
             .Where(u => u.TenantId == tenantId)
+            .Where(u => platformEmails.Count == 0
+                || !platformEmails.Contains(u.Email.ToLower()))
             .OrderBy(u => u.FullName)
             .ToListAsync(cancellationToken);
 
         var invites = await dbContext.UserInvites
             .AsNoTracking()
             .Where(i => i.TenantId == tenantId)
+            .Where(i => platformEmails.Count == 0
+                || !platformEmails.Contains(i.Email.ToLower()))
             .OrderByDescending(i => i.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -108,6 +116,12 @@ public sealed class TenantUserAdminService(
         if (!IsValidEmail(email))
         {
             throw new ArgumentException("Email is not valid.");
+        }
+
+        if (platformAdminChecker.IsPlatformAdminEmail(email))
+        {
+            throw new InvalidOperationException(
+                "Platform administrators cannot be invited as tenant users.");
         }
 
         var existingUser = await dbContext.Users
@@ -218,6 +232,12 @@ public sealed class TenantUserAdminService(
                 .ThenInclude(ur => ur.Role)
             .FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("User was not found.");
+
+        if (platformAdminChecker.IsPlatformAdminEmail(user.Email))
+        {
+            throw new InvalidOperationException(
+                "Platform administrators cannot be modified as tenant users.");
+        }
 
         if (user.UserRoles.Any(ur =>
                 string.Equals(ur.Role.Name, roleName, StringComparison.OrdinalIgnoreCase)))

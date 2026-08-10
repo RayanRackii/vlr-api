@@ -7,6 +7,11 @@ namespace Platform.Api.Authentication;
 public interface IPlatformAdminChecker
 {
     bool IsPlatformAdmin(ClaimsPrincipal? user);
+
+    bool IsPlatformAdminEmail(string? email);
+
+    /// <summary>Normalized (trim + lower) allowlist emails for query filters.</summary>
+    IReadOnlyList<string> GetNormalizedEmails();
 }
 
 public sealed class PlatformAdminChecker(IOptions<PlatformAdminOptions> options) : IPlatformAdminChecker
@@ -18,20 +23,27 @@ public sealed class PlatformAdminChecker(IOptions<PlatformAdminOptions> options)
             return false;
         }
 
-        var email = ResolveEmail(user);
+        return IsPlatformAdminEmail(ResolveEmail(user));
+    }
 
+    public bool IsPlatformAdminEmail(string? email)
+    {
         if (string.IsNullOrWhiteSpace(email))
         {
             return false;
         }
 
-        var allowed = options.Value.Emails
-            .Where(e => !string.IsNullOrWhiteSpace(e))
-            .Select(e => e.Trim())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return allowed.Contains(email);
+        return GetNormalizedEmailSet().Contains(email.Trim());
     }
+
+    public IReadOnlyList<string> GetNormalizedEmails() =>
+        GetNormalizedEmailSet().ToList();
+
+    private HashSet<string> GetNormalizedEmailSet() =>
+        options.Value.Emails
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e.Trim().ToLowerInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static string? ResolveEmail(ClaimsPrincipal user)
     {

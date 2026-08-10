@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Core.Infrastructure.Persistence;
@@ -23,7 +22,7 @@ public interface IPlatformUserAdminService
 public sealed class PlatformUserAdminService(
     AppDbContext dbContext,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
-    IOptions<PlatformAdminOptions> platformAdminOptions,
+    IPlatformAdminChecker platformAdminChecker,
     ILogger<PlatformUserAdminService> logger) : IPlatformUserAdminService
 {
     public async Task<IReadOnlyList<PlatformUserResponseDto>> ListAsync(
@@ -31,10 +30,14 @@ public sealed class PlatformUserAdminService(
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
+        var platformEmails = platformAdminChecker.GetNormalizedEmails();
+
         var query =
             from user in dbContext.Users.AsNoTracking()
             join tenant in dbContext.Tenants.AsNoTracking()
                 on user.TenantId equals tenant.Id
+            where platformEmails.Count == 0
+                || !platformEmails.Contains(user.Email.ToLower())
             select new { user, tenant };
 
         if (tenantId is Guid filterTenantId)
@@ -108,8 +111,11 @@ public sealed class PlatformUserAdminService(
         var supabaseAuthId = user.SupabaseAuthId;
         var email = user.Email.Trim().ToLowerInvariant();
 
-        var isPlatformAdmin = platformAdminOptions.Value.Emails.Any(e =>
-            string.Equals(e.Trim(), email, StringComparison.OrdinalIgnoreCase));
+        if (platformAdminChecker.IsPlatformAdminEmail(email))
+        {
+            throw new InvalidOperationException(
+                "Platform administrators cannot be deleted from tenant memberships via this screen.");
+        }
 
         var stillUsedElsewhere = await dbContext.Users
             .AsNoTracking()
@@ -120,14 +126,12 @@ public sealed class PlatformUserAdminService(
         dbContext.Users.Remove(user);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        if (isPlatformAdmin || stillUsedElsewhere)
+        if (stillUsedElsewhere)
         {
             logger.LogInformation(
-                "Platform user {UserId} removed from database; kept Supabase Auth {SupabaseAuthId} (platformAdmin={IsPlatformAdmin}, usedElsewhere={UsedElsewhere}).",
+                "Platform user {UserId} removed from database; kept Supabase Auth {SupabaseAuthId} (usedElsewhere=true).",
                 userId,
-                supabaseAuthId,
-                isPlatformAdmin,
-                stillUsedElsewhere);
+                supabaseAuthId);
             return;
         }
 

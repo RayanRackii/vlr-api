@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Authentication;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -16,7 +17,8 @@ public interface ITrialGuard
 
 public sealed class TrialGuard(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : ITrialGuard
+    ITenantProvider tenantProvider,
+    IPlatformAdminChecker platformAdminChecker) : ITrialGuard
 {
     public async Task EnsureWritableAsync(CancellationToken cancellationToken)
     {
@@ -67,18 +69,25 @@ public sealed class TrialGuard(
 
         EnsureNotReadOnly(tenant);
 
+        var platformEmails = platformAdminChecker.GetNormalizedEmails();
+
         var userCount = await dbContext.Users
             .IgnoreQueryFilters()
-            .CountAsync(u => u.TenantId == tenantId, cancellationToken);
+            .Where(u => u.TenantId == tenantId)
+            .Where(u => platformEmails.Count == 0
+                || !platformEmails.Contains(u.Email.ToLower()))
+            .CountAsync(cancellationToken);
 
         var pendingInviteCount = await dbContext.UserInvites
             .IgnoreQueryFilters()
-            .CountAsync(
-                i => i.TenantId == tenantId
-                     && i.AcceptedAt == null
-                     && i.RevokedAt == null
-                     && i.ExpiresAt > DateTimeOffset.UtcNow,
-                cancellationToken);
+            .Where(i =>
+                i.TenantId == tenantId
+                && i.AcceptedAt == null
+                && i.RevokedAt == null
+                && i.ExpiresAt > DateTimeOffset.UtcNow)
+            .Where(i => platformEmails.Count == 0
+                || !platformEmails.Contains(i.Email.ToLower()))
+            .CountAsync(cancellationToken);
 
         if (userCount + pendingInviteCount >= TrialLimits.MaxUsers)
         {
