@@ -118,7 +118,7 @@ public sealed class AdminTenantService(
 
             dbContext.Tenants.Add(tenant);
 
-            dbContext.Units.Add(new Unit(tenant.Id, "Headquarters", "HQ"));
+            dbContext.Units.Add(new Unit(tenant.Id, "Matriz", "HQ"));
 
             foreach (var moduleName in modules)
             {
