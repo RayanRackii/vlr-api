@@ -93,6 +93,25 @@ public sealed record PublishDayRequestDto
     public Guid? RentalAssetId { get; init; }
 }
 
+public sealed record SeedDefaultTemplatesRequestDto
+{
+    public required Guid RentalAssetId { get; init; }
+
+    /// <summary>Inclusive start of the hourly grid. Default 08:00.</summary>
+    public TimeOnly? OpenTime { get; init; }
+
+    /// <summary>Exclusive end of the hourly grid. Default 22:00.</summary>
+    public TimeOnly? CloseTime { get; init; }
+
+    /// <summary>Slot length in minutes. Default 60.</summary>
+    public int SlotMinutes { get; init; } = 60;
+
+    /// <summary>Defaults to the tenant's active bookable "open" kind.</summary>
+    public Guid? OccupancyKindId { get; init; }
+}
+
+public sealed record SeedDefaultTemplatesResponseDto(int Created, int Skipped);
+
 public sealed record UpsertSlotRequestDto
 {
     public required Guid RentalAssetId { get; init; }

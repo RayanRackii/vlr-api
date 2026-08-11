@@ -127,8 +127,12 @@ The concrete set of Slots for one calendar date (optionally per Unit). Published
 _Avoid_: Treating the weekly template itself as the live bookings grid
 
 **OpenHours**:
-A schedule policy where a Rentable is continuously available between open and close times; bookable windows are derived from that interval (and allowed durations), without requiring the admin to draw every cell.
-_Avoid_: Forcing explicit Slot drawing when the tenant only needs “18:00–00:00 all open”
+A schedule policy where a Rentable is continuously available between open and close times; bookable windows are derived from that interval (and allowed durations), without requiring the admin to draw every cell. Prefer this for the common club case (~08:00–22:00). Admin: `PUT /api/rental-assets/{id}/schedule-policy`.
+_Avoid_: Forcing explicit Slot drawing when the tenant only needs “18:00–00:00 all open”; seeding dozens of identical SlotGrid templates when OpenHours fits
+
+**SlotGrid**:
+Schedule policy that authors the week as explicit **ScheduleTemplate** cells, then **PublishDay** materializes **Slot** rows. Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default`.
+_Avoid_: N client-side POSTs per hour×day as the product path
 
 **Layout**:
 A Tenant-authored visual arrangement of Rentables on a 2D canvas (positions and sizes) so Customers pick a resource from a map rather than only from a list. Multiple Layouts are allowed (different venues or views).

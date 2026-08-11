@@ -19,6 +19,10 @@ public interface IScheduleService
 
     Task DeleteTemplateAsync(Guid id, CancellationToken cancellationToken);
 
+    Task<SeedDefaultTemplatesResponseDto> SeedDefaultTemplatesAsync(
+        SeedDefaultTemplatesRequestDto request,
+        CancellationToken cancellationToken);
+
     Task<DayScheduleResponseDto> GetDayAsync(
         DateOnly date,
         Guid? rentalAssetId,

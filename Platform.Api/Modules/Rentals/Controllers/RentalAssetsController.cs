@@ -33,4 +33,25 @@ public sealed class RentalAssetsController(
 
         return Ok(asset);
     }
+
+    [HttpPut("{id:guid}/schedule-policy")]
+    public async Task<ActionResult<RentalAssetResponse>> UpdateSchedulePolicy(
+        Guid id,
+        [FromBody] UpdateRentalSchedulePolicyRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(
+                await rentalAssetService.UpdateSchedulePolicyAsync(id, request, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
 }

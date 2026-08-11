@@ -7,4 +7,9 @@ public interface IRentalAssetService
     Task<IReadOnlyList<RentalAssetResponse>> ListRentableAsync(CancellationToken cancellationToken);
 
     Task<RentalAssetResponse?> GetByAssetIdAsync(Guid assetId, CancellationToken cancellationToken);
+
+    Task<RentalAssetResponse> UpdateSchedulePolicyAsync(
+        Guid rentalAssetId,
+        UpdateRentalSchedulePolicyRequestDto request,
+        CancellationToken cancellationToken);
 }

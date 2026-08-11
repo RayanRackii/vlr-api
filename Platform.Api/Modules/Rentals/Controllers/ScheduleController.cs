@@ -75,6 +75,23 @@ public sealed class ScheduleController(
     }
 
     [Authorize]
+    [HttpPost("templates/seed-default")]
+    public async Task<ActionResult<SeedDefaultTemplatesResponseDto>> SeedDefaultTemplates(
+        [FromBody] SeedDefaultTemplatesRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await scheduleService.SeedDefaultTemplatesAsync(request, cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or InvalidOperationException)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [Authorize]
     [HttpGet("days/{date}")]
     public async Task<ActionResult<DayScheduleResponseDto>> GetDayAdmin(
         DateOnly date,

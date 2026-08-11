@@ -109,6 +109,105 @@ public sealed class ScheduleService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<SeedDefaultTemplatesResponseDto> SeedDefaultTemplatesAsync(
+        SeedDefaultTemplatesRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
+        await EnsureRentableAsync(request.RentalAssetId, cancellationToken);
+
+        var open = request.OpenTime ?? new TimeOnly(8, 0);
+        var close = request.CloseTime ?? new TimeOnly(22, 0);
+        var slotMinutes = request.SlotMinutes <= 0 ? 60 : request.SlotMinutes;
+
+        if (close <= open)
+        {
+            throw new ArgumentException("CloseTime must be after OpenTime.");
+        }
+
+        if (open.AddMinutes(slotMinutes) > close)
+        {
+            throw new ArgumentException("SlotMinutes must fit within the open interval.");
+        }
+
+        OccupancyKind openKind;
+        if (request.OccupancyKindId is { } kindId)
+        {
+            openKind = await dbContext.OccupancyKinds
+                .FirstOrDefaultAsync(k => k.Id == kindId && k.IsActive, cancellationToken)
+                ?? throw new KeyNotFoundException("Occupancy kind was not found.");
+        }
+        else
+        {
+            openKind = await dbContext.OccupancyKinds
+                .FirstOrDefaultAsync(
+                    k => k.Key == "open" && k.IsActive && k.IsBookableByCustomer,
+                    cancellationToken)
+                ?? await dbContext.OccupancyKinds
+                    .FirstOrDefaultAsync(
+                        k => k.IsActive && k.IsBookableByCustomer,
+                        cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "No bookable occupancy kind is available for the default grid.");
+        }
+
+        var existing = await dbContext.ScheduleTemplates
+            .Where(t => t.RentalAssetId == request.RentalAssetId)
+            .Select(t => new { t.DayOfWeek, t.StartTime, t.EndTime })
+            .ToListAsync(cancellationToken);
+
+        var existingKeys = existing
+            .Select(row => $"{row.DayOfWeek}|{row.StartTime}|{row.EndTime}")
+            .ToHashSet();
+
+        var created = 0;
+        var skipped = 0;
+
+        foreach (DayOfWeek dayOfWeek in Enum.GetValues<DayOfWeek>())
+        {
+            var cursor = open;
+            while (true)
+            {
+                var end = cursor.AddMinutes(slotMinutes);
+                if (end > close)
+                {
+                    break;
+                }
+
+                var key = $"{dayOfWeek}|{cursor}|{end}";
+                if (existingKeys.Contains(key))
+                {
+                    skipped++;
+                    cursor = end;
+                    continue;
+                }
+
+                dbContext.ScheduleTemplates.Add(new ScheduleTemplate
+                {
+                    TenantId = tenantId,
+                    RentalAssetId = request.RentalAssetId,
+                    DayOfWeek = dayOfWeek,
+                    StartTime = cursor,
+                    EndTime = end,
+                    OccupancyKindId = openKind.Id,
+                    Label = null,
+                    IsActive = true,
+                });
+                existingKeys.Add(key);
+                created++;
+                cursor = end;
+            }
+        }
+
+        if (created > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return new SeedDefaultTemplatesResponseDto(created, skipped);
+    }
+
     public async Task<DayScheduleResponseDto> GetDayAsync(
         DateOnly date,
         Guid? rentalAssetId,

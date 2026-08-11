@@ -43,6 +43,8 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] `OccupancyKind` (catálogo do tenant) + defaults open/closed/lesson
 - [x] `ScheduleTemplate` + `Slot` + PublishDay + UpsertSlot + BookSlot
 - [x] `SchedulePolicy` SlotGrid | OpenHours em `RentalAsset`
+- [x] `PUT /api/rental-assets/{id}/schedule-policy` (admin OpenHours)
+- [x] `POST /api/schedule/templates/seed-default` (bulk seed SlotGrid em 1 request)
 - [x] `RentalLayout` + items (API; canvas UI pendente)
 - [x] Migration `AddRentalsScheduleAndLayouts` + SQL script
 - [ ] Aplicar migration no Supabase
@@ -117,3 +119,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-09 | **Fix:** recovery e-mail usa URL first-party `?token_hash=` + `verifyOtp` (não `action_link` → Site URL `localhost:3000`). |
 | 2026-08-10 | **Executado:** PlatformAdmin oculto de listas/contagens (trial); bloqueio invite/promote/delete; Auth multi-tenant preservado no delete. |
 | 2026-08-10 | **Fix:** unidade padrão `Matriz` (não Headquarters); migration rename; Switch/wizard UX. |
+| 2026-08-11 | **Executado:** `POST /api/schedule/templates/seed-default` + `PUT .../schedule-policy` (OpenHours admin). |
