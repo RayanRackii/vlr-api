@@ -46,6 +46,10 @@ public interface IScheduleService
         ApplyDailyOccurrenceRequestDto request,
         CancellationToken cancellationToken);
 
+    Task<ApplyWeeklyRuleResponseDto> ApplyWeeklyRuleAsync(
+        ApplyWeeklyRuleRequestDto request,
+        CancellationToken cancellationToken);
+
     Task<ReservationResponseDto> BookSlotAsync(
         Guid customerId,
         BookSlotRequestDto request,

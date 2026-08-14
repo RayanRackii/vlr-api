@@ -8,7 +8,9 @@ public sealed record OccupancyKindResponseDto(
     Guid Id,
     string Key,
     string Label,
+    string? Description,
     string? ColorHex,
+    string? IconKey,
     bool IsBookableByCustomer,
     bool BlocksCapacity,
     int SortOrder,
@@ -20,7 +22,11 @@ public sealed record UpsertOccupancyKindRequestDto
 
     public required string Label { get; init; }
 
+    public string? Description { get; init; }
+
     public string? ColorHex { get; init; }
+
+    public string? IconKey { get; init; }
 
     public bool IsBookableByCustomer { get; init; }
 
@@ -62,6 +68,27 @@ public sealed record UpsertScheduleTemplateRequestDto
     public bool IsActive { get; init; } = true;
 }
 
+public sealed record ApplyWeeklyRuleRequestDto
+{
+    public required IReadOnlyList<Guid> RentalAssetIds { get; init; }
+
+    public required IReadOnlyList<DayOfWeek> DaysOfWeek { get; init; }
+
+    public required TimeOnly OpenTime { get; init; }
+
+    public required TimeOnly CloseTime { get; init; }
+
+    public int SlotMinutes { get; init; } = 60;
+
+    public required Guid OccupancyKindId { get; init; }
+
+    public string? Label { get; init; }
+
+    public bool IsActive { get; init; } = true;
+}
+
+public sealed record ApplyWeeklyRuleResponseDto(int Created, int Updated, int Skipped);
+
 // --- Slots / day schedule ---
 
 public enum SlotOccurrenceSource
@@ -75,6 +102,12 @@ public enum DailyOccurrenceAction
     Update,
     MakeUnavailable,
     RestoreWeeklyDefault,
+}
+
+public enum OccurrenceEditScope
+{
+    OnlyThisDay,
+    EntireRecurrence,
 }
 
 public sealed record SlotResponseDto(
@@ -93,7 +126,10 @@ public sealed record SlotResponseDto(
     SlotStatus Status,
     Guid? ReservationId,
     bool IsDerived,
-    SlotOccurrenceSource Source);
+    SlotOccurrenceSource Source,
+    Guid? SourceTemplateId,
+    SchedulePolicy SchedulePolicy,
+    bool SupportsEntireRecurrence);
 
 public sealed record DayScheduleResponseDto(
     DateOnly Date,
@@ -101,7 +137,7 @@ public sealed record DayScheduleResponseDto(
 
 public sealed record ApplyDailyOccurrenceRequestDto
 {
-    /// <summary>Persisted slot id when known. Null for OpenHours-derived windows.</summary>
+    /// <summary>Persisted slot id when known. Null for OpenHours-derived windows or empty cells.</summary>
     public Guid? SlotId { get; init; }
 
     public required Guid RentalAssetId { get; init; }
@@ -113,6 +149,8 @@ public sealed record ApplyDailyOccurrenceRequestDto
     public required TimeOnly EndTime { get; init; }
 
     public required DailyOccurrenceAction Action { get; init; }
+
+    public OccurrenceEditScope Scope { get; init; } = OccurrenceEditScope.OnlyThisDay;
 
     /// <summary>Required for <see cref="DailyOccurrenceAction.Update"/>.</summary>
     public Guid? OccupancyKindId { get; init; }

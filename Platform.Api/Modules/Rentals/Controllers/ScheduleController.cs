@@ -98,6 +98,22 @@ public sealed class ScheduleController(
     }
 
     [Authorize]
+    [HttpPost("templates/apply-weekly-rule")]
+    public async Task<ActionResult<ApplyWeeklyRuleResponseDto>> ApplyWeeklyRule(
+        [FromBody] ApplyWeeklyRuleRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await scheduleService.ApplyWeeklyRuleAsync(request, cancellationToken));
+        }
+        catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or InvalidOperationException)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [Authorize]
     [HttpGet("days/{date}")]
     public async Task<ActionResult<DayScheduleResponseDto>> GetDayAdmin(
         DateOnly date,

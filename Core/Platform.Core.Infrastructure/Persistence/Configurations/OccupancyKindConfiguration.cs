@@ -15,7 +15,9 @@ public sealed class OccupancyKindConfiguration : IEntityTypeConfiguration<Occupa
         builder.Property(k => k.TenantId).IsRequired();
         builder.Property(k => k.Key).HasMaxLength(64).IsRequired();
         builder.Property(k => k.Label).HasMaxLength(120).IsRequired();
+        builder.Property(k => k.Description).HasMaxLength(500);
         builder.Property(k => k.ColorHex).HasMaxLength(16);
+        builder.Property(k => k.IconKey).HasMaxLength(64);
         builder.Property(k => k.IsBookableByCustomer).IsRequired();
         builder.Property(k => k.BlocksCapacity).IsRequired();
         builder.Property(k => k.SortOrder).IsRequired();

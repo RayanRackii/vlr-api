@@ -10,4 +10,6 @@ Rentals stays product-agnostic (spaces, goods, vehicles). Weekly **ScheduleTempl
 
 Because a day can span many Rentables × many hours, deriving OpenHours windows must not query per slot: blocking reservations for the date are loaded once and overlap is computed in memory, and persisted starts come from the Slots the same request already loaded. Template listing accepts `dayOfWeek` so a single day never pays for the whole week.
 
-Day exceptions reuse `Slot` as a dated override (update kind/label, cancel/unavailable tombstone, restore weekly default). Admin day reads include cancelled occurrences; OpenHours cancelled starts remain tombstones so the derived window does not return. Product UI separates **Day agenda** (one date) from **Weekly setup** (recurring rules).
+Day exceptions reuse `Slot` as a dated override (update kind/label, cancel/unavailable tombstone, restore weekly default). Admin day reads include cancelled occurrences; OpenHours cancelled starts remain tombstones so the derived window does not return. Product UI separates **Day agenda** (one date, resource grid) from **Weekly setup** (recurring rules).
+
+`EntireRecurrence` on SlotGrid updates the matching `ScheduleTemplate` and cascades to future non-booked slots that still match the previous fingerprint; OpenHours entire edits remain in Weekly setup. Bulk weekly grids use `POST /api/schedule/templates/apply-weekly-rule`. Occupancy kinds may carry optional description and client-resolved icon keys.

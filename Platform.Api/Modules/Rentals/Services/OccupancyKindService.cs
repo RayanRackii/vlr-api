@@ -49,7 +49,9 @@ public sealed class OccupancyKindService(
             TenantId = tenantId,
             Key = key,
             Label = request.Label.Trim(),
+            Description = TrimOptional(request.Description),
             ColorHex = NormalizeColor(request.ColorHex),
+            IconKey = TrimOptional(request.IconKey),
             IsBookableByCustomer = request.IsBookableByCustomer,
             BlocksCapacity = request.BlocksCapacity,
             SortOrder = request.SortOrder,
@@ -81,7 +83,9 @@ public sealed class OccupancyKindService(
 
         entity.Key = key;
         entity.Label = request.Label.Trim();
+        entity.Description = TrimOptional(request.Description);
         entity.ColorHex = NormalizeColor(request.ColorHex);
+        entity.IconKey = TrimOptional(request.IconKey);
         entity.IsBookableByCustomer = request.IsBookableByCustomer;
         entity.BlocksCapacity = request.BlocksCapacity;
         entity.SortOrder = request.SortOrder;
@@ -108,7 +112,15 @@ public sealed class OccupancyKindService(
                 TenantId = tenantId,
                 Key = item.Key,
                 Label = item.Label,
+                Description = null,
                 ColorHex = item.Color,
+                IconKey = item.Key switch
+                {
+                    "open" => "circle-check",
+                    "closed" => "ban",
+                    "lesson" => "book-open",
+                    _ => null,
+                },
                 IsBookableByCustomer = item.Bookable,
                 BlocksCapacity = item.Blocks,
                 SortOrder = item.Order,
@@ -150,6 +162,19 @@ public sealed class OccupancyKindService(
         return value.Length is 7 or 4 ? value : throw new ArgumentException("Invalid color hex.");
     }
 
+    private static string? TrimOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static OccupancyKindResponseDto ToDto(OccupancyKind k) =>
-        new(k.Id, k.Key, k.Label, k.ColorHex, k.IsBookableByCustomer, k.BlocksCapacity, k.SortOrder, k.IsActive);
+        new(
+            k.Id,
+            k.Key,
+            k.Label,
+            k.Description,
+            k.ColorHex,
+            k.IconKey,
+            k.IsBookableByCustomer,
+            k.BlocksCapacity,
+            k.SortOrder,
+            k.IsActive);
 }

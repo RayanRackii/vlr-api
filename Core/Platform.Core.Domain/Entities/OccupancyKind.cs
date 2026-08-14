@@ -15,7 +15,12 @@ public class OccupancyKind : Entity, ITenantScoped
 
     public required string Label { get; set; }
 
+    public string? Description { get; set; }
+
     public string? ColorHex { get; set; }
+
+    /// <summary>Optional Lucide icon key resolved by the client registry.</summary>
+    public string? IconKey { get; set; }
 
     public required bool IsBookableByCustomer { get; set; }
 

@@ -133,11 +133,20 @@ Resultado: a leitura do dia passou de ~170 consultas para 5, independentemente d
 - Abas renomeadas para **Agenda do dia** e **Configuração semanal**; política e seed saíram da agenda do dia.
 - Contratos: `SlotOccurrenceSource`, `POST /api/schedule/slots/daily-occurrence`.
 
+### 3.9 Agenda operacional em grade (14/08)
+
+- Agenda diária passou de lista de cards para grade virtualizada tempo × recursos (`@tanstack/react-virtual`).
+- Toolbar compacta: navegação de data, seletor “Espaços / bens · N de M”, aplicar grade.
+- Drawer contextual com escopo **Somente este dia** / **Toda a recorrência** (SlotGrid com cascata segura de slots futuros não reservados; OpenHours aponta para Configuração semanal).
+- `POST /api/schedule/templates/apply-weekly-rule` aplica regra em lote (recursos × dias × intervalos) e força `SlotGrid`.
+- `OccupancyKind` ganhou `Description` e `IconKey` (migration `20260814180000_AddOccupancyKindDescriptionAndIcon`).
+- Contratos de Slot incluem `sourceTemplateId`, `schedulePolicy` e `supportsEntireRecurrence`.
+
 ## 4. Decisões vigentes
 
 1. O backend mantém `OpenHours`/`SlotGrid`; a interface usa nomes operacionais.
 2. Operações multi-Rentable validam o conjunto antes de alterar dados.
-3. Templates semanais são editados individualmente para evitar sobrescritas ambíguas.
+3. Ajuste fino de template permanece individual; a grade semanal em lote usa `apply-weekly-rule` (recursos × dias × intervalos) de forma transacional.
 4. A paleta Rolvix é fallback/default, nunca substituição automática das cores de Tenants existentes.
 5. `PrimaryColor`/`AccentColor` continuam sendo os únicos campos de cor do Tenant; complementary é tratamento visual do frontend.
 6. O chrome B2B usa tokens globais; o portal B2C usa o branding persistido do Tenant.
@@ -158,6 +167,12 @@ Resultado: a leitura do dia passou de ~170 consultas para 5, independentemente d
   - `npm run build` concluído;
   - lint dos arquivos tocados não introduziu diagnóstico novo (a execução ampla ainda reporta regras preexistentes de hooks/fast-refresh em componentes do portal);
   - `dotnet build Platform.Api/Platform.Api.csproj --no-restore` concluído com 0 warnings/0 errors.
+- Após a agenda em grade (14/08):
+  - `dotnet build Platform.Api/Platform.Api.csproj --no-restore` → 0 warnings / 0 errors;
+  - `npx tsc --noEmit` e `npm run build` no frontend → OK (warnings preexistentes de chunk size / `@utility` no minify);
+  - locales pt-BR / en / es com chaves de escopo, regra semanal e ícone;
+  - `CONTEXT.md` (API/web), ADR `0001-rentals-slot-schedule` e ambos `ROADMAP.md` atualizados;
+  - `DaySlotsTimeline` removido após substituição por `DayResourceGrid`.
 
 ## 7. Pendências que permanecem
 

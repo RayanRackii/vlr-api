@@ -222,6 +222,124 @@ public sealed class ScheduleService(
         return new SeedDefaultTemplatesResponseDto(created, skipped);
     }
 
+    public async Task<ApplyWeeklyRuleResponseDto> ApplyWeeklyRuleAsync(
+        ApplyWeeklyRuleRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
+
+        if (request.RentalAssetIds is null || request.RentalAssetIds.Count == 0)
+        {
+            throw new ArgumentException("At least one rentable is required.");
+        }
+
+        if (request.DaysOfWeek is null || request.DaysOfWeek.Count == 0)
+        {
+            throw new ArgumentException("At least one weekday is required.");
+        }
+
+        ValidateTimeRange(request.OpenTime, request.CloseTime);
+        var slotMinutes = request.SlotMinutes <= 0 ? 60 : request.SlotMinutes;
+        if (request.OpenTime.AddMinutes(slotMinutes) > request.CloseTime)
+        {
+            throw new ArgumentException("SlotMinutes must fit within the open interval.");
+        }
+
+        var rentableIds = request.RentalAssetIds.Where(id => id != Guid.Empty).Distinct().ToList();
+        await EnsureRentablesAsync(rentableIds, cancellationToken);
+        await EnsureOccupancyKindAsync(request.OccupancyKindId, cancellationToken);
+        var label = TrimLabel(request.Label);
+
+        var existing = await dbContext.ScheduleTemplates
+            .Where(t => rentableIds.Contains(t.RentalAssetId)
+                        && request.DaysOfWeek.Contains(t.DayOfWeek))
+            .ToListAsync(cancellationToken);
+
+        var byKey = existing.ToDictionary(
+            t => $"{t.RentalAssetId}|{t.DayOfWeek}|{t.StartTime}");
+
+        var created = 0;
+        var updated = 0;
+        var skipped = 0;
+
+        foreach (var rentableId in rentableIds)
+        {
+            foreach (var dayOfWeek in request.DaysOfWeek.Distinct())
+            {
+                var cursor = request.OpenTime;
+                while (true)
+                {
+                    var end = cursor.AddMinutes(slotMinutes);
+                    if (end > request.CloseTime)
+                    {
+                        break;
+                    }
+
+                    var key = $"{rentableId}|{dayOfWeek}|{cursor}";
+                    if (byKey.TryGetValue(key, out var template))
+                    {
+                        if (template.EndTime == end
+                            && template.OccupancyKindId == request.OccupancyKindId
+                            && TrimLabel(template.Label) == label
+                            && template.IsActive == request.IsActive)
+                        {
+                            skipped++;
+                        }
+                        else
+                        {
+                            template.EndTime = end;
+                            template.OccupancyKindId = request.OccupancyKindId;
+                            template.Label = label;
+                            template.IsActive = request.IsActive;
+                            template.Touch();
+                            updated++;
+                        }
+                    }
+                    else
+                    {
+                        var entity = new ScheduleTemplate
+                        {
+                            TenantId = tenantId,
+                            RentalAssetId = rentableId,
+                            DayOfWeek = dayOfWeek,
+                            StartTime = cursor,
+                            EndTime = end,
+                            OccupancyKindId = request.OccupancyKindId,
+                            Label = label,
+                            IsActive = request.IsActive,
+                        };
+                        dbContext.ScheduleTemplates.Add(entity);
+                        byKey[key] = entity;
+                        created++;
+                    }
+
+                    cursor = end;
+                }
+            }
+        }
+
+        // Ensure selected rentables use SlotGrid when applying an explicit weekly grid.
+        var rentables = await dbContext.RentalAssets
+            .Where(r => rentableIds.Contains(r.Id))
+            .ToListAsync(cancellationToken);
+        foreach (var rentable in rentables)
+        {
+            if (rentable.SchedulePolicy != SchedulePolicy.SlotGrid)
+            {
+                rentable.SchedulePolicy = SchedulePolicy.SlotGrid;
+                rentable.Touch();
+            }
+        }
+
+        if (created > 0 || updated > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return new ApplyWeeklyRuleResponseDto(created, updated, skipped);
+    }
+
     public async Task<DayScheduleResponseDto> GetDayAsync(
         DateOnly date,
         Guid? rentalAssetId,
@@ -430,6 +548,11 @@ public sealed class ScheduleService(
                 "Cannot edit a booked slot; cancel the reservation instead.");
         }
 
+        if (request.Scope == OccurrenceEditScope.EntireRecurrence)
+        {
+            return await ApplyEntireRecurrenceAsync(tenantId, slot, request, cancellationToken);
+        }
+
         return request.Action switch
         {
             DailyOccurrenceAction.Update =>
@@ -440,6 +563,241 @@ public sealed class ScheduleService(
                 await RestoreWeeklyDefaultAsync(slot, request, cancellationToken),
             _ => throw new ArgumentException("Unknown daily occurrence action."),
         };
+    }
+
+    private async Task<SlotResponseDto> ApplyEntireRecurrenceAsync(
+        Guid tenantId,
+        Slot? existing,
+        ApplyDailyOccurrenceRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var rentable = await dbContext.RentalAssets
+            .Include(r => r.Asset)
+            .FirstAsync(r => r.Id == request.RentalAssetId, cancellationToken);
+
+        if (rentable.SchedulePolicy != SchedulePolicy.SlotGrid)
+        {
+            throw new InvalidOperationException(
+                "Entire recurrence edits are only available for custom weekly grids. Change the weekly window under Weekly setup.");
+        }
+
+        if (request.Action == DailyOccurrenceAction.RestoreWeeklyDefault)
+        {
+            throw new InvalidOperationException(
+                "Restore applies only to a single day override.");
+        }
+
+        var dayOfWeek = request.Date.DayOfWeek;
+        var template = await dbContext.ScheduleTemplates
+            .Include(t => t.OccupancyKind)
+            .Include(t => t.RentalAsset).ThenInclude(r => r.Asset)
+            .FirstOrDefaultAsync(
+                t => t.RentalAssetId == request.RentalAssetId
+                     && t.DayOfWeek == dayOfWeek
+                     && t.StartTime == request.StartTime,
+                cancellationToken);
+
+        var previousKindId = template?.OccupancyKindId;
+        var previousLabel = TrimLabel(template?.Label);
+        var previousEnd = template?.EndTime ?? request.EndTime;
+        var previousActive = template?.IsActive ?? true;
+
+        if (request.Action == DailyOccurrenceAction.Update)
+        {
+            if (request.OccupancyKindId is not { } kindId)
+            {
+                throw new ArgumentException("OccupancyKindId is required to update a recurrence.");
+            }
+
+            await EnsureOccupancyKindAsync(kindId, cancellationToken);
+            var label = TrimLabel(request.Label);
+
+            if (template is null)
+            {
+                template = new ScheduleTemplate
+                {
+                    TenantId = tenantId,
+                    RentalAssetId = request.RentalAssetId,
+                    DayOfWeek = dayOfWeek,
+                    StartTime = request.StartTime,
+                    EndTime = request.EndTime,
+                    OccupancyKindId = kindId,
+                    Label = label,
+                    IsActive = true,
+                };
+                dbContext.ScheduleTemplates.Add(template);
+            }
+            else
+            {
+                template.EndTime = request.EndTime;
+                template.OccupancyKindId = kindId;
+                template.Label = label;
+                template.IsActive = true;
+                template.Touch();
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            await CascadeTemplateToFutureSlotsAsync(
+                template,
+                request.Date,
+                previousKindId,
+                previousLabel,
+                previousEnd,
+                previousActive,
+                makeUnavailable: false,
+                cancellationToken);
+
+            return await GetSlotDtoAsync(
+                (await EnsurePublishedSlotFromTemplateAsync(
+                    tenantId, template, request.Date, existing, cancellationToken)).Id,
+                cancellationToken);
+        }
+
+        // MakeUnavailable for entire recurrence: deactivate template and cancel matching future slots.
+        if (template is null)
+        {
+            throw new InvalidOperationException("There is no weekly rule to make unavailable.");
+        }
+
+        template.IsActive = false;
+        template.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await CascadeTemplateToFutureSlotsAsync(
+            template,
+            request.Date,
+            previousKindId,
+            previousLabel,
+            previousEnd,
+            previousActive,
+            makeUnavailable: true,
+            cancellationToken);
+
+        if (existing is not null && existing.Status != SlotStatus.Booked)
+        {
+            existing.MarkCancelled();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await dbContext.Entry(existing).Reference(s => s.OccupancyKind).LoadAsync(cancellationToken);
+            if (existing.RentalAsset is null)
+            {
+                await dbContext.Entry(existing).Reference(s => s.RentalAsset).LoadAsync(cancellationToken);
+            }
+            if (existing.RentalAsset is not null)
+            {
+                await dbContext.Entry(existing.RentalAsset).Reference(r => r.Asset).LoadAsync(cancellationToken);
+            }
+
+            return ToSlotDto(existing, isDerived: false, SlotOccurrenceSource.DailyOverride);
+        }
+
+        return await MakeDailyOccurrenceUnavailableAsync(tenantId, existing, request, cancellationToken);
+    }
+
+    private async Task CascadeTemplateToFutureSlotsAsync(
+        ScheduleTemplate template,
+        DateOnly fromDate,
+        Guid? previousKindId,
+        string? previousLabel,
+        TimeOnly previousEnd,
+        bool previousActive,
+        bool makeUnavailable,
+        CancellationToken cancellationToken)
+    {
+        if (!previousActive && !makeUnavailable)
+        {
+            return;
+        }
+
+        var candidates = await dbContext.Slots
+            .Include(s => s.OccupancyKind)
+            .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
+            .Where(s => s.RentalAssetId == template.RentalAssetId
+                        && s.Date >= fromDate
+                        && s.StartTime == template.StartTime
+                        && s.Status != SlotStatus.Booked
+                        && (s.SourceTemplateId == template.Id
+                            || s.SourceTemplateId == null))
+            .ToListAsync(cancellationToken);
+
+        foreach (var candidate in candidates)
+        {
+            var matchesPrevious =
+                (!previousKindId.HasValue || candidate.OccupancyKindId == previousKindId)
+                && TrimLabel(candidate.Label) == previousLabel
+                && candidate.EndTime == previousEnd;
+
+            // Preserve intentional daily overrides that diverged from the previous template fingerprint.
+            if (candidate.SourceTemplateId is null && !matchesPrevious)
+            {
+                continue;
+            }
+
+            if (candidate.SourceTemplateId == template.Id && !matchesPrevious && candidate.Status == SlotStatus.Cancelled)
+            {
+                // Keep unrelated cancelled overrides unless they still match the previous rule.
+                continue;
+            }
+
+            if (!matchesPrevious && candidate.SourceTemplateId == template.Id)
+            {
+                // Diverged from previous template values → treat as daily override and skip.
+                continue;
+            }
+
+            if (makeUnavailable)
+            {
+                candidate.MarkCancelled();
+                candidate.SourceTemplateId = template.Id;
+            }
+            else
+            {
+                candidate.EndTime = template.EndTime;
+                candidate.OccupancyKindId = template.OccupancyKindId;
+                candidate.Label = template.Label;
+                candidate.SourceTemplateId = template.Id;
+                candidate.Status = SlotStatus.Available;
+                candidate.Touch();
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<Slot> EnsurePublishedSlotFromTemplateAsync(
+        Guid tenantId,
+        ScheduleTemplate template,
+        DateOnly date,
+        Slot? existing,
+        CancellationToken cancellationToken)
+    {
+        if (existing is not null)
+        {
+            existing.EndTime = template.EndTime;
+            existing.OccupancyKindId = template.OccupancyKindId;
+            existing.Label = template.Label;
+            existing.SourceTemplateId = template.Id;
+            existing.Status = SlotStatus.Available;
+            existing.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return existing;
+        }
+
+        var created = new Slot
+        {
+            TenantId = tenantId,
+            RentalAssetId = template.RentalAssetId,
+            Date = date,
+            StartTime = template.StartTime,
+            EndTime = template.EndTime,
+            OccupancyKindId = template.OccupancyKindId,
+            Label = template.Label,
+            Status = SlotStatus.Available,
+            SourceTemplateId = template.Id,
+        };
+        dbContext.Slots.Add(created);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return created;
     }
 
     public async Task<ReservationResponseDto> BookSlotAsync(
@@ -730,7 +1088,10 @@ public sealed class ScheduleService(
                 SlotStatus.Available,
                 null,
                 IsDerived: true,
-                SlotOccurrenceSource.WeeklyDefault);
+                SlotOccurrenceSource.WeeklyDefault,
+                SourceTemplateId: null,
+                SchedulePolicy.OpenHours,
+                SupportsEntireRecurrence: false);
         }
 
         if (existing is null)
@@ -982,7 +1343,10 @@ public sealed class ScheduleService(
                             SlotStatus.Available,
                             null,
                             IsDerived: true,
-                            SlotOccurrenceSource.WeeklyDefault));
+                            SlotOccurrenceSource.WeeklyDefault,
+                            SourceTemplateId: null,
+                            SchedulePolicy.OpenHours,
+                            SupportsEntireRecurrence: false));
                     }
 
                     cursor = end;
@@ -1270,5 +1634,8 @@ public sealed class ScheduleService(
             s.Status,
             s.ReservationId,
             isDerived,
-            source);
+            source,
+            s.SourceTemplateId,
+            s.RentalAsset.SchedulePolicy,
+            SupportsEntireRecurrence: s.RentalAsset.SchedulePolicy == SchedulePolicy.SlotGrid);
 }

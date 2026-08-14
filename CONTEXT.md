@@ -137,16 +137,20 @@ Schedule policy that authors the week as explicit **ScheduleTemplate** cells, th
 _Avoid_: N client-side POSTs per hour×day as the product path
 
 **Admin Daily Agenda UX**:
-Responsive two-column workspace: filters, Rentable multi-selection and date on the left; grouped per-Rentable day occurrences on the right. Cards are clickable day occurrences (not weekly rules). Policy options live under Weekly setup. Day cards show origin WeeklyDefault vs DailyOverride and allow make-unavailable / restore for that date only.
-_Avoid_: Mixing weekly policy editors into the day agenda; treating a day card click as a weekly template edit
+Operational resource grid: compact toolbar (date navigation, multi-resource selector, apply grid) and a virtualized time × resource matrix as the main surface. Cells open a contextual drawer for day overrides or SlotGrid recurrence edits. Weekly setup holds policy, seed and bulk weekly rules. Copy stays generic (spaces/goods), never segment-specific.
+_Avoid_: Vertical stacks of per-resource cards; mixing weekly policy editors into the day grid; sports-specific labels
 
 **Day occurrence**:
-A dated Slot (or OpenHours-derived window) for one Rentable. Admin can adjust kind/label, make unavailable, or restore the weekly default for that single date. Booked occurrences redirect to the reservation.
-_Avoid_: Deleting a weekly template to hide one date; mutating all future weekdays from the day agenda
+A dated Slot (or OpenHours-derived window) for one Rentable. Admin can adjust kind/label, make unavailable, or restore the weekly default for that single date (`OnlyThisDay`). For SlotGrid, `EntireRecurrence` updates the matching weekly template and cascades to future non-booked slots that still match the previous fingerprint. OpenHours entire-window edits stay in Weekly setup. Booked occurrences redirect to the reservation.
+_Avoid_: Deleting a weekly template to hide one date; cascading over Booked or intentional DailyOverride rows
 
 **Day read path**:
-`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). Admin reads include cancelled occurrences; public reads stay available+bookable only. `PublishDay` follows the same rule for existing starts. `GET /api/schedule/templates` accepts `dayOfWeek` so the Daily Agenda fetches only the weekday it renders. `POST /api/schedule/slots/daily-occurrence` is the single seam for day overrides.
-_Avoid_: One query per derived slot (per-slot reserved-quantity or "already covered" checks); fetching all seven weekdays of templates to answer a single day; canceling a derived OpenHours window without a persisted tombstone
+`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). Admin reads include cancelled occurrences; public reads stay available+bookable only. Slot DTOs expose `sourceTemplateId`, `schedulePolicy` and `supportsEntireRecurrence`. `POST /api/schedule/slots/daily-occurrence` is the seam for day/recurrence edits; `POST /api/schedule/templates/apply-weekly-rule` expands resources × weekdays × intervals transactionally.
+_Avoid_: One query per derived slot; fetching all seven weekdays of templates to answer a single day; canceling a derived OpenHours window without a persisted tombstone; N client POSTs to build a weekly grid
+
+**Occupancy kind**:
+Tenant catalog entry for how a schedule cell behaves (label, optional description/icon, color, bookable/blocks flags). Icons are client-resolved Lucide keys, never hardcoded segment enums.
+_Avoid_: Closed product enums for lesson/court/clinic; requiring icons for every kind
 
 **Layout**:
 A Tenant-authored visual arrangement of Rentables on a 2D canvas (positions and sizes) so Customers pick a resource from a map rather than only from a list. Multiple Layouts are allowed (different venues or views).
