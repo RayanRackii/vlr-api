@@ -121,7 +121,7 @@ One dated occupancy cell on one Rentable: date + start + end + OccupancyKind. Th
 _Avoid_: Free-typed start/end as the only booking path for slot-mode tenants
 
 **ScheduleTemplate**:
-The default weekly pattern of Slots (or open-hours rules) used to materialize each Schedule Day. Weekly template is the default authoring mode; a single day can still be edited after publish.
+The default weekly pattern of Slots (or open-hours rules) used to materialize each Schedule Day. Each template belongs to a `DayOfWeek` and recurs on every occurrence of that weekday (all Mondays, all Tuesdays, etc.); it is not tied to one calendar date. A single day can still be edited after publish.
 _Avoid_: Forcing admins to rebuild every day from scratch as the only path
 
 **ScheduleDay**:
@@ -135,6 +135,18 @@ _Avoid_: Forcing explicit Slot drawing when the tenant only needs “18:00–00:
 **SlotGrid**:
 Schedule policy that authors the week as explicit **ScheduleTemplate** cells, then **PublishDay** materializes **Slot** rows. Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default` (`rentalAssetIds` for a set). Day query/publish accept the same ID list. **UI copy: Grade personalizada** — never show `SlotGrid` in the product UI. Fine edits stay per rentable on Weekly templates.
 _Avoid_: N client-side POSTs per hour×day as the product path
+
+**Admin Daily Agenda UX**:
+Responsive two-column workspace: filters, Rentable multi-selection and date on the left; grouped per-Rentable day occurrences on the right. Cards are clickable day occurrences (not weekly rules). Policy options live under Weekly setup. Day cards show origin WeeklyDefault vs DailyOverride and allow make-unavailable / restore for that date only.
+_Avoid_: Mixing weekly policy editors into the day agenda; treating a day card click as a weekly template edit
+
+**Day occurrence**:
+A dated Slot (or OpenHours-derived window) for one Rentable. Admin can adjust kind/label, make unavailable, or restore the weekly default for that single date. Booked occurrences redirect to the reservation.
+_Avoid_: Deleting a weekly template to hide one date; mutating all future weekdays from the day agenda
+
+**Day read path**:
+`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). Admin reads include cancelled occurrences; public reads stay available+bookable only. `PublishDay` follows the same rule for existing starts. `GET /api/schedule/templates` accepts `dayOfWeek` so the Daily Agenda fetches only the weekday it renders. `POST /api/schedule/slots/daily-occurrence` is the single seam for day overrides.
+_Avoid_: One query per derived slot (per-slot reserved-quantity or "already covered" checks); fetching all seven weekdays of templates to answer a single day; canceling a derived OpenHours window without a persisted tombstone
 
 **Layout**:
 A Tenant-authored visual arrangement of Rentables on a 2D canvas (positions and sizes) so Customers pick a resource from a map rather than only from a list. Multiple Layouts are allowed (different venues or views).

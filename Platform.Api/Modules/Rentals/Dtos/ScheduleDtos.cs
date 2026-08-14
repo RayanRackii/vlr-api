@@ -64,6 +64,19 @@ public sealed record UpsertScheduleTemplateRequestDto
 
 // --- Slots / day schedule ---
 
+public enum SlotOccurrenceSource
+{
+    WeeklyDefault,
+    DailyOverride,
+}
+
+public enum DailyOccurrenceAction
+{
+    Update,
+    MakeUnavailable,
+    RestoreWeeklyDefault,
+}
+
 public sealed record SlotResponseDto(
     Guid Id,
     Guid RentalAssetId,
@@ -79,11 +92,33 @@ public sealed record SlotResponseDto(
     string? Label,
     SlotStatus Status,
     Guid? ReservationId,
-    bool IsDerived);
+    bool IsDerived,
+    SlotOccurrenceSource Source);
 
 public sealed record DayScheduleResponseDto(
     DateOnly Date,
     IReadOnlyList<SlotResponseDto> Slots);
+
+public sealed record ApplyDailyOccurrenceRequestDto
+{
+    /// <summary>Persisted slot id when known. Null for OpenHours-derived windows.</summary>
+    public Guid? SlotId { get; init; }
+
+    public required Guid RentalAssetId { get; init; }
+
+    public required DateOnly Date { get; init; }
+
+    public required TimeOnly StartTime { get; init; }
+
+    public required TimeOnly EndTime { get; init; }
+
+    public required DailyOccurrenceAction Action { get; init; }
+
+    /// <summary>Required for <see cref="DailyOccurrenceAction.Update"/>.</summary>
+    public Guid? OccupancyKindId { get; init; }
+
+    public string? Label { get; init; }
+}
 
 public sealed record PublishDayRequestDto
 {

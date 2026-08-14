@@ -17,12 +17,14 @@ public sealed class ScheduleController(
     public async Task<ActionResult<IReadOnlyList<ScheduleTemplateResponseDto>>> ListTemplates(
         [FromQuery] Guid? rentalAssetId,
         [FromQuery] Guid[]? rentalAssetIds,
+        [FromQuery] DayOfWeek? dayOfWeek,
         CancellationToken cancellationToken)
     {
         return Ok(await scheduleService.ListTemplatesAsync(
             rentalAssetId,
             cancellationToken,
-            rentalAssetIds));
+            rentalAssetIds,
+            dayOfWeek));
     }
 
     [Authorize]
@@ -170,6 +172,27 @@ public sealed class ScheduleController(
             return NotFound(new { error = ex.Message });
         }
         catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [Authorize]
+    [HttpPost("slots/daily-occurrence")]
+    public async Task<ActionResult<SlotResponseDto>> ApplyDailyOccurrence(
+        [FromBody] ApplyDailyOccurrenceRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var slot = await scheduleService.ApplyDailyOccurrenceAsync(request, cancellationToken);
+            return Ok(slot);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             return BadRequest(new { error = ex.Message });
         }

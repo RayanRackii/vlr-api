@@ -122,6 +122,8 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-10 | **Executado:** PlatformAdmin oculto de listas/contagens (trial); bloqueio invite/promote/delete; Auth multi-tenant preservado no delete. |
 | 2026-08-10 | **Fix:** unidade padrão `Matriz` (não Headquarters); migration rename; Switch/wizard UX. |
 | 2026-08-11 | **Executado:** `POST /api/schedule/templates/seed-default` + `PUT .../schedule-policy` (OpenHours admin). |
-| 2026-08-14 | **Executado:** bulk `rentalAssetIds` (política transacional, GET dia/templates, seed, publish). UI no `vlr-web`: Horário padrão / Grade personalizada. |
-| 2026-08-14 | **Docs/branding:** paleta fallback Rolvix registrada (`#4D6A92`, `#5A8FA0`, `#A2C6E9`); contrato `PrimaryColor`/`AccentColor` por tenant permanece inalterado. |
-| 2026-08-14 | **Diário:** entregas de 06–14/08 consolidadas em [`docs/sessions/2026-08-14-product-delivery-log.md`](./docs/sessions/2026-08-14-product-delivery-log.md). |
+| 2026-08-14 | **Executado:** bulk `rentalAssetIds` (política transacional, GET dia/templates, seed, publish). UI no `vlr-web`: Horário padrão / Grade personalizada. Paleta fallback Rolvix (`#4D6A92` / `#5A8FA0` / `#A2C6E9`). Diário: [`docs/sessions/2026-08-14-product-delivery-log.md`](./docs/sessions/2026-08-14-product-delivery-log.md). |
+| 2026-08-14 | **FE Agenda:** layout responsivo em duas colunas, filtro local de Rentables e cards acessíveis para escolha da política. |
+| 2026-08-14 | **FE Agenda:** templates esclarecidos como recorrentes por `DayOfWeek`; cabeçalho centralizado e faixa redundante removida. |
+| 2026-08-14 | **Perf:** `GetDayAsync` sem N+1 (reservas do dia e Slots persistidos em lote), `PublishDayAsync` sem consulta por template e `GET /api/schedule/templates?dayOfWeek=`. Leitura do dia caiu de ~170 para 5 consultas; sem mudança de schema. |
+| 2026-08-14 | **Executado:** exceções diárias — `POST /api/schedule/slots/daily-occurrence` (update/indisponibilizar/restaurar), leitura admin com Cancelled + tombstones OpenHours, origem `WeeklyDefault`/`DailyOverride`. |

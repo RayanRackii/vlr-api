@@ -7,7 +7,8 @@ public interface IScheduleService
     Task<IReadOnlyList<ScheduleTemplateResponseDto>> ListTemplatesAsync(
         Guid? rentalAssetId,
         CancellationToken cancellationToken,
-        IReadOnlyCollection<Guid>? rentalAssetIds = null);
+        IReadOnlyCollection<Guid>? rentalAssetIds = null,
+        DayOfWeek? dayOfWeek = null);
 
     Task<ScheduleTemplateResponseDto> CreateTemplateAsync(
         UpsertScheduleTemplateRequestDto request,
@@ -40,6 +41,10 @@ public interface IScheduleService
         CancellationToken cancellationToken);
 
     Task CancelSlotAsync(Guid slotId, CancellationToken cancellationToken);
+
+    Task<SlotResponseDto> ApplyDailyOccurrenceAsync(
+        ApplyDailyOccurrenceRequestDto request,
+        CancellationToken cancellationToken);
 
     Task<ReservationResponseDto> BookSlotAsync(
         Guid customerId,

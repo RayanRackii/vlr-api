@@ -65,6 +65,16 @@ Commits recentes revisados:
   - `SlotGrid` → **Grade personalizada**.
 - Configurações mistas exigem escolha explícita antes de sobrescrever os selecionados.
 - Edição fina continua singular na aba Templates semanais.
+- A Agenda diária foi reorganizada como workspace responsivo em duas colunas:
+  - esquerda: busca/lista de espaços e bens, data e configuração de horários;
+  - direita: ações do dia e agendas agrupadas.
+- Os cards Horário padrão / Grade personalizada agora expõem `aria-pressed`, foco visível e indicador de seleção; escolher um card altera apenas o rascunho até o usuário salvar.
+- Refino visual: cabeçalho/tabs centralizados, maior distância entre as colunas e remoção da faixa superior redundante da agenda; para Grade personalizada, “Publicar dia” fica junto ao filtro de data.
+- `ScheduleTemplate.DayOfWeek` é recorrente: um template de segunda-feira vale para todas as segundas. A data da Agenda diária apenas escolhe qual ocorrência materializar/visualizar.
+
+Arquivos principais (14/08):
+- API: `RentalAssetsController`, `ScheduleController`, `RentalDtos`, `ScheduleDtos`, `RentalAssetService`, `ScheduleService`.
+- FE: `SchedulePage`, `DailyAgendaTab`, `SchedulePolicyPanel`, `DaySlotsTimeline`, `RentableMultiSelect`, `scheduleService.ts`, locales pt-BR/en/es.
 
 ### 3.4 Assets, famílias e onboarding
 
@@ -96,6 +106,32 @@ Commits recentes revisados:
 - Novos Tenants recebem primary/accent da paleta como default.
 - `PrimaryColor` e `AccentColor` persistidos continuam soberanos nos portais personalizados; nenhum terceiro campo foi adicionado ao schema.
 - O login do Tenant combina as duas cores configuradas no fundo e mantém primary em CTAs/links.
+- Fallback/default vive em `vlr-web/src/lib/brandColors.ts` e tokens `--brand-*` em `index.css`.
+- Formulários de cadastro/edição de Tenant (`TenantOnboardingWizard`, `TenantEditForm`) iniciam com primary/accent da paleta; valores já persistidos não são reescritos.
+
+### 3.7 Desempenho da Agenda diária (14/08)
+
+Sintoma relatado: carregar os horários dos espaços demorava muito, principalmente com vários Rentables selecionados.
+
+Causa: `GetDayAsync` derivava os horários de **Horário padrão** com duas consultas por slot — uma somando reservas bloqueantes e outra verificando se já existia Slot persistido no mesmo início. Com 6 espaços das 08:00 às 22:00 em blocos de 60 min isso gerava ~170 idas e voltas sequenciais ao banco em uma única requisição.
+
+Correções:
+
+- As reservas bloqueantes do dia passam a ser carregadas em uma única consulta e a sobreposição é calculada em memória por Rentable.
+- A verificação de Slot já persistido reaproveita os Slots que a própria requisição já carregou, em vez de consultar o banco por slot.
+- `PublishDayAsync` também deixou de consultar o banco por template: os inícios já existentes vêm em uma consulta e a checagem passa a ser em memória, o que ainda evita duplicatas dentro do mesmo lote.
+- `GET /api/schedule/templates` aceita `dayOfWeek`; a Agenda diária pede apenas o dia da data selecionada, reduzindo o payload em ~7x (ela só precisa saber se o espaço tem grade naquele dia).
+
+Resultado: a leitura do dia passou de ~170 consultas para 5, independentemente da quantidade de horários. Nenhuma mudança de schema foi necessária — os índices existentes (`ix_slots_tenant_id_date_status`, `ix_reservation_items_rental_asset_id`, `ix_schedule_templates_tenant_id_rental_asset_id_day_of_week_st`) já cobrem as consultas em lote.
+
+### 3.8 Exceções diárias na Agenda (14/08)
+
+- `Slot` passou a ser tratado como ocorrência/override de uma data; a regra recorrente fica em Horário padrão / Template semanal.
+- Cards da Agenda do dia são clicáveis: trocar tipo/descrição, indisponibilizar só naquele dia, restaurar o padrão semanal.
+- Horários derivados de OpenHours podem ser indisponibilizados via tombstone `Cancelled` (não reaparecem na derivação).
+- Reservados bloqueiam edição e apontam para `/configuracoes/reservas`.
+- Abas renomeadas para **Agenda do dia** e **Configuração semanal**; política e seed saíram da agenda do dia.
+- Contratos: `SlotOccurrenceSource`, `POST /api/schedule/slots/daily-occurrence`.
 
 ## 4. Decisões vigentes
 

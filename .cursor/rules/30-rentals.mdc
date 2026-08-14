@@ -25,5 +25,12 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 
 ## Estado atual e lacunas
 
-Implementado: pricing CRUD, availability pública, criação de reserva, auth B2C e-mail+senha (+ OTP legado), API de OccupancyKind / ScheduleTemplate / Slot / Layout (ver `docs/adr/0001-rentals-slot-schedule.md`).
-Faltando (ver `ROADMAP.md`): UI admin/B2C de slots no `vlr-web`, confirmar/cancelar/completar reserva, pagamento de depósito (`DepositPaid` hoje sempre 0), listagem de reservas (admin e cliente), SMS real e avisos WhatsApp.
+Implementado (ver `ROADMAP.md` + ADR `docs/adr/0001-rentals-slot-schedule.md`):
+- pricing CRUD, availability pública, criação de reserva, auth B2C e-mail+senha (+ OTP legado);
+- OccupancyKind / ScheduleTemplate / Slot / PublishDay / BookSlot;
+- `SchedulePolicy` OpenHours | SlotGrid (UI: Horário padrão | Grade personalizada);
+- admin de reservas (listar / confirmar / cancelar);
+- admin de agenda completo no `vlr-web` (diária, templates, kinds) + B2C book por `slotId`;
+- operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish.
+
+Faltando: canvas de Layout no admin + picker B2C, pagamento de depósito (`DepositPaid` hoje sempre 0), completar reserva, listagem de reservas do Customer, SMS real e avisos WhatsApp.
