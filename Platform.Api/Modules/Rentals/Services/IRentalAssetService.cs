@@ -12,4 +12,8 @@ public interface IRentalAssetService
         Guid rentalAssetId,
         UpdateRentalSchedulePolicyRequestDto request,
         CancellationToken cancellationToken);
+
+    Task<BulkUpdateRentalSchedulePolicyResponseDto> UpdateSchedulePolicyBulkAsync(
+        BulkUpdateRentalSchedulePolicyRequestDto request,
+        CancellationToken cancellationToken);
 }

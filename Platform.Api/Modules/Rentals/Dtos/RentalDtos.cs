@@ -32,6 +32,24 @@ public sealed record UpdateRentalSchedulePolicyRequestDto
     public string? AllowedDurationMinutes { get; init; }
 }
 
+public sealed record BulkUpdateRentalSchedulePolicyRequestDto
+{
+    public required IReadOnlyList<Guid> RentalAssetIds { get; init; }
+
+    public required SchedulePolicy SchedulePolicy { get; init; }
+
+    public TimeOnly? OpenTime { get; init; }
+
+    public TimeOnly? CloseTime { get; init; }
+
+    /// <summary>Comma-separated minutes for OpenHours (e.g. "60" or "60,120").</summary>
+    public string? AllowedDurationMinutes { get; init; }
+}
+
+public sealed record BulkUpdateRentalSchedulePolicyResponseDto(
+    int Updated,
+    IReadOnlyList<RentalAssetResponse> Items);
+
 public sealed record CheckAvailabilityRequestDto
 {
     public required Guid AssetId { get; init; }

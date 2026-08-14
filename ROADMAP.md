@@ -10,7 +10,8 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 1. Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
 2. Ao encerrar uma tarefa (ou após progresso relevante), o agente deve descrever no chat o **próximo passo previsto** deste roadmap **e** do `ROADMAP.md` do **`vlr-web`**.
 3. Em toda etapa concluída, descrever no chat **como testar** (passos de UI e/ou como disparar o endpoint).
-4. Ordem de leitura do agente: `AGENTS.md` → `CONTEXT.md` → este arquivo → `.cursor/rules/`.
+4. Entregas relevantes de produto/incidentes também atualizam o diário canônico em `docs/sessions/` (um consolidado por data ou período).
+5. Ordem de leitura do agente: `AGENTS.md` → `CONTEXT.md` → este arquivo → `.cursor/rules/`.
 
 ## 1. Registro dinâmico por tenant — FEITO (código)
 
@@ -44,6 +45,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] `ScheduleTemplate` + `Slot` + PublishDay + UpsertSlot + BookSlot
 - [x] `SchedulePolicy` SlotGrid | OpenHours em `RentalAsset`
 - [x] `PUT /api/rental-assets/{id}/schedule-policy` (admin OpenHours)
+- [x] `PUT /api/rental-assets/schedule-policy` (bulk transacional) + `rentalAssetIds` em GET templates/days, seed e publish
 - [x] `POST /api/schedule/templates/seed-default` (bulk seed SlotGrid em 1 request)
 - [x] `RentalLayout` + items (API; canvas UI pendente)
 - [x] Migration `AddRentalsScheduleAndLayouts` + SQL script
@@ -120,3 +122,6 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-10 | **Executado:** PlatformAdmin oculto de listas/contagens (trial); bloqueio invite/promote/delete; Auth multi-tenant preservado no delete. |
 | 2026-08-10 | **Fix:** unidade padrão `Matriz` (não Headquarters); migration rename; Switch/wizard UX. |
 | 2026-08-11 | **Executado:** `POST /api/schedule/templates/seed-default` + `PUT .../schedule-policy` (OpenHours admin). |
+| 2026-08-14 | **Executado:** bulk `rentalAssetIds` (política transacional, GET dia/templates, seed, publish). UI no `vlr-web`: Horário padrão / Grade personalizada. |
+| 2026-08-14 | **Docs/branding:** paleta fallback Rolvix registrada (`#4D6A92`, `#5A8FA0`, `#A2C6E9`); contrato `PrimaryColor`/`AccentColor` por tenant permanece inalterado. |
+| 2026-08-14 | **Diário:** entregas de 06–14/08 consolidadas em [`docs/sessions/2026-08-14-product-delivery-log.md`](./docs/sessions/2026-08-14-product-delivery-log.md). |

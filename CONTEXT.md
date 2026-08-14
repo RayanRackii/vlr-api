@@ -52,6 +52,8 @@ Campos no cadastro/edição do Tenant (além de `Subdomain`):
 
 `LogoUrl` (coluna legada) permanece no banco mas **não** é escrita/lida pelo produto — aposentar em migration futura.
 
+**Paleta padrão Rolvix (fallback, não schema novo):** `#4D6A92` primary, `#5A8FA0` accent e `#A2C6E9` complementary. O formulário de novos tenants inicia com primary/accent dessa paleta; valores persistidos em `PrimaryColor`/`AccentColor` continuam soberanos no portal personalizado. A cor complementar é derivada/aplicada pela UI e não exige terceiro campo no Tenant.
+
 **Derivar automaticamente (zero manutenção extra):**
 - Favicon a partir do SVG (futuro)
 - Cor de fundo suave / contraste de texto a partir do `PrimaryColor` (não pedir paleta completa)
@@ -127,11 +129,11 @@ The concrete set of Slots for one calendar date (optionally per Unit). Published
 _Avoid_: Treating the weekly template itself as the live bookings grid
 
 **OpenHours**:
-A schedule policy where a Rentable is continuously available between open and close times; bookable windows are derived from that interval (and allowed durations), without requiring the admin to draw every cell. Prefer this for the common club case (~08:00–22:00). Admin: `PUT /api/rental-assets/{id}/schedule-policy`.
+A schedule policy where a Rentable is continuously available between open and close times; bookable windows are derived from that interval (and allowed durations), without requiring the admin to draw every cell. Prefer this for the common club case (~08:00–22:00). Admin: `PUT /api/rental-assets/{id}/schedule-policy` (one) or `PUT /api/rental-assets/schedule-policy` (bulk, transactional — invalid ID aborts all). **UI copy: Horário padrão** — never show `OpenHours` or “80%” in the product UI.
 _Avoid_: Forcing explicit Slot drawing when the tenant only needs “18:00–00:00 all open”; seeding dozens of identical SlotGrid templates when OpenHours fits
 
 **SlotGrid**:
-Schedule policy that authors the week as explicit **ScheduleTemplate** cells, then **PublishDay** materializes **Slot** rows. Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default`.
+Schedule policy that authors the week as explicit **ScheduleTemplate** cells, then **PublishDay** materializes **Slot** rows. Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default` (`rentalAssetIds` for a set). Day query/publish accept the same ID list. **UI copy: Grade personalizada** — never show `SlotGrid` in the product UI. Fine edits stay per rentable on Weekly templates.
 _Avoid_: N client-side POSTs per hour×day as the product path
 
 **Layout**:

@@ -16,9 +16,13 @@ public sealed class ScheduleController(
     [HttpGet("templates")]
     public async Task<ActionResult<IReadOnlyList<ScheduleTemplateResponseDto>>> ListTemplates(
         [FromQuery] Guid? rentalAssetId,
+        [FromQuery] Guid[]? rentalAssetIds,
         CancellationToken cancellationToken)
     {
-        return Ok(await scheduleService.ListTemplatesAsync(rentalAssetId, cancellationToken));
+        return Ok(await scheduleService.ListTemplatesAsync(
+            rentalAssetId,
+            cancellationToken,
+            rentalAssetIds));
     }
 
     [Authorize]
@@ -96,9 +100,15 @@ public sealed class ScheduleController(
     public async Task<ActionResult<DayScheduleResponseDto>> GetDayAdmin(
         DateOnly date,
         [FromQuery] Guid? rentalAssetId,
+        [FromQuery] Guid[]? rentalAssetIds,
         CancellationToken cancellationToken)
     {
-        return Ok(await scheduleService.GetDayAsync(date, rentalAssetId, customerFacing: false, cancellationToken));
+        return Ok(await scheduleService.GetDayAsync(
+            date,
+            rentalAssetId,
+            customerFacing: false,
+            cancellationToken,
+            rentalAssetIds));
     }
 
     [AllowAnonymous]

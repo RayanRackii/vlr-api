@@ -91,11 +91,16 @@ public sealed record PublishDayRequestDto
 
     /// <summary>Optional: publish only this rentable; otherwise all SlotGrid rentables.</summary>
     public Guid? RentalAssetId { get; init; }
+
+    /// <summary>Optional: publish these rentables (takes precedence over <see cref="RentalAssetId"/> when set).</summary>
+    public IReadOnlyList<Guid>? RentalAssetIds { get; init; }
 }
 
 public sealed record SeedDefaultTemplatesRequestDto
 {
-    public required Guid RentalAssetId { get; init; }
+    public Guid? RentalAssetId { get; init; }
+
+    public IReadOnlyList<Guid>? RentalAssetIds { get; init; }
 
     /// <summary>Inclusive start of the hourly grid. Default 08:00.</summary>
     public TimeOnly? OpenTime { get; init; }

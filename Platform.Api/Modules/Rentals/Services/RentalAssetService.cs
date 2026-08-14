@@ -58,15 +58,7 @@ public sealed class RentalAssetService(
 
         if (request.SchedulePolicy == SchedulePolicy.OpenHours)
         {
-            if (request.OpenTime is null || request.CloseTime is null)
-            {
-                throw new ArgumentException("OpenHours requires OpenTime and CloseTime.");
-            }
-
-            if (request.CloseTime <= request.OpenTime)
-            {
-                throw new ArgumentException("CloseTime must be after OpenTime.");
-            }
+            ValidatePolicy(request.SchedulePolicy, request.OpenTime, request.CloseTime);
         }
 
         rental.SchedulePolicy = request.SchedulePolicy;
@@ -79,6 +71,79 @@ public sealed class RentalAssetService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToResponse(rental);
+    }
+
+    public async Task<BulkUpdateRentalSchedulePolicyResponseDto> UpdateSchedulePolicyBulkAsync(
+        BulkUpdateRentalSchedulePolicyRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var ids = request.RentalAssetIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            throw new ArgumentException("At least one rentable is required.");
+        }
+
+        ValidatePolicy(request.SchedulePolicy, request.OpenTime, request.CloseTime);
+
+        var rentals = await dbContext.RentalAssets
+            .Include(r => r.Asset)
+                .ThenInclude(a => a.Category)
+            .Where(r => ids.Contains(r.Id) && r.IsActive)
+            .ToListAsync(cancellationToken);
+
+        if (rentals.Count != ids.Count)
+        {
+            throw new KeyNotFoundException("One or more rentables were not found.");
+        }
+
+        var allowed = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
+            ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
+            : request.AllowedDurationMinutes.Trim();
+
+        foreach (var rental in rentals)
+        {
+            rental.SchedulePolicy = request.SchedulePolicy;
+            rental.OpenTime = request.OpenTime;
+            rental.CloseTime = request.CloseTime;
+            rental.AllowedDurationMinutes = allowed;
+            rental.Touch();
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var items = rentals
+            .OrderBy(r => r.Asset.Name)
+            .Select(ToResponse)
+            .ToList();
+
+        return new BulkUpdateRentalSchedulePolicyResponseDto(items.Count, items);
+    }
+
+    private static void ValidatePolicy(
+        SchedulePolicy policy,
+        TimeOnly? openTime,
+        TimeOnly? closeTime)
+    {
+        if (policy != SchedulePolicy.OpenHours)
+        {
+            return;
+        }
+
+        if (openTime is null || closeTime is null)
+        {
+            throw new ArgumentException("OpenHours requires OpenTime and CloseTime.");
+        }
+
+        if (closeTime <= openTime)
+        {
+            throw new ArgumentException("CloseTime must be after OpenTime.");
+        }
     }
 
     private Guid EnsureTenantContext()

@@ -34,6 +34,26 @@ public sealed class RentalAssetsController(
         return Ok(asset);
     }
 
+    [HttpPut("schedule-policy")]
+    public async Task<ActionResult<BulkUpdateRentalSchedulePolicyResponseDto>> UpdateSchedulePolicyBulk(
+        [FromBody] BulkUpdateRentalSchedulePolicyRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(
+                await rentalAssetService.UpdateSchedulePolicyBulkAsync(request, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     [HttpPut("{id:guid}/schedule-policy")]
     public async Task<ActionResult<RentalAssetResponse>> UpdateSchedulePolicy(
         Guid id,

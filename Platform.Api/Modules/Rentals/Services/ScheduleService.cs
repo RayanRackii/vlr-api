@@ -19,9 +19,12 @@ public sealed class ScheduleService(
 
     public async Task<IReadOnlyList<ScheduleTemplateResponseDto>> ListTemplatesAsync(
         Guid? rentalAssetId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<Guid>? rentalAssetIds = null)
     {
         EnsureTenant();
+
+        var ids = ResolveRentableIds(rentalAssetId, rentalAssetIds);
 
         var query = dbContext.ScheduleTemplates
             .AsNoTracking()
@@ -29,9 +32,9 @@ public sealed class ScheduleService(
             .Include(t => t.OccupancyKind)
             .AsQueryable();
 
-        if (rentalAssetId is not null)
+        if (ids.Count > 0)
         {
-            query = query.Where(t => t.RentalAssetId == rentalAssetId);
+            query = query.Where(t => ids.Contains(t.RentalAssetId));
         }
 
         var items = await query
@@ -115,7 +118,9 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
-        await EnsureRentableAsync(request.RentalAssetId, cancellationToken);
+
+        var rentableIds = ResolveRentableIds(request.RentalAssetId, request.RentalAssetIds);
+        await EnsureRentablesAsync(rentableIds, cancellationToken);
 
         var open = request.OpenTime ?? new TimeOnly(8, 0);
         var close = request.CloseTime ?? new TimeOnly(22, 0);
@@ -153,50 +158,53 @@ public sealed class ScheduleService(
         }
 
         var existing = await dbContext.ScheduleTemplates
-            .Where(t => t.RentalAssetId == request.RentalAssetId)
-            .Select(t => new { t.DayOfWeek, t.StartTime, t.EndTime })
+            .Where(t => rentableIds.Contains(t.RentalAssetId))
+            .Select(t => new { t.RentalAssetId, t.DayOfWeek, t.StartTime, t.EndTime })
             .ToListAsync(cancellationToken);
 
         var existingKeys = existing
-            .Select(row => $"{row.DayOfWeek}|{row.StartTime}|{row.EndTime}")
+            .Select(row => $"{row.RentalAssetId}|{row.DayOfWeek}|{row.StartTime}|{row.EndTime}")
             .ToHashSet();
 
         var created = 0;
         var skipped = 0;
 
-        foreach (DayOfWeek dayOfWeek in Enum.GetValues<DayOfWeek>())
+        foreach (var rentableId in rentableIds)
         {
-            var cursor = open;
-            while (true)
+            foreach (DayOfWeek dayOfWeek in Enum.GetValues<DayOfWeek>())
             {
-                var end = cursor.AddMinutes(slotMinutes);
-                if (end > close)
+                var cursor = open;
+                while (true)
                 {
-                    break;
-                }
+                    var end = cursor.AddMinutes(slotMinutes);
+                    if (end > close)
+                    {
+                        break;
+                    }
 
-                var key = $"{dayOfWeek}|{cursor}|{end}";
-                if (existingKeys.Contains(key))
-                {
-                    skipped++;
+                    var key = $"{rentableId}|{dayOfWeek}|{cursor}|{end}";
+                    if (existingKeys.Contains(key))
+                    {
+                        skipped++;
+                        cursor = end;
+                        continue;
+                    }
+
+                    dbContext.ScheduleTemplates.Add(new ScheduleTemplate
+                    {
+                        TenantId = tenantId,
+                        RentalAssetId = rentableId,
+                        DayOfWeek = dayOfWeek,
+                        StartTime = cursor,
+                        EndTime = end,
+                        OccupancyKindId = openKind.Id,
+                        Label = null,
+                        IsActive = true,
+                    });
+                    existingKeys.Add(key);
+                    created++;
                     cursor = end;
-                    continue;
                 }
-
-                dbContext.ScheduleTemplates.Add(new ScheduleTemplate
-                {
-                    TenantId = tenantId,
-                    RentalAssetId = request.RentalAssetId,
-                    DayOfWeek = dayOfWeek,
-                    StartTime = cursor,
-                    EndTime = end,
-                    OccupancyKindId = openKind.Id,
-                    Label = null,
-                    IsActive = true,
-                });
-                existingKeys.Add(key);
-                created++;
-                cursor = end;
             }
         }
 
@@ -212,13 +220,16 @@ public sealed class ScheduleService(
         DateOnly date,
         Guid? rentalAssetId,
         bool customerFacing,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<Guid>? rentalAssetIds = null)
     {
         EnsureTenant();
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
-        var persisted = await LoadPersistedSlotsAsync(date, rentalAssetId, cancellationToken);
-        var derived = await DeriveOpenHoursSlotsAsync(date, rentalAssetId, cancellationToken);
+        var ids = ResolveRentableIds(rentalAssetId, rentalAssetIds);
+
+        var persisted = await LoadPersistedSlotsAsync(date, ids, cancellationToken);
+        var derived = await DeriveOpenHoursSlotsAsync(date, ids, cancellationToken);
 
         IEnumerable<SlotResponseDto> all = persisted.Concat(derived);
 
@@ -244,14 +255,15 @@ public sealed class ScheduleService(
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
         var dayOfWeek = request.Date.DayOfWeek;
+        var ids = ResolveRentableIds(request.RentalAssetId, request.RentalAssetIds);
 
         var templatesQuery = dbContext.ScheduleTemplates
             .Include(t => t.RentalAsset)
             .Where(t => t.IsActive && t.DayOfWeek == dayOfWeek);
 
-        if (request.RentalAssetId is not null)
+        if (ids.Count > 0)
         {
-            templatesQuery = templatesQuery.Where(t => t.RentalAssetId == request.RentalAssetId);
+            templatesQuery = templatesQuery.Where(t => ids.Contains(t.RentalAssetId));
         }
         else
         {
@@ -500,7 +512,7 @@ public sealed class ScheduleService(
 
     private async Task<List<SlotResponseDto>> LoadPersistedSlotsAsync(
         DateOnly date,
-        Guid? rentalAssetId,
+        IReadOnlyList<Guid> rentalAssetIds,
         CancellationToken cancellationToken)
     {
         var query = dbContext.Slots
@@ -509,9 +521,9 @@ public sealed class ScheduleService(
             .Include(s => s.OccupancyKind)
             .Where(s => s.Date == date && s.Status != SlotStatus.Cancelled);
 
-        if (rentalAssetId is not null)
+        if (rentalAssetIds.Count > 0)
         {
-            query = query.Where(s => s.RentalAssetId == rentalAssetId);
+            query = query.Where(s => rentalAssetIds.Contains(s.RentalAssetId));
         }
 
         var slots = await query.ToListAsync(cancellationToken);
@@ -520,7 +532,7 @@ public sealed class ScheduleService(
 
     private async Task<List<SlotResponseDto>> DeriveOpenHoursSlotsAsync(
         DateOnly date,
-        Guid? rentalAssetId,
+        IReadOnlyList<Guid> rentalAssetIds,
         CancellationToken cancellationToken)
     {
         var rentablesQuery = dbContext.RentalAssets
@@ -531,9 +543,9 @@ public sealed class ScheduleService(
                         && r.OpenTime != null
                         && r.CloseTime != null);
 
-        if (rentalAssetId is not null)
+        if (rentalAssetIds.Count > 0)
         {
-            rentablesQuery = rentablesQuery.Where(r => r.Id == rentalAssetId);
+            rentablesQuery = rentablesQuery.Where(r => rentalAssetIds.Contains(r.Id));
         }
 
         var rentables = await rentablesQuery.ToListAsync(cancellationToken);
@@ -688,6 +700,44 @@ public sealed class ScheduleService(
         {
             throw new KeyNotFoundException("Rentable was not found.");
         }
+    }
+
+    private async Task EnsureRentablesAsync(
+        IReadOnlyList<Guid> rentalAssetIds,
+        CancellationToken cancellationToken)
+    {
+        if (rentalAssetIds.Count == 0)
+        {
+            throw new ArgumentException("At least one rentable is required.");
+        }
+
+        var found = await dbContext.RentalAssets
+            .Where(r => rentalAssetIds.Contains(r.Id) && r.IsActive)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        if (found.Count != rentalAssetIds.Count)
+        {
+            throw new KeyNotFoundException("One or more rentables were not found.");
+        }
+    }
+
+    private static IReadOnlyList<Guid> ResolveRentableIds(
+        Guid? rentalAssetId,
+        IReadOnlyCollection<Guid>? rentalAssetIds)
+    {
+        var ids = new List<Guid>();
+        if (rentalAssetId is { } single && single != Guid.Empty)
+        {
+            ids.Add(single);
+        }
+
+        if (rentalAssetIds is not null)
+        {
+            ids.AddRange(rentalAssetIds.Where(id => id != Guid.Empty));
+        }
+
+        return ids.Distinct().ToList();
     }
 
     private async Task EnsureOccupancyKindAsync(Guid occupancyKindId, CancellationToken cancellationToken)

@@ -6,7 +6,8 @@ public interface IScheduleService
 {
     Task<IReadOnlyList<ScheduleTemplateResponseDto>> ListTemplatesAsync(
         Guid? rentalAssetId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<Guid>? rentalAssetIds = null);
 
     Task<ScheduleTemplateResponseDto> CreateTemplateAsync(
         UpsertScheduleTemplateRequestDto request,
@@ -27,7 +28,8 @@ public interface IScheduleService
         DateOnly date,
         Guid? rentalAssetId,
         bool customerFacing,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<Guid>? rentalAssetIds = null);
 
     Task<int> PublishDayAsync(
         PublishDayRequestDto request,
