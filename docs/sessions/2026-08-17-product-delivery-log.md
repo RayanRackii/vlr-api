@@ -14,3 +14,9 @@ Não usar `RentalPricing.RequiresDeposit` como gate — esse campo é percentual
 
 Admin posiciona Rentables em **Operação → Layout**. O mapa pode ser redimensionado (canto do canvas) e os espaços organizados em grade igual. Save ajusta percentuais que saíram do 0–100 após o arraste.
 
+## Escala: templates semanais visíveis na reserva
+
+`GET .../schedule/days/{date}` (admin e público) passa a derivar células SlotGrid a partir dos `ScheduleTemplate` daquele weekday quando ainda não há `Slot` persistido (tombstone cancelado continua ganhando). `POST .../templates/seed-default` também força `SchedulePolicy.SlotGrid`. Reserva B2C de janela derivada usa create-reservation; `PublishDay` continua opcional para exceções e cascata de recorrência.
+
+A grade admin (Agenda do dia / Configuração semanal) deixa de clipar em `68vh`: colunas preenchem a largura e a altura segue os horários do dia.
+

@@ -69,6 +69,17 @@ public sealed class ReservationService(
                 ? "Location is already reserved for the requested interval."
                 : $"Insufficient quantity. Available: {availableQuantity}, requested: {quantity}.";
         }
+        else if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
+                 && !await IsSlotGridIntervalOpenAsync(
+                     rental.Id,
+                     request.Date,
+                     request.StartTime,
+                     request.EndTime,
+                     cancellationToken))
+        {
+            isAvailable = false;
+            reason = "This interval is not open for booking.";
+        }
         else
         {
             try
@@ -166,6 +177,18 @@ public sealed class ReservationService(
                 {
                     throw new InvalidOperationException(
                         $"Asset '{rental.Asset.Name}' does not belong to the given unit.");
+                }
+
+                if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
+                    && !await IsSlotGridIntervalOpenAsync(
+                        rental.Id,
+                        request.Date,
+                        request.StartTime,
+                        request.EndTime,
+                        cancellationToken))
+                {
+                    throw new InvalidOperationException(
+                        $"'{rental.Asset.Name}' is not open for the requested interval.");
                 }
 
                 var reservedQuantity = await GetReservedQuantityAsync(
@@ -416,6 +439,43 @@ public sealed class ReservationService(
                     i.RentalAsset.AssetId,
                     i.RentalAsset.Asset.Name))
                 .ToList());
+
+    private async Task<bool> IsSlotGridIntervalOpenAsync(
+        Guid rentalAssetId,
+        DateOnly date,
+        TimeOnly startTime,
+        TimeOnly endTime,
+        CancellationToken cancellationToken)
+    {
+        var persisted = await dbContext.Slots
+            .AsNoTracking()
+            .Include(s => s.OccupancyKind)
+            .FirstOrDefaultAsync(
+                s => s.RentalAssetId == rentalAssetId
+                     && s.Date == date
+                     && s.StartTime == startTime,
+                cancellationToken);
+
+        if (persisted is not null)
+        {
+            return persisted.Status == SlotStatus.Available
+                   && persisted.EndTime == endTime
+                   && persisted.OccupancyKind.IsBookableByCustomer;
+        }
+
+        var template = await dbContext.ScheduleTemplates
+            .AsNoTracking()
+            .Include(t => t.OccupancyKind)
+            .FirstOrDefaultAsync(
+                t => t.RentalAssetId == rentalAssetId
+                     && t.IsActive
+                     && t.DayOfWeek == date.DayOfWeek
+                     && t.StartTime == startTime
+                     && t.EndTime == endTime,
+                cancellationToken);
+
+        return template is not null && template.OccupancyKind.IsBookableByCustomer;
+    }
 
     private async Task<int> GetReservedQuantityAsync(
         Guid rentalAssetId,

@@ -46,13 +46,14 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] `SchedulePolicy` SlotGrid | OpenHours em `RentalAsset`
 - [x] `PUT /api/rental-assets/{id}/schedule-policy` (admin OpenHours)
 - [x] `PUT /api/rental-assets/schedule-policy` (bulk transacional) + `rentalAssetIds` em GET templates/days, seed e publish
-- [x] `POST /api/schedule/templates/seed-default` (bulk seed SlotGrid em 1 request)
+- [x] `POST /api/schedule/templates/seed-default` (bulk seed SlotGrid em 1 request; força política SlotGrid)
+- [x] Day read deriva SlotGrid não publicado a partir dos templates do weekday (B2C reserva sem PublishDay)
 - [x] `RentalLayout` + items (API; canvas UI no `vlr-web` em Operação)
 - [x] Migration `AddRentalsScheduleAndLayouts` + SQL script
 - [x] `RentalAsset.RequiresDeposit` (default true): BookSlot/CreateReservation nasce `PendingDeposit` ou `Confirmed`
 - [ ] Aplicar migrations no Supabase (`AddRentalsScheduleAndLayouts`, `AddRentalAssetRequiresDeposit`)
 - [x] Admin UI mínima: seed templates + publish day (no `vlr-web`)
-- [x] B2C: escolher slot do dia / book por `slotId` (no `vlr-web`)
+- [x] B2C: escolher slot do dia / book por `slotId` ou create-reservation (SlotGrid derivado)
 - [x] Admin UI completa: kinds, editor fino de templates
 - [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
 
@@ -133,3 +134,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-17 | **Executado:** `RentalAsset.RequiresDeposit` — pagamento prévio opcional por rentable; reserva sem a flag nasce `Confirmed`. |
 | 2026-08-17 | **Executado:** Layout canvas — DELETE + GetDay público com `rentalAssetIds`; UI admin em Operação; B2C escolhe data+horário e vê todos os espaços (indisponíveis visíveis). |
 | 2026-08-17 | **Fix Layout:** save não trava em percentuais fora do canvas; tamanho do mapa persistido; “Organizar sozinho”. |
+| 2026-08-17 | **Fix escala:** `GetDay` deriva horários SlotGrid dos templates semanais (reserva B2C sem PublishDay); seed força SlotGrid; grade admin cabe o dia sem scroll interno. |

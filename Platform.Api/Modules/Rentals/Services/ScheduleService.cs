@@ -214,7 +214,9 @@ public sealed class ScheduleService(
             }
         }
 
-        if (created > 0)
+        var policyChanged = await EnsureSlotGridPolicyAsync(rentableIds, cancellationToken);
+
+        if (created > 0 || policyChanged)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
@@ -319,19 +321,7 @@ public sealed class ScheduleService(
             }
         }
 
-        var policyChanged = false;
-        var rentables = await dbContext.RentalAssets
-            .Where(r => rentableIds.Contains(r.Id))
-            .ToListAsync(cancellationToken);
-        foreach (var rentable in rentables)
-        {
-            if (rentable.SchedulePolicy != SchedulePolicy.SlotGrid)
-            {
-                rentable.SchedulePolicy = SchedulePolicy.SlotGrid;
-                rentable.Touch();
-                policyChanged = true;
-            }
-        }
+        var policyChanged = await EnsureSlotGridPolicyAsync(rentableIds, cancellationToken);
 
         if (created > 0 || updated > 0 || policyChanged)
         {
@@ -368,10 +358,14 @@ public sealed class ScheduleService(
                 ResolvePersistedSource(s, templateBySlot.GetValueOrDefault(s.Id))))
             .ToList();
 
-        var derived = await DeriveOpenHoursSlotsAsync(
+        var derivedOpenHours = await DeriveOpenHoursSlotsAsync(
+            date, ids, persistedStarts, cancellationToken);
+        var derivedSlotGrid = await DeriveSlotGridFromTemplatesAsync(
             date, ids, persistedStarts, cancellationToken);
 
-        IEnumerable<SlotResponseDto> all = persisted.Concat(derived);
+        IEnumerable<SlotResponseDto> all = persisted
+            .Concat(derivedOpenHours)
+            .Concat(derivedSlotGrid);
 
         if (customerFacing)
         {
@@ -1357,6 +1351,113 @@ public sealed class ScheduleService(
         }
 
         return derived;
+    }
+
+    /// <summary>
+    /// Unpublished SlotGrid days reuse the weekday's templates as derived windows, the same way
+    /// OpenHours derives from open/close. Persisted starts (including cancelled tombstones) win.
+    /// </summary>
+    private async Task<List<SlotResponseDto>> DeriveSlotGridFromTemplatesAsync(
+        DateOnly date,
+        IReadOnlyList<Guid> rentalAssetIds,
+        IReadOnlySet<(Guid RentalAssetId, TimeOnly StartTime)> persistedStarts,
+        CancellationToken cancellationToken)
+    {
+        var templatesQuery = dbContext.ScheduleTemplates
+            .AsNoTracking()
+            .Include(t => t.RentalAsset).ThenInclude(r => r.Asset)
+            .Include(t => t.OccupancyKind)
+            .Where(t => t.IsActive
+                        && t.DayOfWeek == date.DayOfWeek
+                        && t.RentalAsset.IsActive
+                        && t.RentalAsset.SchedulePolicy == SchedulePolicy.SlotGrid);
+
+        if (rentalAssetIds.Count > 0)
+        {
+            templatesQuery = templatesQuery.Where(t => rentalAssetIds.Contains(t.RentalAssetId));
+        }
+
+        var templates = await templatesQuery.ToListAsync(cancellationToken);
+        if (templates.Count == 0)
+        {
+            return [];
+        }
+
+        var reservedWindows = await LoadReservedWindowsAsync(
+            date,
+            templates.Select(t => t.RentalAssetId).Distinct().ToList(),
+            cancellationToken);
+
+        var derived = new List<SlotResponseDto>();
+        foreach (var template in templates)
+        {
+            if (persistedStarts.Contains((template.RentalAssetId, template.StartTime)))
+            {
+                continue;
+            }
+
+            var startDt = ToDateTime(date, template.StartTime);
+            var endDt = ToDateTime(date, template.EndTime);
+            var windows = reservedWindows.TryGetValue(template.RentalAssetId, out var found)
+                ? found
+                : [];
+            var reserved = SumOverlapping(windows, startDt, endDt);
+            var available = template.RentalAsset.Type == RentalAssetType.Location
+                ? reserved == 0
+                : reserved < template.RentalAsset.TotalQuantity;
+
+            if (!available)
+            {
+                continue;
+            }
+
+            derived.Add(new SlotResponseDto(
+                Guid.Empty,
+                template.RentalAssetId,
+                template.RentalAsset.Asset.Name,
+                date,
+                template.StartTime,
+                template.EndTime,
+                template.OccupancyKindId,
+                template.OccupancyKind.Key,
+                template.OccupancyKind.Label,
+                template.OccupancyKind.ColorHex,
+                template.OccupancyKind.IsBookableByCustomer,
+                template.Label,
+                SlotStatus.Available,
+                null,
+                IsDerived: true,
+                SlotOccurrenceSource.WeeklyDefault,
+                SourceTemplateId: template.Id,
+                SchedulePolicy.SlotGrid,
+                SupportsEntireRecurrence: true));
+        }
+
+        return derived;
+    }
+
+    private async Task<bool> EnsureSlotGridPolicyAsync(
+        IReadOnlyList<Guid> rentableIds,
+        CancellationToken cancellationToken)
+    {
+        var rentables = await dbContext.RentalAssets
+            .Where(r => rentableIds.Contains(r.Id))
+            .ToListAsync(cancellationToken);
+
+        var changed = false;
+        foreach (var rentable in rentables)
+        {
+            if (rentable.SchedulePolicy == SchedulePolicy.SlotGrid)
+            {
+                continue;
+            }
+
+            rentable.SchedulePolicy = SchedulePolicy.SlotGrid;
+            rentable.Touch();
+            changed = true;
+        }
+
+        return changed;
     }
 
     /// <summary>
