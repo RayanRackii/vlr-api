@@ -137,8 +137,12 @@ Schedule policy that authors the week as explicit **ScheduleTemplate** cells, th
 _Avoid_: N client-side POSTs per hour×day as the product path
 
 **Admin Daily Agenda UX**:
-Operational resource grid: compact toolbar (date navigation, multi-resource selector, apply grid) and a virtualized time × resource matrix as the main surface. Cells open a contextual drawer for day overrides or SlotGrid recurrence edits. Weekly setup holds policy, seed and bulk weekly rules. Copy stays generic (spaces/goods), never segment-specific.
+Operational resource grid: compact toolbar (date navigation, multi-resource selector, apply grid) and a virtualized time × resource matrix as the main surface. Cells open a contextual drawer for day overrides or SlotGrid recurrence edits. Copy stays generic (spaces/goods), never segment-specific.
 _Avoid_: Vertical stacks of per-resource cards; mixing weekly policy editors into the day grid; sports-specific labels
+
+**Weekly setup UX**:
+Same time × resource matrix as the day agenda, keyed by weekday instead of a calendar date. OpenHours columns render derived repeating windows; SlotGrid columns render that weekday’s templates. Empty SlotGrid cells create a template; OpenHours cells open the window-level schedule setup.
+_Avoid_: Loading templates for a single Rentable while the day grid shows the whole selection; a form column that replaces the matrix
 
 **Day occurrence**:
 A dated Slot (or OpenHours-derived window) for one Rentable. Admin can adjust kind/label, make unavailable, or restore the weekly default for that single date (`OnlyThisDay`). For SlotGrid, `EntireRecurrence` updates the matching weekly template and cascades to future non-booked slots that still match the previous fingerprint. OpenHours entire-window edits stay in Weekly setup. Booked occurrences redirect to the reservation.

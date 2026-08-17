@@ -319,7 +319,7 @@ public sealed class ScheduleService(
             }
         }
 
-        // Ensure selected rentables use SlotGrid when applying an explicit weekly grid.
+        var policyChanged = false
         var rentables = await dbContext.RentalAssets
             .Where(r => rentableIds.Contains(r.Id))
             .ToListAsync(cancellationToken);
@@ -329,10 +329,11 @@ public sealed class ScheduleService(
             {
                 rentable.SchedulePolicy = SchedulePolicy.SlotGrid;
                 rentable.Touch();
+                policyChanged = true;
             }
         }
 
-        if (created > 0 || updated > 0)
+        if (created > 0 || updated > 0 || policyChanged)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }

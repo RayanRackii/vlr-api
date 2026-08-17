@@ -128,3 +128,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-14 | **Perf:** `GetDayAsync` sem N+1 (reservas do dia e Slots persistidos em lote), `PublishDayAsync` sem consulta por template e `GET /api/schedule/templates?dayOfWeek=`. Leitura do dia caiu de ~170 para 5 consultas; sem mudança de schema. |
 | 2026-08-14 | **Executado:** exceções diárias — `POST /api/schedule/slots/daily-occurrence` (update/indisponibilizar/restaurar), leitura admin com Cancelled + tombstones OpenHours, origem `WeeklyDefault`/`DailyOverride`. |
 | 2026-08-14 | **Executado:** agenda operacional em grade — `EntireRecurrence` com cascata SlotGrid, `apply-weekly-rule`, OccupancyKind description/icon, UI virtualizada tempo×recursos. |
+| 2026-08-17 | **Executado:** Configuração semanal alinhada à Agenda do dia (grade tempo × recursos por dia da semana; OpenHours visível em todas as colunas). |
