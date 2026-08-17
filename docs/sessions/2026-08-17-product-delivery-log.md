@@ -12,4 +12,5 @@ Não usar `RentalPricing.RequiresDeposit` como gate — esse campo é percentual
 
 ## Layout canvas
 
-Admin posiciona Rentables em **Operação → Layout** (`/configuracoes/layout`). O portal B2C passa a escolher **data + horário** primeiro e depois o espaço no mapa. Sem layout ativo, todos os espaços aparecem em grade; indisponíveis continuam visíveis e não clicáveis.
+Admin posiciona Rentables em **Operação → Layout**. O mapa pode ser redimensionado (canto do canvas) e os espaços organizados em grade igual. Save ajusta percentuais que saíram do 0–100 após o arraste.
+

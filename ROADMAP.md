@@ -132,3 +132,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-17 | **Executado:** Configuração semanal alinhada à Agenda do dia (grade tempo × recursos por dia da semana; OpenHours visível em todas as colunas). |
 | 2026-08-17 | **Executado:** `RentalAsset.RequiresDeposit` — pagamento prévio opcional por rentable; reserva sem a flag nasce `Confirmed`. |
 | 2026-08-17 | **Executado:** Layout canvas — DELETE + GetDay público com `rentalAssetIds`; UI admin em Operação; B2C escolhe data+horário e vê todos os espaços (indisponíveis visíveis). |
+| 2026-08-17 | **Fix Layout:** save não trava em percentuais fora do canvas; tamanho do mapa persistido; “Organizar sozinho”. |

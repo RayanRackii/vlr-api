@@ -15,6 +15,12 @@ public class RentalLayout : Entity, ITenantScoped
 
     public required bool IsActive { get; set; }
 
+    /// <summary>Canvas width / height. Default 1.6 (16:10).</summary>
+    public required double AspectRatio { get; set; }
+
+    /// <summary>How much of the content width the canvas occupies (50–100).</summary>
+    public required double WidthPercent { get; set; }
+
     public Unit? Unit { get; set; }
 
     private readonly List<RentalLayoutItem> _items = [];

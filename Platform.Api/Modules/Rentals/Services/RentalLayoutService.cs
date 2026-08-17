@@ -58,21 +58,23 @@ public sealed class RentalLayoutService(
             UnitId = request.UnitId,
             Name = request.Name.Trim(),
             IsActive = request.IsActive,
+            AspectRatio = FitAspectRatio(request.AspectRatio),
+            WidthPercent = FitWidthPercent(request.WidthPercent),
         };
 
         foreach (var item in request.Items)
         {
             await EnsureRentableAsync(item.RentalAssetId, cancellationToken);
-            ValidatePercents(item);
+            var fitted = FitPercents(item);
             layout.AddItem(new RentalLayoutItem
             {
                 TenantId = tenantId,
                 LayoutId = layout.Id,
                 RentalAssetId = item.RentalAssetId,
-                XPercent = item.XPercent,
-                YPercent = item.YPercent,
-                WidthPercent = item.WidthPercent,
-                HeightPercent = item.HeightPercent,
+                XPercent = fitted.X,
+                YPercent = fitted.Y,
+                WidthPercent = fitted.W,
+                HeightPercent = fitted.H,
                 ZIndex = item.ZIndex,
             });
         }
@@ -102,6 +104,8 @@ public sealed class RentalLayoutService(
         layout.UnitId = request.UnitId;
         layout.Name = request.Name.Trim();
         layout.IsActive = request.IsActive;
+        layout.AspectRatio = FitAspectRatio(request.AspectRatio);
+        layout.WidthPercent = FitWidthPercent(request.WidthPercent);
         layout.Touch();
 
         dbContext.RentalLayoutItems.RemoveRange(layout.Items);
@@ -109,16 +113,16 @@ public sealed class RentalLayoutService(
         foreach (var item in request.Items)
         {
             await EnsureRentableAsync(item.RentalAssetId, cancellationToken);
-            ValidatePercents(item);
+            var fitted = FitPercents(item);
             dbContext.RentalLayoutItems.Add(new RentalLayoutItem
             {
                 TenantId = tenantId,
                 LayoutId = layout.Id,
                 RentalAssetId = item.RentalAssetId,
-                XPercent = item.XPercent,
-                YPercent = item.YPercent,
-                WidthPercent = item.WidthPercent,
-                HeightPercent = item.HeightPercent,
+                XPercent = fitted.X,
+                YPercent = fitted.Y,
+                WidthPercent = fitted.W,
+                HeightPercent = fitted.H,
                 ZIndex = item.ZIndex,
             });
         }
@@ -148,16 +152,21 @@ public sealed class RentalLayoutService(
         }
     }
 
-    private static void ValidatePercents(UpsertRentalLayoutItemRequestDto item)
+    private static (double X, double Y, double W, double H) FitPercents(
+        UpsertRentalLayoutItemRequestDto item)
     {
-        if (item.WidthPercent <= 0 || item.HeightPercent <= 0
-            || item.XPercent < 0 || item.YPercent < 0
-            || item.XPercent + item.WidthPercent > 100.0001
-            || item.YPercent + item.HeightPercent > 100.0001)
-        {
-            throw new ArgumentException("Layout item percents must fit within the 0–100 canvas.");
-        }
+        var width = Math.Clamp(item.WidthPercent, 8, 100);
+        var height = Math.Clamp(item.HeightPercent, 8, 100);
+        var x = Math.Clamp(item.XPercent, 0, 100 - width);
+        var y = Math.Clamp(item.YPercent, 0, 100 - height);
+        return (x, y, width, height);
     }
+
+    private static double FitAspectRatio(double value) =>
+        Math.Clamp(value <= 0 ? 1.6 : value, 0.7, 2.8);
+
+    private static double FitWidthPercent(double value) =>
+        Math.Clamp(value <= 0 ? 100 : value, 50, 100);
 
     private Guid EnsureTenant() =>
         tenantProvider.TenantId
@@ -169,6 +178,8 @@ public sealed class RentalLayoutService(
             layout.UnitId,
             layout.Name,
             layout.IsActive,
+            layout.AspectRatio,
+            layout.WidthPercent,
             layout.Items
                 .OrderBy(i => i.ZIndex)
                 .Select(i => new RentalLayoutItemResponseDto(

@@ -231,6 +231,8 @@ public sealed record RentalLayoutResponseDto(
     Guid? UnitId,
     string Name,
     bool IsActive,
+    double AspectRatio,
+    double WidthPercent,
     IReadOnlyList<RentalLayoutItemResponseDto> Items);
 
 public sealed record UpsertRentalLayoutItemRequestDto
@@ -255,6 +257,12 @@ public sealed record UpsertRentalLayoutRequestDto
     public required string Name { get; init; }
 
     public bool IsActive { get; init; } = true;
+
+    /// <summary>Canvas width / height. Default 1.6 (16:10).</summary>
+    public double AspectRatio { get; init; } = 1.6;
+
+    /// <summary>Canvas width as percent of the content column (50–100).</summary>
+    public double WidthPercent { get; init; } = 100;
 
     public IReadOnlyList<UpsertRentalLayoutItemRequestDto> Items { get; init; } = [];
 }

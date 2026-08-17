@@ -15,6 +15,8 @@ public sealed class RentalLayoutConfiguration : IEntityTypeConfiguration<RentalL
         builder.Property(l => l.TenantId).IsRequired();
         builder.Property(l => l.Name).HasMaxLength(200).IsRequired();
         builder.Property(l => l.IsActive).HasDefaultValue(true).IsRequired();
+        builder.Property(l => l.AspectRatio).HasDefaultValue(1.6d).IsRequired();
+        builder.Property(l => l.WidthPercent).HasDefaultValue(100d).IsRequired();
         builder.Property(l => l.CreatedAt).IsRequired();
 
         builder.HasIndex(l => new { l.TenantId, l.IsActive });
