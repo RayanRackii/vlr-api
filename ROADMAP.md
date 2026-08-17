@@ -47,13 +47,14 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] `PUT /api/rental-assets/{id}/schedule-policy` (admin OpenHours)
 - [x] `PUT /api/rental-assets/schedule-policy` (bulk transacional) + `rentalAssetIds` em GET templates/days, seed e publish
 - [x] `POST /api/schedule/templates/seed-default` (bulk seed SlotGrid em 1 request)
-- [x] `RentalLayout` + items (API; canvas UI pendente)
+- [x] `RentalLayout` + items (API; canvas UI no `vlr-web` em Operação)
 - [x] Migration `AddRentalsScheduleAndLayouts` + SQL script
-- [ ] Aplicar migration no Supabase
+- [x] `RentalAsset.RequiresDeposit` (default true): BookSlot/CreateReservation nasce `PendingDeposit` ou `Confirmed`
+- [ ] Aplicar migrations no Supabase (`AddRentalsScheduleAndLayouts`, `AddRentalAssetRequiresDeposit`)
 - [x] Admin UI mínima: seed templates + publish day (no `vlr-web`)
 - [x] B2C: escolher slot do dia / book por `slotId` (no `vlr-web`)
 - [x] Admin UI completa: kinds, editor fino de templates
-- [ ] Canvas de Layout no admin
+- [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -129,3 +130,5 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-14 | **Executado:** exceções diárias — `POST /api/schedule/slots/daily-occurrence` (update/indisponibilizar/restaurar), leitura admin com Cancelled + tombstones OpenHours, origem `WeeklyDefault`/`DailyOverride`. |
 | 2026-08-14 | **Executado:** agenda operacional em grade — `EntireRecurrence` com cascata SlotGrid, `apply-weekly-rule`, OccupancyKind description/icon, UI virtualizada tempo×recursos. |
 | 2026-08-17 | **Executado:** Configuração semanal alinhada à Agenda do dia (grade tempo × recursos por dia da semana; OpenHours visível em todas as colunas). |
+| 2026-08-17 | **Executado:** `RentalAsset.RequiresDeposit` — pagamento prévio opcional por rentable; reserva sem a flag nasce `Confirmed`. |
+| 2026-08-17 | **Executado:** Layout canvas — DELETE + GetDay público com `rentalAssetIds`; UI admin em Operação; B2C escolhe data+horário e vê todos os espaços (indisponíveis visíveis). |

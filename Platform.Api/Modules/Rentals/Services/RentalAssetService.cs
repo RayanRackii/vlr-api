@@ -162,6 +162,7 @@ public sealed class RentalAssetService(
             rental.Type,
             rental.TotalQuantity,
             rental.IsActive,
+            rental.RequiresDeposit,
             rental.SchedulePolicy,
             rental.OpenTime,
             rental.CloseTime,

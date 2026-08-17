@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -7,7 +8,8 @@ namespace Platform.Api.Modules.Rentals.Services;
 
 public sealed class RentalLayoutService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IRentalLayoutService
+    ITenantProvider tenantProvider,
+    ITrialGuard trialGuard) : IRentalLayoutService
 {
     public async Task<IReadOnlyList<RentalLayoutResponseDto>> ListAsync(
         CancellationToken cancellationToken)
@@ -44,6 +46,12 @@ public sealed class RentalLayoutService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            throw new ArgumentException("Layout name is required.");
+        }
+
         var layout = new RentalLayout
         {
             TenantId = tenantId,
@@ -80,6 +88,12 @@ public sealed class RentalLayoutService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            throw new ArgumentException("Layout name is required.");
+        }
+
         var layout = await dbContext.RentalLayouts
             .Include(l => l.Items)
             .FirstOrDefaultAsync(l => l.Id == id, cancellationToken)
@@ -111,6 +125,18 @@ public sealed class RentalLayoutService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return (await GetAsync(layout.Id, cancellationToken))!;
+    }
+
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        EnsureTenant();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
+        var layout = await dbContext.RentalLayouts
+            .FirstOrDefaultAsync(l => l.Id == id, cancellationToken)
+            ?? throw new KeyNotFoundException("Layout was not found.");
+
+        dbContext.RentalLayouts.Remove(layout);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task EnsureRentableAsync(Guid rentalAssetId, CancellationToken cancellationToken)

@@ -64,6 +64,11 @@ public sealed record CreateAssetRequest
 
     public int TotalQuantity { get; init; } = 1;
 
+    /// <summary>
+    /// When true (default), bookings wait for admin payment confirmation.
+    /// </summary>
+    public bool RequiresDeposit { get; init; } = true;
+
     public Dictionary<string, string?>? Attributes { get; init; }
 }
 
@@ -95,6 +100,11 @@ public sealed record UpdateAssetRequest
 
     public int TotalQuantity { get; init; } = 1;
 
+    /// <summary>
+    /// When true (default), bookings wait for admin payment confirmation.
+    /// </summary>
+    public bool RequiresDeposit { get; init; } = true;
+
     public Dictionary<string, string?>? Attributes { get; init; }
 }
 
@@ -102,7 +112,8 @@ public sealed record AssetRentalConfigResponse(
     Guid RentalAssetId,
     RentalAssetType Type,
     int TotalQuantity,
-    bool IsActive);
+    bool IsActive,
+    bool RequiresDeposit);
 
 public sealed record AssetResponse(
     Guid Id,
@@ -147,6 +158,11 @@ public sealed record BulkCreateAssetsRequest
     public bool IsRentable { get; init; }
 
     public bool RequiresMaintenance { get; init; }
+
+    /// <summary>
+    /// When true (default), bookings wait for admin payment confirmation.
+    /// </summary>
+    public bool RequiresDeposit { get; init; } = true;
 
     public Dictionary<string, string?>? Attributes { get; init; }
 }

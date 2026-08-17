@@ -18,6 +18,13 @@ public class RentalAsset : Entity, ITenantScoped
 
     public required bool IsActive { get; set; }
 
+    /// <summary>
+    /// When true, a Customer booking waits for admin payment confirmation
+    /// (<see cref="ReservationStatus.PendingDeposit"/>). When false, the
+    /// reservation opens as <see cref="ReservationStatus.Confirmed"/>.
+    /// </summary>
+    public required bool RequiresDeposit { get; set; }
+
     /// <summary>Default SlotGrid; OpenHours derives bookable windows from open/close.</summary>
     public required SchedulePolicy SchedulePolicy { get; set; }
 

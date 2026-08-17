@@ -82,7 +82,8 @@ public sealed class AssetService(
             asset,
             request.IsRentable,
             request.RentalType,
-            request.TotalQuantity);
+            request.TotalQuantity,
+            request.RequiresDeposit);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -136,7 +137,8 @@ public sealed class AssetService(
             asset,
             request.IsRentable,
             request.RentalType,
-            request.TotalQuantity);
+            request.TotalQuantity,
+            request.RequiresDeposit);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -253,7 +255,8 @@ public sealed class AssetService(
                 asset,
                 request.IsRentable,
                 RentalAssetType.Location,
-                totalQuantity: 1);
+                totalQuantity: 1,
+                request.RequiresDeposit);
 
             assets.Add(asset);
         }
@@ -273,7 +276,8 @@ public sealed class AssetService(
         Asset asset,
         bool isRentable,
         RentalAssetType rentalType,
-        int totalQuantity)
+        int totalQuantity,
+        bool requiresDeposit)
     {
         if (!isRentable)
         {
@@ -295,6 +299,7 @@ public sealed class AssetService(
                 Type = rentalType,
                 TotalQuantity = totalQuantity,
                 IsActive = true,
+                RequiresDeposit = requiresDeposit,
                 SchedulePolicy = SchedulePolicy.SlotGrid,
             };
             return;
@@ -302,6 +307,7 @@ public sealed class AssetService(
 
         asset.RentalConfiguration.Type = rentalType;
         asset.RentalConfiguration.TotalQuantity = totalQuantity;
+        asset.RentalConfiguration.RequiresDeposit = requiresDeposit;
         asset.RentalConfiguration.IsActive = true;
         asset.RentalConfiguration.Touch();
     }
@@ -415,7 +421,8 @@ public sealed class AssetService(
                 asset.RentalConfiguration.Id,
                 asset.RentalConfiguration.Type,
                 asset.RentalConfiguration.TotalQuantity,
-                asset.RentalConfiguration.IsActive);
+                asset.RentalConfiguration.IsActive,
+                asset.RentalConfiguration.RequiresDeposit);
         }
 
         return new(

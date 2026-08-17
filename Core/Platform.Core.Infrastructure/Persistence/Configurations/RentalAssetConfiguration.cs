@@ -34,6 +34,10 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(a => a.RequiresDeposit)
+            .HasDefaultValue(true)
+            .IsRequired();
+
         builder.Property(a => a.SchedulePolicy)
             .HasConversion<string>()
             .HasMaxLength(32)

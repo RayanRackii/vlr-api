@@ -319,7 +319,7 @@ public sealed class ScheduleService(
             }
         }
 
-        var policyChanged = false
+        var policyChanged = false;
         var rentables = await dbContext.RentalAssets
             .Where(r => rentableIds.Contains(r.Id))
             .ToListAsync(cancellationToken);
@@ -894,6 +894,7 @@ public sealed class ScheduleService(
             reservation.AddItem(item);
 
             dbContext.Reservations.Add(reservation);
+            reservation.OpenAccordingToPaymentPolicy(slot.RentalAsset.RequiresDeposit);
             slot.MarkBooked(reservation.Id);
 
             await dbContext.SaveChangesAsync(cancellationToken);

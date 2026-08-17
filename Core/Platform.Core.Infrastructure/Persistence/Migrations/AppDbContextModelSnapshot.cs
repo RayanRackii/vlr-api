@@ -882,6 +882,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("time without time zone")
                         .HasColumnName("open_time");
 
+                    b.Property<bool>("RequiresDeposit")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("requires_deposit");
+
                     b.Property<string>("SchedulePolicy")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

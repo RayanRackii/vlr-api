@@ -11,6 +11,7 @@ public sealed record RentalAssetResponse(
     RentalAssetType Type,
     int TotalQuantity,
     bool IsActive,
+    bool RequiresDeposit,
     SchedulePolicy SchedulePolicy,
     TimeOnly? OpenTime,
     TimeOnly? CloseTime,

@@ -16,4 +16,6 @@ public interface IRentalLayoutService
         Guid id,
         UpsertRentalLayoutRequestDto request,
         CancellationToken cancellationToken);
+
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 }

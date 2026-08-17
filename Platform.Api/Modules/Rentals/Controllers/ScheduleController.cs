@@ -135,12 +135,18 @@ public sealed class ScheduleController(
         string subdomain,
         DateOnly date,
         [FromQuery] Guid? rentalAssetId,
+        [FromQuery] Guid[]? rentalAssetIds,
         CancellationToken cancellationToken)
     {
         try
         {
             await publicTenantBinder.BindFromSubdomainAsync(subdomain, cancellationToken);
-            return Ok(await scheduleService.GetDayAsync(date, rentalAssetId, customerFacing: true, cancellationToken));
+            return Ok(await scheduleService.GetDayAsync(
+                date,
+                rentalAssetId,
+                customerFacing: true,
+                cancellationToken,
+                rentalAssetIds));
         }
         catch (KeyNotFoundException ex)
         {

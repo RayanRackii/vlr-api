@@ -42,4 +42,11 @@ public class Reservation : Entity, ITenantScoped
     {
         _items.Add(item);
     }
+
+    public void OpenAccordingToPaymentPolicy(bool requiresDeposit)
+    {
+        Status = requiresDeposit
+            ? ReservationStatus.PendingDeposit
+            : ReservationStatus.Confirmed;
+    }
 }

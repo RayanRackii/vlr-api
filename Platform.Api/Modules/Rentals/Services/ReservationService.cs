@@ -147,6 +147,7 @@ public sealed class ReservationService(
             };
 
             decimal totalAmount = 0m;
+            var requiresDeposit = false;
             var itemResponses = new List<(ReservationItem Item, Guid AssetId, string AssetName)>();
 
             foreach (var itemRequest in request.Items)
@@ -188,6 +189,8 @@ public sealed class ReservationService(
                         $"Insufficient quantity for '{rental.Asset.Name}'. Available: {availableQuantity}, requested: {quantity}.");
                 }
 
+                requiresDeposit |= rental.RequiresDeposit;
+
                 var unitPrice = await ResolveHourlyPriceAsync(
                     rental.Id,
                     request.Date,
@@ -213,6 +216,7 @@ public sealed class ReservationService(
             }
 
             reservation.TotalAmount = RoundMoney(totalAmount);
+            reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
 
             dbContext.Reservations.Add(reservation);
             await dbContext.SaveChangesAsync(cancellationToken);

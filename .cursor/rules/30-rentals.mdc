@@ -11,7 +11,7 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 ## Modelo
 
 - **`RentalAsset`** (1:1 com `Asset` via flag `IsRentable`): `Type` = `Location` (quadra/espaço, exclusivo) ou `Good` (bem com `TotalQuantity`). A sincronização acontece em `AssetService.SyncRentalConfiguration`.
-- **`RentalPricing`**: preço por `DayOfWeek` + janela `Start`/`End` + `PricePerHour` + depósito.
+- **`RentalPricing`**: preço por `DayOfWeek` + janela `Start`/`End` + `PricePerHour`. O percentual de depósito na faixa **não** é o gate da reserva; o gate é `RentalAsset.RequiresDeposit`.
 - **`Reservation`** → `Customer` + `Unit`, com snapshots `CustomerName`/`CustomerWhatsApp`, `TotalAmount`, `DepositPaid`.
 - **`ReservationItem`** → `RentalAsset` (quantidade, preço unitário, subtotal).
 - `ReservationStatus`: `PendingDeposit` → `Confirmed` → `Completed` (ou `Canceled`).
@@ -19,7 +19,7 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 ## Invariantes (não quebrar)
 
 1. **Conflito de horário:** `Location` bloqueia se já houver reserva no intervalo; `Good` valida quantidade disponível contra `TotalQuantity`.
-2. Reserva nasce com status `PendingDeposit`.
+2. Reserva nasce `PendingDeposit` se **qualquer** Rentable da reserva tem `RequiresDeposit`; senão nasce `Confirmed` (sem espera de pagamento no admin).
 3. Cliente B2C autentica com **e-mail + senha** (policy `Customer`); disponibilidade é pública com header `X-Tenant-Subdomain`. Celular é para SMS/WhatsApp, não login.
 4. Snapshots de nome/WhatsApp na reserva não são atualizados se o `Customer` mudar depois.
 
@@ -31,6 +31,7 @@ Implementado (ver `ROADMAP.md` + ADR `docs/adr/0001-rentals-slot-schedule.md`):
 - `SchedulePolicy` OpenHours | SlotGrid (UI: Horário padrão | Grade personalizada);
 - admin de reservas (listar / confirmar / cancelar);
 - admin de agenda completo no `vlr-web` (diária, templates, kinds) + B2C book por `slotId`;
-- operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish.
+- operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish;
+- **Layout** canvas (admin em Operação) + picker B2C data+horário; sem layout ativo, grade com todos os Rentables (indisponíveis visíveis).
 
-Faltando: canvas de Layout no admin + picker B2C, pagamento de depósito (`DepositPaid` hoje sempre 0), completar reserva, listagem de reservas do Customer, SMS real e avisos WhatsApp.
+Faltando: pagamento de depósito (`DepositPaid` hoje sempre 0), completar reserva, listagem de reservas do Customer, SMS real e avisos WhatsApp.
