@@ -15,12 +15,12 @@ Status: draft | approved | blocked (`USER_DECISION_REQUIRED`)
 
 ## Architecture route (optional)
 
-- architect
-- deep-architect (only if explicitly approved)
+- rolvix-architect
+- rolvix-deep-architect (only if explicitly approved)
 
 ## Execution route (optional)
 
-- implementer
+- api-implementer
 
 ## Confirmed decisions
 

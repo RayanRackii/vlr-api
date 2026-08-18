@@ -1,6 +1,6 @@
 # Handoffs / specs
 
-Mecanismo de passagem **architect → implementer**. Não é um segundo `ROADMAP.md`.
+Mecanismo de passagem **rolvix-architect → api-implementer / web-implementer**. Não é um segundo `ROADMAP.md`.
 
 ## Onde gravar
 
@@ -12,7 +12,7 @@ Mecanismo de passagem **architect → implementer**. Não é um segundo `ROADMAP
 
 Nome: `YYYY-MM-DD-descricao-curta.md`.
 
-O architect é read-only: devolve o markdown ao parent. Depois das decisões humanas confirmadas, o parent/implementer materializa o arquivo aqui.
+O `rolvix-architect` é read-only: devolve o markdown ao parent. Depois das decisões humanas confirmadas, o parent/`api-implementer` materializa o arquivo aqui.
 
 Uma spec com decisão humana pendente **não** está pronta para implementação.
 
