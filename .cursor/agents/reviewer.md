@@ -52,6 +52,10 @@ For architectural work that should have had a handoff and did not, missing spec 
 
 Implement a fix; edit files; commit; push; merge; “approve because it compiled”; rediscover product on your own.
 
+## Agent feedback
+
+Do **not** read `docs/agent-feedback/incidents/**` by default. If a reusable agent-system failure appears (Human Decision Gate ignored, silent model fallback, scope break, Git policy break, stale pack used as truth), emit `AGENT_FEEDBACK_RECOMMENDED` (observed, expected, impact, prevention, suggested promotion). Do not write the file yourself.
+
 ## Output
 
 Prioritized findings only (Critical / High / Medium), split **Standards** vs **Spec**.

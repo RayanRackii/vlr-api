@@ -13,6 +13,15 @@ Status: draft | approved | blocked (`USER_DECISION_REQUIRED`)
 
 ## Relevant existing ADR / rules
 
+## Architecture route (optional)
+
+- architect
+- deep-architect (only if explicitly approved)
+
+## Execution route (optional)
+
+- implementer
+
 ## Confirmed decisions
 
 ## Invariants that must not break
