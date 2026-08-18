@@ -68,6 +68,16 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 - [ ] Aplicar migration `AddAssetFamilies` no Supabase/Railway
 - [ ] CRUD visual de famílias no Super-Admin (follow-up)
 
+## 2.9. Meu Perfil B2C — EM ANDAMENTO (código)
+
+Spec: [`docs/plans/active/2026-08-18-b2c-meu-perfil.md`](./docs/plans/active/2026-08-18-b2c-meu-perfil.md). Branch `feat/customer-profile`.
+
+Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/telefone/CPF/senha) somente leitura.
+
+- [ ] `GET /api/customers/me` + `PATCH /api/customers/me` (`Authorize(Policy = "Customer")`; `customerId` só do JWT)
+- [ ] UI portal `/app/perfil` + menu da conta (repo `vlr-web`, mesma branch)
+- FOLLOW_UP (fora deste MVP): e-mail, telefone, CPF, senha B2C, CEP/endereço, ExtraAttributes
+
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
@@ -139,3 +149,4 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-18 | **Docs:** fundação multi-agent (architect / implementer / reviewer), Human Decision Gate, Git Work Policy e `docs/plans`. |
 | 2026-08-18 | **Docs:** GLM architect padrão; Fable só com aprovação; context-packs; agent-feedback. |
 | 2026-08-18 | **Docs:** ids de subagent disambiguados no workspace multi-root (`rolvix-architect`, `api-implementer`, `api-reviewer`). |
+| 2026-08-18 | **Iniciado:** Meu Perfil B2C — spec aprovada (A/A/A); `GET`/`PATCH /api/customers/me`; UI no `vlr-web`. FOLLOW_UPs de identidade/endereço/extras. |
