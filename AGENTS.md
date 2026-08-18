@@ -58,7 +58,7 @@ Arquivos em [`.cursor/agents/`](./.cursor/agents/). São roteadores de responsab
 
 1. **architect** — incerteza, arquitetura e domínio. Read-only. Devolve handoff/spec ao parent (não grava sozinho `docs/plans`).
 2. **implementer** — implementação com objetivo definido (instrução local do usuário **ou** spec aprovada). Segue esta Git Work Policy.
-3. **reviewer** — review independente do diff real da branch contra `origin/develop` (Standards × Spec). Read-only.
+3. **reviewer** — review independente do diff real da branch contra `origin/develop` (Standards × Spec). Read-only. O parent executa `git fetch --prune origin` **antes** de delegar; o reviewer não faz fetch.
 
 Tarefa trivial/localizada: pular architect. Tarefa arquitetural ou cross-cutting: architect → Human Decision Gate se necessário → spec materializada em `docs/plans` → implementer → reviewer.
 
@@ -74,6 +74,8 @@ Nome: `YYYY-MM-DD-descricao-curta.md`. Spec com decisão humana pendente **não*
 
 ## Workspace skills
 
-Procedimentos em `C:\Free\.agents\skills\` (workspace local, **fora deste Git**): `grilling`, `domain-modeling`, `implement`, `tdd`, `code-review`.
+Procedimentos locais (fora deste Git), referidos **por nome**: `grilling`, `domain-modeling`, `implement`, `tdd`, `code-review`.
+
+Fallback de arquivo, relativo à raiz deste repo: `../.agents/skills/<skill>/SKILL.md`.
 
 Agents apontam para esses skills; não duplicam o corpo. Se a skill esperada não estiver no workspace, não improvisar cópia — informar.

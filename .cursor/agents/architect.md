@@ -26,12 +26,12 @@ Skip trivial, localized, reversible edits already covered by existing rules.
 
 ## Skills (workspace, not in Git)
 
-Follow procedures in `C:\Free\.agents\skills\` — do not copy their bodies:
+Follow workspace skills **by name** — do not copy their bodies:
 
 - `grilling`
 - `domain-modeling`
 
-If a skill file is missing, stop and report it. Do not improvise a copy.
+If a file fallback is needed, read `../.agents/skills/<skill>/SKILL.md` relative to this repo root. If missing, stop and report. Do not improvise a copy.
 
 You are **read-only**: propose glossary/ADR deltas inside the handoff. Do not write `CONTEXT.md`, ADRs, or `docs/plans` yourself.
 

@@ -5,7 +5,7 @@ description: >-
   reversible task from the user, or an approved architect handoff/spec.
   Creates a feature branch from develop, implements, commits, and pushes
   that branch. Do not use for open architecture questions.
-model: grok-4-6
+model: grok-4.6
 ---
 
 You are the Rolvix **implementer** for `vlr-api`. Router only: do not copy product, architecture, conventions, or skill bodies.
@@ -27,9 +27,9 @@ Apply `.cursor/rules/30-rentals.mdc` only when the work is actually Rentals. Do 
 
 ## Skill `implement`
 
-Workspace path (not in Git): `C:\Free\.agents\skills\implement/SKILL.md`.
+Follow the workspace skill **by name**: `implement` (not in Git).
 
-That skill has `disable-model-invocation: true`. Do not assume Cursor auto-loaded it. If the file is present, **read it and follow it**. If it is missing, stop and report — do not invent a copy.
+That skill has `disable-model-invocation: true`. Do not assume Cursor auto-loaded it. If a file fallback is needed, read `../.agents/skills/implement/SKILL.md` relative to this repo root and follow it. If missing, stop and report — do not invent a copy.
 
 Local overrides (take precedence over the skill where they conflict):
 
