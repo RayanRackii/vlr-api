@@ -105,8 +105,8 @@ Rentable-level flag: a Customer booking of that Rentable waits for admin payment
 _Avoid_: needPayment; assuming every booking waits for deposit
 
 **Asset**:
-A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`.
-_Avoid_: One physical table per use case; dynamic per-tenant tables
+A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`. Create/edit wizard: Geral → Operação → Preços (if rentable) → Revisão. Pricing UI offers same-every-day, weekday+weekend, or per-day presets and expands them into per-weekday `RentalPricing` rows.
+_Avoid_: One physical table per use case; dynamic per-tenant tables; asking the admin to type seven identical price rows as the default path
 
 **AssetFamily**:
 A platform catalog entry (`spaces`, `electrical`, `goods`, `generic`, …) with a FieldSchema describing extra attribute fields. Tenants enable families at onboarding (`TenantAssetFamily`). Drives asset forms and copy tone.
