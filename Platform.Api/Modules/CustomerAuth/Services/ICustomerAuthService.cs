@@ -25,4 +25,13 @@ public interface ICustomerAuthService
     Task<TenantBrandingResponseDto> GetBrandingAsync(
         string subdomain,
         CancellationToken cancellationToken);
+
+    Task<CustomerProfileDto> GetCurrentAsync(
+        Guid customerId,
+        CancellationToken cancellationToken);
+
+    Task<CustomerProfileDto> UpdateProfileAsync(
+        Guid customerId,
+        UpdateCustomerProfileRequestDto request,
+        CancellationToken cancellationToken);
 }

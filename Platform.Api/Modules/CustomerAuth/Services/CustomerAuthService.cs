@@ -302,6 +302,62 @@ public sealed class CustomerAuthService(
             tenant.WelcomeTagline);
     }
 
+    public async Task<CustomerProfileDto> GetCurrentAsync(
+        Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var customer = await dbContext.Customers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken)
+            ?? throw new KeyNotFoundException("Customer not found.");
+
+        return MapProfile(customer);
+    }
+
+    public async Task<CustomerProfileDto> UpdateProfileAsync(
+        Guid customerId,
+        UpdateCustomerProfileRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var customer = await dbContext.Customers
+            .FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken)
+            ?? throw new KeyNotFoundException("Customer not found.");
+
+        string? name = null;
+        string? photoUrl = null;
+        var clearPhoto = false;
+
+        if (request.NameSpecified)
+        {
+            name = (request.Name ?? string.Empty).Trim();
+            if (name.Length is < 2 or > 200)
+            {
+                throw new ArgumentException("Name must be between 2 and 200 characters.");
+            }
+        }
+
+        if (request.PhotoUrlSpecified)
+        {
+            if (request.PhotoUrl is null)
+            {
+                clearPhoto = true;
+            }
+            else
+            {
+                photoUrl = RegistrationAttributeValidator.NormalizePhoto(request.PhotoUrl);
+            }
+        }
+
+        customer.UpdateProfile(name, photoUrl, clearPhoto);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return MapProfile(customer);
+    }
+
     private async Task IssueAndEnqueuePhoneCodeAsync(
         Customer customer,
         CancellationToken cancellationToken)
@@ -384,6 +440,24 @@ public sealed class CustomerAuthService(
                 customer.PhotoUrl,
                 customer.ExtraAttributes));
     }
+
+    private static CustomerProfileDto MapProfile(Customer customer) =>
+        new(
+            customer.Id,
+            customer.TenantId,
+            customer.Name,
+            customer.Email,
+            customer.Phone,
+            customer.Cpf,
+            customer.PostalCode,
+            customer.AddressStreet,
+            customer.AddressNeighborhood,
+            customer.AddressCity,
+            customer.AddressState,
+            customer.PhotoUrl,
+            customer.CreatedAt,
+            customer.IsPhoneVerified,
+            customer.ExtraAttributes);
 
     private async Task<Customer?> FindCustomerByContactAsync(
         ParsedContact contact,

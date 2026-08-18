@@ -74,7 +74,7 @@ Spec: [`docs/plans/active/2026-08-18-b2c-meu-perfil.md`](./docs/plans/active/202
 
 Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/telefone/CPF/senha) somente leitura.
 
-- [ ] `GET /api/customers/me` + `PATCH /api/customers/me` (`Authorize(Policy = "Customer")`; `customerId` só do JWT)
+- [x] `GET /api/customers/me` + `PATCH /api/customers/me` (`Authorize(Policy = "Customer")`; `customerId` só do JWT)
 - [ ] UI portal `/app/perfil` + menu da conta (repo `vlr-web`, mesma branch)
 - FOLLOW_UP (fora deste MVP): e-mail, telefone, CPF, senha B2C, CEP/endereço, ExtraAttributes
 
@@ -150,3 +150,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-18 | **Docs:** GLM architect padrão; Fable só com aprovação; context-packs; agent-feedback. |
 | 2026-08-18 | **Docs:** ids de subagent disambiguados no workspace multi-root (`rolvix-architect`, `api-implementer`, `api-reviewer`). |
 | 2026-08-18 | **Iniciado:** Meu Perfil B2C — spec aprovada (A/A/A); `GET`/`PATCH /api/customers/me`; UI no `vlr-web`. FOLLOW_UPs de identidade/endereço/extras. |
+| 2026-08-18 | **Executado (API):** `GET`/`PATCH /api/customers/me` (policy Customer; PATCH só Name + PhotoUrl; DTO separado do login). UI no `vlr-web`. |
