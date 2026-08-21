@@ -159,3 +159,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-21 | **Fix F-02:** `/hangfire` exige PlatformAdmin (email allowlist); JWT Customer/B2B comum é recusado. |
 | 2026-08-21 | **Executado:** fundação xUnit (`tests/Platform.Api.Tests`) — TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location via `GetReservedQuantityAsync` (SQLite não traduz o join+enum da reserva); extração `AddRolvixPolicies`. F-01 não resolvido. |
 | 2026-08-21 | **Fix F-01:** `SELECT … FOR UPDATE` no `RentalAsset` serializa `CreateReservationAsync` / `BookSlotAsync`; prova em `ReservationConcurrencyTests` (Testcontainers PostgreSQL; skip se o named pipe/socket Docker não existir). Sem exclusion constraint e sem SERIALIZABLE. |
+| 2026-08-21 | **Executado:** `POST /api/assets/pricing-bulk` aplica faixas de `RentalPricing` em lote (transação; replace ou append; caps 1000/100/10000). |
