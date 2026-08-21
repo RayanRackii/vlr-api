@@ -105,7 +105,6 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## Dívidas técnicas conhecidas
 
 - Permissions/RolePermission sem uso.
-- Hangfire dashboard auth fraco em produção.
 - Sem testes automatizados.
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
