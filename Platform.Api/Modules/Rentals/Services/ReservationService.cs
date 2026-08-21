@@ -144,6 +144,25 @@ public sealed class ReservationService(
 
         try
         {
+            var assetIds = request.Items
+                .Select(item => item.AssetId)
+                .Distinct()
+                .ToList();
+
+            var rentalAssetsToLock = await dbContext.RentalAssets
+                .Where(r => assetIds.Contains(r.AssetId) && r.IsActive)
+                .OrderBy(r => r.Id)
+                .Select(r => new { r.Id, r.AssetId })
+                .ToListAsync(cancellationToken);
+
+            foreach (var rentalAsset in rentalAssetsToLock)
+            {
+                await RentalAssetLocks.LockByRentalAssetIdAsync(
+                    dbContext,
+                    rentalAsset.Id,
+                    cancellationToken);
+            }
+
             var reservation = new Reservation
             {
                 TenantId = tenantId,
