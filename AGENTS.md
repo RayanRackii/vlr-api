@@ -52,8 +52,9 @@ parent
   ├─ implementer
   ├─ build / test
   ├─ reviewer
+  ├─ PR
   ├─ Merge Risk Gate (dossier GLM ± Fable)
-  ├─ PR → approve → merge em develop (quando os gates passarem)
+  ├─ approve → merge em develop (quando os gates passarem)
   └─ git checkpoint
 ```
 
@@ -65,7 +66,7 @@ Detecção por **evento**, não por adivinhar se uma janela do Cursor abriu ou v
 | Depois de implementação concluída e validada | Automatic Task Checkpoint |
 | Usuário indica parar / trocar de PC / encerrar sessão | Explicit Session Handoff |
 
-Fluxo: pedido do usuário → parent → Git bootstrap **uma vez** → agentes → implementação → review → Merge Risk Gate → PR → merge em `develop` (se os gates passarem) → checkpoint.
+Fluxo: pedido do usuário → parent → Git bootstrap **uma vez** → agentes → implementação → review → PR → Merge Risk Gate → merge em `develop` (se os gates passarem) → checkpoint.
 
 ### Automatic Session Bootstrap
 
@@ -210,7 +211,7 @@ Se faltar contexto, Fable devolve `NEED_MORE_CONTEXT`. GLM coleta **somente** o 
 
 **Fable dispensável** (`FABLE_MERGE_REVIEW_NOT_REQUIRED` + reason) para mudança claramente local (copy/i18n/CSS isolado/rename/dead-code/docs/refactor mecânico) **desde que** reviewers limpos, build/test ok, blast radius baixo.
 
-**Custo:** 1 PR de alto risco → no máximo 1 chamada Fable. `BLOCK_MERGE` → implementer corrige → GLM + reviewer normal verificam. Segunda chamada Fable no **mesmo** PR só se a correção alterou materialmente arquitetura/risco. PRs que interagem (ex.: F-07 + F-09 no mesmo `api.ts`) podem ir numa `INTEGRATION_MERGE_REVIEW`.
+**Custo:** 1 PR de alto risco → no máximo 1 chamada Fable. `BLOCK_MERGE` → implementer corrige → GLM + reviewer normal verificam. Segunda chamada Fable no **mesmo** PR só se a correção alterou materialmente arquitetura/risco. PRs que interagem (ex.: F-07 + F-09 no mesmo `api.ts`) podem ir numa `INTEGRATION_MERGE_REVIEW`: um dossier GLM cobrindo os PRs relacionados, o mesmo contrato `FABLE_MERGE_REVIEW`, uma chamada.
 
 Contrato de chamada — pedir exatamente:
 
@@ -240,7 +241,7 @@ Arquitetura profunda **fora** deste gate continua: GLM emite `FABLE_ESCALATION_R
 
 Detectar `gh`, GitHub MCP/plugin ou integração autorizada. Abrir PR automaticamente se autenticado. Se não: `PR_AUTOMATION_UNAVAILABLE` + compare URL + título + body. **Não** parar review só porque `gh` falta.
 
-`AI_APPROVED` somente se: Critical/High = 0; nenhum Medium blocking; veredito Fable/GLM permite merge; testes exigidos passaram; Human Decision Gates resolvidos. Se o GitHub bloquear self-approval do autor: `PLATFORM_SELF_APPROVAL_NOT_ALLOWED` — o Merge Risk Gate continua como aprovação técnica interna. Não contornar proteção.
+`AI_APPROVED` somente se: Critical/High = 0; nenhum Medium blocking; veredito Fable/GLM permite merge (`SAFE_TO_MERGE` ou `SAFE_WITH_FOLLOWUP`); testes exigidos passaram; Human Decision Gates resolvidos. `BLOCK_MERGE` impede merge. Se o GitHub bloquear self-approval do autor: `PLATFORM_SELF_APPROVAL_NOT_ALLOWED` — o Merge Risk Gate continua como aprovação técnica interna. Não contornar proteção.
 
 **Merge automático permitido:** feature/fix/refactor/test/chore → `develop`, quando **todos** os gates passarem. Preferir **Squash and merge** se o repo não tiver outra regra. Sem force push. Sem reescrever `develop`.
 

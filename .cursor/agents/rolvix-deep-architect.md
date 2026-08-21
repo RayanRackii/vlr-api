@@ -38,6 +38,18 @@ You receive the GLM architecture dossier, pack (if any), cited evidence, and the
 
 Authorized by `AGENTS.md` **Autonomous Delivery Workflow** when the parent classifies the PR as Fable-mandatory. You receive a **Merge Review Dossier** (compact; ≤ ~1200 words; ≤ 10 files/symbols) plus the relevant diff (parent may paste or cite it). You do **not** need a separate “please use Fable” phrase for this path.
 
+If the parent sent a Merge Risk Gate invocation without a merge dossier:
+
+```text
+NEED_MORE_CONTEXT
+Missing fact: Merge Review Dossier
+Why it matters: Fable must reason on GLM's cheap discovery, not grep.
+Required source/file: parent / rolvix-architect merge dossier
+Question to answer: What is in this PR and which invariants are at risk?
+```
+
+Then **stop**.
+
 If the parent sent neither a merge dossier nor an architecture dossier with user approval:
 
 ```text
