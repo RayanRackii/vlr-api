@@ -56,28 +56,7 @@ public static class SupabaseAuthenticationExtensions
                 };
             });
 
-        services.AddAuthorization(options =>
-        {
-            // Plain [Authorize] protects B2B panel routes: Customer B2C JWTs are rejected.
-            options.DefaultPolicy = new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .RequireAssertion(context =>
-                    !context.User.IsInRole(AuthRoles.Customer)
-                    && context.User.FindFirst(CustomerClaimTypes.CustomerId) is null)
-                .Build();
-
-            options.AddPolicy(
-                "Customer",
-                policy => policy
-                    .RequireAuthenticatedUser()
-                    .RequireRole(AuthRoles.Customer));
-
-            options.AddPolicy(
-                PlatformAdminPolicy,
-                policy => policy
-                    .RequireAuthenticatedUser()
-                    .AddRequirements(new PlatformAdminRequirement()));
-        });
+        services.AddAuthorization(options => options.AddRolvixPolicies());
 
         services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
         services.AddSingleton<ICustomerJwtIssuer, CustomerJwtIssuer>();

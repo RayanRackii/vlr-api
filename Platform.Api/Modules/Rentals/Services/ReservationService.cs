@@ -478,7 +478,7 @@ public sealed class ReservationService(
         return template is not null && template.OccupancyKind.IsBookableByCustomer;
     }
 
-    private async Task<int> GetReservedQuantityAsync(
+    internal async Task<int> GetReservedQuantityAsync(
         Guid rentalAssetId,
         DateTimeOffset start,
         DateTimeOffset end,
