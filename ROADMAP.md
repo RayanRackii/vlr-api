@@ -56,6 +56,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] B2C: escolher slot do dia / book por `slotId` ou create-reservation (SlotGrid derivado)
 - [x] Admin UI completa: kinds, editor fino de templates
 - [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
+- [x] Trial expirado: `BookSlot` / `CreateReservation` passam por `TrialGuard` (mesmo guard de Confirm/Cancel)
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -152,4 +153,6 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-18 | **Executado (API):** `GET`/`PATCH /api/customers/me` (policy Customer; PATCH só Name + PhotoUrl; DTO separado do login). UI no `vlr-web`. |
 | 2026-08-18 | **Executado (FE irmão):** Meu Perfil no portal (`/app/perfil`); review API e web sem Critical/High. |
 | 2026-08-20 | **Docs:** protocolo Git multi-machine no `AGENTS.md` (Session Bootstrap, Task Checkpoint, Session Handoff). |
+| 2026-08-21 | **Docs:** Autonomous Delivery + Merge Risk Gate (Fable). Parent dono do ciclo até merge em `develop`; `main`/PROD continuam Human Gate. |
+| 2026-08-21 | **Fix F-12:** trial read-only também bloqueia `BookSlotAsync` e `CreateReservationAsync`. |
 | 2026-08-21 | **Fix F-02:** `/hangfire` exige PlatformAdmin (email allowlist); JWT Customer/B2B comum é recusado. |

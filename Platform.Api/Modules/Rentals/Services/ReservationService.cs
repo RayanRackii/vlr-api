@@ -113,6 +113,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
         ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
 
         if (request.Items is null || request.Items.Count == 0)

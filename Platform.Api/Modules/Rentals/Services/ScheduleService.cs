@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -9,7 +10,8 @@ namespace Platform.Api.Modules.Rentals.Services;
 public sealed class ScheduleService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    IOccupancyKindService occupancyKindService) : IScheduleService
+    IOccupancyKindService occupancyKindService,
+    ITrialGuard trialGuard) : IScheduleService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -801,6 +803,7 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
 
         var customer = await dbContext.Customers
