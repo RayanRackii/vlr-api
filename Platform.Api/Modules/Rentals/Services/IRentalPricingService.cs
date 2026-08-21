@@ -23,4 +23,8 @@ public interface IRentalPricingService
         Guid assetId,
         Guid pricingId,
         CancellationToken cancellationToken);
+
+    Task<BulkApplyPricingsResponse> ApplyBulkAsync(
+        BulkApplyPricingsRequest request,
+        CancellationToken cancellationToken);
 }

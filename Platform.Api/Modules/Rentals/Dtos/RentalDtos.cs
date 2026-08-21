@@ -158,3 +158,29 @@ public sealed record RentalPricingResponseDto(
     decimal DepositPercentage,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
+
+public sealed record BulkApplyPricingsRequest
+{
+    public required IReadOnlyList<Guid> AssetIds { get; init; }
+
+    public required IReadOnlyList<BulkPricingRowDto> Pricings { get; init; }
+
+    public bool Replace { get; init; }
+}
+
+public sealed record BulkPricingRowDto
+{
+    public required DayOfWeek DayOfWeek { get; init; }
+
+    public required TimeOnly StartTime { get; init; }
+
+    public required TimeOnly EndTime { get; init; }
+
+    public required decimal PricePerHour { get; init; }
+
+    public required bool RequiresDeposit { get; init; }
+
+    public required decimal DepositPercentage { get; init; }
+}
+
+public sealed record BulkApplyPricingsResponse(int AppliedAssetCount, int PricingsCreated);
