@@ -106,7 +106,6 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## Dívidas técnicas conhecidas
 
 - Permissions/RolePermission sem uso.
-- Hangfire dashboard auth fraco em produção.
 - Sem testes automatizados.
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
@@ -156,3 +155,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-20 | **Docs:** protocolo Git multi-machine no `AGENTS.md` (Session Bootstrap, Task Checkpoint, Session Handoff). |
 | 2026-08-21 | **Docs:** Autonomous Delivery + Merge Risk Gate (Fable). Parent dono do ciclo até merge em `develop`; `main`/PROD continuam Human Gate. |
 | 2026-08-21 | **Fix F-12:** trial read-only também bloqueia `BookSlotAsync` e `CreateReservationAsync`. |
+| 2026-08-21 | **Fix F-02:** `/hangfire` exige PlatformAdmin (email allowlist); JWT Customer/B2B comum é recusado. |

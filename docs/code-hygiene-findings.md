@@ -32,7 +32,7 @@ Sweep after `LogoSvg` branding work. Scope: monorepo `C:\Free` (backend + fronte
 
 | Item | Notes |
 |------|--------|
-| Hangfire | `WorkerCount = 1` + capped pool — intentional vs Supabase pool limits; dashboard auth weak in prod (ROADMAP). |
+| Hangfire | `WorkerCount = 1` + capped pool — intentional vs Supabase pool limits; dashboard requires PlatformAdmin (F-02). |
 | Migrations pending on hosted DB | `AddTenantLogoSvg`, and possibly earlier menu/registration migrations — apply via EF or SQL scripts under `backend/scripts/`. |
 | No automated tests | Backend/frontend — known. |
 
