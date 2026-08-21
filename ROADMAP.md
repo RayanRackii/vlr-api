@@ -153,3 +153,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-18 | **Executado (API):** `GET`/`PATCH /api/customers/me` (policy Customer; PATCH só Name + PhotoUrl; DTO separado do login). UI no `vlr-web`. |
 | 2026-08-18 | **Executado (FE irmão):** Meu Perfil no portal (`/app/perfil`); review API e web sem Critical/High. |
 | 2026-08-20 | **Docs:** protocolo Git multi-machine no `AGENTS.md` (Session Bootstrap, Task Checkpoint, Session Handoff). |
+| 2026-08-21 | **Docs:** Autonomous Delivery + Merge Risk Gate (Fable). Parent dono do ciclo até merge em `develop`; `main`/PROD continuam Human Gate. |

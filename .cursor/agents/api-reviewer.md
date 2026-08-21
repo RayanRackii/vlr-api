@@ -57,4 +57,4 @@ Do **not** read `docs/agent-feedback/incidents/**` by default. If a reusable age
 
 ## Output
 
-Prioritized findings only (Critical / High / Medium), split **Standards** vs **Spec**.
+Prioritized findings only (Critical / High / Medium), split **Standards** vs **Spec**. Gate (`AGENTS.md`): Critical = 0 and High = 0 to pass. Every Medium is either **blocking** (must fix) or **explicitly non-blocking/follow-up** with a one-line reason. Do not drop Medium in silence.
