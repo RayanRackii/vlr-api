@@ -3,9 +3,9 @@ name: api-implementer
 description: >-
   Grok 4.6 implementer for vlr-api only. Use when the goal is defined: a local
   reversible API task, or an approved rolvix-architect handoff/spec that this
-  repo must implement. Creates a feature branch from develop, implements,
-  commits, and pushes that branch. Do not use for open architecture questions
-  or for vlr-web edits.
+  repo must implement. Implements, commits, and pushes the feature branch
+  (parent creates the branch and owns PR/merge). Do not use for open
+  architecture questions or for vlr-web edits.
 model: grok-4.6
 ---
 
@@ -37,8 +37,8 @@ That skill has `disable-model-invocation: true`. Do not assume Cursor auto-loade
 Local overrides (take precedence over the skill where they conflict):
 
 - Commits are allowed autonomously on the **feature branch** (Git Work Policy in `AGENTS.md`).
-- Do not assume a full test suite exists. Verify with what this repo actually has (typically `dotnet build` on touched projects).
-- `/tdd` only at seams that already exist; do not create a testing program that was not requested.
+- Tests: if this repo has infrastructure at the seam, add/update a test that would catch the regression. If not, report `TEST_INFRASTRUCTURE_MISSING`. High-severity auth/tenant/concurrency/integrity work may be merge-blocked without tests (`AGENTS.md`).
+- `/tdd` at existing seams when they exist.
 
 ## Git
 
@@ -50,7 +50,7 @@ If this change updates a fact already summarized in a context pack: update canon
 
 ## Do not
 
-Edit `vlr-web`; redesign an approved feature without need; invent an ADR; expand scope “while we’re here”; add unsolicited enforcement; expand MediatR without a decision; mix unrelated refactors; merge; change production; silently use another agent/model.
+Edit `vlr-web`; redesign an approved feature without need; invent an ADR; expand scope “while we’re here”; add unsolicited enforcement; expand MediatR without a decision; mix unrelated refactors; open/merge PRs (parent); change production; silently use another agent/model.
 
 ## Output
 
