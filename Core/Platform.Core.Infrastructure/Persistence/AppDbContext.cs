@@ -6,7 +6,7 @@ using Platform.Core.Domain.Entities;
 
 namespace Platform.Core.Infrastructure.Persistence;
 
-public sealed class AppDbContext : DbContext
+public class AppDbContext : DbContext
 {
     private readonly ITenantProvider _tenantProvider;
 

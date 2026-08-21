@@ -1545,7 +1545,7 @@ public sealed class ScheduleService(
         return list.Count == 0 ? [60] : list;
     }
 
-    private async Task<int> GetReservedQuantityAsync(
+    internal async Task<int> GetReservedQuantityAsync(
         Guid rentalAssetId,
         DateTimeOffset start,
         DateTimeOffset end,

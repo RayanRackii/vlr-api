@@ -3,5 +3,8 @@
     <Project Path="Core/Platform.Core.Domain/Platform.Core.Domain.csproj" />
     <Project Path="Core/Platform.Core.Infrastructure/Platform.Core.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Platform.Api.Tests/Platform.Api.Tests.csproj" />
+  </Folder>
   <Project Path="Platform.Api/Platform.Api.csproj" />
 </Solution>

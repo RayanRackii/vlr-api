@@ -26,4 +26,8 @@
     <ProjectReference Include="..\Core\Platform.Core.Infrastructure\Platform.Core.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Platform.Api.Tests" />
+  </ItemGroup>
+
 </Project>
