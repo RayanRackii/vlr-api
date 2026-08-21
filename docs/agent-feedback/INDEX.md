@@ -13,7 +13,7 @@ None.
 | Id | Title | Promotion |
 |---|---|---|
 | [2026-08-18-silent-subagent-fallback](./incidents/2026-08-18-silent-subagent-fallback.md) | Configured subagent unavailable → parent simulated the role | `AGENTS.md` fail-closed (`SUBAGENT_UNAVAILABLE`) |
-| [2026-08-18-premium-architect-cost](./incidents/2026-08-18-premium-architect-cost.md) | Routine architecture used premium model + broad exploration | GLM default architect; Fable only with explicit approval + dossier; context packs |
+| [2026-08-18-premium-architect-cost](./incidents/2026-08-18-premium-architect-cost.md) | Routine architecture used premium model + broad exploration | GLM default architect; Fable architecture path still needs explicit approval + dossier; **Merge Risk Gate** is the second authorized Fable path (`AGENTS.md` 2026-08-21) |
 
 ## How to promote
 
