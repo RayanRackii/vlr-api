@@ -57,6 +57,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Admin UI completa: kinds, editor fino de templates
 - [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
 - [x] Trial expirado: `BookSlot` / `CreateReservation` passam por `TrialGuard` (mesmo guard de Confirm/Cancel)
+- [x] F-01: `SELECT … FOR UPDATE` em `RentalAsset` serializa `CreateReservation` / `BookSlot` (prova em Testcontainers; skip sem Docker)
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -106,7 +107,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## Dívidas técnicas conhecidas
 
 - Permissions/RolePermission sem uso.
-- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin e overlap de Location; F-01 (corrida) ainda não.
+- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location e corrida de Location (Testcontainers; skip se Docker ausente).
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
@@ -157,3 +158,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-21 | **Fix F-12:** trial read-only também bloqueia `BookSlotAsync` e `CreateReservationAsync`. |
 | 2026-08-21 | **Fix F-02:** `/hangfire` exige PlatformAdmin (email allowlist); JWT Customer/B2B comum é recusado. |
 | 2026-08-21 | **Executado:** fundação xUnit (`tests/Platform.Api.Tests`) — TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location via `GetReservedQuantityAsync` (SQLite não traduz o join+enum da reserva); extração `AddRolvixPolicies`. F-01 não resolvido. |
+| 2026-08-21 | **Fix F-01:** `SELECT … FOR UPDATE` no `RentalAsset` serializa `CreateReservationAsync` / `BookSlotAsync`; prova em `ReservationConcurrencyTests` (Testcontainers PostgreSQL; skip se o named pipe/socket Docker não existir). Sem exclusion constraint e sem SERIALIZABLE. |

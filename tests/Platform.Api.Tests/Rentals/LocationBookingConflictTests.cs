@@ -7,8 +7,7 @@ namespace Platform.Api.Tests.Rentals;
 /// Overlap quantity for Location create/book.
 /// SQLite EnsureCreated succeeded, but CreateReservationAsync/BookSlotAsync overlap LINQ
 /// (enum string conversion + join) does not translate — spec fallback: GetReservedQuantityAsync.
-/// TODO(F-01): no parallel race test — CreateReservationAsync/BookSlotAsync still lack a DB uniqueness
-/// guard; this suite only covers sequential overlap counting.
+/// Concurrent double-book proof lives in ReservationConcurrencyTests (Postgres row lock).
 /// </summary>
 public sealed class LocationBookingConflictTests
 {

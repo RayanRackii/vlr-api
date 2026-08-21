@@ -819,6 +819,21 @@ public sealed class ScheduleService(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            var rentalAssetId = await dbContext.Slots
+                .Where(s => s.Id == request.SlotId)
+                .Select(s => s.RentalAssetId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (rentalAssetId == Guid.Empty)
+            {
+                throw new KeyNotFoundException("Slot was not found.");
+            }
+
+            await RentalAssetLocks.LockByRentalAssetIdAsync(
+                dbContext,
+                rentalAssetId,
+                cancellationToken);
+
             var slot = await dbContext.Slots
                 .Include(s => s.OccupancyKind)
                 .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
