@@ -151,9 +151,15 @@ public sealed record BulkCreateAssetsRequest
 
     public required string BaseTag { get; init; }
 
-    public required int StartNumber { get; init; }
+    /// <summary>Required when <see cref="RentalType"/> is Location. Ignored for Good.</summary>
+    public int? StartNumber { get; init; }
 
-    public required int EndNumber { get; init; }
+    /// <summary>Required when <see cref="RentalType"/> is Location. Ignored for Good.</summary>
+    public int? EndNumber { get; init; }
+
+    public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
+
+    public int TotalQuantity { get; init; } = 1;
 
     public bool IsRentable { get; init; }
 

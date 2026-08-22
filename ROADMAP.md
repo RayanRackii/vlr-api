@@ -68,6 +68,7 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 - [x] Seeds `spaces` / `electrical` / `goods` / `generic`
 - [x] `GET /api/asset-families` (+ `/active`); create/update tenant com `AssetFamilyKeys`
 - [x] Validação de attributes no `AssetService`
+- [x] F-16: `BulkCreate` respeita `RentalType` (Location = N entidades qty 1; Good = 1 entidade com estoque)
 - [ ] Aplicar migration `AddAssetFamilies` no Supabase/Railway
 - [ ] CRUD visual de famílias no Super-Admin (follow-up)
 
@@ -168,3 +169,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-22 | **F-01 follow-up:** `ReservationConcurrencyTests` executado com Docker 29.5.3 — 2 passed, 0 skipped. Follow-up de prova fechado; lock inalterado. |
 | 2026-08-22 | **Fix F-10:** `ApplyWeeklyRule` deixa de indexar só por StartTime; overlap entre OccupancyKinds permitido; duplicata exata rejeitada; SlotGrid não publicado deriva o vencedor por precedência. `PublishDay` inalterado (gap-fill). Follow-up F-10b: rewrite de Slots persistidos sobrepostos. |
 | 2026-08-22 | **Fix F-10 review:** EntireRecurrence / restore / fallback de Slot→template usam `SourceTemplateId` ou a tupla completa (não só StartTime); converter Open→Closed na mesma janela vira 400, não overwrite. |
+| 2026-08-22 | **Fix F-16:** `BulkCreate` respeita `RentalType` — Location cria N ativos (qty 1); Good cria um ativo com estoque em `TotalQuantity`. Sem conversão silenciosa Good→Location. |
