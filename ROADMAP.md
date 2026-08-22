@@ -61,7 +61,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] F-10: overlap de `ScheduleTemplate` entre OccupancyKinds; UNIQUE exact duplicate; derive SlotGrid não publicado por precedência; `PublishDay` continua gap-fill (migration `AddScheduleTemplateExactDuplicateUnique`)
 - [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
-- [ ] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalidar `TurnExpiresAt`; não criar ação em `RentalAssetsController` sem `[Authorize]`
+- [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -174,4 +174,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-22 | **Fix F-10 review:** EntireRecurrence / restore / fallback de Slot→template usam `SourceTemplateId` ou a tupla completa (não só StartTime); converter Open→Closed na mesma janela vira 400, não overwrite. |
 | 2026-08-22 | **Fix F-16:** `BulkCreate` respeita `RentalType` — Location cria N ativos (qty 1); Good cria um ativo com estoque em `TotalQuantity`. Sem conversão silenciosa Good→Location. |
 | 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |
-| 2026-08-22 | **Follow-up fila (Fable SAFE_WITH_FOLLOWUP):** (1) tenant isolation da fila em DockerFact/Postgres; (2) `CompleteTurnAsync` revalidar `TurnExpiresAt`; (3) não adicionar ações em `RentalAssetsController` sem `[Authorize]`; (4) teste de relógio na fronteira 00:00/WR. |
+| 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |
