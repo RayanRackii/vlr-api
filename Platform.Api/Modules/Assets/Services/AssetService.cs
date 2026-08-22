@@ -183,21 +183,10 @@ public sealed class AssetService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
+        var plan = ResolveBulkCreatePlan(request);
+        ValidateRentalFields(request.IsRentable, plan.RentalType, plan.TotalQuantity);
 
-        if (request.StartNumber > request.EndNumber)
-        {
-            throw new ArgumentException("StartNumber must be less than or equal to EndNumber.");
-        }
-
-        var createCount = request.EndNumber - request.StartNumber + 1;
-
-        if (createCount > MaxBulkCreateCount)
-        {
-            throw new ArgumentException(
-                $"Bulk create is limited to {MaxBulkCreateCount} assets per request.");
-        }
-
-        await trialGuard.EnsureCanCreateAssetsAsync(createCount, cancellationToken);
+        await trialGuard.EnsureCanCreateAssetsAsync(plan.Tags.Count, cancellationToken);
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         var category = await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
@@ -209,18 +198,11 @@ public sealed class AssetService(
             family.FieldSchemaJson,
             request.Attributes);
 
-        var baseTag = request.BaseTag.Trim();
         var baseLocation = request.BaseLocationName.Trim();
-        var generatedTags = new List<string>(createCount);
-
-        for (var number = request.StartNumber; number <= request.EndNumber; number++)
-        {
-            generatedTags.Add(BuildTag(baseTag, number));
-        }
 
         var existingTags = await dbContext.Assets
             .AsNoTracking()
-            .Where(a => generatedTags.Contains(a.Tag))
+            .Where(a => plan.Tags.Contains(a.Tag))
             .Select(a => a.Tag)
             .ToListAsync(cancellationToken);
 
@@ -230,12 +212,10 @@ public sealed class AssetService(
                 $"One or more tags already exist: {string.Join(", ", existingTags)}");
         }
 
-        var assets = new List<Asset>(createCount);
+        var assets = new List<Asset>(plan.Tags.Count);
 
-        for (var number = request.StartNumber; number <= request.EndNumber; number++)
+        foreach (var tag in plan.Tags)
         {
-            var tag = BuildTag(baseTag, number);
-
             var asset = new Asset
             {
                 TenantId = tenantId,
@@ -254,8 +234,8 @@ public sealed class AssetService(
             SyncRentalConfiguration(
                 asset,
                 request.IsRentable,
-                RentalAssetType.Location,
-                totalQuantity: 1,
+                plan.RentalType,
+                plan.TotalQuantity,
                 request.RequiresDeposit);
 
             assets.Add(asset);
@@ -394,12 +374,68 @@ public sealed class AssetService(
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
+    private static BulkCreatePlan ResolveBulkCreatePlan(BulkCreateAssetsRequest request)
+    {
+        var baseTag = request.BaseTag.Trim();
+        var rentalType = request.RentalType;
+
+        if (rentalType == RentalAssetType.Location)
+        {
+            if (request.StartNumber is null || request.EndNumber is null)
+            {
+                throw new ArgumentException(
+                    "StartNumber and EndNumber are required when RentalType is Location.");
+            }
+
+            var startNumber = request.StartNumber.Value;
+            var endNumber = request.EndNumber.Value;
+
+            if (startNumber > endNumber)
+            {
+                throw new ArgumentException("StartNumber must be less than or equal to EndNumber.");
+            }
+
+            var createCount = (long)endNumber - startNumber + 1;
+            EnsureWithinBulkCreateLimit(createCount);
+
+            var tags = new List<string>((int)createCount);
+            for (var number = startNumber; number <= endNumber; number++)
+            {
+                tags.Add(BuildTag(baseTag, number));
+            }
+
+            return new BulkCreatePlan(rentalType, 1, tags);
+        }
+
+        if (rentalType == RentalAssetType.Good)
+        {
+            EnsureWithinBulkCreateLimit(1);
+            return new BulkCreatePlan(rentalType, request.TotalQuantity, [baseTag]);
+        }
+
+        throw new ArgumentException($"Unsupported RentalType '{rentalType}'.");
+    }
+
+    private static void EnsureWithinBulkCreateLimit(long createCount)
+    {
+        if (createCount > MaxBulkCreateCount)
+        {
+            throw new ArgumentException(
+                $"Bulk create is limited to {MaxBulkCreateCount} assets per request.");
+        }
+    }
+
     private static string BuildTag(string baseTag, int number)
     {
         return baseTag.EndsWith('-') || baseTag.EndsWith('_')
             ? $"{baseTag}{number}"
             : $"{baseTag}-{number}";
     }
+
+    private sealed record BulkCreatePlan(
+        RentalAssetType RentalType,
+        int TotalQuantity,
+        List<string> Tags);
 
     private static string? NormalizeOptional(string? value)
     {
