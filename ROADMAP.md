@@ -57,7 +57,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Admin UI completa: kinds, editor fino de templates
 - [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
 - [x] Trial expirado: `BookSlot` / `CreateReservation` passam por `TrialGuard` (mesmo guard de Confirm/Cancel)
-- [x] F-01: `SELECT … FOR UPDATE` em `RentalAsset` serializa `CreateReservation` / `BookSlot` (prova em Testcontainers; skip sem Docker)
+- [x] F-01: `SELECT … FOR UPDATE` em `RentalAsset` serializa `CreateReservation` / `BookSlot` (prova em Testcontainers; 2026-08-22: `ReservationConcurrencyTests` 2 passed / 0 skipped com Docker 29.5.3)
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -83,6 +83,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
+- [x] F-05: gate `Notifications:AllowExternalDelivery` (bool? tri-state) — Development não envia externo só por ter credencial; PROD/Staging com flag unset seguem Resend/Meta.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [ ] Provider SMS real quando sair do Dev.
 
@@ -107,7 +108,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## Dívidas técnicas conhecidas
 
 - Permissions/RolePermission sem uso.
-- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location e corrida de Location (Testcontainers; skip se Docker ausente).
+- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location, corrida de Location (Testcontainers; 2026-08-22 comprovado com Docker 29.5.3) e o gate DI de notificações (F-05).
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
@@ -161,3 +162,6 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-21 | **Fix F-01:** `SELECT … FOR UPDATE` no `RentalAsset` serializa `CreateReservationAsync` / `BookSlotAsync`; prova em `ReservationConcurrencyTests` (Testcontainers PostgreSQL; skip se o named pipe/socket Docker não existir). Sem exclusion constraint e sem SERIALIZABLE. |
 | 2026-08-21 | **Executado:** `POST /api/assets/pricing-bulk` aplica faixas de `RentalPricing` em lote (transação; replace ou append; caps 1000/100/10000). |
 | 2026-08-21 | **Fix F-15:** duplicate AssetId rejected on CreateReservation. |
+| 2026-08-22 | **Fix F-05:** `Notifications:AllowExternalDelivery` (bool? tri-state) impede Resend/Meta em Development só porque há credencial; PROD/Staging continuam externos com flag unset. |
+| 2026-08-22 | **F-08 BY_DESIGN:** sessões B2B e B2C são independentes; logout de uma superfície não limpa a outra; sem `signOutAll` neste ciclo. |
+| 2026-08-22 | **F-01 follow-up:** `ReservationConcurrencyTests` executado com Docker 29.5.3 — 2 passed, 0 skipped. Follow-up de prova fechado; lock inalterado. |
