@@ -5,8 +5,7 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `.cursor/rules/30-rentals.mdc`
-- Last verified: 2026-08-18
-- Verified at commit(s): `7dcb66d` (`chore/multi-agent-foundation`)
+- Last verified: 2026-08-22
 
 ## Purpose
 
@@ -14,8 +13,8 @@ Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, sche
 
 ## Canonical sources
 
-- `CONTEXT.md` — glossary (Reservation, Slot, OpenHours, SlotGrid, Layout, …)
-- `docs/adr/0001-rentals-slot-schedule.md` — Slot-first schedule; OccupancyKind catalog; derived days
+- `CONTEXT.md` — glossary (Reservation, Slot, OccupancyKind, ScheduleTemplate, OpenHours, SlotGrid, Layout, …)
+- `docs/adr/0001-rentals-slot-schedule.md` — Slot-first schedule; OccupancyKind catalog; derived days; 2026-08-22 overlap addendum
 - `.cursor/rules/30-rentals.mdc` — invariants and current gaps
 
 ## Domain vocabulary
@@ -23,13 +22,15 @@ Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, sche
 - **Rentable** = `RentalAsset` (Location exclusive / Good with quantity)
 - **Reservation** = Customer booking for a concrete time window; N `ReservationItem`s
 - **Slot** = dated occupancy cell on one Rentable (kind + status)
+- **OccupancyKind** = tenant catalog; overlapping kinds on a weekday: Closed > Lesson > Open on unpublished days
+- **ScheduleTemplate** = weekly pattern; cross-kind overlap allowed; exact interval+kind is unique
 - **OpenHours** = policy “Horário padrão”; bookable windows derived
-- **SlotGrid** = policy “Grade personalizada”; unpublished days derived from weekly templates
+- **SlotGrid** = policy “Grade personalizada”; unpublished days derived from weekly templates (split by precedence)
 - **Layout** = visual map of Rentables; not schedule data
 
 ## Current model
 
-Reservation is the occupancy fact (start/end + items). Slot is the schedule cell. Link is optional: `Slot.ReservationId` when a persisted cell is booked via `BookSlot`. Derived OpenHours/SlotGrid windows book via create-reservation until a Slot row exists (`PublishDay` optional). Conflict = overlapping reservations, not “must have SlotId”.
+Reservation is the occupancy fact (start/end + items). Slot is the schedule cell. Link is optional: `Slot.ReservationId` when a persisted cell is booked via `BookSlot`. Derived OpenHours/SlotGrid windows book via create-reservation until a Slot row exists (`PublishDay` optional). Conflict = overlapping reservations, not “must have SlotId”. Weekly apply matches `(RentalAssetId, DayOfWeek, StartTime, EndTime, OccupancyKindId)`.
 
 ## Critical invariants
 
@@ -38,6 +39,8 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - B2C login is email+password; phone is SMS/WhatsApp, not login
 - Reservation customer snapshots do not follow later Customer edits
 - Product UI never shows `OpenHours` / `SlotGrid` as copy
+- Same OccupancyKind cannot overlap itself on a Rentable+weekday; different kinds may
+- `PublishDay` gap-fills by rentable + start; does not wipe existing slots
 
 ## Current contracts
 
@@ -50,11 +53,12 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 - `Platform.Api/Modules/Rentals/Services/ReservationService.cs`
 - `Platform.Api/Modules/Rentals/Services/ScheduleService.cs`
-- `Core/Platform.Core.Domain/Entities/Reservation.cs`, `Slot.cs`
+- `Platform.Api/Modules/Rentals/Services/OccupancyPrecedence.cs`
+- `Core/Platform.Core.Domain/Entities/Reservation.cs`, `Slot.cs`, `ScheduleTemplate.cs`
 
 ## Known gaps / open constraints
 
-From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), complete-reservation, real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted).
+From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), complete-reservation, real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
 
 ## Do not assume
 
@@ -62,3 +66,5 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), complete-reserv
 - `PublishDay` is required before B2C can book a weekly grid
 - Hard-coded Lesson/Open/Closed as the only occupancy kinds
 - Court-only language in the module core
+- Start time alone identifies a weekly template (that caused ApplyWeeklyRule 500s)
+- Last-write-wins / timestamps / shorter interval as occupancy precedence
