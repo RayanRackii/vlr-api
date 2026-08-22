@@ -18,7 +18,7 @@ B2B "Esqueci a senha" must send a **Rolvix-branded** email (same chrome as invit
 
 ## External delivery gate
 
-Credentials alone do **not** enable Resend (or Meta WhatsApp). Registration is:
+In Development, credentials alone do **not** enable Resend (or Meta WhatsApp). In Production/Staging, an unset flag plus valid credentials still registers the external providers. Registration is:
 
 ```
 effectiveAllowExternal =
