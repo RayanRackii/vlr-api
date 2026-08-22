@@ -5,10 +5,10 @@ namespace Platform.Api.Tests.Infrastructure;
 
 internal static class InMemoryAppDb
 {
-    public static AppDbContext Create(ITenantProvider tenantProvider)
+    public static AppDbContext Create(ITenantProvider tenantProvider, string? databaseName = null)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase($"trial-{Guid.NewGuid():N}")
+            .UseInMemoryDatabase(databaseName ?? $"trial-{Guid.NewGuid():N}")
             .Options;
 
         return new TestAppDbContext(options, tenantProvider);

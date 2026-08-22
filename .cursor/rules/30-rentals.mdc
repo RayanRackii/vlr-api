@@ -10,7 +10,7 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 
 ## Modelo
 
-- **`RentalAsset`** (1:1 com `Asset` via flag `IsRentable`): `Type` = `Location` (quadra/espaço, exclusivo) ou `Good` (bem com `TotalQuantity`). A sincronização acontece em `AssetService.SyncRentalConfiguration`.
+- **`RentalAsset`** (1:1 com `Asset` via flag `IsRentable`): `Type` = `Location` (quadra/espaço, exclusivo) ou `Good` (bem com `TotalQuantity`). A sincronização acontece em `AssetService.SyncRentalConfiguration`. Fila de espera B2C é **opcional por Location** (`QueueEnabled`, default false); Goods não entram na fila.
 - **`RentalPricing`**: preço por `DayOfWeek` + janela `Start`/`End` + `PricePerHour`. O percentual de depósito na faixa **não** é o gate da reserva; o gate é `RentalAsset.RequiresDeposit`.
 - **`Reservation`** → `Customer` + `Unit`, com snapshots `CustomerName`/`CustomerWhatsApp`, `TotalAmount`, `DepositPaid`.
 - **`ReservationItem`** → `RentalAsset` (quantidade, preço unitário, subtotal).

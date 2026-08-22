@@ -46,6 +46,7 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
+    builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddCorePersistence(connectionString);
     builder.Services.AddSupabaseAdminClient(builder.Configuration);
     builder.Services.AddSupabaseAuthentication(builder.Configuration);

@@ -11,7 +11,8 @@ public sealed class ScheduleService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IOccupancyKindService occupancyKindService,
-    ITrialGuard trialGuard) : IScheduleService
+    ITrialGuard trialGuard,
+    IReservationQueueService reservationQueueService) : IScheduleService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -890,6 +891,11 @@ public sealed class ScheduleService(
                 .FirstOrDefaultAsync(s => s.Id == request.SlotId, cancellationToken)
                 ?? throw new KeyNotFoundException("Slot was not found.");
 
+            await reservationQueueService.EnsureActiveTurnForBookingAsync(
+                customerId,
+                slot.RentalAsset,
+                cancellationToken);
+
             if (slot.Status != SlotStatus.Available
                 || !slot.OccupancyKind.IsBookableByCustomer
                 || !slot.OccupancyKind.IsActive)
@@ -958,6 +964,12 @@ public sealed class ScheduleService(
             dbContext.Reservations.Add(reservation);
             reservation.OpenAccordingToPaymentPolicy(slot.RentalAsset.RequiresDeposit);
             slot.MarkBooked(reservation.Id);
+
+            await reservationQueueService.CompleteTurnAsync(
+                customerId,
+                slot.RentalAsset,
+                reservation.Id,
+                cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

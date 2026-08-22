@@ -10,7 +10,8 @@ namespace Platform.Api.Modules.Rentals.Services;
 public sealed class ReservationService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard) : IReservationService
+    ITrialGuard trialGuard,
+    IReservationQueueService reservationQueueService) : IReservationService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -187,6 +188,7 @@ public sealed class ReservationService(
             decimal totalAmount = 0m;
             var requiresDeposit = false;
             var itemResponses = new List<(ReservationItem Item, Guid AssetId, string AssetName)>();
+            var queuedLocations = new List<RentalAsset>();
 
             foreach (var itemRequest in request.Items)
             {
@@ -204,6 +206,16 @@ public sealed class ReservationService(
                 {
                     throw new InvalidOperationException(
                         $"Asset '{rental.Asset.Name}' does not belong to the given unit.");
+                }
+
+                await reservationQueueService.EnsureActiveTurnForBookingAsync(
+                    customerId,
+                    rental,
+                    cancellationToken);
+
+                if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
+                {
+                    queuedLocations.Add(rental);
                 }
 
                 if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
@@ -269,6 +281,16 @@ public sealed class ReservationService(
             reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
 
             dbContext.Reservations.Add(reservation);
+
+            foreach (var queued in queuedLocations)
+            {
+                await reservationQueueService.CompleteTurnAsync(
+                    customerId,
+                    queued,
+                    reservation.Id,
+                    cancellationToken);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {

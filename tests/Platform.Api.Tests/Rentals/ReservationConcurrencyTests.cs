@@ -31,8 +31,16 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
 
         await using var db1 = factory.Create(tenantProvider);
         await using var db2 = factory.Create(tenantProvider);
-        var service1 = new ReservationService(db1, tenantProvider, new FakeTrialGuard());
-        var service2 = new ReservationService(db2, tenantProvider, new FakeTrialGuard());
+        var service1 = new ReservationService(
+            db1,
+            tenantProvider,
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(db1, tenantProvider));
+        var service2 = new ReservationService(
+            db2,
+            tenantProvider,
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(db2, tenantProvider));
 
         var request = new CreateReservationRequestDto
         {
@@ -66,8 +74,18 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
         await using var db1 = factory.Create(tenantProvider);
         await using var db2 = factory.Create(tenantProvider);
         var occupancyKinds = new UnusedOccupancyKindService();
-        var service1 = new ScheduleService(db1, tenantProvider, occupancyKinds, new FakeTrialGuard());
-        var service2 = new ScheduleService(db2, tenantProvider, occupancyKinds, new FakeTrialGuard());
+        var service1 = new ScheduleService(
+            db1,
+            tenantProvider,
+            occupancyKinds,
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(db1, tenantProvider));
+        var service2 = new ScheduleService(
+            db2,
+            tenantProvider,
+            occupancyKinds,
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(db2, tenantProvider));
 
         var request = new BookSlotRequestDto
         {
@@ -130,6 +148,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             SchedulePolicy = SchedulePolicy.OpenHours,
             OpenTime = new TimeOnly(8, 0),
             CloseTime = new TimeOnly(22, 0),
+            QueueEnabled = false,
         };
         var customer = new Customer
         {
