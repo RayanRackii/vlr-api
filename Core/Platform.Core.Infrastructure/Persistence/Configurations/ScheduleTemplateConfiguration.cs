@@ -24,6 +24,18 @@ public sealed class ScheduleTemplateConfiguration : IEntityTypeConfiguration<Sch
 
         builder.HasIndex(t => new { t.TenantId, t.RentalAssetId, t.DayOfWeek, t.StartTime });
 
+        builder.HasIndex(t => new
+            {
+                t.TenantId,
+                t.RentalAssetId,
+                t.DayOfWeek,
+                t.StartTime,
+                t.EndTime,
+                t.OccupancyKindId,
+            })
+            .IsUnique()
+            .HasDatabaseName("ix_schedule_templates_exact_duplicate");
+
         builder.HasOne(t => t.RentalAsset)
             .WithMany()
             .HasForeignKey(t => t.RentalAssetId)

@@ -117,19 +117,19 @@ A Tenant-defined label for grouping Rentables (for example padel, society, tenni
 _Avoid_: Fixed platform enum of sport types
 
 **OccupancyKind**:
-A Tenant-defined kind of time occupancy on a Rentable (for example Open, Closed, Lesson, Event). Controls whether Customers may book that cell and whether it blocks capacity. Catalog is per Tenant, not a global closed set.
-_Avoid_: Hard-coded Lesson/Open/Closed-only enums as the only kinds
+A Tenant-defined kind of time occupancy on a Rentable (for example Open, Closed, Lesson, Event). Controls whether Customers may book that cell and whether it blocks capacity. Catalog is per Tenant, not a global closed set. When several kinds cover the same weekday interval, a higher-precedence kind occupies the overlap on unpublished days (Closed over Lesson over Open; a custom kind that blocks capacity sits with Lesson).
+_Avoid_: Hard-coded Lesson/Open/Closed-only enums as the only kinds; last-write-wins between overlapping templates
 
 **Slot**:
 One dated occupancy cell on one Rentable: date + start + end + OccupancyKind. The operational unit of a published schedule day. Duration is whatever the admin defined (1h, 2h, 3h, …).
 _Avoid_: Free-typed start/end as the only booking path for slot-mode tenants
 
 **ScheduleTemplate**:
-The default weekly pattern of Slots (or open-hours rules) used to materialize each Schedule Day. Each template belongs to a `DayOfWeek` and recurs on every occurrence of that weekday (all Mondays, all Tuesdays, etc.); it is not tied to one calendar date. A single day can still be edited after publish.
-_Avoid_: Forcing admins to rebuild every day from scratch as the only path
+The default weekly pattern of Slots (or open-hours rules) used to materialize each Schedule Day. Each template belongs to a `DayOfWeek` and recurs on every occurrence of that weekday (all Mondays, all Tuesdays, etc.); it is not tied to one calendar date. A single day can still be edited after publish. Different OccupancyKinds may overlap on the same Rentable and weekday (Open 08:00–22:00 plus Lesson 18:00–19:00). The same kind cannot overlap itself, and the same interval+kind cannot be stored twice. Weekly apply matches an existing row by that full interval and kind, not by start time alone.
+_Avoid_: Forcing admins to rebuild every day from scratch as the only path; treating start time alone as the identity of a weekly row
 
 **ScheduleDay**:
-The concrete set of bookable windows for one calendar date (optionally per Unit). Includes persisted **Slot** rows plus unpublished SlotGrid cells derived from that weekday’s templates (same overlap rules as OpenHours). **PublishDay** still materializes Slot rows for dated exceptions and EntireRecurrence cascade.
+The concrete set of bookable windows for one calendar date (optionally per Unit). Includes persisted **Slot** rows plus unpublished SlotGrid cells derived from that weekday’s templates (overlapping kinds are split; the higher-precedence kind occupies the overlap). **PublishDay** still gap-fills Slot rows for dated exceptions and EntireRecurrence cascade without wiping a day that already has slots.
 _Avoid_: Requiring PublishDay before customers can book a weekly grid; treating the weekly editor itself as the B2C booking UI
 
 **OpenHours**:
@@ -137,7 +137,7 @@ A schedule policy where a Rentable is continuously available between open and cl
 _Avoid_: Forcing explicit Slot drawing when the tenant only needs “18:00–00:00 all open”; seeding dozens of identical SlotGrid templates when OpenHours fits
 
 **SlotGrid**:
-Schedule policy that authors the week as explicit **ScheduleTemplate** cells. Day reads derive unpublished bookable windows from that weekday’s templates; **PublishDay** optionally materializes **Slot** rows for exceptions and recurrence cascade. Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default` (`rentalAssetIds` for a set; also forces SlotGrid policy). Day query/publish accept the same ID list. **UI copy: Grade personalizada** — never show `SlotGrid` in the product UI. Fine edits stay per rentable on Weekly templates.
+Schedule policy that authors the week as explicit **ScheduleTemplate** cells. Day reads derive unpublished bookable windows from that weekday’s templates, splitting overlapping kinds so the higher-precedence kind wins the shared interval; **PublishDay** optionally materializes **Slot** rows for exceptions and recurrence cascade (gap-fill by rentable + start; existing slots including Booked stay). Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default` (`rentalAssetIds` for a set; also forces SlotGrid policy). Day query/publish accept the same ID list. **UI copy: Grade personalizada** — never show `SlotGrid` in the product UI. Fine edits stay per rentable on Weekly templates.
 _Avoid_: N client-side POSTs per hour×day as the product path; empty B2C days after seed because publish was skipped
 
 **Admin Daily Agenda UX**:
@@ -153,7 +153,7 @@ A dated Slot (or OpenHours-derived window) for one Rentable. Admin can adjust ki
 _Avoid_: Deleting a weekly template to hide one date; cascading over Booked or intentional DailyOverride rows
 
 **Day read path**:
-`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). SlotGrid derivation loads **that weekday’s** templates once and applies the same persisted-start + overlap rules. Admin reads include cancelled occurrences; public reads stay available+bookable only. Slot DTOs expose `sourceTemplateId`, `schedulePolicy` and `supportsEntireRecurrence`. `POST /api/schedule/slots/daily-occurrence` is the seam for day/recurrence edits; `POST /api/schedule/templates/apply-weekly-rule` expands resources × weekdays × intervals transactionally. B2C booking of a derived SlotGrid window uses create-reservation (not `slotId`) until a Slot row exists.
+`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). SlotGrid derivation loads **that weekday’s** templates once, splits overlapping kinds by precedence, and applies the same persisted-start + reservation overlap rules. Admin reads include cancelled occurrences; public reads stay available+bookable only. Slot DTOs expose `sourceTemplateId`, `schedulePolicy` and `supportsEntireRecurrence`. `POST /api/schedule/slots/daily-occurrence` is the seam for day/recurrence edits; `POST /api/schedule/templates/apply-weekly-rule` expands resources × weekdays × intervals transactionally. B2C booking of a derived SlotGrid window uses create-reservation (not `slotId`) until a Slot row exists.
 _Avoid_: One query per derived slot; fetching all seven weekdays of templates to answer a single day; canceling a derived OpenHours window without a persisted tombstone; N client POSTs to build a weekly grid
 
 **Occupancy kind**:
