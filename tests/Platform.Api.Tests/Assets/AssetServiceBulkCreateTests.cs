@@ -145,6 +145,21 @@ public sealed class AssetServiceBulkCreateTests
     }
 
     [Fact]
+    public async Task BulkCreate_LocationRangeExceedsMax_ThrowsArgumentException()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var service = harness.CreateService();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.BulkCreateAsync(
+                LocationRequest(harness, start: 1, end: 1001),
+                CancellationToken.None));
+
+        Assert.Equal("Bulk create is limited to 1000 assets per request.", ex.Message);
+        Assert.Empty(harness.Db.Assets);
+    }
+
+    [Fact]
     public async Task BulkCreate_GoodTotalQuantityZero_ThrowsArgumentException()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();

@@ -186,12 +186,6 @@ public sealed class AssetService(
         var plan = ResolveBulkCreatePlan(request);
         ValidateRentalFields(request.IsRentable, plan.RentalType, plan.TotalQuantity);
 
-        if (plan.Tags.Count > MaxBulkCreateCount)
-        {
-            throw new ArgumentException(
-                $"Bulk create is limited to {MaxBulkCreateCount} assets per request.");
-        }
-
         await trialGuard.EnsureCanCreateAssetsAsync(plan.Tags.Count, cancellationToken);
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
@@ -401,8 +395,10 @@ public sealed class AssetService(
                 throw new ArgumentException("StartNumber must be less than or equal to EndNumber.");
             }
 
-            var createCount = endNumber - startNumber + 1;
-            var tags = new List<string>(createCount);
+            var createCount = (long)endNumber - startNumber + 1;
+            EnsureWithinBulkCreateLimit(createCount);
+
+            var tags = new List<string>((int)createCount);
             for (var number = startNumber; number <= endNumber; number++)
             {
                 tags.Add(BuildTag(baseTag, number));
@@ -413,10 +409,20 @@ public sealed class AssetService(
 
         if (rentalType == RentalAssetType.Good)
         {
+            EnsureWithinBulkCreateLimit(1);
             return new BulkCreatePlan(rentalType, request.TotalQuantity, [baseTag]);
         }
 
         throw new ArgumentException($"Unsupported RentalType '{rentalType}'.");
+    }
+
+    private static void EnsureWithinBulkCreateLimit(long createCount)
+    {
+        if (createCount > MaxBulkCreateCount)
+        {
+            throw new ArgumentException(
+                $"Bulk create is limited to {MaxBulkCreateCount} assets per request.");
+        }
     }
 
     private static string BuildTag(string baseTag, int number)
