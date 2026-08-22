@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Platform.Api.Modules.CustomerAuth.Dtos;
 
@@ -70,3 +71,52 @@ public sealed record TenantBrandingResponseDto(
     string? PrimaryColor,
     string? AccentColor,
     string? WelcomeTagline);
+
+public sealed record CustomerProfileDto(
+    Guid Id,
+    Guid TenantId,
+    string Name,
+    string? Email,
+    string? Phone,
+    string? Cpf,
+    string? PostalCode,
+    string? AddressStreet,
+    string? AddressNeighborhood,
+    string? AddressCity,
+    string? AddressState,
+    string? PhotoUrl,
+    DateTimeOffset CreatedAt,
+    bool PhoneVerified,
+    IReadOnlyDictionary<string, string?> ExtraAttributes);
+
+public sealed record UpdateCustomerProfileRequestDto
+{
+    private string? _name;
+    private string? _photoUrl;
+
+    [JsonIgnore]
+    public bool NameSpecified { get; private set; }
+
+    [JsonIgnore]
+    public bool PhotoUrlSpecified { get; private set; }
+
+    public string? Name
+    {
+        get => _name;
+        init
+        {
+            _name = value;
+            NameSpecified = true;
+        }
+    }
+
+    public string? PhotoUrl
+    {
+        get => _photoUrl;
+        init
+        {
+            _photoUrl = value;
+            PhotoUrlSpecified = true;
+        }
+    }
+}

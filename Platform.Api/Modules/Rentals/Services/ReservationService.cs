@@ -10,7 +10,8 @@ namespace Platform.Api.Modules.Rentals.Services;
 public sealed class ReservationService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard) : IReservationService
+    ITrialGuard trialGuard,
+    IReservationQueueService reservationQueueService) : IReservationService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -113,11 +114,17 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
         ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
 
         if (request.Items is null || request.Items.Count == 0)
         {
             throw new ArgumentException("At least one reservation item is required.");
+        }
+
+        if (request.Items.Select(i => i.AssetId).Distinct().Count() != request.Items.Count)
+        {
+            throw new ArgumentException("Each assetId may appear only once per reservation.");
         }
 
         var customer = await dbContext.Customers
@@ -139,10 +146,31 @@ public sealed class ReservationService(
             ? string.Empty
             : customer.Phone;
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
+            var assetIds = request.Items
+                .Select(item => item.AssetId)
+                .Distinct()
+                .ToList();
+
+            var rentalAssetsToLock = await dbContext.RentalAssets
+                .Where(r => assetIds.Contains(r.AssetId) && r.IsActive)
+                .OrderBy(r => r.Id)
+                .Select(r => new { r.Id, r.AssetId })
+                .ToListAsync(cancellationToken);
+
+            foreach (var rentalAsset in rentalAssetsToLock)
+            {
+                await RentalAssetLocks.LockByRentalAssetIdAsync(
+                    dbContext,
+                    rentalAsset.Id,
+                    cancellationToken);
+            }
+
             var reservation = new Reservation
             {
                 TenantId = tenantId,
@@ -160,6 +188,7 @@ public sealed class ReservationService(
             decimal totalAmount = 0m;
             var requiresDeposit = false;
             var itemResponses = new List<(ReservationItem Item, Guid AssetId, string AssetName)>();
+            var queuedLocations = new List<RentalAsset>();
 
             foreach (var itemRequest in request.Items)
             {
@@ -177,6 +206,16 @@ public sealed class ReservationService(
                 {
                     throw new InvalidOperationException(
                         $"Asset '{rental.Asset.Name}' does not belong to the given unit.");
+                }
+
+                await reservationQueueService.EnsureActiveTurnForBookingAsync(
+                    customerId,
+                    rental,
+                    cancellationToken);
+
+                if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
+                {
+                    queuedLocations.Add(rental);
                 }
 
                 if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
@@ -242,14 +281,31 @@ public sealed class ReservationService(
             reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
 
             dbContext.Reservations.Add(reservation);
+
+            foreach (var queued in queuedLocations)
+            {
+                await reservationQueueService.CompleteTurnAsync(
+                    customerId,
+                    queued,
+                    reservation.Id,
+                    cancellationToken);
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             return ToResponse(reservation, itemResponses);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw;
         }
     }
@@ -477,7 +533,7 @@ public sealed class ReservationService(
         return template is not null && template.OccupancyKind.IsBookableByCustomer;
     }
 
-    private async Task<int> GetReservedQuantityAsync(
+    internal async Task<int> GetReservedQuantityAsync(
         Guid rentalAssetId,
         DateTimeOffset start,
         DateTimeOffset end,

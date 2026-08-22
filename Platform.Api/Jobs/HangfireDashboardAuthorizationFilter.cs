@@ -1,23 +1,18 @@
 using Hangfire.Dashboard;
+using Platform.Api.Authentication;
 
 namespace Platform.Api.Jobs;
 
 /// <summary>
-/// Allows Hangfire Dashboard in Development; requires an authenticated user otherwise.
+/// Hangfire Dashboard is limited to the PlatformAdmin email allowlist.
+/// Anonymous, Customer, and ordinary B2B JWTs are denied.
 /// </summary>
 public sealed class HangfireDashboardAuthorizationFilter : IDashboardAuthorizationFilter
 {
     public bool Authorize(DashboardContext context)
     {
         var httpContext = context.GetHttpContext();
-        var environment = httpContext.RequestServices
-            .GetRequiredService<IWebHostEnvironment>();
-
-        if (environment.IsDevelopment())
-        {
-            return true;
-        }
-
-        return httpContext.User.Identity?.IsAuthenticated == true;
+        var checker = httpContext.RequestServices.GetRequiredService<IPlatformAdminChecker>();
+        return checker.IsPlatformAdmin(httpContext.User);
     }
 }

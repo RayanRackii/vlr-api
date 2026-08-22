@@ -6,7 +6,7 @@ using Platform.Core.Domain.Entities;
 
 namespace Platform.Core.Infrastructure.Persistence;
 
-public sealed class AppDbContext : DbContext
+public class AppDbContext : DbContext
 {
     private readonly ITenantProvider _tenantProvider;
 
@@ -78,6 +78,12 @@ public sealed class AppDbContext : DbContext
     public DbSet<Reservation> Reservations => Set<Reservation>();
 
     public DbSet<ReservationItem> ReservationItems => Set<ReservationItem>();
+
+    public DbSet<ReservationQueueSession> ReservationQueueSessions =>
+        Set<ReservationQueueSession>();
+
+    public DbSet<ReservationQueueTicket> ReservationQueueTickets =>
+        Set<ReservationQueueTicket>();
 
     public DbSet<OccupancyKind> OccupancyKinds => Set<OccupancyKind>();
 

@@ -46,6 +46,7 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
+    builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddCorePersistence(connectionString);
     builder.Services.AddSupabaseAdminClient(builder.Configuration);
     builder.Services.AddSupabaseAuthentication(builder.Configuration);
@@ -64,7 +65,7 @@ try
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
     builder.Services.AddWebhooksModule();
-    builder.Services.AddNotificationInfrastructure(builder.Configuration);
+    builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     builder.Services.AddPlatformHangfire(connectionString);
 
     builder.Services.AddControllers()

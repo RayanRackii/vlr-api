@@ -56,6 +56,12 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] B2C: escolher slot do dia / book por `slotId` ou create-reservation (SlotGrid derivado)
 - [x] Admin UI completa: kinds, editor fino de templates
 - [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
+- [x] Trial expirado: `BookSlot` / `CreateReservation` passam por `TrialGuard` (mesmo guard de Confirm/Cancel)
+- [x] F-01: `SELECT … FOR UPDATE` em `RentalAsset` serializa `CreateReservation` / `BookSlot` (prova em Testcontainers; 2026-08-22: `ReservationConcurrencyTests` 2 passed / 0 skipped com Docker 29.5.3)
+- [x] F-10: overlap de `ScheduleTemplate` entre OccupancyKinds; UNIQUE exact duplicate; derive SlotGrid não publicado por precedência; `PublishDay` continua gap-fill (migration `AddScheduleTemplateExactDuplicateUnique`)
+- [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
+- [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
+- [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -65,12 +71,24 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 - [x] Seeds `spaces` / `electrical` / `goods` / `generic`
 - [x] `GET /api/asset-families` (+ `/active`); create/update tenant com `AssetFamilyKeys`
 - [x] Validação de attributes no `AssetService`
+- [x] F-16: `BulkCreate` respeita `RentalType` (Location = N entidades qty 1; Good = 1 entidade com estoque)
 - [ ] Aplicar migration `AddAssetFamilies` no Supabase/Railway
 - [ ] CRUD visual de famílias no Super-Admin (follow-up)
+
+## 2.9. Meu Perfil B2C — FEITO (código)
+
+Spec: [`docs/plans/active/2026-08-18-b2c-meu-perfil.md`](./docs/plans/active/2026-08-18-b2c-meu-perfil.md). Branch `feat/customer-profile`.
+
+Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/telefone/CPF/senha) somente leitura.
+
+- [x] `GET /api/customers/me` + `PATCH /api/customers/me` (`Authorize(Policy = "Customer")`; `customerId` só do JWT)
+- [x] UI portal `/app/perfil` + menu da conta (repo `vlr-web`, mesma branch)
+- FOLLOW_UP (fora deste MVP): alteração de e-mail com verificação; telefone com SMS; CPF; senha B2C (troca/recuperação); CEP/endereço; ExtraAttributes. Upload de foto **não** aberto — o fluxo de cadastro (`fileToCompressedDataUrl`) foi reutilizado.
 
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
+- [x] F-05: gate `Notifications:AllowExternalDelivery` (bool? tri-state) — Development não envia externo só por ter credencial; PROD/Staging com flag unset seguem Resend/Meta.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [ ] Provider SMS real quando sair do Dev.
 
@@ -95,8 +113,7 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 ## Dívidas técnicas conhecidas
 
 - Permissions/RolePermission sem uso.
-- Hangfire dashboard auth fraco em produção.
-- Sem testes automatizados.
+- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location, corrida de Location (Testcontainers; 2026-08-22 comprovado com Docker 29.5.3) e o gate DI de notificações (F-05).
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
@@ -136,3 +153,25 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 | 2026-08-17 | **Fix Layout:** save não trava em percentuais fora do canvas; tamanho do mapa persistido; “Organizar sozinho”. |
 | 2026-08-17 | **Fix escala:** `GetDay` deriva horários SlotGrid dos templates semanais (reserva B2C sem PublishDay); seed força SlotGrid; grade admin cabe o dia sem scroll interno. |
 | 2026-08-18 | **Docs:** wizard de recursos (Operação + presets de preço expandindo `RentalPricing` por weekday). UI no `vlr-web`. |
+| 2026-08-18 | **Docs:** fundação multi-agent (architect / implementer / reviewer), Human Decision Gate, Git Work Policy e `docs/plans`. |
+| 2026-08-18 | **Docs:** GLM architect padrão; Fable só com aprovação; context-packs; agent-feedback. |
+| 2026-08-18 | **Docs:** ids de subagent disambiguados no workspace multi-root (`rolvix-architect`, `api-implementer`, `api-reviewer`). |
+| 2026-08-18 | **Iniciado:** Meu Perfil B2C — spec aprovada (A/A/A); `GET`/`PATCH /api/customers/me`; UI no `vlr-web`. FOLLOW_UPs de identidade/endereço/extras. |
+| 2026-08-18 | **Executado (API):** `GET`/`PATCH /api/customers/me` (policy Customer; PATCH só Name + PhotoUrl; DTO separado do login). UI no `vlr-web`. |
+| 2026-08-18 | **Executado (FE irmão):** Meu Perfil no portal (`/app/perfil`); review API e web sem Critical/High. |
+| 2026-08-20 | **Docs:** protocolo Git multi-machine no `AGENTS.md` (Session Bootstrap, Task Checkpoint, Session Handoff). |
+| 2026-08-21 | **Docs:** Autonomous Delivery + Merge Risk Gate (Fable). Parent dono do ciclo até merge em `develop`; `main`/PROD continuam Human Gate. |
+| 2026-08-21 | **Fix F-12:** trial read-only também bloqueia `BookSlotAsync` e `CreateReservationAsync`. |
+| 2026-08-21 | **Fix F-02:** `/hangfire` exige PlatformAdmin (email allowlist); JWT Customer/B2B comum é recusado. |
+| 2026-08-21 | **Executado:** fundação xUnit (`tests/Platform.Api.Tests`) — TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location via `GetReservedQuantityAsync` (SQLite não traduz o join+enum da reserva); extração `AddRolvixPolicies`. F-01 não resolvido. |
+| 2026-08-21 | **Fix F-01:** `SELECT … FOR UPDATE` no `RentalAsset` serializa `CreateReservationAsync` / `BookSlotAsync`; prova em `ReservationConcurrencyTests` (Testcontainers PostgreSQL; skip se o named pipe/socket Docker não existir). Sem exclusion constraint e sem SERIALIZABLE. |
+| 2026-08-21 | **Executado:** `POST /api/assets/pricing-bulk` aplica faixas de `RentalPricing` em lote (transação; replace ou append; caps 1000/100/10000). |
+| 2026-08-21 | **Fix F-15:** duplicate AssetId rejected on CreateReservation. |
+| 2026-08-22 | **Fix F-05:** `Notifications:AllowExternalDelivery` (bool? tri-state) impede Resend/Meta em Development só porque há credencial; PROD/Staging continuam externos com flag unset. |
+| 2026-08-22 | **F-08 BY_DESIGN:** sessões B2B e B2C são independentes; logout de uma superfície não limpa a outra; sem `signOutAll` neste ciclo. |
+| 2026-08-22 | **F-01 follow-up:** `ReservationConcurrencyTests` executado com Docker 29.5.3 — 2 passed, 0 skipped. Follow-up de prova fechado; lock inalterado. |
+| 2026-08-22 | **Fix F-10:** `ApplyWeeklyRule` deixa de indexar só por StartTime; overlap entre OccupancyKinds permitido; duplicata exata rejeitada; SlotGrid não publicado deriva o vencedor por precedência. `PublishDay` inalterado (gap-fill). Follow-up F-10b: rewrite de Slots persistidos sobrepostos. |
+| 2026-08-22 | **Fix F-10 review:** EntireRecurrence / restore / fallback de Slot→template usam `SourceTemplateId` ou a tupla completa (não só StartTime); converter Open→Closed na mesma janela vira 400, não overwrite. |
+| 2026-08-22 | **Fix F-16:** `BulkCreate` respeita `RentalType` — Location cria N ativos (qty 1); Good cria um ativo com estoque em `TotalQuantity`. Sem conversão silenciosa Good→Location. |
+| 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |
+| 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |

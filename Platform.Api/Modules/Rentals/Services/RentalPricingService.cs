@@ -9,6 +9,10 @@ public sealed class RentalPricingService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider) : IRentalPricingService
 {
+    private const int MaxAssetIds = 1000;
+    private const int MaxPricings = 100;
+    private const int MaxProduct = 10_000;
+
     public async Task<IReadOnlyList<RentalPricingResponseDto>> GetByAssetIdAsync(
         Guid assetId,
         CancellationToken cancellationToken)
@@ -102,6 +106,90 @@ public sealed class RentalPricingService(
         return ToResponse(pricing, assetId);
     }
 
+    public async Task<BulkApplyPricingsResponse> ApplyBulkAsync(
+        BulkApplyPricingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var assetIds = request.AssetIds ?? [];
+        var pricings = request.Pricings ?? [];
+
+        ValidateBulkPayload(assetIds, pricings, request.Replace);
+
+        var tenantId = EnsureTenantContext();
+
+        var rentals = new List<RentalAsset>(assetIds.Count);
+        foreach (var assetId in assetIds)
+        {
+            rentals.Add(await EnsureRentableConfigAsync(assetId, cancellationToken));
+        }
+
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            if (request.Replace)
+            {
+                var rentalIds = rentals.Select(r => r.Id).ToList();
+                var existing = await dbContext.RentalPricings
+                    .Where(p => rentalIds.Contains(p.RentalAssetId))
+                    .ToListAsync(cancellationToken);
+                dbContext.RentalPricings.RemoveRange(existing);
+            }
+            else
+            {
+                foreach (var rental in rentals)
+                {
+                    foreach (var row in pricings)
+                    {
+                        await EnsureNoOverlapAsync(
+                            rental.Id,
+                            row.DayOfWeek,
+                            row.StartTime,
+                            row.EndTime,
+                            excludePricingId: null,
+                            cancellationToken);
+                    }
+                }
+            }
+
+            foreach (var rental in rentals)
+            {
+                foreach (var row in pricings)
+                {
+                    dbContext.RentalPricings.Add(new RentalPricing
+                    {
+                        TenantId = tenantId,
+                        RentalAssetId = rental.Id,
+                        DayOfWeek = row.DayOfWeek,
+                        StartTime = row.StartTime,
+                        EndTime = row.EndTime,
+                        PricePerHour = RoundMoney(row.PricePerHour),
+                        RequiresDeposit = row.RequiresDeposit,
+                        DepositPercentage = RoundMoney(row.DepositPercentage),
+                    });
+                }
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
+            throw;
+        }
+
+        return new BulkApplyPricingsResponse(rentals.Count, rentals.Count * pricings.Count);
+    }
+
     public async Task<bool> DeleteAsync(
         Guid assetId,
         Guid pricingId,
@@ -177,6 +265,80 @@ public sealed class RentalPricingService(
     {
         return tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
+    }
+
+    private static void ValidateBulkPayload(
+        IReadOnlyList<Guid> assetIds,
+        IReadOnlyList<BulkPricingRowDto> pricings,
+        bool replace)
+    {
+        if (assetIds.Count == 0)
+        {
+            throw new ArgumentException("At least one asset is required.");
+        }
+
+        if (assetIds.Distinct().Count() != assetIds.Count)
+        {
+            throw new ArgumentException("AssetIds must not contain duplicates.");
+        }
+
+        if (assetIds.Count > MaxAssetIds)
+        {
+            throw new ArgumentException($"Cannot apply pricing to more than {MaxAssetIds} assets.");
+        }
+
+        if (pricings.Count > MaxPricings)
+        {
+            throw new ArgumentException($"Cannot apply more than {MaxPricings} pricing rows.");
+        }
+
+        if ((long)assetIds.Count * pricings.Count > MaxProduct)
+        {
+            throw new ArgumentException($"Bulk pricing cannot exceed {MaxProduct} created rows.");
+        }
+
+        if (!replace && pricings.Count == 0)
+        {
+            throw new ArgumentException("Pricings are required when Replace is false.");
+        }
+
+        foreach (var row in pricings)
+        {
+            ValidatePricingWindow(
+                row.StartTime,
+                row.EndTime,
+                row.PricePerHour,
+                row.DepositPercentage);
+        }
+
+        var windows = new HashSet<(DayOfWeek Day, TimeOnly Start, TimeOnly End)>();
+        foreach (var row in pricings)
+        {
+            if (!windows.Add((row.DayOfWeek, row.StartTime, row.EndTime)))
+            {
+                throw new ArgumentException("Pricings contain duplicate windows for the same day.");
+            }
+        }
+
+        for (var i = 0; i < pricings.Count; i++)
+        {
+            for (var j = i + 1; j < pricings.Count; j++)
+            {
+                var left = pricings[i];
+                var right = pricings[j];
+                if (left.DayOfWeek != right.DayOfWeek)
+                {
+                    continue;
+                }
+
+                if (left.StartTime < right.EndTime && left.EndTime > right.StartTime)
+                {
+                    throw new InvalidOperationException(
+                        $"Pricing window overlaps another rule in the payload on {left.DayOfWeek} " +
+                        $"({left.StartTime:HH\\:mm}-{left.EndTime:HH\\:mm}).");
+                }
+            }
+        }
     }
 
     private static void ValidatePricingWindow(

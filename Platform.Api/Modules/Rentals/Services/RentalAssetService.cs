@@ -167,6 +167,8 @@ public sealed class RentalAssetService(
             rental.OpenTime,
             rental.CloseTime,
             rental.AllowedDurationMinutes,
+            rental.QueueEnabled,
+            rental.QueueOpeningTime,
             rental.Asset.CategoryId,
             rental.Asset.Category?.Name,
             rental.CreatedAt,

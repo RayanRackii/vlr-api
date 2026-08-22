@@ -12,6 +12,7 @@ public static class RentalsModuleExtensions
         services.AddScoped<IOccupancyKindService, OccupancyKindService>();
         services.AddScoped<IScheduleService, ScheduleService>();
         services.AddScoped<IRentalLayoutService, RentalLayoutService>();
+        services.AddScoped<IReservationQueueService, ReservationQueueService>();
 
         return services;
     }

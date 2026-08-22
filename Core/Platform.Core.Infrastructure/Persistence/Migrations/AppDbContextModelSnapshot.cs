@@ -294,6 +294,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("extra_attributes")
                         .HasDefaultValueSql("'{}'::jsonb");
 
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_login_at");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -313,10 +317,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("PhoneVerifiedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("phone_verified_at");
-
-                    b.Property<DateTimeOffset?>("LastLoginAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_login_at");
 
                     b.Property<string>("PhotoUrl")
                         .HasColumnType("text")
@@ -882,6 +882,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("time without time zone")
                         .HasColumnName("open_time");
 
+                    b.Property<bool>("QueueEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("queue_enabled");
+
+                    b.Property<TimeOnly?>("QueueOpeningTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("queue_opening_time");
+
                     b.Property<bool>("RequiresDeposit")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -933,6 +943,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<double>("AspectRatio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("double precision")
+                        .HasDefaultValue(1.6000000000000001)
+                        .HasColumnName("aspect_ratio");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -942,12 +958,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
-
-                    b.Property<double>("AspectRatio")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("double precision")
-                        .HasDefaultValue(1.6)
-                        .HasColumnName("aspect_ratio");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1240,6 +1250,126 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("reservation_items", "rentals");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationQueueSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateOnly>("OpeningDate")
+                        .HasColumnType("date")
+                        .HasColumnName("opening_date");
+
+                    b.Property<DateTimeOffset>("OpensAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opens_at");
+
+                    b.Property<Guid>("RentalAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rental_asset_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<DateTimeOffset>("WaitingRoomOpensAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("waiting_room_opens_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reservation_queue_sessions");
+
+                    b.HasIndex("RentalAssetId")
+                        .HasDatabaseName("ix_reservation_queue_sessions_rental_asset_id");
+
+                    b.HasIndex("TenantId", "RentalAssetId", "OpeningDate")
+                        .IsUnique()
+                        .HasDatabaseName("ix_reservation_queue_sessions_tenant_id_rental_asset_id_openin");
+
+                    b.ToTable("reservation_queue_sessions", "rentals");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationQueueTicket", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("CompletedReservationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("completed_reservation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<Guid>("QueueSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("queue_session_id");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("TurnExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("turn_expires_at");
+
+                    b.Property<DateTimeOffset?>("TurnStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("turn_started_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_reservation_queue_tickets");
+
+                    b.HasIndex("CompletedReservationId")
+                        .HasDatabaseName("ix_reservation_queue_tickets_completed_reservation_id");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_reservation_queue_tickets_customer_id");
+
+                    b.HasIndex("QueueSessionId", "CustomerId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_reservation_queue_tickets_queue_session_id_customer_id")
+                        .HasFilter("status IN ('Waiting', 'Active')");
+
+                    b.HasIndex("QueueSessionId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ix_reservation_queue_tickets_queue_session_id_sequence");
+
+                    b.ToTable("reservation_queue_tickets", "rentals");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1368,6 +1498,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "RentalAssetId", "DayOfWeek", "StartTime")
                         .HasDatabaseName("ix_schedule_templates_tenant_id_rental_asset_id_day_of_week_st");
+
+                    b.HasIndex("TenantId", "RentalAssetId", "DayOfWeek", "StartTime", "EndTime", "OccupancyKindId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_schedule_templates_exact_duplicate");
 
                     b.ToTable("schedule_templates", "rentals");
                 });
@@ -1544,6 +1678,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_tenants");
+
                     b.HasIndex("Subdomain")
                         .IsUnique()
                         .HasDatabaseName("ix_tenants_subdomain")
@@ -2334,6 +2469,47 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Reservation");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationQueueSession", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.RentalAsset", "RentalAsset")
+                        .WithMany()
+                        .HasForeignKey("RentalAssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservation_queue_sessions_rental_assets_rental_asset_id");
+
+                    b.Navigation("RentalAsset");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationQueueTicket", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Reservation", "CompletedReservation")
+                        .WithMany()
+                        .HasForeignKey("CompletedReservationId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_reservation_queue_tickets_reservations_completed_reservatio");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservation_queue_tickets_customers_customer_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.ReservationQueueSession", "QueueSession")
+                        .WithMany("Tickets")
+                        .HasForeignKey("QueueSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_reservation_queue_tickets_reservation_queue_sessions_queue_");
+
+                    b.Navigation("CompletedReservation");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("QueueSession");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Tenant", "Tenant")
@@ -2638,6 +2814,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Platform.Core.Domain.Entities.Reservation", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationQueueSession", b =>
+                {
+                    b.Navigation("Tickets");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>

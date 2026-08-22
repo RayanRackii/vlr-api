@@ -192,16 +192,22 @@ public static class RegistrationAttributeValidator
         return value;
     }
 
-    private static string NormalizePhoto(JsonElement element, string key)
+    public static string NormalizePhoto(string value, string? attributeKey = null)
     {
-        var value = NormalizeText(element, key);
-        if (value.Length is < 32 or > 400_000)
+        var trimmed = value.Trim();
+        if (trimmed.Length is < 32 or > 400_000)
         {
-            throw new ArgumentException($"Attribute '{key}' photo is invalid or too large.");
+            throw new ArgumentException(
+                attributeKey is null
+                    ? "Photo is invalid or too large."
+                    : $"Attribute '{attributeKey}' photo is invalid or too large.");
         }
 
-        return value;
+        return trimmed;
     }
+
+    private static string NormalizePhoto(JsonElement element, string key) =>
+        NormalizePhoto(NormalizeText(element, key), key);
 
     private static string NormalizeDate(JsonElement element, string key)
     {

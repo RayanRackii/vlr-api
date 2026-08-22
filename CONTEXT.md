@@ -104,8 +104,28 @@ _Avoid_: Court-only language in the module core; Quadra as the only product shap
 Rentable-level flag: a Customer booking of that Rentable waits for admin payment confirmation (`PendingDeposit`) before becoming `Confirmed`. Default on so existing rentables keep the current gate. Distinct from the unused per-window deposit percentage on a pricing row.
 _Avoid_: needPayment; assuming every booking waits for deposit
 
+**WaitingQueue**:
+Optional per-Location FIFO waiting room for B2C reservation opening. Default off (`RentalAsset.QueueEnabled`). When on, Customers cannot book that Location without a valid Active ticket for the current daily opening session. Does not replace occupancy row locks (F-01). Not used for Goods; not tenant-global.
+_Avoid_: per-slot queue; raffle; multi-active turns; WebSocket as the MVP transport
+
+**QueueOpeningTime**:
+Wall-clock opening **T** of reservations for that Location, in America/Sao_Paulo (not a tenant timezone). Waiting room opens at T−30 minutes. Distinct from `OpenTime`/`CloseTime` (OpenHours operating hours).
+_Avoid_: treating OpenHours open/close as reservation opening; per-slot T
+
+**QueueSession**:
+One daily opening of a Location waiting queue, keyed by `(TenantId, RentalAssetId, OpeningDate)` where OpeningDate is the civil date of T in America/Sao_Paulo. Lazy-created. Not keyed by Slot.
+_Avoid_: one session per slot; one session per Customer
+
+**QueueTicket**:
+FIFO place in a QueueSession (`Sequence` assigned under the Location row lock). Status: Waiting → Active (90s turn) → Completed | Expired | Cancelled. At most one Waiting or Active ticket per Customer per session. Join is idempotent; reconnect keeps the same ticket and remaining turn time.
+_Avoid_: client-supplied timestamps as order; restarting the 90s on poll/reconnect
+
+**Turn**:
+The 90-second server lease while a QueueTicket is Active. The Customer may view/change slot selection and complete **one** reservation of any currently bookable window on that Location. Timeout expires the ticket and promotes the next Waiting. Failed booking validation does not consume the turn.
+_Avoid_: tying the ticket to a slot before the Customer chooses; holding a database transaction for the 90s
+
 **Asset**:
-A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`. Create/edit wizard: Geral → Operação → Preços (if rentable) → Revisão. Pricing UI offers same-every-day, weekday+weekend, or per-day presets and expands them into per-weekday `RentalPricing` rows.
+A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`. Create/edit wizard: Geral → Operação → Preços (if rentable) → Revisão. Pricing UI offers same-every-day, weekday+weekend, or per-day presets and expands them into per-weekday `RentalPricing` rows. Bulk create: Location quantity is N entities (each `TotalQuantity` 1); Good quantity is stock on one entity.
 _Avoid_: One physical table per use case; dynamic per-tenant tables; asking the admin to type seven identical price rows as the default path
 
 **AssetFamily**:
@@ -117,19 +137,19 @@ A Tenant-defined label for grouping Rentables (for example padel, society, tenni
 _Avoid_: Fixed platform enum of sport types
 
 **OccupancyKind**:
-A Tenant-defined kind of time occupancy on a Rentable (for example Open, Closed, Lesson, Event). Controls whether Customers may book that cell and whether it blocks capacity. Catalog is per Tenant, not a global closed set.
-_Avoid_: Hard-coded Lesson/Open/Closed-only enums as the only kinds
+A Tenant-defined kind of time occupancy on a Rentable (for example Open, Closed, Lesson, Event). Controls whether Customers may book that cell and whether it blocks capacity. Catalog is per Tenant, not a global closed set. When several kinds cover the same weekday interval, a higher-precedence kind occupies the overlap on unpublished days (Closed over Lesson over Open; a custom kind that blocks capacity sits with Lesson).
+_Avoid_: Hard-coded Lesson/Open/Closed-only enums as the only kinds; last-write-wins between overlapping templates
 
 **Slot**:
 One dated occupancy cell on one Rentable: date + start + end + OccupancyKind. The operational unit of a published schedule day. Duration is whatever the admin defined (1h, 2h, 3h, …).
 _Avoid_: Free-typed start/end as the only booking path for slot-mode tenants
 
 **ScheduleTemplate**:
-The default weekly pattern of Slots (or open-hours rules) used to materialize each Schedule Day. Each template belongs to a `DayOfWeek` and recurs on every occurrence of that weekday (all Mondays, all Tuesdays, etc.); it is not tied to one calendar date. A single day can still be edited after publish.
-_Avoid_: Forcing admins to rebuild every day from scratch as the only path
+The default weekly pattern of Slots (or open-hours rules) used to materialize each Schedule Day. Each template belongs to a `DayOfWeek` and recurs on every occurrence of that weekday (all Mondays, all Tuesdays, etc.); it is not tied to one calendar date. A single day can still be edited after publish. Different OccupancyKinds may overlap on the same Rentable and weekday (Open 08:00–22:00 plus Lesson 18:00–19:00). The same kind cannot overlap itself, and the same interval+kind cannot be stored twice. Weekly apply matches an existing row by that full interval and kind, not by start time alone.
+_Avoid_: Forcing admins to rebuild every day from scratch as the only path; treating start time alone as the identity of a weekly row
 
 **ScheduleDay**:
-The concrete set of bookable windows for one calendar date (optionally per Unit). Includes persisted **Slot** rows plus unpublished SlotGrid cells derived from that weekday’s templates (same overlap rules as OpenHours). **PublishDay** still materializes Slot rows for dated exceptions and EntireRecurrence cascade.
+The concrete set of bookable windows for one calendar date (optionally per Unit). Includes persisted **Slot** rows plus unpublished SlotGrid cells derived from that weekday’s templates (overlapping kinds are split; the higher-precedence kind occupies the overlap). **PublishDay** still gap-fills Slot rows for dated exceptions and EntireRecurrence cascade without wiping a day that already has slots.
 _Avoid_: Requiring PublishDay before customers can book a weekly grid; treating the weekly editor itself as the B2C booking UI
 
 **OpenHours**:
@@ -137,7 +157,7 @@ A schedule policy where a Rentable is continuously available between open and cl
 _Avoid_: Forcing explicit Slot drawing when the tenant only needs “18:00–00:00 all open”; seeding dozens of identical SlotGrid templates when OpenHours fits
 
 **SlotGrid**:
-Schedule policy that authors the week as explicit **ScheduleTemplate** cells. Day reads derive unpublished bookable windows from that weekday’s templates; **PublishDay** optionally materializes **Slot** rows for exceptions and recurrence cascade. Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default` (`rentalAssetIds` for a set; also forces SlotGrid policy). Day query/publish accept the same ID list. **UI copy: Grade personalizada** — never show `SlotGrid` in the product UI. Fine edits stay per rentable on Weekly templates.
+Schedule policy that authors the week as explicit **ScheduleTemplate** cells. Day reads derive unpublished bookable windows from that weekday’s templates, splitting overlapping kinds so the higher-precedence kind wins the shared interval; **PublishDay** optionally materializes **Slot** rows for exceptions and recurrence cascade (gap-fill by rentable + start; existing slots including Booked stay). Use for fine exceptions (lesson blocks, closed mornings). Default grid seed is a **single** API call: `POST /api/schedule/templates/seed-default` (`rentalAssetIds` for a set; also forces SlotGrid policy). Day query/publish accept the same ID list. **UI copy: Grade personalizada** — never show `SlotGrid` in the product UI. Fine edits stay per rentable on Weekly templates.
 _Avoid_: N client-side POSTs per hour×day as the product path; empty B2C days after seed because publish was skipped
 
 **Admin Daily Agenda UX**:
@@ -153,7 +173,7 @@ A dated Slot (or OpenHours-derived window) for one Rentable. Admin can adjust ki
 _Avoid_: Deleting a weekly template to hide one date; cascading over Booked or intentional DailyOverride rows
 
 **Day read path**:
-`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). SlotGrid derivation loads **that weekday’s** templates once and applies the same persisted-start + overlap rules. Admin reads include cancelled occurrences; public reads stay available+bookable only. Slot DTOs expose `sourceTemplateId`, `schedulePolicy` and `supportsEntireRecurrence`. `POST /api/schedule/slots/daily-occurrence` is the seam for day/recurrence edits; `POST /api/schedule/templates/apply-weekly-rule` expands resources × weekdays × intervals transactionally. B2C booking of a derived SlotGrid window uses create-reservation (not `slotId`) until a Slot row exists.
+`GET /api/schedule/days/{date}` must stay at a constant, small number of database round trips regardless of how many Rentables or hours are requested. OpenHours derivation loads the day's blocking reservations once and computes overlap in memory, and reuses the Slots already loaded by the same request to detect starts that are already persisted (including cancelled tombstones so unavailable OpenHours windows stay hidden). SlotGrid derivation loads **that weekday’s** templates once, splits overlapping kinds by precedence, and applies the same persisted-start + reservation overlap rules. Admin reads include cancelled occurrences; public reads stay available+bookable only. Slot DTOs expose `sourceTemplateId`, `schedulePolicy` and `supportsEntireRecurrence`. `POST /api/schedule/slots/daily-occurrence` is the seam for day/recurrence edits; `POST /api/schedule/templates/apply-weekly-rule` expands resources × weekdays × intervals transactionally. B2C booking of a derived SlotGrid window uses create-reservation (not `slotId`) until a Slot row exists.
 _Avoid_: One query per derived slot; fetching all seven weekdays of templates to answer a single day; canceling a derived OpenHours window without a persisted tombstone; N client POSTs to build a weekly grid
 
 **Occupancy kind**:
@@ -257,7 +277,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 - **Frontend (`vlr-web`):** React + Vite, shadcn/ui, TailwindCSS. Deploy: **Vercel**. Consome a API com JWT Bearer (`VITE_API_URL`).
 - **Dados e Auth (PaaS):** **Supabase** = PostgreSQL + Supabase Auth (B2B). Proibido provisionar AWS “pura” (RDS/Cognito/EC2) neste momento. EF Core permanece agnóstico à connection string.
 - **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Celular verificado por **SMS** no cadastro; WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.
-- **Notificações:** Fila em memória (`NotificationQueue` + `BackgroundService`). Providers: **Resend** (e-mail), **Meta WhatsApp** (avisos), **SMS** (verificação de celular — provider a plugar na mesma fila), **Dev** como fallback. Nunca enviar e-mail/WhatsApp/SMS de forma síncrona dentro da request HTTP. WA iniciado pela empresa exige template Meta aprovado. Config WA/Resend: Fase 1.5 (adiada).
+- **Notificações:** Fila em memória (`NotificationQueue` + `BackgroundService`). Providers: **Resend** (e-mail), **Meta WhatsApp** (avisos), **SMS** (verificação de celular — provider a plugar na mesma fila), **Dev** como fallback. Em Development, Resend/Meta só registram com `Notifications:AllowExternalDelivery=true` (credencial sozinha não basta; PROD/Staging com flag unset seguem externos). Nunca enviar e-mail/WhatsApp/SMS de forma síncrona dentro da request HTTP. WA iniciado pela empresa exige template Meta aprovado. Config WA/Resend: Fase 1.5 (adiada).
 - **TypeScript:** Zero `any`; validação Zod espelhando DTOs da API. Frontend **nunca** consulta o banco via SDK Supabase — só auth.
 - **Isolamento:** Dados de módulo com `TenantId` (e `UnitId` quando aplicável).
 

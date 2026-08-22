@@ -37,6 +37,17 @@ public class RentalAsset : Entity, ITenantScoped
     /// </summary>
     public string? AllowedDurationMinutes { get; set; }
 
+    /// <summary>
+    /// When true, B2C booking of this Location requires a valid Active queue ticket
+    /// for the current daily opening session. Goods must stay false.
+    /// </summary>
+    public bool QueueEnabled { get; set; }
+
+    /// <summary>
+    /// Wall-clock opening T in America/Sao_Paulo. Required when <see cref="QueueEnabled"/> is true.
+    /// </summary>
+    public TimeOnly? QueueOpeningTime { get; set; }
+
     public Asset Asset { get; set; } = null!;
 
     private readonly List<RentalPricing> _pricings = [];

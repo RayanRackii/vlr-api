@@ -16,6 +16,8 @@ public sealed record RentalAssetResponse(
     TimeOnly? OpenTime,
     TimeOnly? CloseTime,
     string? AllowedDurationMinutes,
+    bool QueueEnabled,
+    TimeOnly? QueueOpeningTime,
     Guid? CategoryId,
     string? CategoryName,
     DateTimeOffset CreatedAt,
@@ -158,3 +160,51 @@ public sealed record RentalPricingResponseDto(
     decimal DepositPercentage,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
+
+public sealed record BulkApplyPricingsRequest
+{
+    public required IReadOnlyList<Guid> AssetIds { get; init; }
+
+    public required IReadOnlyList<BulkPricingRowDto> Pricings { get; init; }
+
+    public bool Replace { get; init; }
+}
+
+public sealed record BulkPricingRowDto
+{
+    public required DayOfWeek DayOfWeek { get; init; }
+
+    public required TimeOnly StartTime { get; init; }
+
+    public required TimeOnly EndTime { get; init; }
+
+    public required decimal PricePerHour { get; init; }
+
+    public required bool RequiresDeposit { get; init; }
+
+    public required decimal DepositPercentage { get; init; }
+}
+
+public sealed record BulkApplyPricingsResponse(int AppliedAssetCount, int PricingsCreated);
+
+public sealed record ReservationQueueTicketDto(
+    Guid Id,
+    QueueTicketStatus Status,
+    long Sequence,
+    int Position,
+    DateTimeOffset JoinedAt,
+    DateTimeOffset? TurnStartedAt,
+    DateTimeOffset? TurnExpiresAt,
+    Guid? CompletedReservationId);
+
+public sealed record ReservationQueueStatusDto(
+    Guid RentalAssetId,
+    bool QueueEnabled,
+    DateOnly OpeningDate,
+    DateTimeOffset OpensAt,
+    DateTimeOffset WaitingRoomOpensAt,
+    DateTimeOffset ServerNow,
+    QueuePhase Phase,
+    int WaitingCount,
+    int AheadCount,
+    ReservationQueueTicketDto? MyTicket);

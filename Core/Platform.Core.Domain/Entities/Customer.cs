@@ -59,4 +59,26 @@ public class Customer : Entity, ITenantScoped
         PhoneVerifiedAt = at;
         Touch();
     }
+
+    /// <summary>
+    /// Updates display fields only. Identity, address, extras and credentials stay unchanged.
+    /// </summary>
+    public void UpdateProfile(string? name, string? photoUrl, bool clearPhoto)
+    {
+        if (name is not null)
+        {
+            Name = name;
+        }
+
+        if (clearPhoto)
+        {
+            PhotoUrl = null;
+        }
+        else if (photoUrl is not null)
+        {
+            PhotoUrl = photoUrl;
+        }
+
+        Touch();
+    }
 }
