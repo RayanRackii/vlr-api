@@ -613,14 +613,18 @@ public sealed class ScheduleService(
         }
 
         var dayOfWeek = request.Date.DayOfWeek;
-        var template = await dbContext.ScheduleTemplates
-            .Include(t => t.OccupancyKind)
-            .Include(t => t.RentalAsset).ThenInclude(r => r.Asset)
-            .FirstOrDefaultAsync(
-                t => t.RentalAssetId == request.RentalAssetId
-                     && t.DayOfWeek == dayOfWeek
-                     && t.StartTime == request.StartTime,
-                cancellationToken);
+        var currentKindId = existing?.OccupancyKindId ?? request.OccupancyKindId;
+        var currentEnd = existing?.EndTime ?? request.EndTime;
+        var currentStart = existing?.StartTime ?? request.StartTime;
+        var template = await ResolveTemplateForOccurrenceAsync(
+            existing,
+            request.RentalAssetId,
+            dayOfWeek,
+            currentStart,
+            currentEnd,
+            currentKindId,
+            activeOnly: false,
+            cancellationToken);
 
         var previousKindId = template?.OccupancyKindId;
         var previousLabel = TrimLabel(template?.Label);
@@ -639,6 +643,15 @@ public sealed class ScheduleService(
 
             if (template is null)
             {
+                await EnsureNoTemplateCollisionAsync(
+                    request.RentalAssetId,
+                    dayOfWeek,
+                    request.StartTime,
+                    request.EndTime,
+                    kindId,
+                    excludeId: null,
+                    cancellationToken);
+
                 template = new ScheduleTemplate
                 {
                     TenantId = tenantId,
@@ -654,6 +667,15 @@ public sealed class ScheduleService(
             }
             else
             {
+                await EnsureNoTemplateCollisionAsync(
+                    template.RentalAssetId,
+                    template.DayOfWeek,
+                    request.StartTime,
+                    request.EndTime,
+                    kindId,
+                    excludeId: template.Id,
+                    cancellationToken);
+
                 template.EndTime = request.EndTime;
                 template.OccupancyKindId = kindId;
                 template.Label = label;
@@ -1085,15 +1107,15 @@ public sealed class ScheduleService(
             .Include(r => r.Asset)
             .FirstAsync(r => r.Id == request.RentalAssetId, cancellationToken);
 
-        var template = await dbContext.ScheduleTemplates
-            .AsNoTracking()
-            .Include(t => t.OccupancyKind)
-            .FirstOrDefaultAsync(
-                t => t.RentalAssetId == request.RentalAssetId
-                     && t.IsActive
-                     && t.DayOfWeek == request.Date.DayOfWeek
-                     && t.StartTime == request.StartTime,
-                cancellationToken);
+        var template = await ResolveTemplateForOccurrenceAsync(
+            existing,
+            request.RentalAssetId,
+            request.Date.DayOfWeek,
+            existing?.StartTime ?? request.StartTime,
+            existing?.EndTime ?? request.EndTime,
+            existing?.OccupancyKindId ?? request.OccupancyKindId,
+            activeOnly: true,
+            cancellationToken);
 
         if (rentable.SchedulePolicy == SchedulePolicy.OpenHours || template is null)
         {
@@ -1258,7 +1280,10 @@ public sealed class ScheduleService(
             foreach (var slot in slots.Where(s => !map.ContainsKey(s.Id)))
             {
                 var match = dayTemplates.FirstOrDefault(t =>
-                    t.RentalAssetId == slot.RentalAssetId && t.StartTime == slot.StartTime);
+                    t.RentalAssetId == slot.RentalAssetId
+                    && t.StartTime == slot.StartTime
+                    && t.EndTime == slot.EndTime
+                    && t.OccupancyKindId == slot.OccupancyKindId);
                 if (match is not null)
                 {
                     map[slot.Id] = match;
@@ -1755,6 +1780,50 @@ public sealed class ScheduleService(
         }
     }
 
+    private async Task<ScheduleTemplate?> ResolveTemplateForOccurrenceAsync(
+        Slot? existing,
+        Guid rentalAssetId,
+        DayOfWeek dayOfWeek,
+        TimeOnly startTime,
+        TimeOnly endTime,
+        Guid? occupancyKindId,
+        bool activeOnly,
+        CancellationToken cancellationToken)
+    {
+        if (existing?.SourceTemplateId is { } sourceId)
+        {
+            var bySource = await TrackedTemplateQuery()
+                .FirstOrDefaultAsync(t => t.Id == sourceId, cancellationToken);
+            if (bySource is not null && (!activeOnly || bySource.IsActive))
+            {
+                return bySource;
+            }
+        }
+
+        if (occupancyKindId is not { } kindId)
+        {
+            return null;
+        }
+
+        var query = TrackedTemplateQuery()
+            .Where(t => t.RentalAssetId == rentalAssetId
+                        && t.DayOfWeek == dayOfWeek
+                        && t.StartTime == startTime
+                        && t.EndTime == endTime
+                        && t.OccupancyKindId == kindId);
+        if (activeOnly)
+        {
+            query = query.Where(t => t.IsActive);
+        }
+
+        return await query.OrderBy(t => t.Id).FirstOrDefaultAsync(cancellationToken);
+
+        IQueryable<ScheduleTemplate> TrackedTemplateQuery() =>
+            dbContext.ScheduleTemplates
+                .Include(t => t.OccupancyKind)
+                .Include(t => t.RentalAsset).ThenInclude(r => r.Asset);
+    }
+
     private async Task EnsureNoTemplateCollisionAsync(
         Guid rentalAssetId,
         DayOfWeek dayOfWeek,
@@ -1852,7 +1921,9 @@ public sealed class ScheduleService(
                     t => t.RentalAssetId == entity.RentalAssetId
                          && t.IsActive
                          && t.DayOfWeek == entity.Date.DayOfWeek
-                         && t.StartTime == entity.StartTime,
+                         && t.StartTime == entity.StartTime
+                         && t.EndTime == entity.EndTime
+                         && t.OccupancyKindId == entity.OccupancyKindId,
                     cancellationToken);
         }
 

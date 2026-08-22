@@ -199,6 +199,98 @@ public sealed class ScheduleTemplateOverlapTests
         Assert.Equal(2, templates.Count);
     }
 
+    [Fact]
+    public async Task EntireRecurrence_label_update_on_closed_does_not_overwrite_open()
+    {
+        await using var harness = await ScheduleOverlapHarness.CreateAsync();
+        var service = harness.CreateScheduleService();
+        var kinds = await harness.EnsureKindsAsync();
+        var monday = new DateOnly(2026, 8, 24);
+
+        await service.CreateTemplateAsync(
+            Template(harness, kinds.Open.Id, Eight, TwentyTwo, DayOfWeek.Monday),
+            CancellationToken.None);
+        await service.CreateTemplateAsync(
+            Template(harness, kinds.Closed.Id, Eight, TwentyTwo, DayOfWeek.Monday),
+            CancellationToken.None);
+
+        await service.ApplyDailyOccurrenceAsync(
+            new ApplyDailyOccurrenceRequestDto
+            {
+                RentalAssetId = harness.RentalAssetId,
+                Date = monday,
+                StartTime = Eight,
+                EndTime = TwentyTwo,
+                Action = DailyOccurrenceAction.Update,
+                Scope = OccurrenceEditScope.EntireRecurrence,
+                OccupancyKindId = kinds.Closed.Id,
+                Label = "Manutenção",
+            },
+            CancellationToken.None);
+
+        var templates = await service.ListTemplatesAsync(
+            harness.RentalAssetId, CancellationToken.None, dayOfWeek: DayOfWeek.Monday);
+        Assert.Equal(2, templates.Count);
+        Assert.Contains(templates, t =>
+            t.OccupancyKindId == kinds.Open.Id
+            && t.StartTime == Eight
+            && t.EndTime == TwentyTwo
+            && t.Label is null);
+        Assert.Contains(templates, t =>
+            t.OccupancyKindId == kinds.Closed.Id
+            && t.StartTime == Eight
+            && t.EndTime == TwentyTwo
+            && t.Label == "Manutenção");
+    }
+
+    [Fact]
+    public async Task EntireRecurrence_converting_open_into_closed_at_same_window_throws()
+    {
+        await using var harness = await ScheduleOverlapHarness.CreateAsync();
+        var service = harness.CreateScheduleService();
+        var kinds = await harness.EnsureKindsAsync();
+        var monday = new DateOnly(2026, 8, 24);
+
+        await service.CreateTemplateAsync(
+            Template(harness, kinds.Open.Id, Eight, TwentyTwo, DayOfWeek.Monday),
+            CancellationToken.None);
+        await service.CreateTemplateAsync(
+            Template(harness, kinds.Closed.Id, Eight, TwentyTwo, DayOfWeek.Monday),
+            CancellationToken.None);
+
+        var openSlot = await service.UpsertSlotAsync(
+            new UpsertSlotRequestDto
+            {
+                RentalAssetId = harness.RentalAssetId,
+                Date = monday,
+                StartTime = Eight,
+                EndTime = TwentyTwo,
+                OccupancyKindId = kinds.Open.Id,
+            },
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.ApplyDailyOccurrenceAsync(
+                new ApplyDailyOccurrenceRequestDto
+                {
+                    SlotId = openSlot.Id,
+                    RentalAssetId = harness.RentalAssetId,
+                    Date = monday,
+                    StartTime = Eight,
+                    EndTime = TwentyTwo,
+                    Action = DailyOccurrenceAction.Update,
+                    Scope = OccurrenceEditScope.EntireRecurrence,
+                    OccupancyKindId = kinds.Closed.Id,
+                },
+                CancellationToken.None));
+
+        var templates = await service.ListTemplatesAsync(
+            harness.RentalAssetId, CancellationToken.None, dayOfWeek: DayOfWeek.Monday);
+        Assert.Equal(2, templates.Count);
+        Assert.Contains(templates, t => t.OccupancyKindId == kinds.Open.Id);
+        Assert.Contains(templates, t => t.OccupancyKindId == kinds.Closed.Id);
+    }
+
     private static void AssertLessonWinsEvening(DayScheduleResponseDto day)
     {
         Assert.Equal(3, day.Slots.Count);
@@ -216,11 +308,12 @@ public sealed class ScheduleTemplateOverlapTests
         ScheduleOverlapHarness harness,
         Guid occupancyKindId,
         TimeOnly start,
-        TimeOnly end) =>
+        TimeOnly end,
+        DayOfWeek dayOfWeek = DayOfWeek.Tuesday) =>
         new()
         {
             RentalAssetId = harness.RentalAssetId,
-            DayOfWeek = DayOfWeek.Tuesday,
+            DayOfWeek = dayOfWeek,
             StartTime = start,
             EndTime = end,
             OccupancyKindId = occupancyKindId,

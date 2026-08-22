@@ -167,3 +167,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-22 | **F-08 BY_DESIGN:** sessões B2B e B2C são independentes; logout de uma superfície não limpa a outra; sem `signOutAll` neste ciclo. |
 | 2026-08-22 | **F-01 follow-up:** `ReservationConcurrencyTests` executado com Docker 29.5.3 — 2 passed, 0 skipped. Follow-up de prova fechado; lock inalterado. |
 | 2026-08-22 | **Fix F-10:** `ApplyWeeklyRule` deixa de indexar só por StartTime; overlap entre OccupancyKinds permitido; duplicata exata rejeitada; SlotGrid não publicado deriva o vencedor por precedência. `PublishDay` inalterado (gap-fill). Follow-up F-10b: rewrite de Slots persistidos sobrepostos. |
+| 2026-08-22 | **Fix F-10 review:** EntireRecurrence / restore / fallback de Slot→template usam `SourceTemplateId` ou a tupla completa (não só StartTime); converter Open→Closed na mesma janela vira 400, não overwrite. |
