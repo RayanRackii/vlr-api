@@ -16,6 +16,8 @@ public sealed record RentalAssetResponse(
     TimeOnly? OpenTime,
     TimeOnly? CloseTime,
     string? AllowedDurationMinutes,
+    bool QueueEnabled,
+    TimeOnly? QueueOpeningTime,
     Guid? CategoryId,
     string? CategoryName,
     DateTimeOffset CreatedAt,
@@ -184,3 +186,25 @@ public sealed record BulkPricingRowDto
 }
 
 public sealed record BulkApplyPricingsResponse(int AppliedAssetCount, int PricingsCreated);
+
+public sealed record ReservationQueueTicketDto(
+    Guid Id,
+    QueueTicketStatus Status,
+    long Sequence,
+    int Position,
+    DateTimeOffset JoinedAt,
+    DateTimeOffset? TurnStartedAt,
+    DateTimeOffset? TurnExpiresAt,
+    Guid? CompletedReservationId);
+
+public sealed record ReservationQueueStatusDto(
+    Guid RentalAssetId,
+    bool QueueEnabled,
+    DateOnly OpeningDate,
+    DateTimeOffset OpensAt,
+    DateTimeOffset WaitingRoomOpensAt,
+    DateTimeOffset ServerNow,
+    QueuePhase Phase,
+    int WaitingCount,
+    int AheadCount,
+    ReservationQueueTicketDto? MyTicket);

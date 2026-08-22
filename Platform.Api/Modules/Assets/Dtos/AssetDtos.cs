@@ -69,6 +69,14 @@ public sealed record CreateAssetRequest
     /// </summary>
     public bool RequiresDeposit { get; init; } = true;
 
+    /// <summary>
+    /// Optional per-Location waiting queue. Ignored (and stored false) for Goods.
+    /// </summary>
+    public bool QueueEnabled { get; init; }
+
+    /// <summary>Required when <see cref="QueueEnabled"/> is true on a Location.</summary>
+    public TimeOnly? QueueOpeningTime { get; init; }
+
     public Dictionary<string, string?>? Attributes { get; init; }
 }
 
@@ -105,6 +113,14 @@ public sealed record UpdateAssetRequest
     /// </summary>
     public bool RequiresDeposit { get; init; } = true;
 
+    /// <summary>
+    /// Optional per-Location waiting queue. Ignored (and stored false) for Goods.
+    /// </summary>
+    public bool QueueEnabled { get; init; }
+
+    /// <summary>Required when <see cref="QueueEnabled"/> is true on a Location.</summary>
+    public TimeOnly? QueueOpeningTime { get; init; }
+
     public Dictionary<string, string?>? Attributes { get; init; }
 }
 
@@ -113,7 +129,9 @@ public sealed record AssetRentalConfigResponse(
     RentalAssetType Type,
     int TotalQuantity,
     bool IsActive,
-    bool RequiresDeposit);
+    bool RequiresDeposit,
+    bool QueueEnabled,
+    TimeOnly? QueueOpeningTime);
 
 public sealed record AssetResponse(
     Guid Id,
@@ -169,6 +187,14 @@ public sealed record BulkCreateAssetsRequest
     /// When true (default), bookings wait for admin payment confirmation.
     /// </summary>
     public bool RequiresDeposit { get; init; } = true;
+
+    /// <summary>
+    /// Optional per-Location waiting queue. Ignored (and stored false) for Goods.
+    /// </summary>
+    public bool QueueEnabled { get; init; }
+
+    /// <summary>Required when <see cref="QueueEnabled"/> is true on a Location.</summary>
+    public TimeOnly? QueueOpeningTime { get; init; }
 
     public Dictionary<string, string?>? Attributes { get; init; }
 }

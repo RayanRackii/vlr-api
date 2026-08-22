@@ -87,6 +87,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             SchedulePolicy = SchedulePolicy.OpenHours,
             OpenTime = new TimeOnly(8, 0),
             CloseTime = new TimeOnly(22, 0),
+            QueueEnabled = false,
         };
         var customer = new Customer
         {
@@ -144,10 +145,10 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
     }
 
     public ReservationService CreateReservationService() =>
-        new(Db, TenantProvider, new FakeTrialGuard());
+        new(Db, TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider));
 
     public ScheduleService CreateScheduleService() =>
-        new(Db, TenantProvider, new UnusedOccupancyKindService(), new FakeTrialGuard());
+        new(Db, TenantProvider, new UnusedOccupancyKindService(), new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider));
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 

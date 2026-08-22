@@ -50,6 +50,7 @@ public sealed class AssetService(
         await trialGuard.EnsureCanCreateAssetsAsync(1, cancellationToken);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
+        ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
         var family = await EnsureFamilyEnabledForTenantAsync(
@@ -83,7 +84,9 @@ public sealed class AssetService(
             request.IsRentable,
             request.RentalType,
             request.TotalQuantity,
-            request.RequiresDeposit);
+            request.RequiresDeposit,
+            request.QueueEnabled,
+            request.QueueOpeningTime);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -99,6 +102,7 @@ public sealed class AssetService(
         await trialGuard.EnsureWritableAsync(cancellationToken);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
+        ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
 
         var asset = await dbContext.Assets
             .Include(a => a.RentalConfiguration)
@@ -138,7 +142,9 @@ public sealed class AssetService(
             request.IsRentable,
             request.RentalType,
             request.TotalQuantity,
-            request.RequiresDeposit);
+            request.RequiresDeposit,
+            request.QueueEnabled,
+            request.QueueOpeningTime);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -185,6 +191,11 @@ public sealed class AssetService(
         var tenantId = EnsureTenantContext();
         var plan = ResolveBulkCreatePlan(request);
         ValidateRentalFields(request.IsRentable, plan.RentalType, plan.TotalQuantity);
+        ValidateQueueFields(
+            request.IsRentable,
+            plan.RentalType,
+            request.QueueEnabled,
+            request.QueueOpeningTime);
 
         await trialGuard.EnsureCanCreateAssetsAsync(plan.Tags.Count, cancellationToken);
 
@@ -236,7 +247,9 @@ public sealed class AssetService(
                 request.IsRentable,
                 plan.RentalType,
                 plan.TotalQuantity,
-                request.RequiresDeposit);
+                request.RequiresDeposit,
+                request.QueueEnabled,
+                request.QueueOpeningTime);
 
             assets.Add(asset);
         }
@@ -257,7 +270,9 @@ public sealed class AssetService(
         bool isRentable,
         RentalAssetType rentalType,
         int totalQuantity,
-        bool requiresDeposit)
+        bool requiresDeposit,
+        bool queueEnabled,
+        TimeOnly? queueOpeningTime)
     {
         if (!isRentable)
         {
@@ -270,6 +285,9 @@ public sealed class AssetService(
             return;
         }
 
+        var enabled = queueEnabled && rentalType == RentalAssetType.Location;
+        var openingTime = enabled ? queueOpeningTime : null;
+
         if (asset.RentalConfiguration is null)
         {
             asset.RentalConfiguration = new RentalAsset
@@ -281,6 +299,8 @@ public sealed class AssetService(
                 IsActive = true,
                 RequiresDeposit = requiresDeposit,
                 SchedulePolicy = SchedulePolicy.SlotGrid,
+                QueueEnabled = enabled,
+                QueueOpeningTime = openingTime,
             };
             return;
         }
@@ -288,8 +308,33 @@ public sealed class AssetService(
         asset.RentalConfiguration.Type = rentalType;
         asset.RentalConfiguration.TotalQuantity = totalQuantity;
         asset.RentalConfiguration.RequiresDeposit = requiresDeposit;
+        asset.RentalConfiguration.QueueEnabled = enabled;
+        asset.RentalConfiguration.QueueOpeningTime = openingTime;
         asset.RentalConfiguration.IsActive = true;
         asset.RentalConfiguration.Touch();
+    }
+
+    private static void ValidateQueueFields(
+        bool isRentable,
+        RentalAssetType rentalType,
+        bool queueEnabled,
+        TimeOnly? queueOpeningTime)
+    {
+        if (!isRentable || !queueEnabled)
+        {
+            return;
+        }
+
+        if (rentalType != RentalAssetType.Location)
+        {
+            throw new ArgumentException("Waiting queue can only be enabled for Location rentals.");
+        }
+
+        if (queueOpeningTime is null)
+        {
+            throw new ArgumentException(
+                "QueueOpeningTime is required when the waiting queue is enabled.");
+        }
     }
 
     private static void ValidateRentalFields(
@@ -458,7 +503,9 @@ public sealed class AssetService(
                 asset.RentalConfiguration.Type,
                 asset.RentalConfiguration.TotalQuantity,
                 asset.RentalConfiguration.IsActive,
-                asset.RentalConfiguration.RequiresDeposit);
+                asset.RentalConfiguration.RequiresDeposit,
+                asset.RentalConfiguration.QueueEnabled,
+                asset.RentalConfiguration.QueueOpeningTime);
         }
 
         return new(

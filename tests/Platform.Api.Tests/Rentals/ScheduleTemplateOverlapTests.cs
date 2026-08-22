@@ -391,6 +391,7 @@ internal sealed class ScheduleOverlapHarness : IAsyncDisposable
             SchedulePolicy = SchedulePolicy.SlotGrid,
             OpenTime = new TimeOnly(8, 0),
             CloseTime = new TimeOnly(22, 0),
+            QueueEnabled = false,
         };
 
         tenantProvider.TenantId = tenant.Id;
@@ -417,7 +418,12 @@ internal sealed class ScheduleOverlapHarness : IAsyncDisposable
     }
 
     public ScheduleService CreateScheduleService() =>
-        new(Db, TenantProvider, new OccupancyKindService(Db, TenantProvider), new FakeTrialGuard());
+        new(
+            Db,
+            TenantProvider,
+            new OccupancyKindService(Db, TenantProvider),
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(Db, TenantProvider));
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 }

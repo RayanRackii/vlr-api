@@ -398,6 +398,7 @@ internal sealed class PricingBulkHarness : IAsyncDisposable
             SchedulePolicy = SchedulePolicy.OpenHours,
             OpenTime = new TimeOnly(8, 0),
             CloseTime = new TimeOnly(22, 0),
+            QueueEnabled = false,
         };
 
         Db.Assets.Add(asset);

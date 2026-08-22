@@ -104,6 +104,26 @@ _Avoid_: Court-only language in the module core; Quadra as the only product shap
 Rentable-level flag: a Customer booking of that Rentable waits for admin payment confirmation (`PendingDeposit`) before becoming `Confirmed`. Default on so existing rentables keep the current gate. Distinct from the unused per-window deposit percentage on a pricing row.
 _Avoid_: needPayment; assuming every booking waits for deposit
 
+**WaitingQueue**:
+Optional per-Location FIFO waiting room for B2C reservation opening. Default off (`RentalAsset.QueueEnabled`). When on, Customers cannot book that Location without a valid Active ticket for the current daily opening session. Does not replace occupancy row locks (F-01). Not used for Goods; not tenant-global.
+_Avoid_: per-slot queue; raffle; multi-active turns; WebSocket as the MVP transport
+
+**QueueOpeningTime**:
+Wall-clock opening **T** of reservations for that Location, in America/Sao_Paulo (not a tenant timezone). Waiting room opens at T−30 minutes. Distinct from `OpenTime`/`CloseTime` (OpenHours operating hours).
+_Avoid_: treating OpenHours open/close as reservation opening; per-slot T
+
+**QueueSession**:
+One daily opening of a Location waiting queue, keyed by `(TenantId, RentalAssetId, OpeningDate)` where OpeningDate is the civil date of T in America/Sao_Paulo. Lazy-created. Not keyed by Slot.
+_Avoid_: one session per slot; one session per Customer
+
+**QueueTicket**:
+FIFO place in a QueueSession (`Sequence` assigned under the Location row lock). Status: Waiting → Active (90s turn) → Completed | Expired | Cancelled. At most one Waiting or Active ticket per Customer per session. Join is idempotent; reconnect keeps the same ticket and remaining turn time.
+_Avoid_: client-supplied timestamps as order; restarting the 90s on poll/reconnect
+
+**Turn**:
+The 90-second server lease while a QueueTicket is Active. The Customer may view/change slot selection and complete **one** reservation of any currently bookable window on that Location. Timeout expires the ticket and promotes the next Waiting. Failed booking validation does not consume the turn.
+_Avoid_: tying the ticket to a slot before the Customer chooses; holding a database transaction for the 90s
+
 **Asset**:
 A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`. Create/edit wizard: Geral → Operação → Preços (if rentable) → Revisão. Pricing UI offers same-every-day, weekday+weekend, or per-day presets and expands them into per-weekday `RentalPricing` rows. Bulk create: Location quantity is N entities (each `TotalQuantity` 1); Good quantity is stock on one entity.
 _Avoid_: One physical table per use case; dynamic per-tenant tables; asking the admin to type seven identical price rows as the default path

@@ -79,6 +79,12 @@ public class AppDbContext : DbContext
 
     public DbSet<ReservationItem> ReservationItems => Set<ReservationItem>();
 
+    public DbSet<ReservationQueueSession> ReservationQueueSessions =>
+        Set<ReservationQueueSession>();
+
+    public DbSet<ReservationQueueTicket> ReservationQueueTickets =>
+        Set<ReservationQueueTicket>();
+
     public DbSet<OccupancyKind> OccupancyKinds => Set<OccupancyKind>();
 
     public DbSet<ScheduleTemplate> ScheduleTemplates => Set<ScheduleTemplate>();

@@ -1,6 +1,7 @@
 using Hangfire;
 using Hangfire.PostgreSql;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Jobs;
 
@@ -90,36 +91,7 @@ public static class HangfireExtensions
     /// <summary>
     /// Windows uses "E. South America Standard Time"; Linux (Railway Docker) uses "America/Sao_Paulo".
     /// </summary>
-    public static TimeZoneInfo ResolveBrazilTimeZone()
-    {
-        string[] candidateIds =
-        [
-            "E. South America Standard Time",
-            "America/Sao_Paulo",
-        ];
+    public static TimeZoneInfo ResolveBrazilTimeZone() => BrazilTimeZone.Resolve();
 
-        foreach (var timeZoneId in candidateIds)
-        {
-            try
-            {
-                return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-            }
-            catch (TimeZoneNotFoundException)
-            {
-            }
-            catch (InvalidTimeZoneException)
-            {
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Could not resolve Brazil time zone. Tried: E. South America Standard Time, America/Sao_Paulo.");
-    }
-
-    public static DateOnly GetBrazilToday()
-    {
-        var brazilTimeZone = ResolveBrazilTimeZone();
-        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, brazilTimeZone);
-        return DateOnly.FromDateTime(localNow);
-    }
+    public static DateOnly GetBrazilToday() => BrazilTimeZone.GetToday(TimeProvider.System);
 }

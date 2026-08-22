@@ -149,6 +149,7 @@ internal sealed class TwoLocationBookingHarness : IAsyncDisposable
                 SchedulePolicy = SchedulePolicy.OpenHours,
                 OpenTime = new TimeOnly(8, 0),
                 CloseTime = new TimeOnly(22, 0),
+                QueueEnabled = false,
             };
             var pricing = new RentalPricing
             {
@@ -194,7 +195,7 @@ internal sealed class TwoLocationBookingHarness : IAsyncDisposable
         };
 
     public ReservationService CreateReservationService() =>
-        new(Db, TenantProvider, new FakeTrialGuard());
+        new(Db, TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider));
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 }

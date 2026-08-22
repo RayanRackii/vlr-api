@@ -59,6 +59,8 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Trial expirado: `BookSlot` / `CreateReservation` passam por `TrialGuard` (mesmo guard de Confirm/Cancel)
 - [x] F-01: `SELECT … FOR UPDATE` em `RentalAsset` serializa `CreateReservation` / `BookSlot` (prova em Testcontainers; 2026-08-22: `ReservationConcurrencyTests` 2 passed / 0 skipped com Docker 29.5.3)
 - [x] F-10: overlap de `ScheduleTemplate` entre OccupancyKinds; UNIQUE exact duplicate; derive SlotGrid não publicado por precedência; `PublishDay` continua gap-fill (migration `AddScheduleTemplateExactDuplicateUnique`)
+- [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
+- [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -170,3 +172,4 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-22 | **Fix F-10:** `ApplyWeeklyRule` deixa de indexar só por StartTime; overlap entre OccupancyKinds permitido; duplicata exata rejeitada; SlotGrid não publicado deriva o vencedor por precedência. `PublishDay` inalterado (gap-fill). Follow-up F-10b: rewrite de Slots persistidos sobrepostos. |
 | 2026-08-22 | **Fix F-10 review:** EntireRecurrence / restore / fallback de Slot→template usam `SourceTemplateId` ou a tupla completa (não só StartTime); converter Open→Closed na mesma janela vira 400, não overwrite. |
 | 2026-08-22 | **Fix F-16:** `BulkCreate` respeita `RentalType` — Location cria N ativos (qty 1); Good cria um ativo com estoque em `TotalQuantity`. Sem conversão silenciosa Good→Location. |
+| 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |

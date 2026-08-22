@@ -51,6 +51,12 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
         builder.Property(a => a.AllowedDurationMinutes)
             .HasMaxLength(128);
 
+        builder.Property(a => a.QueueEnabled)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(a => a.QueueOpeningTime);
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 
