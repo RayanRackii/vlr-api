@@ -121,6 +121,11 @@ public sealed class ReservationService(
             throw new ArgumentException("At least one reservation item is required.");
         }
 
+        if (request.Items.Select(i => i.AssetId).Distinct().Count() != request.Items.Count)
+        {
+            throw new ArgumentException("Each assetId may appear only once per reservation.");
+        }
+
         var customer = await dbContext.Customers
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken)
@@ -140,7 +145,9 @@ public sealed class ReservationService(
             ? string.Empty
             : customer.Phone;
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
@@ -263,13 +270,20 @@ public sealed class ReservationService(
 
             dbContext.Reservations.Add(reservation);
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             return ToResponse(reservation, itemResponses);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw;
         }
     }
