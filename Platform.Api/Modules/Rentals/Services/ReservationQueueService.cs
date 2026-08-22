@@ -66,22 +66,11 @@ public sealed class ReservationQueueService(
 
         var now = timeProvider.GetUtcNow();
         var session = await EnsureSessionAsync(rentalAsset, now, cancellationToken);
+        await AdvanceAsync(session, now, skipExpiringCustomerId: null, cancellationToken);
+        ThrowIfBookingNotAllowed(customerId, rentalAsset.Id, session, now);
 
-        var ticket = session.Tickets.FirstOrDefault(t =>
+        var ticket = session.Tickets.First(t =>
             t.CustomerId == customerId && t.Status == QueueTicketStatus.Active);
-
-        if (ticket is null)
-        {
-            logger.LogInformation(
-                "Reservation queue {QueueAction} code={Code} rentalAssetId={RentalAssetId} sessionId={SessionId} customerId={CustomerId} sequence={Sequence}",
-                "reject",
-                ReservationQueueCodes.Required,
-                rentalAsset.Id,
-                session.Id,
-                customerId,
-                (long?)null);
-            throw new InvalidOperationException(ReservationQueueCodes.Required);
-        }
 
         ticket.Complete(reservationId);
         logger.LogInformation(

@@ -389,6 +389,30 @@ public sealed class ReservationQueueTests
     }
 
     [Fact]
+    public async Task CompleteTurn_after_TurnExpiresAt_throws_QUEUE_TURN_EXPIRED()
+    {
+        await using var harness = await ReservationQueueHarness.CreateAsync();
+        harness.Time.SetUtcNow(ReservationQueueHarness.Brazil(7, 31));
+        var joined = await harness.Queue().JoinAsync(
+            harness.RentalAssetId, harness.CustomerA, CancellationToken.None);
+        var rental = await harness.Db.RentalAssets.SingleAsync(r => r.Id == harness.RentalAssetId);
+
+        harness.Time.SetUtcNow(joined.MyTicket!.TurnExpiresAt!.Value.AddSeconds(1));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Queue().CompleteTurnAsync(
+                harness.CustomerA,
+                rental,
+                Guid.NewGuid(),
+                CancellationToken.None));
+        Assert.Equal(ReservationQueueCodes.TurnExpired, ex.Message);
+
+        var ticket = await harness.Db.ReservationQueueTickets.SingleAsync(t => t.Id == joined.MyTicket.Id);
+        Assert.Equal(QueueTicketStatus.Expired, ticket.Status);
+        Assert.Null(ticket.CompletedReservationId);
+    }
+
+    [Fact]
     public void Clock_closed_before_waiting_room_uses_today()
     {
         var now = ReservationQueueHarness.Brazil(6, 0);
@@ -403,5 +427,67 @@ public sealed class ReservationQueueTests
             ReservationQueueHarness.Brazil(7, 10), wr, opens));
         Assert.Equal(QueuePhase.Open, ReservationQueueClock.ResolvePhase(
             ReservationQueueHarness.Brazil(7, 31), wr, opens));
+    }
+
+    [Fact]
+    public void Clock_civil_midnight_closes_until_next_waiting_room()
+    {
+        var opening = ReservationQueueHarness.OpeningTime;
+        var late = ReservationQueueHarness.Brazil(23, 59);
+        var lateDate = ReservationQueueClock.ResolveOpeningDate(late, opening);
+        Assert.Equal(ReservationQueueHarness.OpeningDate, lateDate);
+        Assert.Equal(
+            QueuePhase.Open,
+            ReservationQueueClock.ResolvePhase(
+                late,
+                ReservationQueueClock.WaitingRoomOpensAt(lateDate, opening),
+                ReservationQueueClock.OpensAt(lateDate, opening)));
+
+        var nextDay = ReservationQueueHarness.OpeningDate.AddDays(1);
+        var midnight = ReservationQueueHarness.Brazil(nextDay, 0, 0);
+        var midnightDate = ReservationQueueClock.ResolveOpeningDate(midnight, opening);
+        Assert.Equal(nextDay, midnightDate);
+        Assert.Equal(
+            QueuePhase.Closed,
+            ReservationQueueClock.ResolvePhase(
+                midnight,
+                ReservationQueueClock.WaitingRoomOpensAt(midnightDate, opening),
+                ReservationQueueClock.OpensAt(midnightDate, opening)));
+    }
+
+    [Fact]
+    public void Clock_opening_near_midnight_spills_waiting_room_to_previous_civil_day()
+    {
+        var opening = new TimeOnly(0, 15);
+        var beforeRoom = ReservationQueueHarness.Brazil(23, 40);
+        var beforeDate = ReservationQueueClock.ResolveOpeningDate(beforeRoom, opening);
+        Assert.Equal(ReservationQueueHarness.OpeningDate, beforeDate);
+        Assert.Equal(
+            QueuePhase.Open,
+            ReservationQueueClock.ResolvePhase(
+                beforeRoom,
+                ReservationQueueClock.WaitingRoomOpensAt(beforeDate, opening),
+                ReservationQueueClock.OpensAt(beforeDate, opening)));
+
+        var inRoom = ReservationQueueHarness.Brazil(23, 50);
+        var inRoomDate = ReservationQueueClock.ResolveOpeningDate(inRoom, opening);
+        Assert.Equal(ReservationQueueHarness.OpeningDate.AddDays(1), inRoomDate);
+        Assert.Equal(
+            QueuePhase.WaitingRoom,
+            ReservationQueueClock.ResolvePhase(
+                inRoom,
+                ReservationQueueClock.WaitingRoomOpensAt(inRoomDate, opening),
+                ReservationQueueClock.OpensAt(inRoomDate, opening)));
+
+        var nextDay = ReservationQueueHarness.OpeningDate.AddDays(1);
+        var afterOpen = ReservationQueueHarness.Brazil(nextDay, 0, 16);
+        var afterDate = ReservationQueueClock.ResolveOpeningDate(afterOpen, opening);
+        Assert.Equal(nextDay, afterDate);
+        Assert.Equal(
+            QueuePhase.Open,
+            ReservationQueueClock.ResolvePhase(
+                afterOpen,
+                ReservationQueueClock.WaitingRoomOpensAt(afterDate, opening),
+                ReservationQueueClock.OpensAt(afterDate, opening)));
     }
 }

@@ -177,6 +177,32 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
     }
 
     [DockerFact]
+    public async Task Tenant_isolation_hides_other_tenant_tickets_on_postgres()
+    {
+        var factory = RequireFactory();
+        var providerA = new FakeTenantProvider();
+        var providerB = new FakeTenantProvider();
+        var time = new TestTimeProvider(ReservationQueueHarness.Brazil(7, 10));
+
+        await using var seedA = factory.Create(providerA);
+        var tenantA = await ReservationQueueHarness.CreateOnAsync(seedA, providerA, time);
+        var queueA = TestReservationQueue.Create(seedA, providerA, time);
+        await queueA.JoinAsync(tenantA.RentalAssetId, tenantA.CustomerA, CancellationToken.None);
+
+        await using var seedB = factory.Create(providerB);
+        var tenantB = await ReservationQueueHarness.CreateOnAsync(seedB, providerB, time);
+
+        await using var asB = factory.Create(providerB);
+        Assert.Empty(await asB.ReservationQueueTickets.ToListAsync());
+        var queueB = TestReservationQueue.Create(asB, providerB, time);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            queueB.GetStatusAsync(tenantA.RentalAssetId, tenantB.CustomerA, CancellationToken.None));
+
+        await using var asA = factory.Create(providerA);
+        Assert.Equal(1, await asA.ReservationQueueTickets.CountAsync());
+    }
+
+    [DockerFact]
     public async Task Queue_disabled_create_still_works_on_postgres()
     {
         var factory = RequireFactory();
