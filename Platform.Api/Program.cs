@@ -64,7 +64,7 @@ try
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
     builder.Services.AddWebhooksModule();
-    builder.Services.AddNotificationInfrastructure(builder.Configuration);
+    builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     builder.Services.AddPlatformHangfire(connectionString);
 
     builder.Services.AddControllers()
