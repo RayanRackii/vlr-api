@@ -18,6 +18,58 @@ namespace Platform.Api.Tests.Rbac;
 public sealed class TenantRbacAccessTests
 {
     [Fact]
+    public async Task Non_admin_cannot_persist_inactive_module_keys_on_a_custom_role()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: false));
+        var managerRole = harness.AddCustomRole(
+            "RoleEditor",
+            Permissions.Core.RolesManage,
+            Permissions.Core.RolesRead,
+            Permissions.Core.DashboardRead);
+        var editor = harness.AddUser("role-editor");
+        harness.Assign(editor, managerRole);
+        await harness.Db.SaveChangesAsync();
+
+        var actor = new RbacActor(harness.Tenant.Id, editor.Id, IsPlatformAdminInTenant: false);
+
+        var ex = await Assert.ThrowsAsync<RbacException>(
+            () => harness.Roles.CreateAsync(
+                harness.Tenant.Id,
+                actor,
+                new CreateRoleRequest(
+                    "Sneaky",
+                    null,
+                    [Permissions.Core.DashboardRead, Permissions.Rentals.ScheduleWrite]),
+                CancellationToken.None));
+
+        Assert.Equal(RbacErrorCodes.PrivilegeEscalationBlocked, ex.Code);
+    }
+
+    [Fact]
+    public async Task Tenant_admin_can_persist_inactive_module_keys_on_a_custom_role()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: false));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("tenant-admin");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var actor = new RbacActor(harness.Tenant.Id, admin.Id, IsPlatformAdminInTenant: false);
+        var created = await harness.Roles.CreateAsync(
+            harness.Tenant.Id,
+            actor,
+            new CreateRoleRequest(
+                "FrontDesk",
+                null,
+                [Permissions.Core.DashboardRead, Permissions.Rentals.ScheduleWrite]),
+            CancellationToken.None);
+
+        Assert.Contains(Permissions.Rentals.ScheduleWrite, created.PermissionKeys);
+    }
+
+    [Fact]
     public async Task Tenant_admin_can_assign_seeded_user_role_when_a_user_bundle_module_is_inactive()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();

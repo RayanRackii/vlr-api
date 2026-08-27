@@ -47,22 +47,29 @@ public sealed class RbacGrantGuard(
         var enabled = await permissionResolver.GetEnabledCatalogKeysAsync(
             actor.TenantId,
             cancellationToken);
-        var relevantKeys = keys
-            .Where(enabled.Contains)
-            .ToHashSet(StringComparer.Ordinal);
-
         var actorPerms = await permissionResolver.GetEffectivePermissionsAsync(
             actor.TenantId,
             userId,
             cancellationToken);
+        var actorIsAdmin = await ActorHasAdminWildcardAsync(
+            actor.TenantId,
+            userId,
+            cancellationToken);
 
-        if (relevantKeys.Any(key => !actorPerms.Contains(key)))
+        foreach (var key in keys)
         {
-            logger.LogInformation(
-                "RBAC privilege-escalation rejected. TenantId={TenantId} ActorUserId={ActorUserId}",
-                actor.TenantId,
-                userId);
-            throw RbacException.PrivilegeEscalation();
+            var allowed = enabled.Contains(key)
+                ? actorPerms.Contains(key)
+                : actorIsAdmin;
+
+            if (!allowed)
+            {
+                logger.LogInformation(
+                    "RBAC privilege-escalation rejected. TenantId={TenantId} ActorUserId={ActorUserId}",
+                    actor.TenantId,
+                    userId);
+                throw RbacException.PrivilegeEscalation();
+            }
         }
     }
 
