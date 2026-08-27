@@ -120,8 +120,19 @@ Spec: [`docs/plans/active/2026-08-27-tenant-rbac-v1.md`](./docs/plans/active/202
 - [x] Stub `POST /api/users/invite` substituído (`roleIds` 1..N); `UserInvite.RoleName` legado permanece
 - [x] Last-admin 409, privilege escalation 403, fail-closed; PlatformAdmin com tenant = wildcard
 - [x] OS assigned-only por `os.work_orders.execute` (não pelo nome Technician)
-- [ ] Aplicar migration `AddTenantRbacV1` no Supabase/Railway (não aplicar da máquina de implementação)
-- [ ] UI Pessoas e acesso no `vlr-web` (web-implementer; contrato `/me` additive já nesta branch)
+- [ ] Aplicar migration `AddTenantRbacV1` via workflow `database-migrations` (`target=development`, `mode=list` then `apply`). Não aplicar da máquina de implementação.
+- [x] UI Pessoas e acesso no `vlr-web` (merged `develop`)
+
+## 5.2. Remote EF migrations — FEITO (código)
+
+Runbook: [`docs/runbooks/database-migrations.md`](./docs/runbooks/database-migrations.md). Inspector: `tools/Platform.MigrationInspector`. Workflow: `.github/workflows/database-migrations.yml` (`workflow_dispatch` only).
+
+- [x] `mode=list` (read-only) / `mode=apply` with identity preflight (DEV ref `jzptnjyzijklutinpxag`, PROD ref `kbptdzfbngelzdhriyhf`)
+- [x] GitHub Environment-scoped secret `ConnectionStrings__DefaultConnection` (human creates environments + secrets in the GitHub UI)
+- [ ] Human: create GitHub Environment `development` + secret, dispatch `mode=list`
+- [ ] Human: production environment + required reviewers (UI) — not in this cycle
+
+Follow-up: `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway env `development` currently sets `ASPNETCORE_ENVIRONMENT=Production`. Do not flip that without reviewing notification/host gates.
 
 ## Dívidas técnicas conhecidas
 
@@ -129,6 +140,7 @@ Spec: [`docs/plans/active/2026-08-27-tenant-rbac-v1.md`](./docs/plans/active/202
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
+- `REVIEW_DEV_HOSTING_ENVIRONMENT`: Railway `development` + `ASPNETCORE_ENVIRONMENT=Production` (RBAC Client diagnostic hosted service does not run; notification gate treats the host as non-Development).
 
 ## Histórico
 
@@ -188,3 +200,4 @@ Spec: [`docs/plans/active/2026-08-27-tenant-rbac-v1.md`](./docs/plans/active/202
 | 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |
 | 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |
 | 2026-08-27 | **Executado (API):** Tenant RBAC v1 — Roles/Permissions enforcement, invite `roleIds[]`, `/me` additive `roles`+`permissions`, migration `AddTenantRbacV1`. Spec `docs/plans/active/2026-08-27-tenant-rbac-v1.md`. UI no `vlr-web`. |
+| 2026-08-27 | **Executado (API):** workflow remoto `database-migrations` + `Platform.MigrationInspector` (list/apply, identity preflight, sem migrate no startup). Apply DEV ainda é Human Action. |
