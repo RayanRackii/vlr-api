@@ -27,5 +27,13 @@ public sealed class UserInviteConfiguration : IEntityTypeConfiguration<UserInvit
             .WithMany()
             .HasForeignKey(i => i.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(i => i.InviteRoles)
+            .WithOne(ir => ir.Invite)
+            .HasForeignKey(ir => ir.InviteId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Navigation(i => i.InviteRoles)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

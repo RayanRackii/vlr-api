@@ -1,20 +1,18 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Platform.Api.Modules.Users.Dtos;
-using Platform.Api.Modules.Users.Services;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.WorkOrders.Dtos;
 using Platform.Api.Modules.WorkOrders.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.WorkOrders.Controllers;
 
 [ApiController]
-[Authorize]
 [Route("api/work-orders")]
 public sealed class WorkOrdersController(
-    IWorkOrderService workOrderService,
-    IUserDirectoryService userDirectoryService) : ControllerBase
+    IWorkOrderService workOrderService) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Os.WorkOrdersRead)]
     public async Task<ActionResult<IReadOnlyList<WorkOrderResponse>>> List(
         [FromQuery] Guid? assetId,
         CancellationToken cancellationToken)
@@ -24,6 +22,7 @@ public sealed class WorkOrdersController(
     }
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(Permissions.Os.WorkOrdersRead)]
     public async Task<ActionResult<WorkOrderResponse>> GetById(
         Guid id,
         CancellationToken cancellationToken)
@@ -39,21 +38,13 @@ public sealed class WorkOrdersController(
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Os.WorkOrdersCreate)]
     public async Task<ActionResult<WorkOrderResponse>> Create(
         [FromBody] CreateWorkOrderRequest request,
         CancellationToken cancellationToken)
     {
         try
         {
-            var currentUser = await userDirectoryService.GetCurrentAsync(
-                User,
-                cancellationToken);
-
-            if (currentUser.Role != ApplicationRoles.Admin)
-            {
-                return Forbid();
-            }
-
             var workOrder = await workOrderService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = workOrder.Id }, workOrder);
         }
@@ -68,6 +59,7 @@ public sealed class WorkOrdersController(
     }
 
     [HttpPatch("{id:guid}/tasks/{taskId:guid}")]
+    [RequirePermission(Permissions.Os.WorkOrdersExecute)]
     public async Task<ActionResult<WorkOrderResponse>> UpdateTaskValue(
         Guid id,
         Guid taskId,
@@ -96,6 +88,7 @@ public sealed class WorkOrdersController(
     }
 
     [HttpPatch("{id:guid}/status")]
+    [RequirePermission(Permissions.Os.WorkOrdersExecute)]
     public async Task<ActionResult<WorkOrderResponse>> UpdateStatus(
         Guid id,
         [FromBody] UpdateWorkOrderStatusRequest request,

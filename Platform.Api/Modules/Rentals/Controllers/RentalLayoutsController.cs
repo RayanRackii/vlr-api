@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
 
@@ -12,7 +14,7 @@ public sealed class RentalLayoutsController(
     IRentalLayoutService rentalLayoutService,
     IPublicTenantBinder publicTenantBinder) : ControllerBase
 {
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.LayoutsRead)]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<RentalLayoutResponseDto>>> List(
         CancellationToken cancellationToken)
@@ -20,7 +22,7 @@ public sealed class RentalLayoutsController(
         return Ok(await rentalLayoutService.ListAsync(cancellationToken));
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.LayoutsRead)]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<RentalLayoutResponseDto>> Get(
         Guid id,
@@ -50,7 +52,7 @@ public sealed class RentalLayoutsController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.LayoutsWrite)]
     [HttpPost]
     public async Task<ActionResult<RentalLayoutResponseDto>> Create(
         [FromBody] UpsertRentalLayoutRequestDto request,
@@ -67,7 +69,7 @@ public sealed class RentalLayoutsController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.LayoutsWrite)]
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<RentalLayoutResponseDto>> Update(
         Guid id,
@@ -88,7 +90,7 @@ public sealed class RentalLayoutsController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.LayoutsWrite)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {

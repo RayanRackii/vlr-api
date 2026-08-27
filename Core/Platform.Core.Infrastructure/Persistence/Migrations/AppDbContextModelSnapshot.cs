@@ -2113,6 +2113,25 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("user_invites", "core");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.UserInviteRole", b =>
+                {
+                    b.Property<Guid>("InviteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invite_id");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
+                    b.HasKey("InviteId", "RoleId")
+                        .HasName("pk_user_invite_roles");
+
+                    b.HasIndex("RoleId")
+                        .HasDatabaseName("ix_user_invite_roles_role_id");
+
+                    b.ToTable("user_invite_roles", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.UserRole", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -2702,6 +2721,27 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.UserInviteRole", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.UserInvite", "Invite")
+                        .WithMany("InviteRoles")
+                        .HasForeignKey("InviteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_invite_roles_user_invites_invite_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Role", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_invite_roles_roles_role_id");
+
+                    b.Navigation("Invite");
+
+                    b.Navigation("Role");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.UserRole", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Role", "Role")
@@ -2846,6 +2886,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Platform.Core.Domain.Entities.User", b =>
                 {
                     b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.UserInvite", b =>
+                {
+                    b.Navigation("InviteRoles");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrder", b =>

@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Features.CreateTenant;
-using Platform.Api.Features.InviteUser;
 using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
@@ -12,6 +12,7 @@ using Platform.Api.Modules.ModuleMenuItems;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.Roles;
 using Platform.Api.Modules.Users;
 using Platform.Api.Modules.Webhooks;
 using Platform.Api.Modules.WorkOrders;
@@ -50,12 +51,14 @@ try
     builder.Services.AddCorePersistence(connectionString);
     builder.Services.AddSupabaseAdminClient(builder.Configuration);
     builder.Services.AddSupabaseAuthentication(builder.Configuration);
+    builder.Services.AddRbacAuthorization();
     builder.Services.AddAssetsModule();
     builder.Services.AddPmocModule();
     builder.Services.AddWorkOrdersModule();
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
     builder.Services.AddUsersModule();
+    builder.Services.AddRolesModule();
     builder.Services.AddAuthModule();
     builder.Services.AddCustomerAuthModule();
     builder.Services.AddRegistrationFieldsModule();
@@ -67,6 +70,11 @@ try
     builder.Services.AddWebhooksModule();
     builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     builder.Services.AddPlatformHangfire(connectionString);
+
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Services.AddHostedService<ClientRoleDiagnosticHostedService>();
+    }
 
     builder.Services.AddControllers()
         .AddJsonOptions(options =>
@@ -142,7 +150,6 @@ try
         .AllowAnonymous();
 
     app.MapCreateTenantEndpoint();
-    app.MapInviteUserEndpoint();
     app.MapControllers();
 
     app.MapPlatformRecurringJobs();

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Tests.Authentication;
 
@@ -36,6 +38,10 @@ public sealed class RolvixAuthorizationPolicyTests
         Assert.False((await harness.Authorization.AuthorizeAsync(user, resource: null, harness.DefaultPolicy)).Succeeded);
         Assert.True((await harness.Authorization.AuthorizeAsync(user, "Customer")).Succeeded);
         Assert.False((await harness.Authorization.AuthorizeAsync(user, SupabaseAuthenticationExtensions.PlatformAdminPolicy)).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                user,
+                PermissionPolicies.Name(Permissions.Core.DashboardRead))).Succeeded);
     }
 
     [Fact]
@@ -71,6 +77,7 @@ public sealed class RolvixAuthorizationPolicyTests
         services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>();
         services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
         services.AddAuthorization(options => options.AddRolvixPolicies());
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
 
         var provider = services.BuildServiceProvider();
         return new AuthzHarness(

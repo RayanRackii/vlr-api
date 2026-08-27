@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
 
@@ -12,7 +14,7 @@ public sealed class RentalAssetsController(
     IRentalAssetService rentalAssetService,
     IReservationQueueService reservationQueueService) : ControllerBase
 {
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.AssetsRead)]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<RentalAssetResponse>>> List(
         CancellationToken cancellationToken)
@@ -21,7 +23,7 @@ public sealed class RentalAssetsController(
         return Ok(assets);
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.AssetsRead)]
     [HttpGet("by-asset/{assetId:guid}")]
     public async Task<ActionResult<RentalAssetResponse>> GetByAssetId(
         Guid assetId,
@@ -37,7 +39,7 @@ public sealed class RentalAssetsController(
         return Ok(asset);
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
     [HttpPut("schedule-policy")]
     public async Task<ActionResult<BulkUpdateRentalSchedulePolicyResponseDto>> UpdateSchedulePolicyBulk(
         [FromBody] BulkUpdateRentalSchedulePolicyRequestDto request,
@@ -58,7 +60,7 @@ public sealed class RentalAssetsController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
     [HttpPut("{id:guid}/schedule-policy")]
     public async Task<ActionResult<RentalAssetResponse>> UpdateSchedulePolicy(
         Guid id,

@@ -1,17 +1,18 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Api.Modules.Pmoc.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Pmoc.Controllers;
 
 [ApiController]
-[Authorize]
 [Route("api/maintenance-plans")]
 public sealed class MaintenancePlansController(
     IMaintenancePlanService maintenancePlanService) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Pmoc.PlansRead)]
     public async Task<ActionResult<IReadOnlyList<MaintenancePlanResponse>>> List(
         CancellationToken cancellationToken)
     {
@@ -20,6 +21,7 @@ public sealed class MaintenancePlansController(
     }
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(Permissions.Pmoc.PlansRead)]
     public async Task<ActionResult<MaintenancePlanResponse>> GetById(
         Guid id,
         CancellationToken cancellationToken)
@@ -35,6 +37,7 @@ public sealed class MaintenancePlansController(
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Pmoc.PlansWrite)]
     public async Task<ActionResult<MaintenancePlanResponse>> Create(
         [FromBody] CreateMaintenancePlanRequest request,
         CancellationToken cancellationToken)
@@ -58,6 +61,7 @@ public sealed class MaintenancePlansController(
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(Permissions.Pmoc.PlansWrite)]
     public async Task<ActionResult<MaintenancePlanResponse>> Update(
         Guid id,
         [FromBody] UpdateMaintenancePlanRequest request,
@@ -81,6 +85,7 @@ public sealed class MaintenancePlansController(
     }
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Pmoc.PlansWrite)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var deleted = await maintenancePlanService.DeleteAsync(id, cancellationToken);
