@@ -1,16 +1,17 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
 
 [ApiController]
-[Authorize]
 [Route("api/occupancy-kinds")]
 public sealed class OccupancyKindsController(IOccupancyKindService occupancyKindService) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Rentals.OccupancyKindsRead)]
     public async Task<ActionResult<IReadOnlyList<OccupancyKindResponseDto>>> List(
         CancellationToken cancellationToken)
     {
@@ -18,6 +19,7 @@ public sealed class OccupancyKindsController(IOccupancyKindService occupancyKind
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Rentals.OccupancyKindsWrite)]
     public async Task<ActionResult<OccupancyKindResponseDto>> Create(
         [FromBody] UpsertOccupancyKindRequestDto request,
         CancellationToken cancellationToken)
@@ -34,6 +36,7 @@ public sealed class OccupancyKindsController(IOccupancyKindService occupancyKind
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(Permissions.Rentals.OccupancyKindsWrite)]
     public async Task<ActionResult<OccupancyKindResponseDto>> Update(
         Guid id,
         [FromBody] UpsertOccupancyKindRequestDto request,

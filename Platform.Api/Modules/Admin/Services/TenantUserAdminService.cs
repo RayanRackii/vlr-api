@@ -45,7 +45,8 @@ public sealed class TenantUserAdminService(
     IConfiguration configuration,
     IHostEnvironment environment,
     ITrialGuard trialGuard,
-    IPlatformAdminChecker platformAdminChecker) : ITenantUserAdminService
+    IPlatformAdminChecker platformAdminChecker,
+    ILogger<TenantUserAdminService> logger) : ITenantUserAdminService
 {
     private static readonly TimeSpan InviteTtl = TimeSpan.FromDays(7);
     private const int MinimumPasswordLength = 8;
@@ -106,7 +107,6 @@ public sealed class TenantUserAdminService(
 
         var fullName = request.FullName.Trim();
         var email = NormalizeEmail(request.Email);
-        var roleName = NormalizeRole(request.RoleName);
 
         if (fullName.Length < 2)
         {
@@ -133,6 +133,18 @@ public sealed class TenantUserAdminService(
                 "A user with this email already exists for the tenant. Promote them instead.");
         }
 
+        IReadOnlyList<Role> inviteRoles = [];
+        string roleName;
+        if (request.RoleIds is { Count: > 0 })
+        {
+            inviteRoles = await LoadRolesAsync(tenantId, request.RoleIds, cancellationToken);
+            roleName = inviteRoles.First(role => role.Id == request.RoleIds![0]).Name;
+        }
+        else
+        {
+            roleName = NormalizeRole(request.RoleName);
+        }
+
         var pending = await dbContext.UserInvites
             .Where(i => i.TenantId == tenantId
                         && i.Email == email
@@ -155,9 +167,19 @@ public sealed class TenantUserAdminService(
             DateTimeOffset.UtcNow.Add(InviteTtl));
 
         dbContext.UserInvites.Add(invite);
+        foreach (var role in inviteRoles)
+        {
+            dbContext.UserInviteRoles.Add(new UserInviteRole(invite.Id, role.Id));
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         await EnqueueInviteEmailAsync(invite, cancellationToken);
+
+        logger.LogInformation(
+            "RBAC invitation created. TenantId={TenantId} InviteId={InviteId}",
+            tenantId,
+            invite.Id);
 
         return ToInviteDto(invite);
     }
@@ -168,6 +190,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken)
     {
         var invite = await dbContext.UserInvites
+            .Include(item => item.InviteRoles)
             .FirstOrDefaultAsync(i => i.Id == inviteId && i.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found.");
 
@@ -192,6 +215,11 @@ public sealed class TenantUserAdminService(
 
         invite.Revoke();
         dbContext.UserInvites.Add(refreshed);
+        foreach (var inviteRole in invite.InviteRoles)
+        {
+            dbContext.UserInviteRoles.Add(new UserInviteRole(refreshed.Id, inviteRole.RoleId));
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         await EnqueueInviteEmailAsync(refreshed, cancellationToken);
@@ -268,6 +296,7 @@ public sealed class TenantUserAdminService(
         }
 
         var invite = await dbContext.UserInvites
+            .Include(item => item.InviteRoles)
             .FirstOrDefaultAsync(i => i.Token == token, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found or is invalid.");
 
@@ -288,7 +317,12 @@ public sealed class TenantUserAdminService(
 
         string? supabaseUserId = null;
         var createdAuthUser = false;
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var useTransaction = dbContext.Database.IsRelational();
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        if (useTransaction)
+        {
+            transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        }
 
         try
         {
@@ -317,7 +351,15 @@ public sealed class TenantUserAdminService(
                 invite.TenantId,
                 cancellationToken);
 
-            var role = await EnsureRoleAsync(invite.TenantId, invite.RoleName, cancellationToken);
+            var roleIdsToAssign = invite.InviteRoles.Count > 0
+                ? invite.InviteRoles.Select(item => item.RoleId).Distinct().ToList()
+                : [];
+
+            if (roleIdsToAssign.Count == 0)
+            {
+                var ensured = await EnsureRoleAsync(invite.TenantId, invite.RoleName, cancellationToken);
+                roleIdsToAssign.Add(ensured.Id);
+            }
 
             var user = await dbContext.Users
                 .IgnoreQueryFilters()
@@ -334,7 +376,10 @@ public sealed class TenantUserAdminService(
                     invite.FullName,
                     invite.Email);
                 dbContext.Users.Add(user);
-                dbContext.UserRoles.Add(new UserRole(user.Id, role.Id));
+                foreach (var roleId in roleIdsToAssign)
+                {
+                    dbContext.UserRoles.Add(new UserRole(user.Id, roleId));
+                }
             }
             else
             {
@@ -349,27 +394,42 @@ public sealed class TenantUserAdminService(
                     user.Activate();
                 }
 
-                var hasRole = await dbContext.UserRoles
-                    .AnyAsync(
-                        ur => ur.UserId == user.Id && ur.RoleId == role.Id,
-                        cancellationToken);
-
-                if (!hasRole)
+                foreach (var roleId in roleIdsToAssign)
                 {
-                    dbContext.UserRoles.Add(new UserRole(user.Id, role.Id));
+                    var hasRole = await dbContext.UserRoles
+                        .AnyAsync(
+                            ur => ur.UserId == user.Id && ur.RoleId == roleId,
+                            cancellationToken);
+
+                    if (!hasRole)
+                    {
+                        dbContext.UserRoles.Add(new UserRole(user.Id, roleId));
+                    }
                 }
             }
 
             invite.MarkAccepted(user.Id);
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            logger.LogInformation(
+                "RBAC invitation accepted. TenantId={TenantId} InviteId={InviteId} UserId={UserId}",
+                invite.TenantId,
+                invite.Id,
+                user.Id);
 
             return new AcceptInviteResponseDto(user.Id, invite.TenantId, invite.Email);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
 
             if (createdAuthUser && !string.IsNullOrWhiteSpace(supabaseUserId))
             {
@@ -385,6 +445,13 @@ public sealed class TenantUserAdminService(
 
             throw;
         }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+        }
     }
 
     private async Task EnsureTenantExistsAsync(Guid tenantId, CancellationToken cancellationToken)
@@ -397,6 +464,24 @@ public sealed class TenantUserAdminService(
         }
     }
 
+    private async Task<IReadOnlyList<Role>> LoadRolesAsync(
+        Guid tenantId,
+        IReadOnlyList<Guid> roleIds,
+        CancellationToken cancellationToken)
+    {
+        var distinctIds = roleIds.Distinct().ToList();
+        var roles = await dbContext.Roles
+            .Where(role => role.TenantId == tenantId && distinctIds.Contains(role.Id))
+            .ToListAsync(cancellationToken);
+
+        if (roles.Count != distinctIds.Count)
+        {
+            throw new ArgumentException("One or more roles were not found.");
+        }
+
+        return roles;
+    }
+
     private async Task<Role> EnsureRoleAsync(
         Guid tenantId,
         string roleName,
@@ -404,7 +489,7 @@ public sealed class TenantUserAdminService(
     {
         var existing = await dbContext.Roles
             .FirstOrDefaultAsync(
-                r => r.TenantId == tenantId && EF.Functions.ILike(r.Name, roleName),
+                r => r.TenantId == tenantId && r.Name.ToLower() == roleName.ToLower(),
                 cancellationToken);
 
         if (existing is not null)

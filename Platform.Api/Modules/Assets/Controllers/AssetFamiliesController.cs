@@ -1,20 +1,21 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Assets.Controllers;
 
 [ApiController]
 [Route("api/asset-families")]
-[Authorize]
 public sealed class AssetFamiliesController(
     IAssetFamilyService assetFamilyService,
     ITenantProvider tenantProvider) : ControllerBase
 {
     /// <summary>Platform catalog of active asset families (for onboarding multi-select).</summary>
     [HttpGet]
+    [RequirePermission(Permissions.Inventory.FamiliesRead)]
     public async Task<ActionResult<IReadOnlyList<AssetFamilyDetailResponse>>> ListCatalog(
         CancellationToken cancellationToken)
     {
@@ -24,6 +25,7 @@ public sealed class AssetFamiliesController(
 
     /// <summary>Families enabled for the current tenant (forms + copy).</summary>
     [HttpGet("active")]
+    [RequirePermission(Permissions.Inventory.FamiliesRead)]
     public async Task<ActionResult<IReadOnlyList<AssetFamilyDetailResponse>>> ListActive(
         CancellationToken cancellationToken)
     {

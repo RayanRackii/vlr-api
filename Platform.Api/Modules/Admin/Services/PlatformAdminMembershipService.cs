@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -33,6 +34,7 @@ public sealed class PlatformAdminMembershipService(
     AppDbContext dbContext,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     IOptions<PlatformAdminOptions> platformAdminOptions,
+    ITenantAccessBootstrapper tenantAccessBootstrapper,
     ILogger<PlatformAdminMembershipService> logger) : IPlatformAdminMembershipService
 {
     public async Task ProvisionPlatformAdminsAsync(
@@ -215,6 +217,8 @@ public sealed class PlatformAdminMembershipService(
         string email,
         CancellationToken cancellationToken)
     {
+        await tenantAccessBootstrapper.EnsureAsync(tenantId, cancellationToken);
+
         var existing = await dbContext.Users
             .IgnoreQueryFilters()
             .Include(u => u.UserRoles)
@@ -258,7 +262,7 @@ public sealed class PlatformAdminMembershipService(
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(
                 r => r.TenantId == tenantId
-                    && EF.Functions.ILike(r.Name, SystemRoles.Admin),
+                    && r.Name.ToLower() == SystemRoles.Admin.ToLower(),
                 cancellationToken);
 
         if (existing is not null)

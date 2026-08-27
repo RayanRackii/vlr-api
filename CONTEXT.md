@@ -241,7 +241,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 
 - **Fase 1: O Core (Esqueleto Agnóstico)** — em andamento
   - Multi-tenant via Global Query Filters no EF Core (RLS Postgres ainda não é requisito bloqueante do beachhead).
-  - Tenants, Units, Users, RBAC (Permissions modeladas; enforcement fino ainda incompleto).
+  - Tenants, Units, Users, RBAC (Roles + Permissions; tenant enforcement via `RequirePermission`).
   - Catálogo de módulos por tenant (persistido; gating de API/UI pendente).
   - Subdomain + branding (`LogoSvg`, cores, tagline) no cadastro do tenant; portal UI em uso.
 

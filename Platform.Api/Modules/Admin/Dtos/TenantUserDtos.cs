@@ -29,8 +29,11 @@ public sealed record InviteTenantUserRequestDto
 
     public required string Email { get; init; }
 
-    /// <summary>Defaults to Admin.</summary>
+    /// <summary>Defaults to Admin when <see cref="RoleIds"/> is omitted.</summary>
     public string? RoleName { get; init; }
+
+    /// <summary>Optional additive role ids. When present and non-empty, these are assigned on accept.</summary>
+    public IReadOnlyList<Guid>? RoleIds { get; init; }
 }
 
 public sealed record PromoteTenantUserRequestDto

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
 
@@ -12,7 +14,7 @@ public sealed class ScheduleController(
     IScheduleService scheduleService,
     IPublicTenantBinder publicTenantBinder) : ControllerBase
 {
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleRead)]
     [HttpGet("templates")]
     public async Task<ActionResult<IReadOnlyList<ScheduleTemplateResponseDto>>> ListTemplates(
         [FromQuery] Guid? rentalAssetId,
@@ -27,7 +29,7 @@ public sealed class ScheduleController(
             dayOfWeek));
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("templates")]
     public async Task<ActionResult<ScheduleTemplateResponseDto>> CreateTemplate(
         [FromBody] UpsertScheduleTemplateRequestDto request,
@@ -44,7 +46,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPut("templates/{id:guid}")]
     public async Task<ActionResult<ScheduleTemplateResponseDto>> UpdateTemplate(
         Guid id,
@@ -65,7 +67,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpDelete("templates/{id:guid}")]
     public async Task<IActionResult> DeleteTemplate(Guid id, CancellationToken cancellationToken)
     {
@@ -80,7 +82,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("templates/seed-default")]
     public async Task<ActionResult<SeedDefaultTemplatesResponseDto>> SeedDefaultTemplates(
         [FromBody] SeedDefaultTemplatesRequestDto request,
@@ -97,7 +99,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("templates/apply-weekly-rule")]
     public async Task<ActionResult<ApplyWeeklyRuleResponseDto>> ApplyWeeklyRule(
         [FromBody] ApplyWeeklyRuleRequestDto request,
@@ -113,7 +115,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleRead)]
     [HttpGet("days/{date}")]
     public async Task<ActionResult<DayScheduleResponseDto>> GetDayAdmin(
         DateOnly date,
@@ -154,7 +156,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("days/publish")]
     public async Task<ActionResult<object>> PublishDay(
         [FromBody] PublishDayRequestDto request,
@@ -164,7 +166,7 @@ public sealed class ScheduleController(
         return Ok(new { created });
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("slots")]
     public async Task<ActionResult<SlotResponseDto>> UpsertSlot(
         [FromBody] UpsertSlotRequestDto request,
@@ -180,7 +182,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("slots/{id:guid}/cancel")]
     public async Task<IActionResult> CancelSlot(Guid id, CancellationToken cancellationToken)
     {
@@ -199,7 +201,7 @@ public sealed class ScheduleController(
         }
     }
 
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ScheduleWrite)]
     [HttpPost("slots/daily-occurrence")]
     public async Task<ActionResult<SlotResponseDto>> ApplyDailyOccurrence(
         [FromBody] ApplyDailyOccurrenceRequestDto request,

@@ -1,26 +1,23 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.RegistrationFields.Dtos;
 using Platform.Api.Modules.RegistrationFields.Services;
-using Platform.Api.Modules.Users.Dtos;
-using Platform.Api.Modules.Users.Services;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.RegistrationFields.Controllers;
 
 [ApiController]
 [Route("api/registration-fields")]
-[Authorize]
 public sealed class RegistrationFieldsController(
     IRegistrationFieldService registrationFieldService,
-    IUserDirectoryService userDirectoryService,
     ITenantProvider tenantProvider) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Core.RegistrationFieldsRead)]
     public async Task<ActionResult<IReadOnlyList<RegistrationFieldDto>>> List(
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -29,11 +26,11 @@ public sealed class RegistrationFieldsController(
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Core.RegistrationFieldsWrite)]
     public async Task<ActionResult<RegistrationFieldDto>> Create(
         [FromBody] UpsertRegistrationFieldRequestDto request,
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -56,12 +53,12 @@ public sealed class RegistrationFieldsController(
     }
 
     [HttpPut("{fieldId:guid}")]
+    [RequirePermission(Permissions.Core.RegistrationFieldsWrite)]
     public async Task<ActionResult<RegistrationFieldDto>> Update(
         Guid fieldId,
         [FromBody] UpdateRegistrationFieldRequestDto request,
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -85,11 +82,11 @@ public sealed class RegistrationFieldsController(
     }
 
     [HttpDelete("{fieldId:guid}")]
+    [RequirePermission(Permissions.Core.RegistrationFieldsWrite)]
     public async Task<IActionResult> Delete(
         Guid fieldId,
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -101,15 +98,6 @@ public sealed class RegistrationFieldsController(
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
-        }
-    }
-
-    private async Task EnsureTenantAdminAsync(CancellationToken cancellationToken)
-    {
-        var current = await userDirectoryService.GetCurrentAsync(User, cancellationToken);
-        if (current.Role is not (ApplicationRoles.Admin or ApplicationRoles.SuperAdmin))
-        {
-            throw new UnauthorizedAccessException("Only tenant administrators can manage registration fields.");
         }
     }
 }
