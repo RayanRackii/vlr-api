@@ -18,6 +18,35 @@ namespace Platform.Api.Tests.Rbac;
 public sealed class TenantRbacAccessTests
 {
     [Fact]
+    public async Task Tenant_admin_can_assign_seeded_user_role_when_a_user_bundle_module_is_inactive()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: false));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.WorkOrders, isActive: true));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var userRole = harness.AddSystemRole(SystemRoles.User);
+        var admin = harness.AddUser("tenant-admin");
+        var member = harness.AddUser("member");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var actor = new RbacActor(harness.Tenant.Id, admin.Id, IsPlatformAdminInTenant: false);
+
+        await harness.Users.AssignRolesAsync(
+            member.Id,
+            actor,
+            [userRole.Id],
+            CancellationToken.None);
+
+        var assigned = await harness.Db.UserRoles
+            .Where(item => item.UserId == member.Id)
+            .Select(item => item.RoleId)
+            .ToListAsync();
+
+        Assert.Equal([userRole.Id], assigned);
+    }
+
+    [Fact]
     public async Task Privilege_escalation_is_blocked_when_granting_stronger_role()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
@@ -316,6 +345,14 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
             foreach (var entry in PermissionCatalog.All)
             {
                 var permission = Db.Permissions.Local.First(item => item.Key == entry.Key);
+                Db.RolePermissions.Add(new RolePermission(role.Id, permission.Id));
+            }
+        }
+        else if (name.Equals(SystemRoles.User, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var key in PermissionCatalog.DefaultUserKeys)
+            {
+                var permission = Db.Permissions.Local.First(item => item.Key == key);
                 Db.RolePermissions.Add(new RolePermission(role.Id, permission.Id));
             }
         }

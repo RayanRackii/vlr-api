@@ -20,7 +20,8 @@ public sealed class RoleService(
             .AsNoTracking()
             .Include(role => role.RolePermissions)
                 .ThenInclude(rolePermission => rolePermission.Permission)
-            .Where(role => role.TenantId == tenantId)
+            .Where(role => role.TenantId == tenantId
+                && role.Name.ToLower() != SystemRoles.SuperAdmin.ToLower())
             .OrderBy(role => role.Name)
             .ToListAsync(cancellationToken);
 
@@ -254,7 +255,9 @@ public sealed class RoleService(
     {
         if (name.Equals(SystemRoles.SuperAdmin, StringComparison.OrdinalIgnoreCase)
             || name.Equals(SystemRoles.Admin, StringComparison.OrdinalIgnoreCase)
-            || name.Equals(SystemRoles.User, StringComparison.OrdinalIgnoreCase))
+            || name.Equals(SystemRoles.User, StringComparison.OrdinalIgnoreCase)
+            || name.Equals(SystemRoles.Technician, StringComparison.OrdinalIgnoreCase)
+            || name.Equals(SystemRoles.Client, StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("This role name is reserved.");
         }
