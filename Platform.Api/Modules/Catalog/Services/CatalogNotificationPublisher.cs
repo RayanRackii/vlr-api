@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using Platform.Api.Authorization;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -28,8 +30,44 @@ public sealed class CatalogNotificationPublisher(
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
-        await EnsurePlatformTemplatesAsync(cancellationToken);
-        await EnsureTenantChannelDefaultsAsync(tenantId, cancellationToken);
+        IDbContextTransaction? seedTransaction = null;
+        if (dbContext.Database.IsRelational()
+            && dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true
+            && dbContext.Database.CurrentTransaction is null)
+        {
+            seedTransaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await dbContext.Database.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock(748201928)",
+                cancellationToken);
+        }
+
+        try
+        {
+            await EnsurePlatformTemplatesAsync(cancellationToken);
+            await SaveSeedIgnoringUniqueAsync(cancellationToken);
+            await EnsureTenantChannelDefaultsAsync(tenantId, cancellationToken);
+            await SaveSeedIgnoringUniqueAsync(cancellationToken);
+            if (seedTransaction is not null)
+            {
+                await seedTransaction.CommitAsync(cancellationToken);
+            }
+        }
+        catch
+        {
+            if (seedTransaction is not null)
+            {
+                await seedTransaction.RollbackAsync(cancellationToken);
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (seedTransaction is not null)
+            {
+                await seedTransaction.DisposeAsync();
+            }
+        }
     }
 
     public async Task<IReadOnlyList<Guid>> PublishOrderEventAsync(
@@ -41,8 +79,6 @@ public sealed class CatalogNotificationPublisher(
         {
             return [];
         }
-
-        await EnsureReadyAsync(cancellationToken);
 
         var tenant = await dbContext.Tenants
             .AsNoTracking()
@@ -181,6 +217,7 @@ public sealed class CatalogNotificationPublisher(
     private async Task EnsurePlatformTemplatesAsync(CancellationToken cancellationToken)
     {
         var existing = await dbContext.NotificationTemplates
+            .AsNoTracking()
             .Select(t => new { t.EventType, t.Channel, t.Language })
             .ToListAsync(cancellationToken);
 
@@ -188,15 +225,20 @@ public sealed class CatalogNotificationPublisher(
             .Select(t => $"{t.EventType}|{t.Channel}|{t.Language}")
             .ToHashSet(StringComparer.Ordinal);
 
+        foreach (var local in dbContext.NotificationTemplates.Local)
+        {
+            existingSet.Add($"{local.EventType}|{local.Channel}|{local.Language}");
+        }
+
         foreach (var seed in CatalogNotificationTemplates.Seeds)
         {
-            var key = $"{seed.EventType}|{seed.Channel}|{seed.Language}";
+            var key = $"{seed.EventType}|{seed.Channel}|pt-BR";
             if (existingSet.Contains(key))
             {
                 continue;
             }
 
-            dbContext.NotificationTemplates.Add(seed);
+            dbContext.NotificationTemplates.Add(seed.ToEntity());
             existingSet.Add(key);
         }
     }
@@ -204,12 +246,18 @@ public sealed class CatalogNotificationPublisher(
     private async Task EnsureTenantChannelDefaultsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
         var existing = await dbContext.TenantNotificationChannelConfigs
+            .AsNoTracking()
             .Select(c => new { c.EventType, c.Channel })
             .ToListAsync(cancellationToken);
 
         var existingSet = existing
             .Select(c => $"{c.EventType}|{c.Channel}")
             .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var local in dbContext.TenantNotificationChannelConfigs.Local)
+        {
+            existingSet.Add($"{local.EventType}|{local.Channel}");
+        }
 
         foreach (var eventType in CatalogEventTypes.Notifying)
         {
@@ -239,6 +287,38 @@ public sealed class CatalogNotificationPublisher(
         }
     }
 
+    private async Task SaveSeedIgnoringUniqueAsync(CancellationToken cancellationToken)
+    {
+        if (!dbContext.ChangeTracker.Entries().Any(entry =>
+                entry.State == EntityState.Added
+                && (entry.Entity is NotificationTemplate or TenantNotificationChannelConfig)))
+        {
+            return;
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            foreach (var entry in dbContext.ChangeTracker.Entries()
+                         .Where(e => e.State is EntityState.Added or EntityState.Unchanged
+                             && (e.Entity is NotificationTemplate or TenantNotificationChannelConfig))
+                         .ToList())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException postgres
+        && postgres.SqlState is PostgresErrorCodes.UniqueViolation or PostgresErrorCodes.DeadlockDetected;
+
     private sealed record Recipient(
         NotificationRecipientKind Kind,
         Guid Id,
@@ -249,54 +329,42 @@ public sealed class CatalogNotificationPublisher(
 
 internal static class CatalogNotificationTemplates
 {
-    public static IReadOnlyList<NotificationTemplate> Seeds { get; } =
+    internal sealed record Seed(
+        string EventType,
+        NotificationChannel Channel,
+        string Body,
+        string? Subject = null,
+        string? WhatsAppTemplateName = null)
+    {
+        public NotificationTemplate ToEntity() =>
+            new()
+            {
+                EventType = EventType,
+                Channel = Channel,
+                Language = "pt-BR",
+                SubjectTemplate = Subject,
+                BodyTemplate = Body,
+                WhatsAppTemplateName = WhatsAppTemplateName,
+                IsActive = true,
+            };
+    }
+
+    public static IReadOnlyList<Seed> Seeds { get; } =
     [
-        InApp(CatalogEventTypes.OrderCreated, "Pedido {{orderNumber}} recebido."),
-        Email(CatalogEventTypes.OrderCreated, "Pedido {{orderNumber}}", "Olá {{customerName}}, recebemos o pedido {{orderNumber}}."),
-        WhatsApp(CatalogEventTypes.OrderCreated, "catalog_order_created", "Pedido {{orderNumber}} recebido."),
-        InApp(CatalogEventTypes.OrderApproved, "Pedido {{orderNumber}} aprovado."),
-        Email(CatalogEventTypes.OrderApproved, "Pedido {{orderNumber}} aprovado", "Olá {{customerName}}, o pedido {{orderNumber}} foi aprovado."),
-        WhatsApp(CatalogEventTypes.OrderApproved, "catalog_order_approved", "Pedido {{orderNumber}} aprovado."),
-        InApp(CatalogEventTypes.OrderReady, "Pedido {{orderNumber}} está pronto."),
-        Email(CatalogEventTypes.OrderReady, "Pedido {{orderNumber}} pronto", "Olá {{customerName}}, o pedido {{orderNumber}} está pronto."),
-        WhatsApp(CatalogEventTypes.OrderReady, "catalog_order_ready", "Pedido {{orderNumber}} está pronto."),
-        InApp(CatalogEventTypes.OrderRejected, "Pedido {{orderNumber}} recusado: {{rejectionReason}}"),
-        Email(CatalogEventTypes.OrderRejected, "Pedido {{orderNumber}} recusado", "Olá {{customerName}}, o pedido {{orderNumber}} foi recusado. Motivo: {{rejectionReason}}"),
-        WhatsApp(CatalogEventTypes.OrderRejected, "catalog_order_rejected", "Pedido {{orderNumber}} recusado: {{rejectionReason}}"),
-        InApp(CatalogEventTypes.OrderCancelledBySupplier, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}"),
-        Email(CatalogEventTypes.OrderCancelledBySupplier, "Pedido {{orderNumber}} cancelado", "Olá {{customerName}}, o pedido {{orderNumber}} foi cancelado. Motivo: {{cancellationReason}}"),
-        WhatsApp(CatalogEventTypes.OrderCancelledBySupplier, "catalog_order_cancelled", "Pedido {{orderNumber}} cancelado: {{cancellationReason}}"),
+        new(CatalogEventTypes.OrderCreated, NotificationChannel.InApp, "Pedido {{orderNumber}} recebido."),
+        new(CatalogEventTypes.OrderCreated, NotificationChannel.Email, "Olá {{customerName}}, recebemos o pedido {{orderNumber}}.", "Pedido {{orderNumber}}"),
+        new(CatalogEventTypes.OrderCreated, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recebido.", WhatsAppTemplateName: "catalog_order_created"),
+        new(CatalogEventTypes.OrderApproved, NotificationChannel.InApp, "Pedido {{orderNumber}} aprovado."),
+        new(CatalogEventTypes.OrderApproved, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi aprovado.", "Pedido {{orderNumber}} aprovado"),
+        new(CatalogEventTypes.OrderApproved, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} aprovado.", WhatsAppTemplateName: "catalog_order_approved"),
+        new(CatalogEventTypes.OrderReady, NotificationChannel.InApp, "Pedido {{orderNumber}} está pronto."),
+        new(CatalogEventTypes.OrderReady, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} está pronto.", "Pedido {{orderNumber}} pronto"),
+        new(CatalogEventTypes.OrderReady, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} está pronto.", WhatsAppTemplateName: "catalog_order_ready"),
+        new(CatalogEventTypes.OrderRejected, NotificationChannel.InApp, "Pedido {{orderNumber}} recusado: {{rejectionReason}}"),
+        new(CatalogEventTypes.OrderRejected, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi recusado. Motivo: {{rejectionReason}}", "Pedido {{orderNumber}} recusado"),
+        new(CatalogEventTypes.OrderRejected, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recusado: {{rejectionReason}}", WhatsAppTemplateName: "catalog_order_rejected"),
+        new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.InApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}"),
+        new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi cancelado. Motivo: {{cancellationReason}}", "Pedido {{orderNumber}} cancelado"),
+        new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}", WhatsAppTemplateName: "catalog_order_cancelled"),
     ];
-
-    private static NotificationTemplate InApp(string eventType, string body) =>
-        new()
-        {
-            EventType = eventType,
-            Channel = NotificationChannel.InApp,
-            Language = "pt-BR",
-            BodyTemplate = body,
-            IsActive = true,
-        };
-
-    private static NotificationTemplate Email(string eventType, string subject, string body) =>
-        new()
-        {
-            EventType = eventType,
-            Channel = NotificationChannel.Email,
-            Language = "pt-BR",
-            SubjectTemplate = subject,
-            BodyTemplate = body,
-            IsActive = true,
-        };
-
-    private static NotificationTemplate WhatsApp(string eventType, string templateName, string body) =>
-        new()
-        {
-            EventType = eventType,
-            Channel = NotificationChannel.WhatsApp,
-            Language = "pt-BR",
-            BodyTemplate = body,
-            WhatsAppTemplateName = templateName,
-            IsActive = true,
-        };
 }

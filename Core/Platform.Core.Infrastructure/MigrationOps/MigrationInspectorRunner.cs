@@ -47,6 +47,8 @@ public static class MigrationInspectorRunner
         {
             var diagnostics = await RbacSchemaDiagnostics.CollectAsync(dbContext, cancellationToken);
             WriteDiagnostics(output, diagnostics);
+            var catalogPreflight = await CatalogPreflightDiagnostics.CollectAsync(dbContext, cancellationToken);
+            WriteCatalogPreflight(output, catalogPreflight);
             return;
         }
 
@@ -126,5 +128,30 @@ public static class MigrationInspectorRunner
         output.WriteLine($"DUPLICATE_ROLE_NAME_GROUPS={diagnostics.DuplicateRoleNameGroups}");
         output.WriteLine($"ORPHAN_USER_ROLES={diagnostics.OrphanUserRoles}");
         output.WriteLine($"ORPHAN_ROLE_PERMISSIONS={diagnostics.OrphanRolePermissions}");
+    }
+
+    private static void WriteCatalogPreflight(TextWriter output, CatalogPreflightDiagnosticCounts diagnostics)
+    {
+        output.WriteLine("CATALOG_PREFLIGHT");
+        output.WriteLine($"TOTAL_CUSTOMERS={diagnostics.TotalCustomers}");
+        output.WriteLine($"CUSTOMERS_WITH_CPF={diagnostics.CustomersWithCpf}");
+        output.WriteLine($"CPF_DUPLICATE_GROUPS_WITHIN_TENANT={diagnostics.DuplicateGroupsWithinTenant}");
+        output.WriteLine($"CPF_DUPLICATE_ROWS_WITHIN_TENANT={diagnostics.DuplicateRowsWithinTenant}");
+        output.WriteLine($"CPF_NON_DIGIT_ROWS={diagnostics.NonDigitRows}");
+        output.WriteLine($"CPF_LENGTH_NOT_11_ROWS={diagnostics.LengthNot11Rows}");
+        output.WriteLine($"CPF_INVALID_CHECK_DIGIT_ROWS={diagnostics.InvalidCheckDigitRows}");
+        output.WriteLine($"DOCUMENT_COLUMN={(diagnostics.DocumentColumnPresent ? "PRESENT" : "ABSENT")}");
+        output.WriteLine($"DOCUMENT_ALREADY_POPULATED_ROWS={diagnostics.DocumentAlreadyPopulatedRows}");
+        output.WriteLine($"DOCUMENT_CONFLICT_WITH_CPF_ROWS={diagnostics.DocumentConflictWithCpfRows}");
+        output.WriteLine($"CATALOG_MODULE_ACTIVE_TENANTS={diagnostics.CatalogModuleActiveTenants}");
+        if (diagnostics.CatalogModuleActiveTenants > 0)
+        {
+            output.WriteLine("CATALOG_MODULE_ACTIVE_BEFORE_MIGRATION");
+        }
+
+        foreach (var sample in diagnostics.DuplicateSamples)
+        {
+            output.WriteLine($"CPF_DUPLICATE_SAMPLE tenant={sample.TenantId:D} mask={sample.MaskedCpf}");
+        }
     }
 }
