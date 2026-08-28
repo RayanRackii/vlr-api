@@ -71,6 +71,29 @@ public sealed class PermissionResolverTests
     }
 
     [Fact]
+    public async Task Catalog_orders_manage_is_filtered_when_catalog_module_is_off()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: false));
+        var role = harness.AddCustomRole(
+            "Ops",
+            Permissions.Core.DashboardRead,
+            Permissions.Catalog.OrdersManage,
+            Permissions.Catalog.ProductsManage);
+        var user = harness.AddUser("catalog-ops");
+        harness.Assign(user, role);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            user.Id);
+
+        Assert.Contains(Permissions.Core.DashboardRead, effective);
+        Assert.DoesNotContain(Permissions.Catalog.OrdersManage, effective);
+        Assert.DoesNotContain(Permissions.Catalog.ProductsManage, effective);
+    }
+
+    [Fact]
     public async Task Module_disabled_filters_union_permissions()
     {
         await using var harness = await RbacResolverHarness.CreateAsync();

@@ -563,11 +563,41 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 table: "tenant_notification_channel_configs",
                 columns: new[] { "tenant_id", "event_type", "channel" },
                 unique: true);
+
+            migrationBuilder.Sql(
+                """
+                INSERT INTO core.permissions (id, key, name, description, module_key, created_at)
+                VALUES
+                    (gen_random_uuid(), 'catalog.products.read', 'Read catalog products', 'List and view catalog products.', 'catalog', now()),
+                    (gen_random_uuid(), 'catalog.products.manage', 'Manage catalog products', 'Create, update, and deactivate catalog products and files.', 'catalog', now()),
+                    (gen_random_uuid(), 'catalog.orders.read', 'Read catalog orders', 'List and view catalog orders.', 'catalog', now()),
+                    (gen_random_uuid(), 'catalog.orders.manage', 'Manage catalog orders', 'Approve, reject, fulfill, and cancel catalog orders.', 'catalog', now()),
+                    (gen_random_uuid(), 'catalog.notifications.read', 'Read catalog notifications', 'List catalog notification deliveries and channel config.', 'catalog', now()),
+                    (gen_random_uuid(), 'catalog.notifications.resend', 'Resend catalog notifications', 'Resend failed deliveries and update catalog channel config.', 'catalog', now())
+                ON CONFLICT (key) DO NOTHING;
+
+                INSERT INTO core.role_permissions (role_id, permission_id, granted_at)
+                SELECT r.id, p.id, now()
+                FROM core.roles r
+                CROSS JOIN core.permissions p
+                WHERE lower(r.name) IN ('admin', 'superadmin')
+                  AND p.key LIKE 'catalog.%'
+                ON CONFLICT DO NOTHING;
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                DELETE FROM core.role_permissions
+                WHERE permission_id IN (
+                    SELECT id FROM core.permissions WHERE key LIKE 'catalog.%');
+
+                DELETE FROM core.permissions WHERE key LIKE 'catalog.%';
+                """);
+
             migrationBuilder.DropTable(
                 name: "catalog_order_items",
                 schema: "catalog");

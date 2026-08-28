@@ -143,7 +143,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - [x] IStorageProvider (public images / private technical)
 - [x] Catalog domain + orders state machine + outbox notifications
 - [x] `AllowExternalDelivery` unset = false
-- [ ] UI B2B/B2C no `vlr-web`
+- [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
 - [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
 - [x] B2C portal: explicit 403 when `catalog` module inactive (other modules still pending generic middleware, §4)
 
@@ -214,3 +214,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |
 | 2026-08-27 | **Executado (API):** Tenant RBAC v1 — Roles/Permissions enforcement, invite `roleIds[]`, `/me` additive `roles`+`permissions`, migration `AddTenantRbacV1`. Spec `docs/plans/active/2026-08-27-tenant-rbac-v1.md`. UI no `vlr-web`. |
 | 2026-08-28 | **Iniciado:** Catalog & Orders v1 — spec `docs/plans/active/2026-08-28-catalog-orders.md`; PF/PJ; storage; outbox; `AllowExternalDelivery` unset=false. Branch `feat/catalog-orders`. Migration **não** aplicada. |
+| 2026-08-28 | **Review-fix:** INSERT das 6 keys em `core.permissions`; `EnsureAsync` no update de tenant; testes de isolamento/RBAC. |

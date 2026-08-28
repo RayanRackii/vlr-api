@@ -57,6 +57,61 @@ public sealed class CatalogServiceTests
     }
 
     [Fact]
+    public async Task Orders_are_tenant_scoped_for_read_and_transition()
+    {
+        await using var harness = await CatalogHarness.CreateAsync();
+        var product = await harness.Products.CreateAsync(
+            new CreateCatalogProductRequest { Name = "Item", Price = 1m },
+            CancellationToken.None);
+        var customer = harness.AddCustomer();
+        await harness.Db.SaveChangesAsync();
+        var order = await harness.Portal.CreateOrderAsync(
+            customer.Id,
+            new CreatePortalOrderRequest
+            {
+                Items = [new CreatePortalOrderItemRequest { ProductId = product.Id, Quantity = 1 }],
+            },
+            CancellationToken.None);
+
+        var otherProvider = new Fakes.FakeTenantProvider { TenantId = Guid.NewGuid() };
+        await using var otherDb = Infrastructure.InMemoryAppDb.Create(otherProvider);
+        otherDb.Tenants.Add(new Tenant("Other", "55555555000191"));
+        await otherDb.SaveChangesAsync();
+        harness.TenantProvider.TenantId = otherProvider.TenantId;
+
+        Assert.Null(await harness.Orders.GetByIdAsync(order.Id, CancellationToken.None));
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => harness.Orders.ApproveAsync(order.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Internal_file_url_is_tenant_scoped()
+    {
+        await using var harness = await CatalogHarness.CreateAsync();
+        var product = await harness.Products.CreateAsync(
+            new CreateCatalogProductRequest { Name = "Item", Price = 1m },
+            CancellationToken.None);
+        var pdf = "%PDF-1.4 dummy"u8.ToArray();
+        await using var privateStream = new MemoryStream(pdf);
+        var file = await harness.Products.AddFileAsync(
+            product.Id,
+            "tech.pdf",
+            "application/pdf",
+            privateStream,
+            CatalogFileVisibility.InternalB2B,
+            CancellationToken.None);
+
+        var otherProvider = new Fakes.FakeTenantProvider { TenantId = Guid.NewGuid() };
+        await using var otherDb = Infrastructure.InMemoryAppDb.Create(otherProvider);
+        otherDb.Tenants.Add(new Tenant("Other", "55555555000191"));
+        await otherDb.SaveChangesAsync();
+        harness.TenantProvider.TenantId = otherProvider.TenantId;
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => harness.Products.GetFileUrlAsync(product.Id, file.Id, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Portal_cannot_see_another_customer_order()
     {
         await using var harness = await CatalogHarness.CreateAsync();
