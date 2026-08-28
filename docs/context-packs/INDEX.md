@@ -10,6 +10,12 @@ File: [`active/rentals.md`](./active/rentals.md)
 
 Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker).
 
+### `catalog`
+
+File: [`active/catalog.md`](./active/catalog.md)
+
+Use for: CatalogProduct, CatalogOrder, ProductRequest, catalog files/storage, catalog notifications, B2C catalog/cart.
+
 ## Planned / on-demand
 
 ### `platform-core`

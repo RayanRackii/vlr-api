@@ -6,6 +6,7 @@ using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Auth;
+using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.ModuleMenuItems;
@@ -18,6 +19,7 @@ using Platform.Api.Modules.Webhooks;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Api.Storage;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
 using Serilog;
@@ -57,6 +59,7 @@ try
     builder.Services.AddWorkOrdersModule();
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
+    builder.Services.AddCatalogModule();
     builder.Services.AddUsersModule();
     builder.Services.AddRolesModule();
     builder.Services.AddAuthModule();
@@ -68,6 +71,7 @@ try
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
     builder.Services.AddWebhooksModule();
+    builder.Services.AddStorage(builder.Configuration);
     builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     builder.Services.AddPlatformHangfire(connectionString);
 

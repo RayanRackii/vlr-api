@@ -88,7 +88,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
-- [x] F-05: gate `Notifications:AllowExternalDelivery` (bool? tri-state) — Development não envia externo só por ter credencial; PROD/Staging com flag unset seguem Resend/Meta.
+- [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [ ] Provider SMS real quando sair do Dev.
 
@@ -133,6 +133,19 @@ Runbook: [`docs/runbooks/database-migrations.md`](./docs/runbooks/database-migra
 - [ ] Human: production environment + required reviewers (UI) — not in this cycle
 
 Follow-up: `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway env `development` currently sets `ASPNETCORE_ENVIRONMENT=Production`. Do not flip that without reviewing notification/host gates.
+
+## 6. Catalog & Orders v1 — EM ANDAMENTO (código)
+
+Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/2026-08-28-catalog-orders.md). Branch `feat/catalog-orders`. Pack: [`docs/context-packs/active/catalog.md`](./docs/context-packs/active/catalog.md).
+
+- [x] Module `catalog` + 6 permissions (37→43); Admin wildcard unchanged; DefaultUserKeys unchanged
+- [x] CustomerType + Document (keep Cpf); CPF check digits on dynamic validator; CNPJ
+- [x] IStorageProvider (public images / private technical)
+- [x] Catalog domain + orders state machine + outbox notifications
+- [x] `AllowExternalDelivery` unset = false
+- [ ] UI B2B/B2C no `vlr-web`
+- [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
+- [x] B2C portal: explicit 403 when `catalog` module inactive (other modules still pending generic middleware, §4)
 
 ## Dívidas técnicas conhecidas
 
@@ -200,4 +213,4 @@ Follow-up: `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway env `development` curren
 | 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |
 | 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |
 | 2026-08-27 | **Executado (API):** Tenant RBAC v1 — Roles/Permissions enforcement, invite `roleIds[]`, `/me` additive `roles`+`permissions`, migration `AddTenantRbacV1`. Spec `docs/plans/active/2026-08-27-tenant-rbac-v1.md`. UI no `vlr-web`. |
-| 2026-08-27 | **Executado (API):** workflow remoto `database-migrations` + `Platform.MigrationInspector` (list/apply, identity preflight, sem migrate no startup). Apply DEV ainda é Human Action. |
+| 2026-08-28 | **Iniciado:** Catalog & Orders v1 — spec `docs/plans/active/2026-08-28-catalog-orders.md`; PF/PJ; storage; outbox; `AllowExternalDelivery` unset=false. Branch `feat/catalog-orders`. Migration **não** aplicada. |
