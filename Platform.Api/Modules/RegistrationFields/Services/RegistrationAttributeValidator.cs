@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Platform.Api.Modules.RegistrationFields.Dtos;
+using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.RegistrationFields.Services;
@@ -72,6 +73,7 @@ public static class RegistrationAttributeValidator
             RegistrationFieldTypes.Boolean => NormalizeBoolean(element, field.FieldKey),
             RegistrationFieldTypes.Number => NormalizeNumber(element, field.FieldKey),
             RegistrationFieldTypes.Cpf => NormalizeCpf(element, field.FieldKey),
+            RegistrationFieldTypes.Cnpj => NormalizeCnpj(element, field.FieldKey),
             RegistrationFieldTypes.Cep => NormalizeCep(element, field.FieldKey),
             RegistrationFieldTypes.Phone => NormalizePhone(element, field.FieldKey),
             RegistrationFieldTypes.Email => NormalizeEmail(element, field.FieldKey),
@@ -138,9 +140,20 @@ public static class RegistrationAttributeValidator
     private static string NormalizeCpf(JsonElement element, string key)
     {
         var digits = OnlyDigits(NormalizeText(element, key));
-        if (digits.Length != 11)
+        if (digits.Length != 11 || !BrazilianDocumentValidator.IsValidCpfDigits(digits))
         {
             throw new ArgumentException($"Attribute '{key}' must be a valid CPF.");
+        }
+
+        return digits;
+    }
+
+    private static string NormalizeCnpj(JsonElement element, string key)
+    {
+        var digits = OnlyDigits(NormalizeText(element, key));
+        if (digits.Length != 14 || !BrazilianDocumentValidator.IsValidCnpjDigits(digits))
+        {
+            throw new ArgumentException($"Attribute '{key}' must be a valid CNPJ.");
         }
 
         return digits;

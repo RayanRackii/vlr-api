@@ -47,6 +47,27 @@ public sealed class PermissionResolverTests
         Assert.Contains(Permissions.Core.DashboardRead, effective);
         Assert.Contains(Permissions.Os.WorkOrdersRead, effective);
         Assert.DoesNotContain(Permissions.Rentals.ReservationsRead, effective);
+        Assert.DoesNotContain(Permissions.Catalog.OrdersRead, effective);
+    }
+
+    [Fact]
+    public async Task Admin_wildcard_includes_catalog_when_module_enabled()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: true));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: false));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("admin-catalog");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            admin.Id);
+
+        Assert.Contains(Permissions.Catalog.ProductsRead, effective);
+        Assert.Contains(Permissions.Catalog.OrdersManage, effective);
+        Assert.DoesNotContain(Permissions.Rentals.ReservationsRead, effective);
     }
 
     [Fact]

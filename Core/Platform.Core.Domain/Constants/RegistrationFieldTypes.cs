@@ -7,6 +7,7 @@ public static class RegistrationFieldTypes
     public const string Email = "email";
     public const string Phone = "phone";
     public const string Cpf = "cpf";
+    public const string Cnpj = "cnpj";
     public const string Cep = "cep";
     public const string Boolean = "boolean";
     public const string Number = "number";
@@ -16,13 +17,14 @@ public static class RegistrationFieldTypes
 
     public static readonly HashSet<string> All = new(StringComparer.OrdinalIgnoreCase)
     {
-        Text, Email, Phone, Cpf, Cep, Boolean, Number, Select, Photo, Date,
+        Text, Email, Phone, Cpf, Cnpj, Cep, Boolean, Number, Select, Photo, Date,
     };
 
     /// <summary>Keys reserved for core auth fields — cannot be used as dynamic field keys.</summary>
     public static readonly HashSet<string> ReservedKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "name", "email", "password", "confirmPassword", "phone",
+        "customerType", "document",
     };
 
     public static bool TryNormalize(string? value, out string canonical)

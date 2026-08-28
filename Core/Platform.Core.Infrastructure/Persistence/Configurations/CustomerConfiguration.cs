@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Infrastructure.Persistence.Configurations;
 
@@ -31,8 +32,16 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.PasswordHash)
             .HasMaxLength(500);
 
+        builder.Property(c => c.CustomerType)
+            .HasConversion<int>()
+            .HasDefaultValue(CustomerType.Individual)
+            .IsRequired();
+
         builder.Property(c => c.Cpf)
             .HasMaxLength(11);
+
+        builder.Property(c => c.Document)
+            .HasMaxLength(14);
 
         builder.Property(c => c.PostalCode)
             .HasMaxLength(8);
@@ -79,6 +88,10 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.HasIndex(c => new { c.TenantId, c.Cpf })
             .IsUnique()
             .HasFilter("cpf IS NOT NULL");
+
+        builder.HasIndex(c => new { c.TenantId, c.Document })
+            .IsUnique()
+            .HasFilter("document IS NOT NULL");
 
         builder.HasMany(c => c.OtpCodes)
             .WithOne(o => o.Customer)

@@ -8,6 +8,7 @@ using Platform.Api.Modules.RegistrationFields.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.CustomerAuth.Services;
@@ -118,18 +119,30 @@ public sealed class CustomerAuthService(
 
         var phone = BrazilianDocumentValidator.NormalizePhoneBr(request.Phone);
 
+        var document = NormalizeCustomerDocument(request.CustomerType, request.Document);
+        string? cpf = request.CustomerType == CustomerType.Individual ? document : null;
+
         var schema = await registrationFieldService.ListForTenantAsync(tenantId, cancellationToken);
         var extras = RegistrationAttributeValidator.ValidateAndNormalize(
             schema,
             request.Attributes);
 
-        if (extras.TryGetValue("cpf", out var cpfValue) && !string.IsNullOrWhiteSpace(cpfValue))
+        if (cpf is not null)
         {
-            cpfValue = BrazilianDocumentValidator.NormalizeCpf(cpfValue);
-            extras["cpf"] = cpfValue;
+            extras["cpf"] = cpf;
+        }
 
+        var documentTaken = await dbContext.Customers
+            .AnyAsync(c => c.Document == document, cancellationToken);
+        if (documentTaken)
+        {
+            throw new InvalidOperationException("A customer with this document already exists.");
+        }
+
+        if (cpf is not null)
+        {
             var cpfTaken = await dbContext.Customers
-                .AnyAsync(c => c.Cpf == cpfValue, cancellationToken);
+                .AnyAsync(c => c.Cpf == cpf, cancellationToken);
             if (cpfTaken)
             {
                 throw new InvalidOperationException("A customer with this CPF already exists.");
@@ -184,7 +197,9 @@ public sealed class CustomerAuthService(
             Name = name,
             Email = email,
             Phone = phone,
-            Cpf = extras.GetValueOrDefault("cpf"),
+            CustomerType = request.CustomerType,
+            Cpf = cpf,
+            Document = document,
             PostalCode = postalCode,
             AddressStreet = street,
             AddressNeighborhood = neighborhood,
@@ -204,7 +219,7 @@ public sealed class CustomerAuthService(
         catch (DbUpdateException)
         {
             throw new InvalidOperationException(
-                "A customer with the same email, CPF, or phone already exists.");
+                "A customer with the same email, document, or phone already exists.");
         }
 
         await IssueAndEnqueuePhoneCodeAsync(customer, cancellationToken);
@@ -435,6 +450,9 @@ public sealed class CustomerAuthService(
                 customer.Name,
                 customer.Phone,
                 customer.Email,
+                customer.CustomerType,
+                customer.Document,
+                customer.Cpf,
                 customer.CreatedAt,
                 customer.IsPhoneVerified,
                 customer.PhotoUrl,
@@ -448,6 +466,8 @@ public sealed class CustomerAuthService(
             customer.Name,
             customer.Email,
             customer.Phone,
+            customer.CustomerType,
+            customer.Document,
             customer.Cpf,
             customer.PostalCode,
             customer.AddressStreet,
@@ -498,6 +518,16 @@ public sealed class CustomerAuthService(
         }
 
         return normalized;
+    }
+
+    private static string NormalizeCustomerDocument(CustomerType customerType, string? raw)
+    {
+        return customerType switch
+        {
+            CustomerType.Individual => BrazilianDocumentValidator.NormalizeCpf(raw),
+            CustomerType.Company => BrazilianDocumentValidator.NormalizeCnpj(raw),
+            _ => throw new ArgumentException("Customer type is invalid."),
+        };
     }
 
     private static ParsedContact ParseContact(string? rawContact)

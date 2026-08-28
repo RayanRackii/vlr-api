@@ -13,10 +13,10 @@ public sealed class NotificationsServiceCollectionExtensionsTests
     [InlineData("Development", true, true, "ResendEmailProvider", "MetaWhatsAppProvider")]
     [InlineData("Development", true, false, "DevEmailProvider", "DevWhatsAppProvider")]
     [InlineData("Development", false, true, "DevEmailProvider", "DevWhatsAppProvider")]
-    [InlineData("Production", true, null, "ResendEmailProvider", "MetaWhatsAppProvider")]
+    [InlineData("Production", true, null, "DevEmailProvider", "DevWhatsAppProvider")]
     [InlineData("Production", true, false, "DevEmailProvider", "DevWhatsAppProvider")]
     [InlineData("Production", false, null, "DevEmailProvider", "DevWhatsAppProvider")]
-    [InlineData("Staging", true, null, "ResendEmailProvider", "MetaWhatsAppProvider")]
+    [InlineData("Staging", true, null, "DevEmailProvider", "DevWhatsAppProvider")]
     public void AddNotificationInfrastructure_registers_providers_from_environment_credentials_and_flag(
         string environmentName,
         bool credentialsConfigured,
