@@ -6,7 +6,9 @@ Read an incident only when it matches this agent/model, the same domain, a simil
 
 ## Open
 
-None.
+| Id | Title | Why open |
+|---|---|---|
+| [2026-08-28-permission-catalog-missing-sql](./incidents/2026-08-28-permission-catalog-missing-sql.md) | New PermissionCatalog keys shipped without `core.permissions` INSERT | Suggested rule promotion; Catalog & Orders review-fix already in `feat/catalog-orders` |
 
 ## Promoted
 
