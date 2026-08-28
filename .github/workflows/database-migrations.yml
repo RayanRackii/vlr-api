@@ -1,0 +1,78 @@
+name: database-migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Explicit database target. Never inferred from branch.
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+      mode:
+        description: list is read-only inventory. apply runs EF MigrateAsync.
+        required: true
+        type: choice
+        options:
+          - list
+          - apply
+      confirm_production:
+        description: Required for production apply. Type APPLY_PRODUCTION.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ef-migrate-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: ${{ inputs.mode }} / ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    permissions:
+      contents: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - name: Fail closed without explicit target
+        if: ${{ inputs.target != 'development' && inputs.target != 'production' }}
+        run: |
+          echo "FAIL CLOSED: target must be development or production."
+          exit 1
+
+      - name: Require APPLY_PRODUCTION for production apply
+        if: ${{ inputs.target == 'production' && inputs.mode == 'apply' }}
+        env:
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "$CONFIRM_PRODUCTION" != "APPLY_PRODUCTION" ]; then
+            echo "FAIL CLOSED: production apply requires confirm_production=APPLY_PRODUCTION."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Inspect or apply migrations
+        env:
+          MIGRATION_TARGET: ${{ inputs.target }}
+          MIGRATION_MODE: ${{ inputs.mode }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+          ConnectionStrings__DefaultConnection: ${{ secrets.ConnectionStrings__DefaultConnection }}
+        run: |
+          set +x
+          dotnet run \
+            --project tools/Platform.MigrationInspector/Platform.MigrationInspector.csproj \
+            --configuration Release \
+            --no-launch-profile
