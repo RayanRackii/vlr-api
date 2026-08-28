@@ -116,6 +116,8 @@ public sealed class CatalogPortalService(
             .Where(p => productIds.Contains(p.Id) && p.IsActive)
             .ToDictionaryAsync(p => p.Id, cancellationToken);
 
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;

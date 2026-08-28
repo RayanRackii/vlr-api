@@ -71,6 +71,33 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
         Assert.Contains(captured, r => r.Error is InvalidCatalogOrderTransitionException);
     }
 
+    [DockerFact]
+    public async Task Parallel_approve_and_cancel_allows_only_one_winner()
+    {
+        var factory = RequireFactory();
+        var tenantProvider = new FakeTenantProvider();
+        var seed = await SeedAsync(factory, tenantProvider, withOrder: true);
+
+        await using var db1 = factory.Create(tenantProvider);
+        await using var db2 = factory.Create(tenantProvider);
+        var orders1 = CreateOrders(db1, tenantProvider);
+        var orders2 = CreateOrders(db2, tenantProvider);
+
+        var captured = await Task.WhenAll(
+            CaptureAsync(() => orders1.ApproveAsync(seed.OrderId!.Value, CancellationToken.None)),
+            CaptureAsync(() => orders2.CancelAsync(seed.OrderId!.Value, "preflight race", CancellationToken.None)));
+
+        Assert.Single(captured, r => r.Error is null);
+        Assert.Contains(captured, r => r.Error is InvalidCatalogOrderTransitionException);
+
+        await using var verify = factory.Create(tenantProvider);
+        var status = await verify.CatalogOrders
+            .Where(o => o.Id == seed.OrderId)
+            .Select(o => o.Status)
+            .SingleAsync();
+        Assert.True(status is CatalogOrderStatus.Approved or CatalogOrderStatus.Cancelled);
+    }
+
     private PostgresAppDbFactory RequireFactory()
     {
         Assert.NotNull(_postgres.Factory);

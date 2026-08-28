@@ -188,6 +188,8 @@ public sealed class CatalogOrderService(
         var actorId = await ResolveB2BUserIdAsync(cancellationToken);
         var actorType = actorId is null ? CatalogActorType.System : CatalogActorType.B2BUser;
 
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
