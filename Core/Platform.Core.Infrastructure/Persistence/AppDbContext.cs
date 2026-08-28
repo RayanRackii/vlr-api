@@ -49,6 +49,18 @@ public class AppDbContext : DbContext
 
     public DbSet<TrialSignupClaim> TrialSignupClaims => Set<TrialSignupClaim>();
 
+    public DbSet<Notification> Notifications => Set<Notification>();
+
+    public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+
+    public DbSet<NotificationDeliveryAttempt> NotificationDeliveryAttempts =>
+        Set<NotificationDeliveryAttempt>();
+
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
+
+    public DbSet<TenantNotificationChannelConfig> TenantNotificationChannelConfigs =>
+        Set<TenantNotificationChannelConfig>();
+
     // --- Schema: assets (inventory module — full model; schema rename to inventory is deferred) ---
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
 
@@ -96,6 +108,25 @@ public class AppDbContext : DbContext
     public DbSet<RentalLayout> RentalLayouts => Set<RentalLayout>();
 
     public DbSet<RentalLayoutItem> RentalLayoutItems => Set<RentalLayoutItem>();
+
+    // --- Schema: catalog ---
+    public DbSet<CatalogProduct> CatalogProducts => Set<CatalogProduct>();
+
+    public DbSet<CatalogProductFile> CatalogProductFiles => Set<CatalogProductFile>();
+
+    public DbSet<CatalogOrder> CatalogOrders => Set<CatalogOrder>();
+
+    public DbSet<CatalogOrderItem> CatalogOrderItems => Set<CatalogOrderItem>();
+
+    public DbSet<CatalogOrderStatusHistory> CatalogOrderStatusHistories =>
+        Set<CatalogOrderStatusHistory>();
+
+    public DbSet<CatalogOrderNumberSequence> CatalogOrderNumberSequences =>
+        Set<CatalogOrderNumberSequence>();
+
+    public DbSet<ProductRequest> ProductRequests => Set<ProductRequest>();
+
+    public DbSet<ProductRequestFile> ProductRequestFiles => Set<ProductRequestFile>();
 
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
 

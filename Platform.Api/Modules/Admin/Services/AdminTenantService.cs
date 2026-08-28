@@ -265,6 +265,7 @@ public sealed class AdminTenantService(
             await SyncTenantAssetFamiliesAsync(tenant.Id, familyIds, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            await tenantAccessBootstrapper.EnsureAsync(id, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             var updated = await dbContext.Tenants

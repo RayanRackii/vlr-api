@@ -20,6 +20,22 @@ public static class BrazilianDocumentValidator
         return digits;
     }
 
+    public static string NormalizeCnpj(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new ArgumentException("CNPJ is required.");
+        }
+
+        var digits = Regex.Replace(raw, @"\D", string.Empty);
+        if (digits.Length != 14 || !IsValidCnpjDigits(digits))
+        {
+            throw new ArgumentException("CNPJ is invalid.");
+        }
+
+        return digits;
+    }
+
     public static string NormalizePostalCode(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -93,6 +109,40 @@ public static class BrazilianDocumentValidator
         remainder = sum % 11;
         var digit2 = remainder < 2 ? 0 : 11 - remainder;
         return digits[10] - '0' == digit2;
+    }
+
+    public static bool IsValidCnpjDigits(string digits)
+    {
+        if (digits.Length != 14 || digits.Distinct().Count() == 1)
+        {
+            return false;
+        }
+
+        int[] weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+        int[] weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+        var sum = 0;
+        for (var i = 0; i < 12; i++)
+        {
+            sum += (digits[i] - '0') * weights1[i];
+        }
+
+        var remainder = sum % 11;
+        var digit1 = remainder < 2 ? 0 : 11 - remainder;
+        if (digits[12] - '0' != digit1)
+        {
+            return false;
+        }
+
+        sum = 0;
+        for (var i = 0; i < 13; i++)
+        {
+            sum += (digits[i] - '0') * weights2[i];
+        }
+
+        remainder = sum % 11;
+        var digit2 = remainder < 2 ? 0 : 11 - remainder;
+        return digits[13] - '0' == digit2;
     }
 
     public static bool IsValidHexColor(string? color)

@@ -61,4 +61,14 @@ public static class Permissions
         public const string OccupancyKindsRead = "rentals.occupancy_kinds.read";
         public const string OccupancyKindsWrite = "rentals.occupancy_kinds.write";
     }
+
+    public static class Catalog
+    {
+        public const string ProductsRead = "catalog.products.read";
+        public const string ProductsManage = "catalog.products.manage";
+        public const string OrdersRead = "catalog.orders.read";
+        public const string OrdersManage = "catalog.orders.manage";
+        public const string NotificationsRead = "catalog.notifications.read";
+        public const string NotificationsResend = "catalog.notifications.resend";
+    }
 }

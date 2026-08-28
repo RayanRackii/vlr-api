@@ -18,6 +18,43 @@ namespace Platform.Api.Tests.Rbac;
 public sealed class TenantRbacAccessTests
 {
     [Fact]
+    public async Task EnsureAsync_inserts_missing_catalog_keys_so_custom_role_can_persist_them()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync(includeCatalogPermissionRows: false);
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("tenant-admin");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var actor = new RbacActor(harness.Tenant.Id, admin.Id, IsPlatformAdminInTenant: false);
+        var dropped = await harness.Roles.CreateAsync(
+            harness.Tenant.Id,
+            actor,
+            new CreateRoleRequest(
+                "OpsBefore",
+                null,
+                [Permissions.Core.DashboardRead, Permissions.Catalog.OrdersManage]),
+            CancellationToken.None);
+
+        Assert.Contains(Permissions.Core.DashboardRead, dropped.PermissionKeys);
+        Assert.DoesNotContain(Permissions.Catalog.OrdersManage, dropped.PermissionKeys);
+
+        var bootstrapper = new TenantAccessBootstrapper(harness.Db);
+        await bootstrapper.EnsureAsync(harness.Tenant.Id);
+
+        var persisted = await harness.Roles.CreateAsync(
+            harness.Tenant.Id,
+            actor,
+            new CreateRoleRequest(
+                "OpsAfter",
+                null,
+                [Permissions.Core.DashboardRead, Permissions.Catalog.OrdersManage]),
+            CancellationToken.None);
+
+        Assert.Contains(Permissions.Catalog.OrdersManage, persisted.PermissionKeys);
+    }
+
+    [Fact]
     public async Task Non_admin_cannot_persist_inactive_module_keys_on_a_custom_role()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
@@ -334,7 +371,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
 
     public Platform.Api.Modules.Admin.Services.TenantUserAdminService AdminInvites { get; }
 
-    public static async Task<RbacAccessHarness> CreateAsync()
+    public static async Task<RbacAccessHarness> CreateAsync(bool includeCatalogPermissionRows = true)
     {
         var tenant = new Tenant("Access Club", "44444444000191");
         var tenantProvider = new FakeTenantProvider { TenantId = tenant.Id };
@@ -342,6 +379,12 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
         db.Tenants.Add(tenant);
         foreach (var entry in PermissionCatalog.All)
         {
+            if (!includeCatalogPermissionRows
+                && entry.ModuleKey == PlatformModules.Catalog)
+            {
+                continue;
+            }
+
             db.Permissions.Add(new Permission(entry.Key, entry.Name, entry.Description, entry.ModuleKey));
         }
 
@@ -396,7 +439,12 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
         {
             foreach (var entry in PermissionCatalog.All)
             {
-                var permission = Db.Permissions.Local.First(item => item.Key == entry.Key);
+                var permission = Db.Permissions.Local.FirstOrDefault(item => item.Key == entry.Key);
+                if (permission is null)
+                {
+                    continue;
+                }
+
                 Db.RolePermissions.Add(new RolePermission(role.Id, permission.Id));
             }
         }

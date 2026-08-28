@@ -9,7 +9,8 @@ namespace Platform.Api.Modules.RegistrationFields.Services;
 
 public sealed class RegistrationFieldService(AppDbContext dbContext) : IRegistrationFieldService
 {
-    private static readonly string[] CoreFields = ["name", "email", "password", "phone"];
+    private static readonly string[] CoreFields =
+        ["name", "email", "password", "phone", "customerType", "document"];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

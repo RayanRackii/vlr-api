@@ -16,6 +16,8 @@ public static class NotificationsServiceCollectionExtensions
         IConfiguration configuration,
         IHostEnvironment hostEnvironment)
     {
+        ArgumentNullException.ThrowIfNull(hostEnvironment);
+
         services.AddSingleton<NotificationQueue>();
         services.AddHostedService<NotificationDispatcherService>();
 
@@ -28,8 +30,7 @@ public static class NotificationsServiceCollectionExtensions
             .Get<NotificationsOptions>()
             ?.AllowExternalDelivery;
 
-        var effectiveAllowExternal = allowExternalDelivery
-            ?? (hostEnvironment.IsDevelopment() ? false : true);
+        var effectiveAllowExternal = allowExternalDelivery == true;
 
         var resendConfigured = !string.IsNullOrWhiteSpace(configuration["Resend:ApiKey"])
             && !string.IsNullOrWhiteSpace(configuration["Resend:FromEmail"]);
@@ -56,7 +57,31 @@ public static class NotificationsServiceCollectionExtensions
         }
 
         services.AddScoped<ISmsProvider, DevSmsProvider>();
+        services.AddHostedService(sp => new NotificationDeliveryGateHostedService(
+            effectiveAllowExternal,
+            sp.GetRequiredService<ILogger<NotificationDeliveryGateHostedService>>()));
 
         return services;
     }
+}
+
+internal sealed class NotificationDeliveryGateHostedService(
+    bool enabled,
+    ILogger<NotificationDeliveryGateHostedService> logger) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        if (enabled)
+        {
+            logger.LogInformation("External notification delivery enabled");
+        }
+        else
+        {
+            logger.LogInformation("External notification delivery disabled");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

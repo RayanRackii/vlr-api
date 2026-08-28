@@ -5,8 +5,8 @@ public sealed class NotificationsOptions
     public const string SectionName = "Notifications";
 
     /// <summary>
-    /// Tri-state gate for Resend/Meta. <see langword="null"/> (unset) resolves
-    /// to false in Development and true in every other environment.
+    /// Tri-state gate for Resend/Meta. External providers are registered only when
+    /// this is explicitly <see langword="true"/> (unset/null is false in every environment).
     /// </summary>
     public bool? AllowExternalDelivery { get; set; }
 }

@@ -119,6 +119,80 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Catalog_orders_manage_requires_grant_and_active_module()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var withGrant = harness.SeedUserWithKeys("catalog-ops", Permissions.Catalog.OrdersManage);
+        var withoutGrant = harness.SeedUserWithKeys("catalog-reader", Permissions.Catalog.OrdersRead);
+        var allowed = AuthenticatedPrincipal(
+            new Claim("sub", withGrant.SupabaseAuthId),
+            new Claim("email", withGrant.Email));
+        var denied = AuthenticatedPrincipal(
+            new Claim("sub", withoutGrant.SupabaseAuthId),
+            new Claim("email", withoutGrant.Email));
+        var customer = AuthenticatedPrincipal(
+            new Claim(ClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()));
+
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                allowed,
+                PermissionPolicies.Name(Permissions.Catalog.OrdersManage))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                denied,
+                PermissionPolicies.Name(Permissions.Catalog.OrdersManage))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                customer,
+                PermissionPolicies.Name(Permissions.Catalog.OrdersManage))).Succeeded);
+    }
+
+    [Fact]
+    public async Task Catalog_products_manage_is_denied_without_grant_even_when_module_is_on()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var reader = harness.SeedUserWithKeys("catalog-product-reader", Permissions.Catalog.ProductsRead);
+        var principal = AuthenticatedPrincipal(
+            new Claim("sub", reader.SupabaseAuthId),
+            new Claim("email", reader.Email));
+
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Catalog.ProductsManage))).Succeeded);
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Catalog.ProductsRead))).Succeeded);
+    }
+
+    [Fact]
+    public async Task Catalog_orders_manage_is_denied_when_module_is_off_even_with_grant()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: false));
+        await harness.Db.SaveChangesAsync();
+
+        var user = harness.SeedUserWithKeys("catalog-off", Permissions.Catalog.OrdersManage);
+        var principal = AuthenticatedPrincipal(
+            new Claim("sub", user.SupabaseAuthId),
+            new Claim("email", user.Email));
+
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Catalog.OrdersManage))).Succeeded);
+    }
+
+    [Fact]
     public async Task Customer_and_platform_admin_named_policies_still_delegate()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();
