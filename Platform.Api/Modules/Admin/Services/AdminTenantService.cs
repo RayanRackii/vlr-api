@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Constants;
@@ -16,6 +17,7 @@ public sealed class AdminTenantService(
     AppDbContext dbContext,
     ITenantUserAdminService tenantUserAdminService,
     IPlatformAdminMembershipService platformAdminMembershipService,
+    ITenantAccessBootstrapper tenantAccessBootstrapper,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     IOptions<PlatformAdminOptions> platformAdminOptions,
     ILogger<AdminTenantService> logger) : IAdminTenantService
@@ -134,6 +136,8 @@ public sealed class AdminTenantService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            await tenantAccessBootstrapper.EnsureAsync(tenant.Id, cancellationToken);
 
             await platformAdminMembershipService.ProvisionPlatformAdminsAsync(
                 tenant.Id,
@@ -261,6 +265,7 @@ public sealed class AdminTenantService(
             await SyncTenantAssetFamiliesAsync(tenant.Id, familyIds, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            await tenantAccessBootstrapper.EnsureAsync(id, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             var updated = await dbContext.Tenants

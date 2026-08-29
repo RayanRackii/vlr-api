@@ -13,6 +13,8 @@ public static class HangfireExtensions
 
     public const string TrialLifecycleJobId = "trial-lifecycle-purge";
 
+    public const string NotificationOutboxJobId = "notification-outbox";
+
     private const int HangfireMaxPoolSize = 3;
 
     public static IServiceCollection AddPlatformHangfire(
@@ -83,6 +85,12 @@ public static class HangfireExtensions
             PmocEngineJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "0 6 * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<NotificationOutboxJob>(
+            NotificationOutboxJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            "* * * * *",
             recurringJobOptions);
 
         return app;

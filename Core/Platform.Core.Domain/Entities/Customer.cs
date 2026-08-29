@@ -1,4 +1,5 @@
 using Platform.Core.Domain.Common;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Domain.Entities;
 
@@ -26,8 +27,14 @@ public class Customer : Entity, ITenantScoped
     /// <summary>Last successful portal (B2C) login.</summary>
     public DateTimeOffset? LastLoginAt { get; set; }
 
-    /// <summary>Brazilian CPF digits only (11).</summary>
+    /// <summary>Individual (CPF) or Company (CNPJ). Profile PATCH cannot change this.</summary>
+    public CustomerType CustomerType { get; set; } = CustomerType.Individual;
+
+    /// <summary>Brazilian CPF digits only (11). Kept for Individual/compat; do not drop in v1.</summary>
     public string? Cpf { get; set; }
+
+    /// <summary>Digits-only CPF (11) or CNPJ (14). Unique per tenant when set.</summary>
+    public string? Document { get; set; }
 
     /// <summary>Brazilian postal code digits only (8).</summary>
     public string? PostalCode { get; set; }

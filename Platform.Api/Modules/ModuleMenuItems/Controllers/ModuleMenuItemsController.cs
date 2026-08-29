@@ -1,19 +1,17 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
 using Platform.Api.Modules.ModuleMenuItems.Services;
-using Platform.Api.Modules.Users.Dtos;
-using Platform.Api.Modules.Users.Services;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.ModuleMenuItems.Controllers;
 
 [ApiController]
 [Route("api/module-menu-items")]
-[Authorize]
 public sealed class ModuleMenuItemsController(
     IModuleMenuItemService moduleMenuItemService,
-    IUserDirectoryService userDirectoryService,
     ITenantProvider tenantProvider) : ControllerBase
 {
     /// <summary>Public B2C sidebar menu for a tenant subdomain.</summary>
@@ -37,10 +35,10 @@ public sealed class ModuleMenuItemsController(
     }
 
     [HttpGet]
+    [RequirePermission(Permissions.Core.ModuleMenuRead)]
     public async Task<ActionResult<IReadOnlyList<ModuleMenuItemDto>>> List(
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -49,11 +47,11 @@ public sealed class ModuleMenuItemsController(
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Core.ModuleMenuWrite)]
     public async Task<ActionResult<ModuleMenuItemDto>> Create(
         [FromBody] UpsertModuleMenuItemRequestDto request,
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -76,12 +74,12 @@ public sealed class ModuleMenuItemsController(
     }
 
     [HttpPut("{itemId:guid}")]
+    [RequirePermission(Permissions.Core.ModuleMenuWrite)]
     public async Task<ActionResult<ModuleMenuItemDto>> Update(
         Guid itemId,
         [FromBody] UpdateModuleMenuItemRequestDto request,
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -105,11 +103,11 @@ public sealed class ModuleMenuItemsController(
     }
 
     [HttpDelete("{itemId:guid}")]
+    [RequirePermission(Permissions.Core.ModuleMenuWrite)]
     public async Task<IActionResult> Delete(
         Guid itemId,
         CancellationToken cancellationToken)
     {
-        await EnsureTenantAdminAsync(cancellationToken);
         var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
@@ -121,16 +119,6 @@ public sealed class ModuleMenuItemsController(
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
-        }
-    }
-
-    private async Task EnsureTenantAdminAsync(CancellationToken cancellationToken)
-    {
-        var current = await userDirectoryService.GetCurrentAsync(User, cancellationToken);
-        if (current.Role is not (ApplicationRoles.Admin or ApplicationRoles.SuperAdmin))
-        {
-            throw new UnauthorizedAccessException(
-                "Only tenant administrators can manage module menu items.");
         }
     }
 }

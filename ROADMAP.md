@@ -88,7 +88,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 ## 3. Notificações reais (Resend + WhatsApp) — ADIADA
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
-- [x] F-05: gate `Notifications:AllowExternalDelivery` (bool? tri-state) — Development não envia externo só por ter credencial; PROD/Staging com flag unset seguem Resend/Meta.
+- [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [ ] Provider SMS real quando sair do Dev.
 
@@ -100,7 +100,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 
 - [x] Tabela `core.user_invites` + migration `AddUserInvites`
 - [x] `POST /api/admin/tenants/{id}/invites` + list users + promote + resend/revoke
-- [x] `POST /api/invites/accept` (anonymous) → Supabase user + `User` + role
+- [x] `POST /api/invites/accept` (anonymous) → Supabase user + `User` + role (`UserInviteRole` quando houver, senão `RoleName`)
 - [x] `GET/DELETE /api/admin/users` (lista global Super-Admin + exclusão; índices `full_name` / `tenant_id`)
 - [x] Membership Super-Admin por tenant (`User` único em TenantId+SupabaseAuthId) + enter/exit via app_metadata.tenant_id
 - [x] Wizard Super-Admin: passo “Admin” (nome/e-mail, sem senha)
@@ -108,15 +108,52 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] FE `/invite` chama API real
 - [x] E-mail (Resend) com layout Rolvix + `App:FrontendBaseUrl` (prod nunca emite localhost)
 - [x] Reset de senha B2B: `POST /api/auth/forgot-password` → `generate_link` + Resend (`RolvixEmailLayout`); FE não usa mais `resetPasswordForEmail`
+- [x] Tenant RBAC v1 (API): `RequirePermission`, catálogo, Roles CRUD, invite `roleIds[]`, `/me` additive. UI no `vlr-web`.
 - [ ] Migrar onboarding público para invite (remover senha do admin)
+
+## 5.1. Tenant RBAC v1 — FEITO (código API)
+
+Spec: [`docs/plans/active/2026-08-27-tenant-rbac-v1.md`](./docs/plans/active/2026-08-27-tenant-rbac-v1.md). Branch `feat/tenant-rbac-v1`.
+
+- [x] 37 permissions + Admin wildcard / User bundle; Technician execute bundle se a role existir
+- [x] `GET /api/roles`, `GET /api/permissions`, mutações de roles, `PUT /api/users/{id}/roles`, `GET /api/users`
+- [x] Stub `POST /api/users/invite` substituído (`roleIds` 1..N); `UserInvite.RoleName` legado permanece
+- [x] Last-admin 409, privilege escalation 403, fail-closed; PlatformAdmin com tenant = wildcard
+- [x] OS assigned-only por `os.work_orders.execute` (não pelo nome Technician)
+- [ ] Aplicar migration `AddTenantRbacV1` via workflow `database-migrations` (`target=development`, `mode=list` then `apply`). Não aplicar da máquina de implementação.
+- [x] UI Pessoas e acesso no `vlr-web` (merged `develop`)
+
+## 5.2. Remote EF migrations — FEITO (código)
+
+Runbook: [`docs/runbooks/database-migrations.md`](./docs/runbooks/database-migrations.md). Inspector: `tools/Platform.MigrationInspector`. Workflow: `.github/workflows/database-migrations.yml` (`workflow_dispatch` only).
+
+- [x] `mode=list` (read-only) / `mode=apply` with identity preflight (DEV ref `jzptnjyzijklutinpxag`, PROD ref `kbptdzfbngelzdhriyhf`)
+- [x] GitHub Environment-scoped secret `ConnectionStrings__DefaultConnection` (human creates environments + secrets in the GitHub UI)
+- [ ] Human: create GitHub Environment `development` + secret, dispatch `mode=list`
+- [ ] Human: production environment + required reviewers (UI) — not in this cycle
+
+Follow-up: `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway env `development` currently sets `ASPNETCORE_ENVIRONMENT=Production`. Do not flip that without reviewing notification/host gates.
+
+## 6. Catalog & Orders v1 — EM ANDAMENTO (código)
+
+Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/2026-08-28-catalog-orders.md). Branch `feat/catalog-orders`. Pack: [`docs/context-packs/active/catalog.md`](./docs/context-packs/active/catalog.md).
+
+- [x] Module `catalog` + 6 permissions (37→43); Admin wildcard unchanged; DefaultUserKeys unchanged
+- [x] CustomerType + Document (keep Cpf); CPF check digits on dynamic validator; CNPJ
+- [x] IStorageProvider (public images / private technical)
+- [x] Catalog domain + orders state machine + outbox notifications
+- [x] `AllowExternalDelivery` unset = false
+- [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
+- [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
+- [x] B2C portal: explicit 403 when `catalog` module inactive (other modules still pending generic middleware, §4)
 
 ## Dívidas técnicas conhecidas
 
-- Permissions/RolePermission sem uso.
-- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin, overlap de Location, corrida de Location (Testcontainers; 2026-08-22 comprovado com Docker 29.5.3) e o gate DI de notificações (F-05).
+- Fundação de testes: `tests/Platform.Api.Tests` (xUnit) cobre TrialGuard, policies B2B/Customer/PlatformAdmin, RBAC (resolver, matrix, last-admin, invite roleIds, OS assigned-only), overlap de Location, corrida de Location (Testcontainers; 2026-08-22 comprovado com Docker 29.5.3) e o gate DI de notificações (F-05).
 - Consulta CPF “Receita/Serpro” ainda não plugada.
 - Coluna `logo_url` obsoleta (produto usa só `logo_svg`).
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
+- `REVIEW_DEV_HOSTING_ENVIRONMENT`: Railway `development` + `ASPNETCORE_ENVIRONMENT=Production` (RBAC Client diagnostic hosted service does not run; notification gate treats the host as non-Development).
 
 ## Histórico
 
@@ -175,3 +212,6 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 | 2026-08-22 | **Fix F-16:** `BulkCreate` respeita `RentalType` — Location cria N ativos (qty 1); Good cria um ativo com estoque em `TotalQuantity`. Sem conversão silenciosa Good→Location. |
 | 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |
 | 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |
+| 2026-08-27 | **Executado (API):** Tenant RBAC v1 — Roles/Permissions enforcement, invite `roleIds[]`, `/me` additive `roles`+`permissions`, migration `AddTenantRbacV1`. Spec `docs/plans/active/2026-08-27-tenant-rbac-v1.md`. UI no `vlr-web`. |
+| 2026-08-28 | **Iniciado:** Catalog & Orders v1 — spec `docs/plans/active/2026-08-28-catalog-orders.md`; PF/PJ; storage; outbox; `AllowExternalDelivery` unset=false. Branch `feat/catalog-orders`. Migration **não** aplicada. |
+| 2026-08-28 | **Review-fix:** INSERT das 6 keys em `core.permissions`; `EnsureAsync` no update de tenant; testes de isolamento/RBAC. |

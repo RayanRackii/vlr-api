@@ -28,6 +28,10 @@ public class UserInvite : Entity, ITenantScoped
 
     public Tenant Tenant { get; private set; } = null!;
 
+    private readonly List<UserInviteRole> _inviteRoles = [];
+
+    public IReadOnlyCollection<UserInviteRole> InviteRoles => _inviteRoles.AsReadOnly();
+
     private UserInvite()
     {
     }

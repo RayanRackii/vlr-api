@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
@@ -57,7 +59,7 @@ public sealed class ReservationsController(
     }
 
     /// <summary>Admin list of tenant reservations (B2B).</summary>
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ReservationsRead)]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ReservationResponseDto>>> ListAdmin(
         [FromQuery] DateOnly? from,
@@ -83,7 +85,7 @@ public sealed class ReservationsController(
     }
 
     /// <summary>Confirm a pending reservation (B2B staff).</summary>
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ReservationsConfirm)]
     [HttpPost("{id:guid}/confirm")]
     public async Task<ActionResult<ReservationResponseDto>> Confirm(
         Guid id,
@@ -108,7 +110,7 @@ public sealed class ReservationsController(
     }
 
     /// <summary>Cancel a reservation and free linked slots (B2B staff).</summary>
-    [Authorize]
+    [RequirePermission(Permissions.Rentals.ReservationsCancel)]
     [HttpPost("{id:guid}/cancel")]
     public async Task<ActionResult<ReservationResponseDto>> Cancel(
         Guid id,

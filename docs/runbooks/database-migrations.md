@@ -36,16 +36,6 @@ The workflow job uses `environment: ${{ inputs.target }}`, so a `development` ru
 
 File: `.github/workflows/database-migrations.yml`
 
-This file lives on the **default branch** (`main`) so GitHub Actions can list **Run workflow**. The API on `main` stays functionally equal to current PROD. Feature migrations that exist only on `develop` (for example `AddTenantRbacV1`) are **not** in the `main` assembly.
-
-To inventory or apply what is on `develop`:
-
-1. Actions → **database-migrations** → Run workflow.
-2. **Use workflow from:** `develop` (GitHub checks out that ref; the inspector sees that assembly’s migrations).
-3. `target=development`, `mode=list` (always first).
-
-Do not run `apply` until `list` is understood. Do not create or fill the GitHub Environment `production` in this bootstrap.
-
 - Trigger: **workflow_dispatch only** (no push / PR / deploy / startup).
 - Inputs: `target` (`development` \| `production`), `mode` (`list` \| `apply`), `confirm_production` (required for production apply).
 - Concurrency group `ef-migrate-${{ inputs.target }}` with `cancel-in-progress: false`.
@@ -53,7 +43,7 @@ Do not run `apply` until `list` is understood. Do not create or fill the GitHub 
 
 ### Always list first
 
-1. Actions → **database-migrations** → Run workflow (from `develop` when the goal is the integration branch).
+1. Actions → **database-migrations** → Run workflow.
 2. `target=development`, `mode=list`.
 3. Read the job log for:
 

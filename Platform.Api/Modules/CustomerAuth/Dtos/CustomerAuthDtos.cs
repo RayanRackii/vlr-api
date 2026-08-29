@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.CustomerAuth.Dtos;
 
@@ -26,6 +27,10 @@ public sealed record RegisterCustomerRequestDto
     public required string Password { get; init; }
 
     public required string Phone { get; init; }
+
+    public required CustomerType CustomerType { get; init; }
+
+    public required string Document { get; init; }
 
     /// <summary>Values for tenant-defined registration fields.</summary>
     public Dictionary<string, JsonElement>? Attributes { get; init; }
@@ -55,6 +60,9 @@ public sealed record CustomerAuthProfileDto(
     string Name,
     string? Phone,
     string? Email,
+    CustomerType CustomerType,
+    string? Document,
+    string? Cpf,
     DateTimeOffset CreatedAt,
     bool PhoneVerified,
     string? PhotoUrl,
@@ -78,6 +86,8 @@ public sealed record CustomerProfileDto(
     string Name,
     string? Email,
     string? Phone,
+    CustomerType CustomerType,
+    string? Document,
     string? Cpf,
     string? PostalCode,
     string? AddressStreet,

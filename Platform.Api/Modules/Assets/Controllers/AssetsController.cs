@@ -1,16 +1,17 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Assets.Controllers;
 
 [ApiController]
-[Authorize]
 [Route("api/assets")]
 public sealed class AssetsController(IAssetService assetService) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Inventory.AssetsRead)]
     public async Task<ActionResult<IReadOnlyList<AssetResponse>>> List(
         CancellationToken cancellationToken)
     {
@@ -19,6 +20,7 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
     }
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(Permissions.Inventory.AssetsRead)]
     public async Task<ActionResult<AssetResponse>> GetById(
         Guid id,
         CancellationToken cancellationToken)
@@ -34,6 +36,7 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Inventory.AssetsWrite)]
     public async Task<ActionResult<AssetResponse>> Create(
         [FromBody] CreateAssetRequest request,
         CancellationToken cancellationToken)
@@ -50,6 +53,7 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
     }
 
     [HttpPost("bulk")]
+    [RequirePermission(Permissions.Inventory.AssetsWrite)]
     public async Task<ActionResult<BulkCreateAssetsResponse>> BulkCreate(
         [FromBody] BulkCreateAssetsRequest request,
         CancellationToken cancellationToken)
@@ -74,6 +78,7 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(Permissions.Inventory.AssetsWrite)]
     public async Task<ActionResult<AssetResponse>> Update(
         Guid id,
         [FromBody] UpdateAssetRequest request,
@@ -97,6 +102,7 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
     }
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Inventory.AssetsWrite)]
     public async Task<ActionResult<DeleteAssetResult>> Delete(
         Guid id,
         CancellationToken cancellationToken)

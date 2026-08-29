@@ -1,17 +1,18 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Assets.Controllers;
 
 [ApiController]
-[Authorize]
 [Route("api/asset-categories")]
 public sealed class AssetCategoriesController(
     IAssetCategoryService assetCategoryService) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Inventory.CategoriesRead)]
     public async Task<ActionResult<IReadOnlyList<AssetCategoryResponse>>> List(
         CancellationToken cancellationToken)
     {
@@ -20,6 +21,7 @@ public sealed class AssetCategoriesController(
     }
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(Permissions.Inventory.CategoriesRead)]
     public async Task<ActionResult<AssetCategoryResponse>> GetById(
         Guid id,
         CancellationToken cancellationToken)
@@ -35,6 +37,7 @@ public sealed class AssetCategoriesController(
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Inventory.CategoriesWrite)]
     public async Task<ActionResult<AssetCategoryResponse>> Create(
         [FromBody] CreateAssetCategoryRequest request,
         CancellationToken cancellationToken)
@@ -44,6 +47,7 @@ public sealed class AssetCategoriesController(
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(Permissions.Inventory.CategoriesWrite)]
     public async Task<ActionResult<AssetCategoryResponse>> Update(
         Guid id,
         [FromBody] UpdateAssetCategoryRequest request,
@@ -60,6 +64,7 @@ public sealed class AssetCategoriesController(
     }
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Inventory.CategoriesWrite)]
     public async Task<ActionResult<DeleteAssetCategoryResult>> Delete(
         Guid id,
         CancellationToken cancellationToken)

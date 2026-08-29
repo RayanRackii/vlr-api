@@ -15,6 +15,8 @@ public static class PlatformModules
 
     public const string Rentals = "rentals";
 
+    public const string Catalog = "catalog";
+
     /// <summary>
     /// Maps API / UI module labels (e.g. "Rentals", "PMOC") to canonical keys.
     /// </summary>
@@ -52,6 +54,13 @@ public static class PlatformModules
             case "manutencao":
             case "manutenção":
                 canonical = Maintenance;
+                return true;
+            case "catalog":
+            case "catalogo":
+            case "catálogo":
+            case "orders":
+            case "pedidos":
+                canonical = Catalog;
                 return true;
             default:
                 return false;
