@@ -1,6 +1,7 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Authorization;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Units;
@@ -13,13 +14,13 @@ public sealed record UnitResponse(
     bool IsActive);
 
 [ApiController]
-[Authorize]
 [Route("api/units")]
 public sealed class UnitsController(
     AppDbContext dbContext,
     ITenantProvider tenantProvider) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Core.UnitsRead)]
     public async Task<ActionResult<IReadOnlyList<UnitResponse>>> List(
         CancellationToken cancellationToken)
     {

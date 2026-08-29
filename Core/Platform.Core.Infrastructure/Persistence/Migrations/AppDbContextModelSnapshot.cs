@@ -247,6 +247,388 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("asset_families", "assets");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CancelledReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("cancelled_reason");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("BRL")
+                        .HasColumnName("currency");
+
+                    b.Property<string>("CustomerEmailSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("customer_email_snapshot");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("CustomerNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("customer_name_snapshot");
+
+                    b.Property<string>("CustomerNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("customer_note");
+
+                    b.Property<string>("CustomerPhoneSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("customer_phone_snapshot");
+
+                    b.Property<int>("OrderNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("order_number");
+
+                    b.Property<string>("RejectedReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("rejected_reason");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Requested")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal?>("TotalAmount")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("total_amount");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_orders");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_catalog_orders_customer_id");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .HasDatabaseName("ix_catalog_orders_tenant_id_created_at");
+
+                    b.HasIndex("TenantId", "CustomerId")
+                        .HasDatabaseName("ix_catalog_orders_tenant_id_customer_id");
+
+                    b.HasIndex("TenantId", "OrderNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_catalog_orders_tenant_id_order_number");
+
+                    b.HasIndex("TenantId", "Status")
+                        .HasDatabaseName("ix_catalog_orders_tenant_id_status");
+
+                    b.ToTable("catalog_orders", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("BRL")
+                        .HasColumnName("currency");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_id");
+
+                    b.Property<string>("ProductCodeSnapshot")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("product_code_snapshot");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<string>("ProductNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("product_name_snapshot");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<decimal?>("SubTotal")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("sub_total");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal?>("UnitPriceSnapshot")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("unit_price_snapshot");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_order_items");
+
+                    b.HasIndex("OrderId")
+                        .HasDatabaseName("ix_catalog_order_items_order_id");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("ix_catalog_order_items_product_id");
+
+                    b.HasIndex("TenantId", "OrderId")
+                        .HasDatabaseName("ix_catalog_order_items_tenant_id_order_id");
+
+                    b.ToTable("catalog_order_items", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderNumberSequence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("LastNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_number");
+
+                    b.HasKey("TenantId")
+                        .HasName("pk_catalog_order_number_sequences");
+
+                    b.ToTable("catalog_order_number_sequences", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderStatusHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("actor_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_order_status_history");
+
+                    b.HasIndex("OrderId")
+                        .HasDatabaseName("ix_catalog_order_status_history_order_id");
+
+                    b.HasIndex("TenantId", "OrderId", "CreatedAt")
+                        .HasDatabaseName("ix_catalog_order_status_history_tenant_id_order_id_created_at");
+
+                    b.ToTable("catalog_order_status_history", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProduct", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("BRL")
+                        .HasColumnName("currency");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal?>("Price")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("price");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_products");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_catalog_products_tenant_id_code")
+                        .HasFilter("code IS NOT NULL");
+
+                    b.HasIndex("TenantId", "IsActive")
+                        .HasDatabaseName("ix_catalog_products_tenant_id_is_active");
+
+                    b.HasIndex("TenantId", "Name")
+                        .HasDatabaseName("ix_catalog_products_tenant_id_name");
+
+                    b.ToTable("catalog_products", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("mime_type");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("storage_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("visibility");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_product_files");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("ix_catalog_product_files_product_id");
+
+                    b.HasIndex("TenantId", "ProductId")
+                        .HasDatabaseName("ix_catalog_product_files_tenant_id_product_id");
+
+                    b.HasIndex("TenantId", "StorageKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_catalog_product_files_tenant_id_storage_key");
+
+                    b.ToTable("catalog_product_files", "catalog");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Customer", b =>
                 {
                     b.Property<Guid>("Id")
@@ -281,6 +663,17 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<int>("CustomerType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("customer_type");
+
+                    b.Property<string>("Document")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)")
+                        .HasColumnName("document");
 
                     b.Property<string>("Email")
                         .HasMaxLength(256)
@@ -342,6 +735,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_customers_tenant_id_cpf")
                         .HasFilter("cpf IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Document")
+                        .IsUnique()
+                        .HasDatabaseName("ix_customers_tenant_id_document")
+                        .HasFilter("document IS NOT NULL");
 
                     b.HasIndex("TenantId", "Email")
                         .IsUnique()
@@ -616,6 +1014,279 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("maintenance_plans", "pmoc");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AggregateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("aggregate_id");
+
+                    b.Property<string>("AggregateType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("aggregate_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("event_type");
+
+                    b.Property<Dictionary<string, string>>("Payload")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notifications");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .HasDatabaseName("ix_notifications_tenant_id_created_at");
+
+                    b.HasIndex("TenantId", "EventType")
+                        .HasDatabaseName("ix_notifications_tenant_id_event_type");
+
+                    b.HasIndex("TenantId", "AggregateType", "AggregateId")
+                        .HasDatabaseName("ix_notifications_tenant_id_aggregate_type_aggregate_id");
+
+                    b.ToTable("notifications", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.NotificationDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempt_count");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("error_message");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<Guid>("NotificationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("notification_id");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("provider_message_id");
+
+                    b.Property<string>("RecipientEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("recipient_email");
+
+                    b.Property<Guid?>("RecipientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recipient_id");
+
+                    b.Property<string>("RecipientKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("recipient_kind");
+
+                    b.Property<string>("RecipientName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recipient_name");
+
+                    b.Property<string>("RecipientPhone")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("recipient_phone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Queued")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notification_deliveries");
+
+                    b.HasIndex("NotificationId")
+                        .HasDatabaseName("ix_notification_deliveries_notification_id");
+
+                    b.HasIndex("TenantId", "Channel")
+                        .HasDatabaseName("ix_notification_deliveries_tenant_id_channel");
+
+                    b.HasIndex("TenantId", "Status", "NextAttemptAt")
+                        .HasDatabaseName("ix_notification_deliveries_tenant_id_status_next_attempt_at");
+
+                    b.ToTable("notification_deliveries", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.NotificationDeliveryAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_number");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DeliveryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("delivery_id");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("error_message");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("ProviderResponse")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("provider_response");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notification_delivery_attempts");
+
+                    b.HasIndex("DeliveryId", "AttemptNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_notification_delivery_attempts_delivery_id_attempt_number");
+
+                    b.ToTable("notification_delivery_attempts", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.NotificationTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BodyTemplate")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body_template");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("event_type");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("pt-BR")
+                        .HasColumnName("language");
+
+                    b.Property<string>("SubjectTemplate")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("subject_template");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("WhatsAppTemplateName")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("whats_app_template_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notification_templates");
+
+                    b.HasIndex("EventType", "Channel", "Language")
+                        .IsUnique()
+                        .HasDatabaseName("ix_notification_templates_event_type_channel_language");
+
+                    b.ToTable("notification_templates", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.OccupancyKind", b =>
                 {
                     b.Property<Guid>("Id")
@@ -847,6 +1518,130 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_plan_tasks_tenant_id_maintenance_plan_id_order");
 
                     b.ToTable("plan_tasks", "pmoc");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ProductRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Submitted")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_product_requests");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_product_requests_customer_id");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .HasDatabaseName("ix_product_requests_tenant_id_created_at");
+
+                    b.HasIndex("TenantId", "CustomerId")
+                        .HasDatabaseName("ix_product_requests_tenant_id_customer_id");
+
+                    b.ToTable("product_requests", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ProductRequestFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("MimeType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("mime_type");
+
+                    b.Property<Guid>("ProductRequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_request_id");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("storage_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("InternalB2B")
+                        .HasColumnName("visibility");
+
+                    b.HasKey("Id")
+                        .HasName("pk_product_request_files");
+
+                    b.HasIndex("ProductRequestId")
+                        .HasDatabaseName("ix_product_request_files_product_request_id");
+
+                    b.HasIndex("TenantId", "ProductRequestId")
+                        .HasDatabaseName("ix_product_request_files_tenant_id_product_request_id");
+
+                    b.ToTable("product_request_files", "catalog");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.RentalAsset", b =>
@@ -1825,6 +2620,50 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("tenant_module_menu_items", "core");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantNotificationChannelConfig", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("event_type");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tenant_notification_channel_configs");
+
+                    b.HasIndex("TenantId", "EventType", "Channel")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tenant_notification_channel_configs_tenant_id_event_type_ch");
+
+                    b.ToTable("tenant_notification_channel_configs", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.TenantRegistrationField", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2113,6 +2952,25 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("user_invites", "core");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.UserInviteRole", b =>
+                {
+                    b.Property<Guid>("InviteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invite_id");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
+                    b.HasKey("InviteId", "RoleId")
+                        .HasName("pk_user_invite_roles");
+
+                    b.HasIndex("RoleId")
+                        .HasDatabaseName("ix_user_invite_roles_role_id");
+
+                    b.ToTable("user_invite_roles", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.UserRole", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -2314,6 +3172,63 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Unit");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_orders_customers_customer_id");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItem", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogOrder", "Order")
+                        .WithMany("Items")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_order_items_catalog_orders_order_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_order_items_catalog_products_product_id");
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderStatusHistory", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogOrder", "Order")
+                        .WithMany("History")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_order_status_history_catalog_orders_order_id");
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductFile", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", "Product")
+                        .WithMany("Files")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_files_catalog_products_product_id");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.GlobalTemplateTask", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.GlobalMaintenanceTemplate", "GlobalMaintenanceTemplate")
@@ -2347,6 +3262,30 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Unit");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.NotificationDelivery", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Notification", "Notification")
+                        .WithMany("Deliveries")
+                        .HasForeignKey("NotificationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_notification_deliveries_notifications_notification_id");
+
+                    b.Navigation("Notification");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.NotificationDeliveryAttempt", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.NotificationDelivery", "Delivery")
+                        .WithMany("Attempts")
+                        .HasForeignKey("DeliveryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_notification_delivery_attempts_notification_deliveries_deli");
+
+                    b.Navigation("Delivery");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.OtpCode", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
@@ -2369,6 +3308,30 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_plan_tasks_maintenance_plans_maintenance_plan_id");
 
                     b.Navigation("MaintenancePlan");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ProductRequest", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_product_requests_customers_customer_id");
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ProductRequestFile", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.ProductRequest", "ProductRequest")
+                        .WithMany("Files")
+                        .HasForeignKey("ProductRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_product_request_files_product_requests_product_request_id");
+
+                    b.Navigation("ProductRequest");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.RentalAsset", b =>
@@ -2702,6 +3665,27 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.UserInviteRole", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.UserInvite", "Invite")
+                        .WithMany("InviteRoles")
+                        .HasForeignKey("InviteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_invite_roles_user_invites_invite_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Role", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_invite_roles_roles_role_id");
+
+                    b.Navigation("Invite");
+
+                    b.Navigation("Role");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.UserRole", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Role", "Role")
@@ -2781,6 +3765,18 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Assets");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
+                {
+                    b.Navigation("History");
+
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProduct", b =>
+                {
+                    b.Navigation("Files");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Customer", b =>
                 {
                     b.Navigation("OtpCodes");
@@ -2796,9 +3792,24 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Tasks");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.Notification", b =>
+                {
+                    b.Navigation("Deliveries");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.NotificationDelivery", b =>
+                {
+                    b.Navigation("Attempts");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Permission", b =>
                 {
                     b.Navigation("RolePermissions");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ProductRequest", b =>
+                {
+                    b.Navigation("Files");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.RentalAsset", b =>
@@ -2846,6 +3857,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Platform.Core.Domain.Entities.User", b =>
                 {
                     b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.UserInvite", b =>
+                {
+                    b.Navigation("InviteRoles");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrder", b =>

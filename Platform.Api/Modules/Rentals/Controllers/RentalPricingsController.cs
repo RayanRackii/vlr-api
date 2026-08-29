@@ -1,17 +1,18 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Rentals.Controllers;
 
 [ApiController]
-[Authorize]
 [Route("api/assets/{assetId:guid}/pricing")]
 public sealed class RentalPricingsController(
     IRentalPricingService rentalPricingService) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(Permissions.Rentals.PricingRead)]
     public async Task<ActionResult<IReadOnlyList<RentalPricingResponseDto>>> List(
         Guid assetId,
         CancellationToken cancellationToken)
@@ -28,6 +29,7 @@ public sealed class RentalPricingsController(
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Rentals.PricingWrite)]
     public async Task<ActionResult<RentalPricingResponseDto>> Create(
         Guid assetId,
         [FromBody] CreateRentalPricingDto request,
@@ -55,6 +57,7 @@ public sealed class RentalPricingsController(
     }
 
     [HttpPut("{pricingId:guid}")]
+    [RequirePermission(Permissions.Rentals.PricingWrite)]
     public async Task<ActionResult<RentalPricingResponseDto>> Update(
         Guid assetId,
         Guid pricingId,
@@ -91,6 +94,7 @@ public sealed class RentalPricingsController(
     }
 
     [HttpDelete("{pricingId:guid}")]
+    [RequirePermission(Permissions.Rentals.PricingWrite)]
     public async Task<IActionResult> Delete(
         Guid assetId,
         Guid pricingId,

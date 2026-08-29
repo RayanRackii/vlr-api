@@ -6,7 +6,7 @@
 3. [`.cursor/rules/`](./.cursor/rules/) — produto, arquitetura, convenções, rentals
 4. [`docs/adr/`](./docs/adr/) — decisões duras (ex.: schedule Slot-first)
 5. [`docs/sessions/`](./docs/sessions/) — diários operacionais de sessão
-6. [`docs/runbooks/`](./docs/runbooks/) — procedimentos (enter órfão, [entrega autônoma](./docs/runbooks/autonomous-delivery.md), etc.)
+6. [`docs/runbooks/`](./docs/runbooks/) — procedimentos (enter órfão, [entrega autônoma](./docs/runbooks/autonomous-delivery.md), [migrations remotas](./docs/runbooks/database-migrations.md), etc.)
 
 ## Repos
 - **Este:** `vlr-api` (.NET 10, Railway).

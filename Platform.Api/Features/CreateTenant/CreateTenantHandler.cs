@@ -1,6 +1,7 @@
 using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Platform.Api.Authorization;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -38,13 +39,16 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 
     private readonly AppDbContext _dbContext;
     private readonly ISupabaseAuthAdminClient _supabaseAuthAdminClient;
+    private readonly ITenantAccessBootstrapper _tenantAccessBootstrapper;
 
     public CreateTenantHandler(
         AppDbContext dbContext,
-        ISupabaseAuthAdminClient supabaseAuthAdminClient)
+        ISupabaseAuthAdminClient supabaseAuthAdminClient,
+        ITenantAccessBootstrapper tenantAccessBootstrapper)
     {
         _dbContext = dbContext;
         _supabaseAuthAdminClient = supabaseAuthAdminClient;
+        _tenantAccessBootstrapper = tenantAccessBootstrapper;
     }
 
     public async Task<IResult> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken)
@@ -163,6 +167,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
+            await _tenantAccessBootstrapper.EnsureAsync(tenant.Id, cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
 

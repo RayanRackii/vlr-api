@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
@@ -14,7 +15,8 @@ public sealed class WorkOrderService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IHttpContextAccessor httpContextAccessor,
-    IUserDirectoryService userDirectoryService) : IWorkOrderService
+    IUserDirectoryService userDirectoryService,
+    IPermissionResolver permissionResolver) : IWorkOrderService
 {
     public async Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
         Guid? assetId,
@@ -30,7 +32,7 @@ public sealed class WorkOrderService(
             .Include(w => w.Tasks)
             .AsQueryable();
 
-        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
         {
             query = query.Where(w => w.AssignedUserId == currentUser.Id);
         }
@@ -62,7 +64,7 @@ public sealed class WorkOrderService(
             .Include(w => w.Tasks)
             .AsQueryable();
 
-        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
         {
             query = query.Where(w => w.AssignedUserId == currentUser.Id);
         }
@@ -106,16 +108,16 @@ public sealed class WorkOrderService(
                 ?? throw new KeyNotFoundException(
                     $"Assigned user '{assignedUserId}' was not found.");
 
-            var isTechnician = assignedUser.UserRoles.Any(userRole =>
-                string.Equals(
-                    userRole.Role.Name,
-                    SystemRoles.Technician,
-                    StringComparison.OrdinalIgnoreCase));
+            var canExecute = await permissionResolver.HasPermissionAsync(
+                tenantId,
+                assignedUserId,
+                Permissions.Os.WorkOrdersExecute,
+                cancellationToken);
 
-            if (!isTechnician)
+            if (!canExecute)
             {
                 throw new ArgumentException(
-                    $"Assigned user '{assignedUserId}' does not have the Technician role.");
+                    $"Assigned user '{assignedUserId}' cannot execute work orders.");
             }
         }
 
@@ -182,7 +184,7 @@ public sealed class WorkOrderService(
             .Include(w => w.Tasks)
             .AsQueryable();
 
-        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
         {
             query = query.Where(w => w.AssignedUserId == currentUser.Id);
         }
@@ -231,7 +233,7 @@ public sealed class WorkOrderService(
             .Include(w => w.Tasks)
             .AsQueryable();
 
-        if (currentUser.Role is ApplicationRoles.Technician or ApplicationRoles.User)
+        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
         {
             query = query.Where(w => w.AssignedUserId == currentUser.Id);
         }
@@ -283,6 +285,37 @@ public sealed class WorkOrderService(
     {
         return tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
+    }
+
+    private async Task<bool> RestrictToAssignedAsync(
+        CurrentUserResponse currentUser,
+        CancellationToken cancellationToken)
+    {
+        if (currentUser.Id is not Guid userId || tenantProvider.TenantId is not Guid tenantId)
+        {
+            return false;
+        }
+
+        if (await permissionResolver.HasPermissionAsync(
+                tenantId,
+                userId,
+                Permissions.Os.WorkOrdersCreate,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        if (currentUser.Roles.Any(role =>
+                role.IsSystemRole && PermissionResolver.IsAdminOrSuperAdminName(role.Name)))
+        {
+            return false;
+        }
+
+        return await permissionResolver.HasPermissionAsync(
+            tenantId,
+            userId,
+            Permissions.Os.WorkOrdersExecute,
+            cancellationToken);
     }
 
     private Task<CurrentUserResponse> GetCurrentUserAsync(
