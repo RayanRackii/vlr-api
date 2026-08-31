@@ -24,18 +24,18 @@ public sealed class PhoneVerificationSendGate(
 
         lock (_sync)
         {
-            if (cache.TryGetValue(CooldownKey(tenantId, normalizedEmail), out DateTimeOffset lastSuccess)
-                && now - lastSuccess < EmailCooldown)
-            {
-                return PhoneVerificationSendDecision.Cooldown;
-            }
-
             var attempts = GetIpAttempts(ip);
             attempts.RemoveAll(at => now - at >= IpWindow);
             if (attempts.Count >= IpMaxAttempts)
             {
                 cache.Set(IpKey(ip), attempts, IpWindow);
                 return PhoneVerificationSendDecision.Limited;
+            }
+
+            if (cache.TryGetValue(CooldownKey(tenantId, normalizedEmail), out DateTimeOffset lastSuccess)
+                && now - lastSuccess < EmailCooldown)
+            {
+                return PhoneVerificationSendDecision.Cooldown;
             }
 
             attempts.Add(now);
