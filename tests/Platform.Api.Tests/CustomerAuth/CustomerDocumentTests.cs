@@ -4,7 +4,6 @@ using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.Services;
 using Platform.Api.Modules.RegistrationFields.Dtos;
 using Platform.Api.Modules.RegistrationFields.Services;
-using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
@@ -121,7 +120,7 @@ public sealed class CustomerDocumentTests
             new FakeJwtIssuer(),
             new FakeViaCep(),
             new EmptyRegistrationFields(),
-            new NotificationQueue(),
+            new FakePhoneVerificationClient(),
             NullLogger<CustomerAuthService>.Instance);
         return new AuthHarness(db, tenant, auth);
     }
