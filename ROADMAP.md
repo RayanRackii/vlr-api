@@ -144,7 +144,8 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - [x] Catalog domain + orders state machine + outbox notifications
 - [x] `AllowExternalDelivery` unset = false
 - [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
-- [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
+- [x] Aplicar migration `20260828175423_AddCatalogOrdersAndCustomerDocument` no **DEV** (workflow `database-migrations`, `target=development`, `mode=apply`, 2026-08-28; `PENDING_COUNT=0`). **PROD não aplicado.**
+- [ ] Live smoke DEV (módulo `catalog` ainda inativo; ativação só no tenant de teste, Human Gate)
 - [x] B2C portal: explicit 403 when `catalog` module inactive (other modules still pending generic middleware, §4)
 
 ## Dívidas técnicas conhecidas
@@ -213,5 +214,6 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-08-22 | **Executado (API):** fila de espera B2C opcional por Location — `QueueEnabled` + `QueueOpeningTime` (T diário America/Sao_Paulo); waiting room T−30 min; turno Active 90s; F-01 permanece. Migration `AddReservationWaitingQueue`. Spec `docs/plans/active/2026-08-22-reservation-waiting-queue.md`; ADR 0003. UI no `vlr-web`. |
 | 2026-08-22 | **Follow-up fila (release):** `CompleteTurnAsync` revalida `TurnExpiresAt` (QUEUE_TURN_EXPIRED); isolamento tenant em Testcontainers; testes de relógio na meia-noite e abertura 00:15. |
 | 2026-08-27 | **Executado (API):** Tenant RBAC v1 — Roles/Permissions enforcement, invite `roleIds[]`, `/me` additive `roles`+`permissions`, migration `AddTenantRbacV1`. Spec `docs/plans/active/2026-08-27-tenant-rbac-v1.md`. UI no `vlr-web`. |
-| 2026-08-28 | **Iniciado:** Catalog & Orders v1 — spec `docs/plans/active/2026-08-28-catalog-orders.md`; PF/PJ; storage; outbox; `AllowExternalDelivery` unset=false. Branch `feat/catalog-orders`. Migration **não** aplicada. |
+| 2026-08-28 | **Iniciado:** Catalog & Orders v1 — spec `docs/plans/active/2026-08-28-catalog-orders.md`; PF/PJ; storage; outbox; `AllowExternalDelivery` unset=false. Branch `feat/catalog-orders`. |
 | 2026-08-28 | **Review-fix:** INSERT das 6 keys em `core.permissions`; `EnsureAsync` no update de tenant; testes de isolamento/RBAC. |
+| 2026-08-28 | **DEV:** migration `20260828175423_AddCatalogOrdersAndCustomerDocument` **aplicada** (identity `jzptnjyzijklutinpxag`, assembly 33/33, pending 0). Módulo `catalog` permanece inativo. PROD não tocado. |
