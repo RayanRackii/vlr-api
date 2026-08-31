@@ -89,6 +89,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
 - [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
+- [x] Gates por canal: `AllowExternalEmail` / `AllowExternalWhatsApp` (override do global). Unset continua fail-closed. SMS Catalog permanece Dev.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
 - [x] Cadastro pending (`PhoneVerifiedAt` null) com o mesmo e-mail + telefone + documento **retoma** a linha; falha Twilio **não apaga** o Customer; DTO `verificationStarted`.
@@ -221,3 +222,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-08-28 | **Review-fix:** INSERT das 6 keys em `core.permissions`; `EnsureAsync` no update de tenant; testes de isolamento/RBAC. |
 | 2026-08-31 | **Executado (API):** verificação de celular B2C via Twilio Verify v2 (`IPhoneVerificationClient`, sync). `core.otp_codes` deixa de ser escrito neste path. Catalog SMS (`ISmsProvider`) inalterado. Sem migration, sem PROD. Spec `docs/plans/active/2026-08-31-twilio-verify-phone.md`. Merge Risk Gate: `SAFE_WITH_FOLLOWUP` (enumeração 404 no resend; rate limit só Twilio; resend de já-verificado). |
 | 2026-08-31 | **Fix:** cadastro B2C pending (`PhoneVerifiedAt` null) com e-mail+telefone+documento iguais retoma a linha (atualiza nome/senha); falha Twilio não apaga Customer; `verificationStarted` no DTO de register. Resend 202 neutro (desconhecido/já verificado/cooldown); rate limit de aplicação (45s e-mail, 10/10min IP → 429 só no resend). Fecha follow-ups Fable do Twilio Verify. Spec `docs/plans/active/2026-08-31-b2c-pending-registration.md`. |
+| 2026-08-31 | **Fix:** gates `AllowExternalEmail` / `AllowExternalWhatsApp` com fallback no global `AllowExternalDelivery`. Unset continua fail-closed. SMS Catalog permanece Dev. Sem alterar Railway/PROD. |

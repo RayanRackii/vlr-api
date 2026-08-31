@@ -8,8 +8,8 @@ public static class NotificationsServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the notification queue and dispatcher. Resend / Meta are
-    /// registered only when <c>effectiveAllowExternal &amp;&amp; credentialsConfigured</c>;
-    /// otherwise Dev providers are used (console log, no HTTP).
+    /// registered only when the resolved channel gate is true and credentials
+    /// exist; otherwise Dev providers are used (console log, no HTTP).
     /// </summary>
     public static IServiceCollection AddNotificationInfrastructure(
         this IServiceCollection services,
@@ -25,17 +25,23 @@ public static class NotificationsServiceCollectionExtensions
         services.Configure<ResendOptions>(configuration.GetSection(ResendOptions.SectionName));
         services.Configure<MetaWhatsAppOptions>(configuration.GetSection(MetaWhatsAppOptions.SectionName));
 
-        var allowExternalDelivery = configuration
+        var options = configuration
             .GetSection(NotificationsOptions.SectionName)
             .Get<NotificationsOptions>()
-            ?.AllowExternalDelivery;
+            ?? new NotificationsOptions();
 
-        var effectiveAllowExternal = allowExternalDelivery == true;
+        var emailGate = ExternalDeliveryResolution.IsEnabled(
+            options.AllowExternalEmail,
+            options.AllowExternalDelivery);
+        var whatsAppGate = ExternalDeliveryResolution.IsEnabled(
+            options.AllowExternalWhatsApp,
+            options.AllowExternalDelivery);
 
         var resendConfigured = !string.IsNullOrWhiteSpace(configuration["Resend:ApiKey"])
             && !string.IsNullOrWhiteSpace(configuration["Resend:FromEmail"]);
 
-        if (effectiveAllowExternal && resendConfigured)
+        var emailExternal = emailGate && resendConfigured;
+        if (emailExternal)
         {
             services.AddHttpClient<IEmailProvider, ResendEmailProvider>();
         }
@@ -47,7 +53,8 @@ public static class NotificationsServiceCollectionExtensions
         var whatsAppConfigured = !string.IsNullOrWhiteSpace(configuration["WhatsApp:AccessToken"])
             && !string.IsNullOrWhiteSpace(configuration["WhatsApp:PhoneNumberId"]);
 
-        if (effectiveAllowExternal && whatsAppConfigured)
+        var whatsAppExternal = whatsAppGate && whatsAppConfigured;
+        if (whatsAppExternal)
         {
             services.AddHttpClient<IWhatsAppProvider, MetaWhatsAppProvider>();
         }
@@ -58,7 +65,8 @@ public static class NotificationsServiceCollectionExtensions
 
         services.AddScoped<ISmsProvider, DevSmsProvider>();
         services.AddHostedService(sp => new NotificationDeliveryGateHostedService(
-            effectiveAllowExternal,
+            emailExternal,
+            whatsAppExternal,
             sp.GetRequiredService<ILogger<NotificationDeliveryGateHostedService>>()));
 
         return services;
@@ -66,19 +74,18 @@ public static class NotificationsServiceCollectionExtensions
 }
 
 internal sealed class NotificationDeliveryGateHostedService(
-    bool enabled,
+    bool emailEnabled,
+    bool whatsAppEnabled,
     ILogger<NotificationDeliveryGateHostedService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (enabled)
-        {
-            logger.LogInformation("External notification delivery enabled");
-        }
-        else
-        {
-            logger.LogInformation("External notification delivery disabled");
-        }
+        logger.LogInformation(
+            "External email delivery {State}",
+            emailEnabled ? "enabled" : "disabled");
+        logger.LogInformation(
+            "External WhatsApp delivery {State}",
+            whatsAppEnabled ? "enabled" : "disabled");
 
         return Task.CompletedTask;
     }
