@@ -38,13 +38,19 @@ public sealed record RegisterCustomerRequestDto
 
 public sealed record RegisterCustomerResponseDto(
     Guid CustomerId,
-    bool RequiresPhoneVerification);
+    bool RequiresPhoneVerification,
+    bool VerificationStarted);
 
 public sealed record VerifyPhoneRequestDto
 {
     public required string Email { get; init; }
 
     public required string Code { get; init; }
+}
+
+public sealed record ResendVerificationRequestDto
+{
+    public required string Email { get; init; }
 }
 
 public sealed record CustomerLoginRequestDto

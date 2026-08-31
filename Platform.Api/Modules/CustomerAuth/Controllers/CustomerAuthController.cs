@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Dtos;
+using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.CustomerAuth.Services;
 using Platform.Api.Modules.RegistrationFields.Dtos;
 using Platform.Api.Modules.RegistrationFields.Services;
@@ -64,6 +65,18 @@ public sealed class CustomerAuthController(
             var response = await customerAuthService.RegisterAsync(request, cancellationToken);
             return Ok(response);
         }
+        catch (PhoneVerificationProviderException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = ex.Message });
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
+        catch (PhoneVerificationInvalidException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -85,6 +98,18 @@ public sealed class CustomerAuthController(
             await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
             var response = await customerAuthService.VerifyPhoneAsync(request, cancellationToken);
             return Ok(response);
+        }
+        catch (PhoneVerificationProviderException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = ex.Message });
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
+        catch (PhoneVerificationInvalidException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
         }
         catch (ArgumentException ex)
         {
@@ -130,6 +155,18 @@ public sealed class CustomerAuthController(
             await customerAuthService.RequestOtpAsync(request, cancellationToken);
             return Accepted(new { message = "OTP sent." });
         }
+        catch (PhoneVerificationProviderException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = ex.Message });
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
+        catch (PhoneVerificationInvalidException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -148,6 +185,18 @@ public sealed class CustomerAuthController(
             var response = await customerAuthService.VerifyOtpAsync(request, cancellationToken);
             return Ok(response);
         }
+        catch (PhoneVerificationProviderException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = ex.Message });
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
+        catch (PhoneVerificationInvalidException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -155,6 +204,32 @@ public sealed class CustomerAuthController(
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("resend-verification")]
+    public async Task<IActionResult> ResendVerification(
+        [FromBody] ResendVerificationRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            await customerAuthService.ResendVerificationAsync(request, cancellationToken);
+            return Accepted();
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
+        catch (PhoneVerificationInvalidException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
     }
 }

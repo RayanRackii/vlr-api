@@ -1,11 +1,11 @@
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Dtos;
+using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.RegistrationFields.Services;
-using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -19,10 +19,11 @@ public sealed class CustomerAuthService(
     ICustomerJwtIssuer customerJwtIssuer,
     IViaCepClient viaCepClient,
     IRegistrationFieldService registrationFieldService,
-    NotificationQueue notificationQueue,
-    ILogger<CustomerAuthService> logger) : ICustomerAuthService
+    IPhoneVerificationClient phoneVerification,
+    IPhoneVerificationSendGate sendGate,
+    ILogger<CustomerAuthService> logger,
+    IHttpContextAccessor? httpContextAccessor = null) : ICustomerAuthService
 {
-    private static readonly TimeSpan OtpLifetime = TimeSpan.FromMinutes(10);
     private static readonly PasswordHasher<Customer> PasswordHasher = new();
     private const int MinimumPasswordLength = 8;
 
@@ -43,6 +44,14 @@ public sealed class CustomerAuthService(
         var contact = ParseContact(request.Contact);
         var customer = await FindCustomerByContactAsync(contact, cancellationToken);
 
+        var phone = contact.Kind == ContactKind.Phone
+            ? contact.Normalized
+            : customer?.Phone;
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            throw new ArgumentException("Phone is required for SMS verification.");
+        }
+
         if (customer is null)
         {
             customer = new Customer
@@ -54,18 +63,13 @@ public sealed class CustomerAuthService(
             };
 
             dbContext.Customers.Add(customer);
-        }
-        else if (!string.Equals(customer.Name, name, StringComparison.Ordinal))
-        {
-            customer.Name = name;
-            customer.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        await IssueAndEnqueuePhoneCodeAsync(customer, cancellationToken);
+        await phoneVerification.StartVerificationAsync(phone, cancellationToken);
 
         logger.LogInformation(
-            "Legacy OTP generated for contact {Contact} (customer {CustomerId}).",
-            contact.Normalized,
+            "Phone verification started for customer {CustomerId}.",
             customer.Id);
     }
 
@@ -76,19 +80,22 @@ public sealed class CustomerAuthService(
         EnsureTenantContext();
 
         var contact = ParseContact(request.Contact);
-        var code = (request.Code ?? string.Empty).Trim();
-
-        if (!Regex.IsMatch(code, @"^\d{6}$"))
-        {
-            throw new UnauthorizedAccessException("Invalid or expired OTP code.");
-        }
+        var code = RequireSixDigitCode(request.Code);
 
         var customer = await FindCustomerByContactAsync(contact, cancellationToken)
-            ?? throw new UnauthorizedAccessException("Invalid or expired OTP code.");
+            ?? throw new UnauthorizedAccessException("Invalid or expired verification code.");
 
-        await ConsumeOtpAsync(customer.Id, code, cancellationToken);
+        var phone = contact.Kind == ContactKind.Phone
+            ? contact.Normalized
+            : customer.Phone;
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            throw new ArgumentException("Phone is required for SMS verification.");
+        }
 
-        if (contact.Kind == ContactKind.Phone && !customer.IsPhoneVerified)
+        await phoneVerification.CheckVerificationAsync(phone, code, cancellationToken);
+
+        if (!customer.IsPhoneVerified)
         {
             customer.MarkPhoneVerified(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -132,99 +139,62 @@ public sealed class CustomerAuthService(
             extras["cpf"] = cpf;
         }
 
-        var documentTaken = await dbContext.Customers
-            .AnyAsync(c => c.Document == document, cancellationToken);
-        if (documentTaken)
+        var matches = await LoadRegistrationMatchesAsync(
+            email,
+            phone,
+            document,
+            cpf,
+            cancellationToken);
+
+        if (matches.Exists(c => c.PhoneVerifiedAt is not null))
         {
-            throw new InvalidOperationException("A customer with this document already exists.");
+            throw DuplicateIdentityException(
+                matches.Where(c => c.PhoneVerifiedAt is not null).ToList(),
+                email,
+                phone,
+                document,
+                cpf);
         }
 
-        if (cpf is not null)
+        Customer customer;
+        if (matches.Count == 0)
         {
-            var cpfTaken = await dbContext.Customers
-                .AnyAsync(c => c.Cpf == cpf, cancellationToken);
-            if (cpfTaken)
-            {
-                throw new InvalidOperationException("A customer with this CPF already exists.");
-            }
+            customer = await InsertCustomerAsync(
+                tenantId,
+                name,
+                email,
+                password,
+                phone,
+                request.CustomerType,
+                cpf,
+                document,
+                extras,
+                cancellationToken);
         }
-
-        string? postalCode = null;
-        string? street = null;
-        string? neighborhood = null;
-        string? city = null;
-        string? state = null;
-
-        var cepKey = extras.Keys.FirstOrDefault(k =>
-            string.Equals(k, "cep", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(k, "postalCode", StringComparison.OrdinalIgnoreCase));
-
-        if (cepKey is not null && !string.IsNullOrWhiteSpace(extras[cepKey]))
+        else if (matches.Count == 1
+                 && IsFullPendingMatch(matches[0], email, phone, document))
         {
-            var address = await viaCepClient.LookupAsync(extras[cepKey]!, cancellationToken);
-            postalCode = address.PostalCode;
-            street = address.Street;
-            neighborhood = address.Neighborhood;
-            city = address.City;
-            state = address.State;
-            extras[cepKey] = postalCode;
-        }
-
-        string? photoUrl = null;
-        if (extras.TryGetValue("photo", out var photo)
-            || extras.TryGetValue("photoUrl", out photo))
-        {
-            photoUrl = photo;
-        }
-
-        var emailTaken = await dbContext.Customers
-            .AnyAsync(c => c.Email == email, cancellationToken);
-        if (emailTaken)
-        {
-            throw new InvalidOperationException("A customer with this email already exists.");
-        }
-
-        var phoneTaken = await dbContext.Customers
-            .AnyAsync(c => c.Phone == phone, cancellationToken);
-        if (phoneTaken)
-        {
-            throw new InvalidOperationException("A customer with this phone already exists.");
-        }
-
-        var customer = new Customer
-        {
-            TenantId = tenantId,
-            Name = name,
-            Email = email,
-            Phone = phone,
-            CustomerType = request.CustomerType,
-            Cpf = cpf,
-            Document = document,
-            PostalCode = postalCode,
-            AddressStreet = street,
-            AddressNeighborhood = neighborhood,
-            AddressCity = city,
-            AddressState = state,
-            PhotoUrl = photoUrl,
-            ExtraAttributes = extras,
-        };
-
-        customer.PasswordHash = PasswordHasher.HashPassword(customer, password);
-        dbContext.Customers.Add(customer);
-
-        try
-        {
+            customer = matches[0];
+            customer.Name = name;
+            customer.PasswordHash = PasswordHasher.HashPassword(customer, password);
+            customer.Touch();
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        else
         {
-            throw new InvalidOperationException(
-                "A customer with the same email, document, or phone already exists.");
+            throw DuplicateIdentityException(matches, email, phone, document, cpf);
         }
 
-        await IssueAndEnqueuePhoneCodeAsync(customer, cancellationToken);
+        var started = await TryStartVerificationForRegisterAsync(
+            tenantId,
+            email,
+            RequirePhone(customer),
+            cancellationToken);
 
-        return new RegisterCustomerResponseDto(customer.Id, RequiresPhoneVerification: true);
+        return new RegisterCustomerResponseDto(
+            customer.Id,
+            RequiresPhoneVerification: true,
+            VerificationStarted: started);
     }
 
     public async Task<AuthResponseDto> VerifyPhoneAsync(
@@ -234,23 +204,66 @@ public sealed class CustomerAuthService(
         EnsureTenantContext();
 
         var email = NormalizeEmail(request.Email);
-        var code = (request.Code ?? string.Empty).Trim();
-
-        if (!Regex.IsMatch(code, @"^\d{6}$"))
-        {
-            throw new UnauthorizedAccessException("Invalid or expired verification code.");
-        }
+        var code = RequireSixDigitCode(request.Code);
 
         var customer = await dbContext.Customers
             .FirstOrDefaultAsync(c => c.Email == email, cancellationToken)
             ?? throw new UnauthorizedAccessException("Invalid or expired verification code.");
 
-        await ConsumeOtpAsync(customer.Id, code, cancellationToken);
+        var phone = RequirePhone(customer);
+        await phoneVerification.CheckVerificationAsync(phone, code, cancellationToken);
 
         customer.MarkPhoneVerified(DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return BuildAuthResponse(customer);
+    }
+
+    public async Task ResendVerificationAsync(
+        ResendVerificationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+
+        var email = NormalizeEmail(request.Email);
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(tenantId, email, clientIp);
+
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            throw new PhoneVerificationRateLimitedException(
+                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
+        }
+
+        var customer = await dbContext.Customers
+            .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
+
+        if (customer is null
+            || customer.IsPhoneVerified
+            || string.IsNullOrWhiteSpace(customer.Phone))
+        {
+            return;
+        }
+
+        if (decision == PhoneVerificationSendDecision.Cooldown)
+        {
+            return;
+        }
+
+        try
+        {
+            await phoneVerification.StartVerificationAsync(customer.Phone, cancellationToken);
+            sendGate.RecordSuccess(tenantId, email, clientIp);
+        }
+        catch (PhoneVerificationProviderException)
+        {
+        }
+        catch (PhoneVerificationRateLimitedException)
+        {
+        }
+        catch (PhoneVerificationInvalidException)
+        {
+        }
     }
 
     public async Task<AuthResponseDto> LoginAsync(
@@ -373,71 +386,6 @@ public sealed class CustomerAuthService(
         return MapProfile(customer);
     }
 
-    private async Task IssueAndEnqueuePhoneCodeAsync(
-        Customer customer,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(customer.Phone))
-        {
-            throw new ArgumentException("Phone is required for SMS verification.");
-        }
-
-        var tenantId = customer.TenantId;
-        var code = GenerateOtpCode();
-        var now = DateTimeOffset.UtcNow;
-
-        var previousOtps = await dbContext.OtpCodes
-            .Where(o => o.CustomerId == customer.Id && !o.IsUsed)
-            .ToListAsync(cancellationToken);
-
-        foreach (var previous in previousOtps)
-        {
-            previous.MarkAsUsed();
-        }
-
-        dbContext.OtpCodes.Add(new OtpCode
-        {
-            TenantId = tenantId,
-            CustomerId = customer.Id,
-            Code = code,
-            ExpiresAt = now.Add(OtpLifetime),
-            IsUsed = false,
-        });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await notificationQueue.EnqueueAsync(
-            new NotificationMessage(
-                Type: "Sms",
-                Recipient: customer.Phone,
-                Subject: "Verification",
-                Body: $"Seu codigo Rolvix: {code}. Valido por 10 minutos."),
-            cancellationToken);
-    }
-
-    private async Task ConsumeOtpAsync(
-        Guid customerId,
-        string code,
-        CancellationToken cancellationToken)
-    {
-        var now = DateTimeOffset.UtcNow;
-
-        var otp = await dbContext.OtpCodes
-            .Where(o => o.CustomerId == customerId
-                        && !o.IsUsed
-                        && o.ExpiresAt > now)
-            .OrderByDescending(o => o.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (otp is null || !string.Equals(otp.Code, code, StringComparison.Ordinal))
-        {
-            throw new UnauthorizedAccessException("Invalid or expired verification code.");
-        }
-
-        otp.MarkAsUsed();
-        await dbContext.SaveChangesAsync(cancellationToken);
-    }
-
     private AuthResponseDto BuildAuthResponse(Customer customer)
     {
         var token = customerJwtIssuer.IssueToken(customer);
@@ -479,6 +427,195 @@ public sealed class CustomerAuthService(
             customer.IsPhoneVerified,
             customer.ExtraAttributes);
 
+    private async Task<List<Customer>> LoadRegistrationMatchesAsync(
+        string email,
+        string phone,
+        string document,
+        string? cpf,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.Customers
+            .Where(c =>
+                c.Email == email
+                || c.Phone == phone
+                || c.Document == document
+                || (cpf != null && c.Cpf == cpf))
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<Customer> InsertCustomerAsync(
+        Guid tenantId,
+        string name,
+        string email,
+        string password,
+        string phone,
+        CustomerType customerType,
+        string? cpf,
+        string document,
+        Dictionary<string, string?> extras,
+        CancellationToken cancellationToken)
+    {
+        string? postalCode = null;
+        string? street = null;
+        string? neighborhood = null;
+        string? city = null;
+        string? state = null;
+
+        var cepKey = extras.Keys.FirstOrDefault(k =>
+            string.Equals(k, "cep", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(k, "postalCode", StringComparison.OrdinalIgnoreCase));
+
+        if (cepKey is not null && !string.IsNullOrWhiteSpace(extras[cepKey]))
+        {
+            var address = await viaCepClient.LookupAsync(extras[cepKey]!, cancellationToken);
+            postalCode = address.PostalCode;
+            street = address.Street;
+            neighborhood = address.Neighborhood;
+            city = address.City;
+            state = address.State;
+            extras[cepKey] = postalCode;
+        }
+
+        string? photoUrl = null;
+        if (extras.TryGetValue("photo", out var photo)
+            || extras.TryGetValue("photoUrl", out photo))
+        {
+            photoUrl = photo;
+        }
+
+        var customer = new Customer
+        {
+            TenantId = tenantId,
+            Name = name,
+            Email = email,
+            Phone = phone,
+            CustomerType = customerType,
+            Cpf = cpf,
+            Document = document,
+            PostalCode = postalCode,
+            AddressStreet = street,
+            AddressNeighborhood = neighborhood,
+            AddressCity = city,
+            AddressState = state,
+            PhotoUrl = photoUrl,
+            ExtraAttributes = extras,
+        };
+
+        customer.PasswordHash = PasswordHasher.HashPassword(customer, password);
+        dbContext.Customers.Add(customer);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            throw new InvalidOperationException(
+                "A customer with the same email, document, or phone already exists.");
+        }
+
+        return customer;
+    }
+
+    private async Task<bool> TryStartVerificationForRegisterAsync(
+        Guid tenantId,
+        string email,
+        string phone,
+        CancellationToken cancellationToken)
+    {
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(tenantId, email, clientIp);
+        if (decision == PhoneVerificationSendDecision.Cooldown)
+        {
+            return true;
+        }
+
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            return false;
+        }
+
+        try
+        {
+            await phoneVerification.StartVerificationAsync(phone, cancellationToken);
+            sendGate.RecordSuccess(tenantId, email, clientIp);
+            return true;
+        }
+        catch (PhoneVerificationProviderException)
+        {
+            return false;
+        }
+        catch (PhoneVerificationRateLimitedException)
+        {
+            return false;
+        }
+        catch (PhoneVerificationInvalidException)
+        {
+            return false;
+        }
+    }
+
+    private string? GetClientIp()
+    {
+        var httpContext = httpContextAccessor?.HttpContext;
+        if (httpContext is null)
+        {
+            return null;
+        }
+
+        var forwarded = httpContext.Request.Headers["X-Forwarded-For"].ToString();
+        if (!string.IsNullOrWhiteSpace(forwarded))
+        {
+            var firstHop = forwarded.Split(',', 2)[0].Trim();
+            if (firstHop.Length > 0)
+            {
+                return firstHop;
+            }
+        }
+
+        return httpContext.Connection.RemoteIpAddress?.ToString();
+    }
+
+    private static bool IsFullPendingMatch(
+        Customer customer,
+        string email,
+        string phone,
+        string document) =>
+        string.Equals(customer.Email, email, StringComparison.Ordinal)
+        && string.Equals(customer.Phone, phone, StringComparison.Ordinal)
+        && string.Equals(customer.Document, document, StringComparison.Ordinal);
+
+    private static InvalidOperationException DuplicateIdentityException(
+        IReadOnlyList<Customer> matches,
+        string email,
+        string phone,
+        string document,
+        string? cpf)
+    {
+        if (matches.Any(c => c.Document == document))
+        {
+            return new InvalidOperationException("A customer with this document already exists.");
+        }
+
+        if (cpf is not null && matches.Any(c => c.Cpf == cpf))
+        {
+            return new InvalidOperationException("A customer with this CPF already exists.");
+        }
+
+        if (matches.Any(c => c.Email == email))
+        {
+            return new InvalidOperationException("A customer with this email already exists.");
+        }
+
+        if (matches.Any(c => c.Phone == phone))
+        {
+            return new InvalidOperationException("A customer with this phone already exists.");
+        }
+
+        return new InvalidOperationException(
+            "A customer with the same email, document, or phone already exists.");
+    }
+
     private async Task<Customer?> FindCustomerByContactAsync(
         ParsedContact contact,
         CancellationToken cancellationToken)
@@ -499,9 +636,25 @@ public sealed class CustomerAuthService(
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
-    private static string GenerateOtpCode()
+    private static string RequirePhone(Customer customer)
     {
-        return RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        if (string.IsNullOrWhiteSpace(customer.Phone))
+        {
+            throw new ArgumentException("Phone is required for SMS verification.");
+        }
+
+        return customer.Phone;
+    }
+
+    private static string RequireSixDigitCode(string? code)
+    {
+        var trimmed = (code ?? string.Empty).Trim();
+        if (!Regex.IsMatch(trimmed, @"^\d{6}$"))
+        {
+            throw new PhoneVerificationInvalidException("Invalid or expired verification code.");
+        }
+
+        return trimmed;
     }
 
     private static string NormalizeEmail(string? email)
