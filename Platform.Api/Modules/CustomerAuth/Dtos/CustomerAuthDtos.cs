@@ -38,7 +38,8 @@ public sealed record RegisterCustomerRequestDto
 
 public sealed record RegisterCustomerResponseDto(
     Guid CustomerId,
-    bool RequiresPhoneVerification);
+    bool RequiresPhoneVerification,
+    bool VerificationStarted);
 
 public sealed record VerifyPhoneRequestDto
 {

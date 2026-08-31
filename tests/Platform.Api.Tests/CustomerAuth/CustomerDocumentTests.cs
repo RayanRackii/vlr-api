@@ -121,6 +121,7 @@ public sealed class CustomerDocumentTests
             new FakeViaCep(),
             new EmptyRegistrationFields(),
             new FakePhoneVerificationClient(),
+            new AllowAllPhoneVerificationSendGate(),
             NullLogger<CustomerAuthService>.Instance);
         return new AuthHarness(db, tenant, auth);
     }

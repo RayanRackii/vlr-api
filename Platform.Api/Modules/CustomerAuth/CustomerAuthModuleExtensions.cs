@@ -15,6 +15,8 @@ public static class CustomerAuthModuleExtensions
         {
             client.Timeout = TimeSpan.FromSeconds(10);
         });
+        services.AddMemoryCache();
+        services.AddSingleton<IPhoneVerificationSendGate, PhoneVerificationSendGate>();
         services.AddScoped<ICustomerAuthService, CustomerAuthService>();
         services.AddHttpClient<IViaCepClient, ViaCepClient>(client =>
         {
