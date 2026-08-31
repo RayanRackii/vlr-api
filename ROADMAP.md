@@ -90,7 +90,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
 - [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
 - [ ] Config externa Meta no Railway + template Authentication.
-- [ ] Provider SMS real quando sair do Dev.
+- [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
 
 ## 4. Enforcement de módulos por tenant
 
@@ -215,3 +215,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-08-27 | **Executado (API):** Tenant RBAC v1 — Roles/Permissions enforcement, invite `roleIds[]`, `/me` additive `roles`+`permissions`, migration `AddTenantRbacV1`. Spec `docs/plans/active/2026-08-27-tenant-rbac-v1.md`. UI no `vlr-web`. |
 | 2026-08-28 | **Iniciado:** Catalog & Orders v1 — spec `docs/plans/active/2026-08-28-catalog-orders.md`; PF/PJ; storage; outbox; `AllowExternalDelivery` unset=false. Branch `feat/catalog-orders`. Migration **não** aplicada. |
 | 2026-08-28 | **Review-fix:** INSERT das 6 keys em `core.permissions`; `EnsureAsync` no update de tenant; testes de isolamento/RBAC. |
+| 2026-08-31 | **Executado (API):** verificação de celular B2C via Twilio Verify v2 (`IPhoneVerificationClient`, sync). `core.otp_codes` deixa de ser escrito neste path. Catalog SMS (`ISmsProvider`) inalterado. Sem migration, sem PROD. Spec `docs/plans/active/2026-08-31-twilio-verify-phone.md`. |
