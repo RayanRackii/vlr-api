@@ -39,6 +39,8 @@ Detalhe de execução: este `ROADMAP.md` e o `ROADMAP.md` do repo `vlr-web`. Reg
 - **Login = e-mail + senha** em todos os tenants/projetos (mesmo padrão do B2B na experiência do usuário: credenciais de conta).
 - **Celular** não autentica: serve para **verificação por SMS no cadastro** (prova de posse) e, depois, **avisos via WhatsApp**.
 - Fluxo alvo: cadastro completo (inclui senha) → SMS no celular → login com e-mail + senha → JWT `Customer`.
+- Cadastro **pending** (`PhoneVerifiedAt` nulo): no mesmo tenant, um novo register com o **mesmo e-mail + telefone + documento** **retoma** essa linha (atualiza nome e senha) em vez de criar outra ou bloquear. Falha ao enviar o SMS **não apaga** o Customer e não deixa a conta órfã — a resposta inclui `verificationStarted` e o portal segue para verificação com reenvio.
+- Sobreposição parcial com pending (só e-mail, só telefone ou só documento) ou Customer já verificado → 409, sem hijack e sem delete.
 - O OTP-only atual por telefone é legado a aposentar quando o cadastro/login por senha estiver estável.
 
 **Branding do tenant — poucos campos, muita identidade (baixa manutenção):**
