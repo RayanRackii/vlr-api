@@ -416,6 +416,29 @@ public sealed class PhoneVerificationTests
         Assert.Empty(harness.Phone.StartedPhones);
     }
 
+    [Fact]
+    public async Task Resend_unknown_email_when_ip_limited_throws_rate_limit()
+    {
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var time = new TestTimeProvider(DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
+        var gate = new PhoneVerificationSendGate(cache, time);
+        await using var harness = await AuthHarness.CreateAsync(sendGate: gate);
+
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts; i++)
+        {
+            await harness.Auth.ResendVerificationAsync(
+                new ResendVerificationRequestDto { Email = $"unknown{i}@club.test" },
+                CancellationToken.None);
+        }
+
+        await Assert.ThrowsAsync<PhoneVerificationRateLimitedException>(
+            () => harness.Auth.ResendVerificationAsync(
+                new ResendVerificationRequestDto { Email = "still-unknown@club.test" },
+                CancellationToken.None));
+        Assert.Empty(harness.Phone.StartedPhones);
+    }
+
     private static void FillIpLimit(PhoneVerificationSendGate gate)
     {
         var tenantId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");

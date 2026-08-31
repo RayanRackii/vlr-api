@@ -226,6 +226,15 @@ public sealed class CustomerAuthService(
         var tenantId = EnsureTenantContext();
 
         var email = NormalizeEmail(request.Email);
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(tenantId, email, clientIp);
+
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            throw new PhoneVerificationRateLimitedException(
+                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
+        }
+
         var customer = await dbContext.Customers
             .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
 
@@ -236,17 +245,9 @@ public sealed class CustomerAuthService(
             return;
         }
 
-        var clientIp = GetClientIp();
-        var decision = sendGate.Decide(tenantId, email, clientIp);
         if (decision == PhoneVerificationSendDecision.Cooldown)
         {
             return;
-        }
-
-        if (decision == PhoneVerificationSendDecision.Limited)
-        {
-            throw new PhoneVerificationRateLimitedException(
-                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
         }
 
         try
