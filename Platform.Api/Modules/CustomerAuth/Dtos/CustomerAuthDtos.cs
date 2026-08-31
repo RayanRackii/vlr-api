@@ -47,6 +47,11 @@ public sealed record VerifyPhoneRequestDto
     public required string Code { get; init; }
 }
 
+public sealed record ResendVerificationRequestDto
+{
+    public required string Email { get; init; }
+}
+
 public sealed record CustomerLoginRequestDto
 {
     public required string Email { get; init; }

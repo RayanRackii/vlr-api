@@ -64,7 +64,7 @@ Campos no cadastro/edição do Tenant (além de `Subdomain`):
 **Validações BR (front + back):**
 - **CPF:** validar dígitos verificadores localmente; enriquecer/consultar via API pública/comercial BR no back (não confiar só no front). Tratar indisponibilidade da API com falha clara ou fila de retry — nunca aceitar CPF só “bem formatado” sem check de dígitos.
 - **CEP:** consultar ViaCEP ou BrasilAPI; back é a fonte da verdade; front usa para autocompletar UX.
-- **SMS:** provider a escolher na implementação (ex.: Twilio, Zenvia, AWS SNS via abstração); enfileirar como as demais notificações — não enviar SMS síncrono na request HTTP.
+- **SMS:** verificação de celular no cadastro B2C usa **Twilio Verify** (desafio de autenticação síncrono; não passa pela fila). SMS de catálogo/notificação continua enfileirado via `ISmsProvider` (ainda Dev). Celular não autentica.
 
 ## Language
 
@@ -300,8 +300,8 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 - **Backend (`vlr-api`):** .NET 10, REST. Organização dominante: `Platform.Api/Modules/<Área>/` (Controller + Service + DTOs). Features Minimal API + MediatR só onde já existem (`CreateTenant`, `InviteUser`) — não expandir MediatR sem decisão explícita. Deploy: **Docker no Railway**.
 - **Frontend (`vlr-web`):** React + Vite, shadcn/ui, TailwindCSS. Deploy: **Vercel**. Consome a API com JWT Bearer (`VITE_API_URL`).
 - **Dados e Auth (PaaS):** **Supabase** = PostgreSQL + Supabase Auth (B2B). Proibido provisionar AWS “pura” (RDS/Cognito/EC2) neste momento. EF Core permanece agnóstico à connection string.
-- **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Celular verificado por **SMS** no cadastro; WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.
-- **Notificações:** Fila em memória (`NotificationQueue` + `BackgroundService`). Providers: **Resend** (e-mail), **Meta WhatsApp** (avisos), **SMS** (verificação de celular — provider a plugar na mesma fila), **Dev** como fallback. Em Development, Resend/Meta só registram com `Notifications:AllowExternalDelivery=true` (credencial sozinha não basta; PROD/Staging com flag unset seguem externos). Nunca enviar e-mail/WhatsApp/SMS de forma síncrona dentro da request HTTP. WA iniciado pela empresa exige template Meta aprovado. Config WA/Resend: Fase 1.5 (adiada).
+- **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Celular verificado por **SMS (Twilio Verify)** no cadastro; celular **não autentica**. WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.
+- **Notificações:** Fila em memória (`NotificationQueue` + `BackgroundService`). Providers: **Resend** (e-mail), **Meta WhatsApp** (avisos), **SMS de catálogo** via `ISmsProvider` (ainda Dev). Verificação de celular B2C usa **Twilio Verify** (síncrono; não é notificação de catálogo). Em Development, Resend/Meta só registram com `Notifications:AllowExternalDelivery=true` (credencial sozinha não basta; PROD/Staging com flag unset seguem externos). Nunca enviar e-mail/WhatsApp/SMS de catálogo de forma síncrona dentro da request HTTP. WA iniciado pela empresa exige template Meta aprovado. Config WA/Resend: Fase 1.5 (adiada).
 - **TypeScript:** Zero `any`; validação Zod espelhando DTOs da API. Frontend **nunca** consulta o banco via SDK Supabase — só auth.
 - **Isolamento:** Dados de módulo com `TenantId` (e `UnitId` quando aplicável).
 

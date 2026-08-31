@@ -1,11 +1,10 @@
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Dtos;
+using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.RegistrationFields.Services;
-using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -19,10 +18,9 @@ public sealed class CustomerAuthService(
     ICustomerJwtIssuer customerJwtIssuer,
     IViaCepClient viaCepClient,
     IRegistrationFieldService registrationFieldService,
-    NotificationQueue notificationQueue,
+    IPhoneVerificationClient phoneVerification,
     ILogger<CustomerAuthService> logger) : ICustomerAuthService
 {
-    private static readonly TimeSpan OtpLifetime = TimeSpan.FromMinutes(10);
     private static readonly PasswordHasher<Customer> PasswordHasher = new();
     private const int MinimumPasswordLength = 8;
 
@@ -43,6 +41,14 @@ public sealed class CustomerAuthService(
         var contact = ParseContact(request.Contact);
         var customer = await FindCustomerByContactAsync(contact, cancellationToken);
 
+        var phone = contact.Kind == ContactKind.Phone
+            ? contact.Normalized
+            : customer?.Phone;
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            throw new ArgumentException("Phone is required for SMS verification.");
+        }
+
         if (customer is null)
         {
             customer = new Customer
@@ -54,18 +60,13 @@ public sealed class CustomerAuthService(
             };
 
             dbContext.Customers.Add(customer);
-        }
-        else if (!string.Equals(customer.Name, name, StringComparison.Ordinal))
-        {
-            customer.Name = name;
-            customer.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        await IssueAndEnqueuePhoneCodeAsync(customer, cancellationToken);
+        await phoneVerification.StartVerificationAsync(phone, cancellationToken);
 
         logger.LogInformation(
-            "Legacy OTP generated for contact {Contact} (customer {CustomerId}).",
-            contact.Normalized,
+            "Phone verification started for customer {CustomerId}.",
             customer.Id);
     }
 
@@ -76,19 +77,22 @@ public sealed class CustomerAuthService(
         EnsureTenantContext();
 
         var contact = ParseContact(request.Contact);
-        var code = (request.Code ?? string.Empty).Trim();
-
-        if (!Regex.IsMatch(code, @"^\d{6}$"))
-        {
-            throw new UnauthorizedAccessException("Invalid or expired OTP code.");
-        }
+        var code = RequireSixDigitCode(request.Code);
 
         var customer = await FindCustomerByContactAsync(contact, cancellationToken)
-            ?? throw new UnauthorizedAccessException("Invalid or expired OTP code.");
+            ?? throw new UnauthorizedAccessException("Invalid or expired verification code.");
 
-        await ConsumeOtpAsync(customer.Id, code, cancellationToken);
+        var phone = contact.Kind == ContactKind.Phone
+            ? contact.Normalized
+            : customer.Phone;
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            throw new ArgumentException("Phone is required for SMS verification.");
+        }
 
-        if (contact.Kind == ContactKind.Phone && !customer.IsPhoneVerified)
+        await phoneVerification.CheckVerificationAsync(phone, code, cancellationToken);
+
+        if (!customer.IsPhoneVerified)
         {
             customer.MarkPhoneVerified(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -222,7 +226,7 @@ public sealed class CustomerAuthService(
                 "A customer with the same email, document, or phone already exists.");
         }
 
-        await IssueAndEnqueuePhoneCodeAsync(customer, cancellationToken);
+        await phoneVerification.StartVerificationAsync(RequirePhone(customer), cancellationToken);
 
         return new RegisterCustomerResponseDto(customer.Id, RequiresPhoneVerification: true);
     }
@@ -234,23 +238,34 @@ public sealed class CustomerAuthService(
         EnsureTenantContext();
 
         var email = NormalizeEmail(request.Email);
-        var code = (request.Code ?? string.Empty).Trim();
-
-        if (!Regex.IsMatch(code, @"^\d{6}$"))
-        {
-            throw new UnauthorizedAccessException("Invalid or expired verification code.");
-        }
+        var code = RequireSixDigitCode(request.Code);
 
         var customer = await dbContext.Customers
             .FirstOrDefaultAsync(c => c.Email == email, cancellationToken)
             ?? throw new UnauthorizedAccessException("Invalid or expired verification code.");
 
-        await ConsumeOtpAsync(customer.Id, code, cancellationToken);
+        var phone = RequirePhone(customer);
+        await phoneVerification.CheckVerificationAsync(phone, code, cancellationToken);
 
         customer.MarkPhoneVerified(DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return BuildAuthResponse(customer);
+    }
+
+    public async Task ResendVerificationAsync(
+        ResendVerificationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var email = NormalizeEmail(request.Email);
+        var customer = await dbContext.Customers
+            .FirstOrDefaultAsync(c => c.Email == email, cancellationToken)
+            ?? throw new KeyNotFoundException("Customer not found.");
+
+        var phone = RequirePhone(customer);
+        await phoneVerification.StartVerificationAsync(phone, cancellationToken);
     }
 
     public async Task<AuthResponseDto> LoginAsync(
@@ -373,71 +388,6 @@ public sealed class CustomerAuthService(
         return MapProfile(customer);
     }
 
-    private async Task IssueAndEnqueuePhoneCodeAsync(
-        Customer customer,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(customer.Phone))
-        {
-            throw new ArgumentException("Phone is required for SMS verification.");
-        }
-
-        var tenantId = customer.TenantId;
-        var code = GenerateOtpCode();
-        var now = DateTimeOffset.UtcNow;
-
-        var previousOtps = await dbContext.OtpCodes
-            .Where(o => o.CustomerId == customer.Id && !o.IsUsed)
-            .ToListAsync(cancellationToken);
-
-        foreach (var previous in previousOtps)
-        {
-            previous.MarkAsUsed();
-        }
-
-        dbContext.OtpCodes.Add(new OtpCode
-        {
-            TenantId = tenantId,
-            CustomerId = customer.Id,
-            Code = code,
-            ExpiresAt = now.Add(OtpLifetime),
-            IsUsed = false,
-        });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        await notificationQueue.EnqueueAsync(
-            new NotificationMessage(
-                Type: "Sms",
-                Recipient: customer.Phone,
-                Subject: "Verification",
-                Body: $"Seu codigo Rolvix: {code}. Valido por 10 minutos."),
-            cancellationToken);
-    }
-
-    private async Task ConsumeOtpAsync(
-        Guid customerId,
-        string code,
-        CancellationToken cancellationToken)
-    {
-        var now = DateTimeOffset.UtcNow;
-
-        var otp = await dbContext.OtpCodes
-            .Where(o => o.CustomerId == customerId
-                        && !o.IsUsed
-                        && o.ExpiresAt > now)
-            .OrderByDescending(o => o.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (otp is null || !string.Equals(otp.Code, code, StringComparison.Ordinal))
-        {
-            throw new UnauthorizedAccessException("Invalid or expired verification code.");
-        }
-
-        otp.MarkAsUsed();
-        await dbContext.SaveChangesAsync(cancellationToken);
-    }
-
     private AuthResponseDto BuildAuthResponse(Customer customer)
     {
         var token = customerJwtIssuer.IssueToken(customer);
@@ -499,9 +449,25 @@ public sealed class CustomerAuthService(
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
-    private static string GenerateOtpCode()
+    private static string RequirePhone(Customer customer)
     {
-        return RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        if (string.IsNullOrWhiteSpace(customer.Phone))
+        {
+            throw new ArgumentException("Phone is required for SMS verification.");
+        }
+
+        return customer.Phone;
+    }
+
+    private static string RequireSixDigitCode(string? code)
+    {
+        var trimmed = (code ?? string.Empty).Trim();
+        if (!Regex.IsMatch(trimmed, @"^\d{6}$"))
+        {
+            throw new PhoneVerificationInvalidException("Invalid or expired verification code.");
+        }
+
+        return trimmed;
     }
 
     private static string NormalizeEmail(string? email)
