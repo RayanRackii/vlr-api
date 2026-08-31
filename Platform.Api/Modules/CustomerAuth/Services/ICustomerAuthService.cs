@@ -18,6 +18,10 @@ public interface ICustomerAuthService
         VerifyPhoneRequestDto request,
         CancellationToken cancellationToken);
 
+    Task ResendVerificationAsync(
+        ResendVerificationRequestDto request,
+        CancellationToken cancellationToken);
+
     Task<AuthResponseDto> LoginAsync(
         CustomerLoginRequestDto request,
         CancellationToken cancellationToken);

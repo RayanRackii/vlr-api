@@ -63,7 +63,7 @@ try
     builder.Services.AddUsersModule();
     builder.Services.AddRolesModule();
     builder.Services.AddAuthModule();
-    builder.Services.AddCustomerAuthModule();
+    builder.Services.AddCustomerAuthModule(builder.Configuration);
     builder.Services.AddRegistrationFieldsModule();
     builder.Services.AddModuleMenuItemsModule();
     builder.Services.AddAdminModule();
