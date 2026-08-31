@@ -219,10 +219,6 @@ public sealed class CustomerAuthController(
             await customerAuthService.ResendVerificationAsync(request, cancellationToken);
             return Accepted();
         }
-        catch (PhoneVerificationProviderException ex)
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = ex.Message });
-        }
         catch (PhoneVerificationRateLimitedException ex)
         {
             return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
@@ -234,10 +230,6 @@ public sealed class CustomerAuthController(
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { error = ex.Message });
         }
     }
 }

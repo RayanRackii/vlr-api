@@ -116,12 +116,24 @@ public sealed class TwilioVerifyPhoneVerificationClient : IPhoneVerificationClie
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             TryParseTwilioBody(body, out var verificationStatus, out var twilioCode);
 
-            _logger.LogInformation(
-                "Phone verification {Operation} for phone ending {Last4} returned HTTP {StatusCode} status {VerificationStatus}.",
-                isCheck ? "check" : "start",
-                last4,
-                (int)response.StatusCode,
-                verificationStatus);
+            if (!IsSuccess(response.StatusCode))
+            {
+                _logger.LogWarning(
+                    "Phone verification {Operation} for phone ending {Last4} failed with HTTP {StatusCode} Twilio code {TwilioCode}.",
+                    isCheck ? "check" : "start",
+                    last4,
+                    (int)response.StatusCode,
+                    twilioCode);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Phone verification {Operation} for phone ending {Last4} returned HTTP {StatusCode} status {VerificationStatus}.",
+                    isCheck ? "check" : "start",
+                    last4,
+                    (int)response.StatusCode,
+                    verificationStatus);
+            }
 
             MapOutcome(response.StatusCode, verificationStatus, twilioCode, isCheck);
         }
@@ -151,6 +163,11 @@ public sealed class TwilioVerifyPhoneVerificationClient : IPhoneVerificationClie
             || twilioCode is TwilioMaxCheckAttempts or TwilioMaxSendAttempts)
         {
             throw new PhoneVerificationRateLimitedException(RateLimitedMessage);
+        }
+
+        if (httpStatus is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            throw new PhoneVerificationProviderException(ProviderUnavailableMessage);
         }
 
         if (httpStatus == HttpStatusCode.NotFound
@@ -218,11 +235,20 @@ public sealed class TwilioVerifyPhoneVerificationClient : IPhoneVerificationClie
                 verificationStatus = statusElement.GetString();
             }
 
-            if (root.TryGetProperty("code", out var codeElement)
-                && codeElement.ValueKind == JsonValueKind.Number
-                && codeElement.TryGetInt32(out var parsedCode))
+            // Numeric `status` is the HTTP code in Twilio error JSON, not a verification state.
+
+            if (root.TryGetProperty("code", out var codeElement))
             {
-                twilioCode = parsedCode;
+                if (codeElement.ValueKind == JsonValueKind.Number
+                    && codeElement.TryGetInt32(out var parsedCode))
+                {
+                    twilioCode = parsedCode;
+                }
+                else if (codeElement.ValueKind == JsonValueKind.String
+                         && int.TryParse(codeElement.GetString(), out var parsedFromString))
+                {
+                    twilioCode = parsedFromString;
+                }
             }
         }
         catch (JsonException)

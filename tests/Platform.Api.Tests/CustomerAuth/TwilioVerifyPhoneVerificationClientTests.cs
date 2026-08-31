@@ -66,6 +66,32 @@ public sealed class TwilioVerifyPhoneVerificationClientTests
     }
 
     [Fact]
+    public async Task Start_403_with_numeric_status_throws_provider()
+    {
+        var handler = new RecordingHandler(
+            Json(HttpStatusCode.Forbidden, """{"code":20003,"status":403}"""));
+        var sut = CreateSut(handler);
+
+        var ex = await Assert.ThrowsAsync<PhoneVerificationProviderException>(
+            () => sut.StartVerificationAsync(Phone, CancellationToken.None));
+
+        Assert.Equal(TwilioVerifyPhoneVerificationClient.ProviderUnavailableMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task Start_401_throws_provider()
+    {
+        var handler = new RecordingHandler(
+            Json(HttpStatusCode.Unauthorized, """{"code":20003,"status":401}"""));
+        var sut = CreateSut(handler);
+
+        var ex = await Assert.ThrowsAsync<PhoneVerificationProviderException>(
+            () => sut.StartVerificationAsync(Phone, CancellationToken.None));
+
+        Assert.Equal(TwilioVerifyPhoneVerificationClient.ProviderUnavailableMessage, ex.Message);
+    }
+
+    [Fact]
     public async Task Start_500_throws_provider()
     {
         var handler = new RecordingHandler(Json(HttpStatusCode.InternalServerError, """{"status":500}"""));

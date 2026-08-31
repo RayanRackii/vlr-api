@@ -31,6 +31,7 @@ public sealed class PhoneVerificationTests
             CancellationToken.None);
 
         Assert.True(response.RequiresPhoneVerification);
+        Assert.True(response.VerificationStarted);
         Assert.Single(harness.Phone.StartedPhones);
         Assert.Equal(phone, harness.Phone.StartedPhones[0]);
         Assert.Empty(harness.Db.OtpCodes);
@@ -45,25 +46,31 @@ public sealed class PhoneVerificationTests
         harness.Phone.StartThrowsProvider = true;
         var email = "kept@club.test";
 
-        await Assert.ThrowsAsync<PhoneVerificationProviderException>(
-            () => harness.Auth.RegisterAsync(
-                NewRegister(email: email),
-                CancellationToken.None));
+        var response = await harness.Auth.RegisterAsync(
+            NewRegister(email: email),
+            CancellationToken.None);
 
+        Assert.False(response.VerificationStarted);
+        Assert.True(response.RequiresPhoneVerification);
         var customer = await harness.Db.Customers.SingleAsync(c => c.Email == email);
+        Assert.Equal(response.CustomerId, customer.Id);
         Assert.Null(customer.PhoneVerifiedAt);
         Assert.Equal("+5511999991111", customer.Phone);
         Assert.Empty(harness.Db.OtpCodes);
     }
 
     [Fact]
-    public async Task Register_rate_limit_throws_rate_limit_exception()
+    public async Task Register_rate_limit_returns_verification_not_started()
     {
         await using var harness = await AuthHarness.CreateAsync();
         harness.Phone.StartThrowsRateLimit = true;
 
-        await Assert.ThrowsAsync<PhoneVerificationRateLimitedException>(
-            () => harness.Auth.RegisterAsync(NewRegister(), CancellationToken.None));
+        var response = await harness.Auth.RegisterAsync(NewRegister(), CancellationToken.None);
+
+        Assert.False(response.VerificationStarted);
+        Assert.True(response.RequiresPhoneVerification);
+        Assert.NotEqual(Guid.Empty, response.CustomerId);
+        Assert.Single(await harness.Db.Customers.ToListAsync());
     }
 
     [Fact]
@@ -140,14 +147,307 @@ public sealed class PhoneVerificationTests
     }
 
     [Fact]
-    public async Task Resend_missing_customer_throws_not_found()
+    public async Task Resend_missing_customer_does_not_throw()
     {
         await using var harness = await AuthHarness.CreateAsync();
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(
-            () => harness.Auth.ResendVerificationAsync(
-                new ResendVerificationRequestDto { Email = "missing@club.test" },
+        await harness.Auth.ResendVerificationAsync(
+            new ResendVerificationRequestDto { Email = "missing@club.test" },
+            CancellationToken.None);
+
+        Assert.Empty(harness.Phone.StartedPhones);
+    }
+
+    [Fact]
+    public async Task Resend_already_verified_does_not_start()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        var email = "verified-resend@club.test";
+        await harness.Auth.RegisterAsync(NewRegister(email: email), CancellationToken.None);
+        await harness.Auth.VerifyPhoneAsync(
+            new VerifyPhoneRequestDto { Email = email, Code = "123456" },
+            CancellationToken.None);
+        harness.Phone.StartedPhones.Clear();
+
+        await harness.Auth.ResendVerificationAsync(
+            new ResendVerificationRequestDto { Email = email },
+            CancellationToken.None);
+
+        Assert.Empty(harness.Phone.StartedPhones);
+    }
+
+    [Fact]
+    public async Task Resend_provider_failure_does_not_throw()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        var email = "resend-fail@club.test";
+        await harness.Auth.RegisterAsync(NewRegister(email: email), CancellationToken.None);
+        harness.Phone.StartedPhones.Clear();
+        harness.Phone.StartThrowsProvider = true;
+
+        await harness.Auth.ResendVerificationAsync(
+            new ResendVerificationRequestDto { Email = email },
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Register_retries_same_pending_triple_resume_same_customer()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        var email = "resume@club.test";
+        var phone = "+5511999991111";
+        var first = await harness.Auth.RegisterAsync(
+            NewRegister(email: email, phone: phone, name: "Primeiro Nome", password: "secret123"),
+            CancellationToken.None);
+
+        var second = await harness.Auth.RegisterAsync(
+            NewRegister(email: email, phone: phone, name: "Nome Atualizado", password: "newpass12"),
+            CancellationToken.None);
+
+        Assert.Equal(first.CustomerId, second.CustomerId);
+        Assert.Equal(2, harness.Phone.StartedPhones.Count);
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+        var customer = await harness.Db.Customers.SingleAsync(c => c.Id == first.CustomerId);
+        Assert.Equal("Nome Atualizado", customer.Name);
+        Assert.Null(customer.PhoneVerifiedAt);
+        var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Customer>();
+        Assert.Equal(
+            Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success,
+            hasher.VerifyHashedPassword(customer, customer.PasswordHash!, "newpass12"));
+    }
+
+    [Fact]
+    public async Task Register_retries_same_pending_phone_with_matching_email_and_document()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        var email = "phone-resume@club.test";
+        var phone = "+5511988882222";
+        var first = await harness.Auth.RegisterAsync(
+            NewRegister(email: email, phone: phone),
+            CancellationToken.None);
+
+        var second = await harness.Auth.RegisterAsync(
+            NewRegister(email: email, phone: phone),
+            CancellationToken.None);
+
+        Assert.Equal(first.CustomerId, second.CustomerId);
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+        Assert.Equal(2, harness.Phone.StartedPhones.Count);
+        Assert.All(harness.Phone.StartedPhones, started => Assert.Equal(phone, started));
+    }
+
+    [Fact]
+    public async Task Register_retries_same_pending_document_as_triple_match()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        var email = "cnpj-resume@club.test";
+        var phone = "+5511977773333";
+        var document = "11.222.333/0001-81";
+        var first = await harness.Auth.RegisterAsync(
+            NewRegister(
+                email: email,
+                phone: phone,
+                document: document,
+                customerType: CustomerType.Company),
+            CancellationToken.None);
+
+        var second = await harness.Auth.RegisterAsync(
+            NewRegister(
+                email: email,
+                phone: phone,
+                document: document,
+                customerType: CustomerType.Company),
+            CancellationToken.None);
+
+        Assert.Equal(first.CustomerId, second.CustomerId);
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+        var customer = await harness.Db.Customers.SingleAsync();
+        Assert.Equal("11222333000181", customer.Document);
+        Assert.Null(customer.Cpf);
+    }
+
+    [Fact]
+    public async Task Register_verified_duplicate_email_is_rejected()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        var email = "taken@club.test";
+        await harness.Auth.RegisterAsync(
+            NewRegister(email: email, phone: "+5511966664444", document: "529.982.247-25"),
+            CancellationToken.None);
+        await harness.Auth.VerifyPhoneAsync(
+            new VerifyPhoneRequestDto { Email = email, Code = "123456" },
+            CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.Auth.RegisterAsync(
+                NewRegister(email: email, phone: "+5511955550000", document: "39053344705"),
                 CancellationToken.None));
+
+        Assert.Equal("A customer with this email already exists.", ex.Message);
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+    }
+
+    [Fact]
+    public async Task Register_pending_partial_overlap_is_rejected()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        await harness.Auth.RegisterAsync(
+            NewRegister(email: "partial@club.test", phone: "+5511944440001", document: "529.982.247-25"),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.Auth.RegisterAsync(
+                NewRegister(email: "partial@club.test", phone: "+5511944440002", document: "39053344705"),
+                CancellationToken.None));
+
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+    }
+
+    [Fact]
+    public async Task Register_provider_failure_returns_dto_without_throwing()
+    {
+        await using var harness = await AuthHarness.CreateAsync();
+        harness.Phone.StartThrowsProvider = true;
+
+        var response = await harness.Auth.RegisterAsync(
+            NewRegister(email: "timeout@club.test"),
+            CancellationToken.None);
+
+        Assert.False(response.VerificationStarted);
+        Assert.True(response.RequiresPhoneVerification);
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+    }
+
+    [Fact]
+    public async Task Register_pending_in_tenant_a_does_not_block_tenant_b()
+    {
+        var databaseName = $"pending-iso-{Guid.NewGuid():N}";
+        var tenantA = new Tenant("Club A", "66666666000191", subdomain: "club-a");
+        var tenantB = new Tenant("Club B", "11222333000181", subdomain: "club-b");
+        var tenantProvider = new FakeTenantProvider { TenantId = tenantA.Id };
+        await using var db = InMemoryAppDb.Create(tenantProvider, databaseName);
+        db.Tenants.Add(tenantA);
+        db.Tenants.Add(tenantB);
+        await db.SaveChangesAsync();
+
+        var phone = new FakePhoneVerificationClient();
+        var auth = new CustomerAuthService(
+            db,
+            tenantProvider,
+            new FakeJwtIssuer(),
+            new FakeViaCep(),
+            new UnusedRegistrationFields(),
+            phone,
+            new AllowAllPhoneVerificationSendGate(),
+            NullLogger<CustomerAuthService>.Instance);
+
+        var request = NewRegister(email: "shared@club.test", phone: "+5511933331111");
+        var fromA = await auth.RegisterAsync(request, CancellationToken.None);
+
+        tenantProvider.TenantId = tenantB.Id;
+        var fromB = await auth.RegisterAsync(request, CancellationToken.None);
+
+        Assert.NotEqual(fromA.CustomerId, fromB.CustomerId);
+
+        tenantProvider.TenantId = tenantA.Id;
+        Assert.Equal(1, await db.Customers.CountAsync());
+        Assert.Equal(fromA.CustomerId, (await db.Customers.SingleAsync()).Id);
+
+        tenantProvider.TenantId = tenantB.Id;
+        Assert.Equal(1, await db.Customers.CountAsync());
+        Assert.Equal(fromB.CustomerId, (await db.Customers.SingleAsync()).Id);
+    }
+
+    [Fact]
+    public async Task Register_resume_within_cooldown_skips_second_start()
+    {
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var gate = new PhoneVerificationSendGate(cache, TimeProvider.System);
+        await using var harness = await AuthHarness.CreateAsync(sendGate: gate);
+        var request = NewRegister(email: "cooldown@club.test", phone: "+5511922220001");
+
+        var first = await harness.Auth.RegisterAsync(request, CancellationToken.None);
+        var second = await harness.Auth.RegisterAsync(request, CancellationToken.None);
+
+        Assert.True(first.VerificationStarted);
+        Assert.True(second.VerificationStarted);
+        Assert.Equal(first.CustomerId, second.CustomerId);
+        Assert.Single(harness.Phone.StartedPhones);
+    }
+
+    [Fact]
+    public async Task Register_ip_limited_skips_start_without_throwing()
+    {
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var gate = new PhoneVerificationSendGate(cache, TimeProvider.System);
+        FillIpLimit(gate);
+
+        await using var harness = await AuthHarness.CreateAsync(sendGate: gate);
+        var response = await harness.Auth.RegisterAsync(
+            NewRegister(email: "limit-over@club.test"),
+            CancellationToken.None);
+
+        Assert.False(response.VerificationStarted);
+        Assert.Empty(harness.Phone.StartedPhones);
+        Assert.Equal(1, await harness.Db.Customers.CountAsync());
+    }
+
+    [Fact]
+    public async Task Resend_ip_limited_throws_rate_limit()
+    {
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var gate = new PhoneVerificationSendGate(cache, TimeProvider.System);
+        FillIpLimit(gate);
+
+        await using var harness = await AuthHarness.CreateAsync(sendGate: gate);
+        var email = "after-limit@club.test";
+        var registered = await harness.Auth.RegisterAsync(
+            NewRegister(email: email),
+            CancellationToken.None);
+        Assert.False(registered.VerificationStarted);
+
+        await Assert.ThrowsAsync<PhoneVerificationRateLimitedException>(
+            () => harness.Auth.ResendVerificationAsync(
+                new ResendVerificationRequestDto { Email = email },
+                CancellationToken.None));
+        Assert.Empty(harness.Phone.StartedPhones);
+    }
+
+    [Fact]
+    public async Task Resend_unknown_email_when_ip_limited_throws_rate_limit()
+    {
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var time = new TestTimeProvider(DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
+        var gate = new PhoneVerificationSendGate(cache, time);
+        await using var harness = await AuthHarness.CreateAsync(sendGate: gate);
+
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts; i++)
+        {
+            await harness.Auth.ResendVerificationAsync(
+                new ResendVerificationRequestDto { Email = $"unknown{i}@club.test" },
+                CancellationToken.None);
+        }
+
+        await Assert.ThrowsAsync<PhoneVerificationRateLimitedException>(
+            () => harness.Auth.ResendVerificationAsync(
+                new ResendVerificationRequestDto { Email = "still-unknown@club.test" },
+                CancellationToken.None));
+        Assert.Empty(harness.Phone.StartedPhones);
+    }
+
+    private static void FillIpLimit(PhoneVerificationSendGate gate)
+    {
+        var tenantId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts; i++)
+        {
+            Assert.Equal(
+                PhoneVerificationSendDecision.Send,
+                gate.Decide(tenantId, $"prefill{i}@club.test", clientIp: null));
+        }
     }
 
     [Fact]
@@ -240,6 +540,19 @@ public sealed class PhoneVerificationTests
         var rateObject = Assert.IsType<ObjectResult>(rateResult.Result);
         Assert.Equal(StatusCodes.Status429TooManyRequests, rateObject.StatusCode);
         Assert.Contains("Too many verification attempts", ErrorText(rateObject));
+
+        var verifyProviderController = CreateController(
+            new StubAuthService
+            {
+                ToThrow = new PhoneVerificationProviderException(
+                    TwilioVerifyPhoneVerificationClient.ProviderUnavailableMessage),
+            });
+        var verifyProviderResult = await verifyProviderController.VerifyPhone(
+            new VerifyPhoneRequestDto { Email = "a@club.test", Code = "123456" },
+            "authclub",
+            CancellationToken.None);
+        var verifyProviderObject = Assert.IsType<ObjectResult>(verifyProviderResult.Result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, verifyProviderObject.StatusCode);
     }
 
     [Fact]
@@ -261,6 +574,18 @@ public sealed class PhoneVerificationTests
         Assert.IsType<BadRequestObjectResult>(resendResult);
     }
 
+    [Fact]
+    public async Task Controller_resend_unknown_email_returns_accepted()
+    {
+        var controller = CreateController(new StubAuthService());
+        var result = await controller.ResendVerification(
+            new ResendVerificationRequestDto { Email = "missing@club.test" },
+            "authclub",
+            CancellationToken.None);
+
+        Assert.IsType<AcceptedResult>(result);
+    }
+
     private static string ErrorText(ObjectResult result) =>
         System.Text.Json.JsonSerializer.Serialize(result.Value);
 
@@ -269,15 +594,19 @@ public sealed class PhoneVerificationTests
 
     private static RegisterCustomerRequestDto NewRegister(
         string? email = null,
-        string? phone = null) =>
+        string? phone = null,
+        string? document = null,
+        string? name = null,
+        string? password = null,
+        CustomerType customerType = CustomerType.Individual) =>
         new()
         {
-            Name = "Cliente Teste",
+            Name = name ?? "Cliente Teste",
             Email = email ?? $"{Guid.NewGuid():N}@club.test",
-            Password = "secret123",
+            Password = password ?? "secret123",
             Phone = phone ?? "+5511999991111",
-            CustomerType = CustomerType.Individual,
-            Document = "529.982.247-25",
+            CustomerType = customerType,
+            Document = document ?? "529.982.247-25",
         };
 
     private sealed class AuthHarness(
@@ -289,7 +618,9 @@ public sealed class PhoneVerificationTests
         public CustomerAuthService Auth { get; } = auth;
         public FakePhoneVerificationClient Phone { get; } = phone;
 
-        public static async Task<AuthHarness> CreateAsync()
+        public static async Task<AuthHarness> CreateAsync(
+            IPhoneVerificationSendGate? sendGate = null,
+            IHttpContextAccessor? httpContextAccessor = null)
         {
             var tenant = new Tenant("Auth Club", "66666666000191", subdomain: "authclub");
             var tenantProvider = new FakeTenantProvider { TenantId = tenant.Id };
@@ -304,7 +635,9 @@ public sealed class PhoneVerificationTests
                 new FakeViaCep(),
                 new UnusedRegistrationFields(),
                 phone,
-                NullLogger<CustomerAuthService>.Instance);
+                sendGate ?? new AllowAllPhoneVerificationSendGate(),
+                NullLogger<CustomerAuthService>.Instance,
+                httpContextAccessor);
             return new AuthHarness(db, auth, phone);
         }
 
@@ -382,7 +715,7 @@ public sealed class PhoneVerificationTests
         public Task ResendVerificationAsync(
             ResendVerificationRequestDto request,
             CancellationToken cancellationToken) =>
-            Fail();
+            ToThrow is null ? Task.CompletedTask : Fail();
 
         public Task<AuthResponseDto> LoginAsync(
             CustomerLoginRequestDto request,
