@@ -18,40 +18,42 @@ B2B "Esqueci a senha" must send a **Rolvix-branded** email (same chrome as invit
 
 ## External delivery gate
 
-In Development, credentials alone do **not** enable Resend (or Meta WhatsApp). In Production/Staging, an unset flag plus valid credentials still registers the external providers. Registration is:
+Credentials alone never enable Resend or Meta. Unset flags are **false in every environment** (including a Railway service whose `ASPNETCORE_ENVIRONMENT` is Production).
+
+Per channel:
 
 ```
-effectiveAllowExternal =
-    Notifications:AllowExternalDelivery
-    ?? (ASPNETCORE_ENVIRONMENT=Development ? false : true)
+effectiveEmail =
+    (Notifications:AllowExternalEmail ?? Notifications:AllowExternalDelivery) == true
+    && Resend credentials present
 
-external provider = effectiveAllowExternal && credentialsConfigured
+effectiveWhatsApp =
+    (Notifications:AllowExternalWhatsApp ?? Notifications:AllowExternalDelivery) == true
+    && WhatsApp credentials present
 ```
 
-`Notifications:AllowExternalDelivery` is a **nullable bool** (unset / true / false). Do not bake `false` into `appsettings.Production.json` — that would disable PROD email if the env var were forgotten.
+An explicit channel flag overrides the legacy global `AllowExternalDelivery`. Catalog SMS stays on `DevSmsProvider`.
 
-| Environment | Flag | With credentials |
-|-------------|------|------------------|
-| Development | unset or `false` | Dev providers (console log). No Resend/Meta HTTP. |
-| Development | `true` | Resend / Meta |
-| Production / Staging / other | unset or `true` | Resend / Meta (no new env var required) |
-| Any | `false` | Dev providers even with credentials |
+Do not bake `false` into `appsettings.Production.json` for the global flag — that would disable PROD email if the env var were forgotten. Channel-specific `false` is the safe way to keep one provider on Dev while the other is live.
 
-Local DEV with keys in `appsettings.Development.json`: set `"Notifications": { "AllowExternalDelivery": true }` to send for real. Leave the flag unset to stay on Dev providers.
+| Setting | Effect with credentials |
+|---------|------------------------|
+| All unset | Dev email + Dev WhatsApp |
+| `AllowExternalDelivery=true` only | Resend + Meta (legacy) |
+| `AllowExternalWhatsApp=true`, email unset/false | Meta only; email stays Dev |
+| `AllowExternalEmail=false` with global true | Email Dev; WhatsApp follows global |
 
-Railway (the gate keys off `ASPNETCORE_ENVIRONMENT` / `IHostEnvironment`, not Railway's service label):
+Startup logs `External email delivery enabled|disabled` and `External WhatsApp delivery enabled|disabled` (no secrets).
 
-- Production host environment: existing `Resend__*` / `WhatsApp__*` vars keep working; `Notifications__AllowExternalDelivery` is **not** required.
-- A service with `ASPNETCORE_ENVIRONMENT=Development` needs `Notifications__AllowExternalDelivery=true` to send externally.
-- A Railway service *named* Development that still runs `ASPNETCORE_ENVIRONMENT=Production` behaves like Production. Set `Notifications__AllowExternalDelivery=false` if that service should stay silent.
+Local DEV: leave flags unset to stay on Dev providers. To send WhatsApp only: `AllowExternalWhatsApp=true` and `AllowExternalEmail=false`.
 
-`AllowExternalDelivery=true` with missing credentials still uses Dev providers. Credentials remain a hard precondition.
+Railway: this task does **not** set env vars. After merge, DEV can set `Notifications__AllowExternalWhatsApp=true` without enabling Resend.
 
 ## Ops checklist
 
 - [ ] `Resend:ApiKey` / `FromEmail` / `FromName` set on Railway (same as invites).
 - [ ] **`App:FrontendBaseUrl=https://rolvix.com.br` on Railway** — never `localhost`.
-- [ ] (DEV only, optional) `Notifications:AllowExternalDelivery=true` if you need real Resend/Meta locally.
+- [ ] (DEV only, optional) `Notifications:AllowExternalEmail=true` for real Resend; `AllowExternalWhatsApp=true` for Meta only.
 - [ ] Supabase Auth → URL Configuration:
   - Site URL: `https://rolvix.com.br` (not `localhost:3000`)
   - Redirect URLs include `https://rolvix.com.br/**` and `http://localhost:5173/**` for local API tests

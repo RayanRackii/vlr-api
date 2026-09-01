@@ -34,7 +34,7 @@ Tenant-wide catalog (no Unit). Price nullable = “Sob consulta”. Orders start
 
 Files: public bucket for customer-visible images; private bucket + signed URL for technical files. Keys `{tenantId}/{productId}/{fileId}`.
 
-Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queued). InApp committed with the order. External channels default off. `AllowExternalDelivery` unset = false.
+Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queued). InApp committed with the order. External channels default off. `AllowExternalDelivery` unset = false. Per-channel `AllowExternalEmail` / `AllowExternalWhatsApp` override the global flag.
 
 ## Critical invariants
 
