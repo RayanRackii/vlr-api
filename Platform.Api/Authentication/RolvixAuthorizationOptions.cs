@@ -17,6 +17,7 @@ public static class RolvixAuthorizationOptions
         options.AddPolicy(
             "Customer",
             policy => policy
+                .AddAuthenticationSchemes(CustomerJwtBearerDefaults.AuthenticationScheme)
                 .RequireAuthenticatedUser()
                 .RequireRole(AuthRoles.Customer));
 
