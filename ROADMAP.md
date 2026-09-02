@@ -91,6 +91,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
 - [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
 - [x] Gates por canal: `AllowExternalEmail` / `AllowExternalWhatsApp` (override do global). Unset continua fail-closed. SMS Catalog permanece Dev.
+- [ ] **Ops (humano):** no Railway **production**, setar `Notifications__AllowExternalEmail=true` + Resend + `App__FrontendBaseUrl`. Storage reuses existing `Supabase__Url` / `Supabase__ServiceRoleKey` (do not duplicate `Storage__*` secrets). Código LogError se Dev permanecer; processo sobe.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
 - [x] Cadastro pending (`PhoneVerifiedAt` null) com o mesmo e-mail + telefone + documento **retoma** a linha; falha Twilio **não apaga** o Customer; DTO `verificationStarted`.
@@ -114,6 +115,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] FE `/invite` chama API real
 - [x] E-mail (Resend) com layout Rolvix + `App:FrontendBaseUrl` (prod nunca emite localhost)
 - [x] Reset de senha B2B: `POST /api/auth/forgot-password` → `generate_link` + Resend (`RolvixEmailLayout`); FE não usa mais `resetPasswordForEmail`
+- [ ] **Ops (humano):** Railway PROD deve ter `Notifications__AllowExternalEmail=true` (obrigatório para convite/recovery; não é opcional de DEV). Ver `docs/runbooks/password-recovery-resend.md`.
 - [x] Tenant RBAC v1 (API): `RequirePermission`, catálogo, Roles CRUD, invite `roleIds[]`, `/me` additive. UI no `vlr-web`.
 - [ ] Migrar onboarding público para invite (remover senha do admin)
 
@@ -225,3 +227,8 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-08-31 | **Fix:** cadastro B2C pending (`PhoneVerifiedAt` null) com e-mail+telefone+documento iguais retoma a linha (atualiza nome/senha); falha Twilio não apaga Customer; `verificationStarted` no DTO de register. Resend 202 neutro (desconhecido/já verificado/cooldown); rate limit de aplicação (45s e-mail, 10/10min IP → 429 só no resend). Fecha follow-ups Fable do Twilio Verify. Spec `docs/plans/active/2026-08-31-b2c-pending-registration.md`. |
 | 2026-08-31 | **Fix:** gates `AllowExternalEmail` / `AllowExternalWhatsApp` com fallback no global `AllowExternalDelivery`. Unset continua fail-closed. SMS Catalog permanece Dev. Sem alterar Railway/PROD. |
 | 2026-09-01 | **Fix:** SuperAdmin wizard Recursos — `GET /api/admin/asset-families` (PlatformAdmin, sem tenant). `GET /api/asset-families` permanece fail-closed sem `tenant_id`. Spec `docs/plans/active/2026-09-01-admin-asset-families-catalog.md`. |
+| 2026-09-02 | **Fix:** hotfix silent Dev email/storage in PROD. Explicit `AllowExternalEmail=true` still required (F-05 Production default not restored). LogError when Production selects DevEmailProvider/DevStorageProvider, or email gate true with incomplete Resend (no secrets). Invite HTML polish (table/td) is not the incident cause. |
+| 2026-09-02 | **Follow-up:** unify catalog storage on `Supabase:Url` / `Supabase:ServiceRoleKey`. Removed `Storage:SupabaseUrl` / `Storage:ServiceRoleKey` (no legacy fallback). Spec `docs/plans/active/2026-09-02-unify-supabase-storage-config.md`. |
+| 2026-09-02 | **Fix:** Storage + Auth Admin send `sb_secret_` as `apikey` only (legacy JWT still `apikey` + Bearer). Capture Storage error bodies without credentials; map duplicate 409, file/mime 400, Invalid JWT/401/403 as upstream 502. Spec `docs/plans/active/2026-09-02-supabase-storage-secret-key-auth.md`. |
+| 2026-09-02 | **Fix:** named JwtBearer scheme `CustomerJwt` (HS256, `platform.b2c` / `platform.customer`); policy `"Customer"` binds only that scheme. B2B JwtBearer/JWKS unchanged. |
+| 2026-09-02 | **Fix:** Bearer default is PolicyScheme (`iss=platform.b2c` → `CustomerJwt`, else `Supabase`); TenantProvider reads only authenticated identities so catalog GQF/gate get the customer tenant. Customer principal is never treated as PlatformAdmin (policy + checker + Customer-first tenant resolution). |

@@ -22,6 +22,11 @@ public sealed class FakePlatformAdminChecker : IPlatformAdminChecker
             return false;
         }
 
+        if (CustomerClaimTypes.IsCustomer(user))
+        {
+            return false;
+        }
+
         var email = user.FindFirst("email")?.Value
             ?? user.FindFirst(ClaimTypes.Email)?.Value
             ?? user.Identity?.Name;

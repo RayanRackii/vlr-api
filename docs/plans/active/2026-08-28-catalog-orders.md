@@ -128,7 +128,7 @@ Implementations: `SupabaseStorageProvider`, `DevStorageProvider` (local folder u
 Storage:PublicBucket = catalog-public
 Storage:PrivateBucket = catalog-private
 Storage:SignedUrlTtlSeconds = 900
-Storage:SupabaseUrl / Storage:ServiceRoleKey  (env; never commit secrets)
+Supabase:Url / Supabase:ServiceRoleKey  (env; never commit secrets; same keys as Auth)
 ```
 
 Keys: `{tenantId:N}/{productId:N}/{fileId:N}` (or product-request equivalent).

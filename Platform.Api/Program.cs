@@ -71,7 +71,7 @@ try
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
     builder.Services.AddWebhooksModule();
-    builder.Services.AddStorage(builder.Configuration);
+    builder.Services.AddStorage(builder.Configuration, builder.Environment);
     builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     builder.Services.AddPlatformHangfire(connectionString);
 

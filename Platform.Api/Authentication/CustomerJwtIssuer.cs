@@ -11,6 +11,16 @@ public interface ICustomerJwtIssuer
     string IssueToken(Customer customer);
 }
 
+public static class CustomerJwtBearerDefaults
+{
+    public const string AuthenticationScheme = "CustomerJwt";
+}
+
+public static class SupabaseJwtBearerDefaults
+{
+    public const string AuthenticationScheme = "Supabase";
+}
+
 public sealed class CustomerJwtIssuer(IConfiguration configuration) : ICustomerJwtIssuer
 {
     public const string Issuer = "platform.b2c";

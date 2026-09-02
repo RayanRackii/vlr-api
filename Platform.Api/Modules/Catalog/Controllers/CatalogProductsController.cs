@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
+using Platform.Api.Storage;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Enums;
 
@@ -132,6 +133,18 @@ public sealed class CatalogProductsController(ICatalogProductService productServ
         {
             return NotFound(new { error = ex.Message });
         }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
+        }
     }
 
     [HttpDelete("{id:guid}/files/{fileId:guid}")]
@@ -167,6 +180,18 @@ public sealed class CatalogProductsController(ICatalogProductService productServ
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
         }
     }
 }
