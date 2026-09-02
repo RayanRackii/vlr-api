@@ -8,6 +8,7 @@ public static class RolvixAuthorizationOptions
     {
         // Plain [Authorize] protects B2B panel routes: Customer B2C JWTs are rejected.
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
+            .AddAuthenticationSchemes(SupabaseJwtBearerDefaults.AuthenticationScheme)
             .RequireAuthenticatedUser()
             .RequireAssertion(context =>
                 !context.User.IsInRole(AuthRoles.Customer)
@@ -24,6 +25,7 @@ public static class RolvixAuthorizationOptions
         options.AddPolicy(
             SupabaseAuthenticationExtensions.PlatformAdminPolicy,
             policy => policy
+                .AddAuthenticationSchemes(SupabaseJwtBearerDefaults.AuthenticationScheme)
                 .RequireAuthenticatedUser()
                 .AddRequirements(new PlatformAdminRequirement()));
 

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Authentication;
@@ -28,13 +29,21 @@ public sealed class HttpContextTenantProvider : ITenantProvider
             }
 
             var httpContext = _httpContextAccessor.HttpContext;
-
-            if (httpContext is null || httpContext.User.Identity?.IsAuthenticated != true)
+            if (httpContext is null)
             {
                 return null;
             }
 
-            var user = httpContext.User;
+            var authenticatedIdentities = httpContext.User.Identities
+                .Where(identity => identity.IsAuthenticated)
+                .ToArray();
+
+            if (authenticatedIdentities.Length == 0)
+            {
+                return null;
+            }
+
+            var user = new ClaimsPrincipal(authenticatedIdentities);
 
             // Platform Super-Admins: no tenant_id → cross-tenant platform mode.
             // With tenant_id in JWT → operating inside that tenant as admin.

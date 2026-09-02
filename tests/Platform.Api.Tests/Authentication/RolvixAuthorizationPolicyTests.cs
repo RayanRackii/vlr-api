@@ -20,6 +20,12 @@ public sealed class RolvixAuthorizationPolicyTests
             new Claim("email", "staff@club.test"),
             new Claim(ClaimTypes.Name, "staff@club.test"));
 
+        Assert.Equal(
+            [SupabaseJwtBearerDefaults.AuthenticationScheme],
+            harness.DefaultPolicy.AuthenticationSchemes);
+        Assert.DoesNotContain(
+            CustomerJwtBearerDefaults.AuthenticationScheme,
+            harness.DefaultPolicy.AuthenticationSchemes);
         Assert.True((await harness.Authorization.AuthorizeAsync(user, resource: null, harness.DefaultPolicy)).Succeeded);
         Assert.False((await harness.Authorization.AuthorizeAsync(user, "Customer")).Succeeded);
         Assert.False((await harness.Authorization.AuthorizeAsync(user, SupabaseAuthenticationExtensions.PlatformAdminPolicy)).Succeeded);
