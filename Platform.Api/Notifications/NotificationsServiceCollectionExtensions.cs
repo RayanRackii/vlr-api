@@ -67,6 +67,9 @@ public static class NotificationsServiceCollectionExtensions
         services.AddHostedService(sp => new NotificationDeliveryGateHostedService(
             emailExternal,
             whatsAppExternal,
+            hostEnvironment.IsProduction(),
+            emailGate,
+            resendConfigured,
             sp.GetRequiredService<ILogger<NotificationDeliveryGateHostedService>>()));
 
         return services;
@@ -76,6 +79,9 @@ public static class NotificationsServiceCollectionExtensions
 internal sealed class NotificationDeliveryGateHostedService(
     bool emailEnabled,
     bool whatsAppEnabled,
+    bool isProduction,
+    bool emailGate,
+    bool resendConfigured,
     ILogger<NotificationDeliveryGateHostedService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
@@ -86,6 +92,18 @@ internal sealed class NotificationDeliveryGateHostedService(
         logger.LogInformation(
             "External WhatsApp delivery {State}",
             whatsAppEnabled ? "enabled" : "disabled");
+
+        if (isProduction && !emailEnabled)
+        {
+            logger.LogError(
+                "DevEmailProvider is selected in Production. Invite and recovery mail will not reach Resend until Notifications:AllowExternalEmail is true and Resend credentials are present.");
+        }
+
+        if (emailGate && !resendConfigured)
+        {
+            logger.LogError(
+                "Resend configuration is incomplete (missing ApiKey or FromEmail). Email stays on DevEmailProvider.");
+        }
 
         return Task.CompletedTask;
     }
