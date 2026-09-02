@@ -23,6 +23,11 @@ public sealed class PlatformAdminChecker(IOptions<PlatformAdminOptions> options)
             return false;
         }
 
+        if (CustomerClaimTypes.IsCustomer(user))
+        {
+            return false;
+        }
+
         return IsPlatformAdminEmail(ResolveEmail(user));
     }
 

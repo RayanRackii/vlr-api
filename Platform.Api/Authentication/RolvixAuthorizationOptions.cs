@@ -10,9 +10,7 @@ public static class RolvixAuthorizationOptions
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
             .AddAuthenticationSchemes(SupabaseJwtBearerDefaults.AuthenticationScheme)
             .RequireAuthenticatedUser()
-            .RequireAssertion(context =>
-                !context.User.IsInRole(AuthRoles.Customer)
-                && context.User.FindFirst(CustomerClaimTypes.CustomerId) is null)
+            .RequireAssertion(context => !CustomerClaimTypes.IsCustomer(context.User))
             .Build();
 
         options.AddPolicy(
@@ -27,6 +25,7 @@ public static class RolvixAuthorizationOptions
             policy => policy
                 .AddAuthenticationSchemes(SupabaseJwtBearerDefaults.AuthenticationScheme)
                 .RequireAuthenticatedUser()
+                .RequireAssertion(context => !CustomerClaimTypes.IsCustomer(context.User))
                 .AddRequirements(new PlatformAdminRequirement()));
 
         return options;

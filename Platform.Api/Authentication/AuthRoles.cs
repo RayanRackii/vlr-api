@@ -1,3 +1,5 @@
+using System.Security.Claims;
+
 namespace Platform.Api.Authentication;
 
 public static class AuthRoles
@@ -12,4 +14,8 @@ public static class CustomerClaimTypes
     public const string TenantId = "tenant_id";
 
     public const string Role = "role";
+
+    public static bool IsCustomer(ClaimsPrincipal? user) =>
+        user is not null
+        && (user.IsInRole(AuthRoles.Customer) || user.FindFirst(CustomerId) is not null);
 }

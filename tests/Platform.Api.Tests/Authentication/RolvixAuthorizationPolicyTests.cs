@@ -51,6 +51,21 @@ public sealed class RolvixAuthorizationPolicyTests
     }
 
     [Fact]
+    public async Task Customer_with_platform_admin_email_is_denied_platform_admin()
+    {
+        var harness = CreateHarness();
+        var user = AuthenticatedPrincipal(
+            new Claim(ClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+            new Claim("email", AdminEmail));
+
+        Assert.False((await harness.Authorization.AuthorizeAsync(user, resource: null, harness.DefaultPolicy)).Succeeded);
+        Assert.True((await harness.Authorization.AuthorizeAsync(user, "Customer")).Succeeded);
+        Assert.False((await harness.Authorization.AuthorizeAsync(user, SupabaseAuthenticationExtensions.PlatformAdminPolicy)).Succeeded);
+    }
+
+    [Fact]
     public async Task Platform_admin_is_allowed_by_default_and_platform_admin_and_denied_customer()
     {
         var harness = CreateHarness();

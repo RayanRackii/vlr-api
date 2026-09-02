@@ -9,6 +9,8 @@ namespace Platform.Api.Tests.Authentication;
 
 public sealed class HttpContextTenantProviderTests
 {
+    private const string AdminEmail = "admin@rolvix.test";
+
     [Fact]
     public void Authenticated_customer_identity_is_used_when_unauthenticated_identity_is_first()
     {
@@ -47,6 +49,43 @@ public sealed class HttpContextTenantProviderTests
     }
 
     [Fact]
+    public void Authenticated_customer_with_platform_admin_email_resolves_customer_tenant()
+    {
+        var tenantId = Guid.NewGuid();
+        var customer = new ClaimsIdentity(
+            [
+                new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+                new Claim(CustomerClaimTypes.TenantId, tenantId.ToString()),
+                new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+                new Claim(ClaimTypes.Role, AuthRoles.Customer),
+                new Claim("email", AdminEmail),
+            ],
+            authenticationType: CustomerJwtBearerDefaults.AuthenticationScheme);
+
+        var provider = CreateProvider(new ClaimsPrincipal(customer), AdminEmail);
+
+        Assert.Equal(tenantId, provider.TenantId);
+    }
+
+    [Fact]
+    public void Authenticated_customer_with_platform_admin_email_missing_tenant_id_throws()
+    {
+        var customer = new ClaimsIdentity(
+            [
+                new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+                new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+                new Claim(ClaimTypes.Role, AuthRoles.Customer),
+                new Claim("email", AdminEmail),
+            ],
+            authenticationType: CustomerJwtBearerDefaults.AuthenticationScheme);
+
+        var provider = CreateProvider(new ClaimsPrincipal(customer), AdminEmail);
+
+        var exception = Assert.Throws<TenantResolutionException>(() => provider.TenantId);
+        Assert.Equal("The customer access token is missing a valid tenant_id claim.", exception.Message);
+    }
+
+    [Fact]
     public void Unauthenticated_only_returns_null()
     {
         var unauthenticated = new ClaimsIdentity(
@@ -60,7 +99,9 @@ public sealed class HttpContextTenantProviderTests
         Assert.Null(provider.TenantId);
     }
 
-    private static HttpContextTenantProvider CreateProvider(ClaimsPrincipal user)
+    private static HttpContextTenantProvider CreateProvider(
+        ClaimsPrincipal user,
+        params string[] platformAdminEmails)
     {
         var accessor = new FakeHttpContextAccessor
         {
@@ -70,6 +111,9 @@ public sealed class HttpContextTenantProviderTests
         return new HttpContextTenantProvider(
             accessor,
             new AmbientTenantContext(),
-            new PlatformAdminChecker(Options.Create(new PlatformAdminOptions())));
+            new PlatformAdminChecker(Options.Create(new PlatformAdminOptions
+            {
+                Emails = [.. platformAdminEmails],
+            })));
     }
 }

@@ -10,8 +10,9 @@ After PR #40, Customer policy succeeds but `GET /api/catalog/portal/products` re
 
 - PolicyScheme / ForwardDefaultSelector as default authenticate scheme (keep name `Bearer`). Peek unvalidated JWT `iss == platform.b2c` → forward `CustomerJwt`; otherwise forward B2B JwtBearer (named e.g. `Supabase`). Selector must not throw on malformed tokens; must not trust claims for authz/tenant.
 - Do not make `CustomerJwt` the universal default handler.
-- Customer policy stays `CustomerJwt` only. DefaultPolicy / PlatformAdmin authenticate the B2B scheme (not CustomerJwt).
-- Harden `HttpContextTenantProvider`: any authenticated identity; tenant_id only from authenticated identities; Customer missing tenant_id still throws; never return null for authenticated Customer.
+- Customer policy stays `CustomerJwt` only. DefaultPolicy / PlatformAdmin authenticate the B2B scheme (not CustomerJwt) **and** reject Customer principals (`role=Customer` or `customer_id`).
+- Harden `HttpContextTenantProvider`: any authenticated identity; tenant_id only from authenticated identities; Customer branch **before** platform-admin; Customer missing tenant_id still throws; never return null for authenticated Customer (including when the B2C email is in `PlatformAdmin:Emails`).
+- `IPlatformAdminChecker.IsPlatformAdmin` returns false for Customer principals. Email allowlist alone is not enough.
 - No WEB, no GQF semantic change, no migration, no gate removal.
 
 ## Repositories
