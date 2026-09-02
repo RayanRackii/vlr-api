@@ -1,27 +1,41 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Platform.Core.Infrastructure.Supabase;
 
 namespace Platform.Api.Storage;
 
 public sealed class SupabaseStorageProvider : IStorageProvider
 {
     private readonly HttpClient _httpClient;
-    private readonly StorageOptions _options;
+    private readonly StorageOptions _storageOptions;
+    private readonly string _supabaseUrl;
     private readonly ILogger<SupabaseStorageProvider> _logger;
 
     public SupabaseStorageProvider(
         HttpClient httpClient,
-        IOptions<StorageOptions> options,
+        IOptions<SupabaseOptions> supabaseOptions,
+        IOptions<StorageOptions> storageOptions,
         ILogger<SupabaseStorageProvider> logger)
     {
-        _options = options.Value;
-        _logger = logger;
+        var supabase = supabaseOptions.Value;
+        if (string.IsNullOrWhiteSpace(supabase.Url))
+        {
+            throw new InvalidOperationException("Supabase:Url is not configured.");
+        }
 
-        var baseUrl = (_options.SupabaseUrl ?? string.Empty).TrimEnd('/') + "/storage/v1/";
-        httpClient.BaseAddress = new Uri(baseUrl);
+        if (string.IsNullOrWhiteSpace(supabase.ServiceRoleKey))
+        {
+            throw new InvalidOperationException("Supabase:ServiceRoleKey is not configured.");
+        }
+
+        _storageOptions = storageOptions.Value;
+        _logger = logger;
+        _supabaseUrl = supabase.Url.TrimEnd('/');
+
+        httpClient.BaseAddress = new Uri($"{_supabaseUrl}/storage/v1/");
         httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", _options.ServiceRoleKey);
+            new AuthenticationHeaderValue("Bearer", supabase.ServiceRoleKey);
         _httpClient = httpClient;
     }
 
@@ -43,13 +57,12 @@ public sealed class SupabaseStorageProvider : IStorageProvider
 
     public string GetPublicUrl(string bucket, string key)
     {
-        if (!string.Equals(bucket, _options.PublicBucket, StringComparison.Ordinal))
+        if (!string.Equals(bucket, _storageOptions.PublicBucket, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Public URLs are only available for the public bucket.");
         }
 
-        var root = (_options.SupabaseUrl ?? string.Empty).TrimEnd('/');
-        return $"{root}/storage/v1/object/public/{Uri.EscapeDataString(bucket)}/{key}";
+        return $"{_supabaseUrl}/storage/v1/object/public/{Uri.EscapeDataString(bucket)}/{key}";
     }
 
     public async Task<string> CreateSignedUrlAsync(
@@ -83,8 +96,7 @@ public sealed class SupabaseStorageProvider : IStorageProvider
             return signed;
         }
 
-        var root = (_options.SupabaseUrl ?? string.Empty).TrimEnd('/');
-        return $"{root}/storage/v1{signed}";
+        return $"{_supabaseUrl}/storage/v1{signed}";
     }
 
     public async Task DeleteAsync(

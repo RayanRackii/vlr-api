@@ -47,7 +47,7 @@ HTML of the invite was **not** the incident cause (email never reached Resend). 
 
 - **D1 A:** Keep explicit email opt-in. Ops sets `Notifications__AllowExternalEmail=true` + Resend on Railway PROD. Do not restore F-05.
 - **D2 A + hardening:** Do not fail startup on `IsProduction()`. Add `LogError` for the three cases above. No secrets in logs.
-- **D3 A:** No `PublicBaseUrl`. Use `Storage__SupabaseUrl` as both API host and public URL prefix.
+- **D3 A:** No `PublicBaseUrl`. Public/signed URL prefix is the project URL (originally `Storage__SupabaseUrl`). Follow-up unifies that host on `Supabase__Url` / `Supabase__ServiceRoleKey` — see ops table below.
 - **D4:** Small invite/recovery HTML polish + render test if natural. HTML is not the incident cause.
 - **P2:** out of scope (follows this hotfix).
 
@@ -96,11 +96,11 @@ Set on the **production** Railway service (not implied by `ASPNETCORE_ENVIRONMEN
 | `Resend__FromEmail` | **yes** | Verified sender |
 | `Resend__FromName` | recommended | Default in code: `Rolvix` |
 | `App__FrontendBaseUrl` | **yes** | Invite/recovery links; must be `https://rolvix.com.br`, never localhost |
-| `Storage__SupabaseUrl` | **yes** | Public Supabase project URL (`https://<ref>.supabase.co`). Used for Storage HTTP **and** public/signed URLs. |
-| `Storage__ServiceRoleKey` | **yes** | Service role; backend only |
 | `Storage__PublicBucket` | optional | Default `catalog-public` |
 | `Storage__PrivateBucket` | optional | Default `catalog-private` |
 | `Storage__SignedUrlTtlSeconds` | optional | Default `900` |
+
+Follow-up (`docs/plans/active/2026-09-02-unify-supabase-storage-config.md`): catalog Storage HTTP and public/signed URL prefix reuse existing `Supabase__Url` / `Supabase__ServiceRoleKey`. Do **not** set `Storage__SupabaseUrl` / `Storage__ServiceRoleKey`.
 
 Supabase Storage: buckets `catalog-public` (public) and `catalog-private` (private) must exist. Public bucket policy must allow read of customer-visible objects.
 

@@ -9,8 +9,4 @@ public sealed class StorageOptions
     public string PrivateBucket { get; set; } = "catalog-private";
 
     public int SignedUrlTtlSeconds { get; set; } = 900;
-
-    public string? SupabaseUrl { get; set; }
-
-    public string? ServiceRoleKey { get; set; }
 }

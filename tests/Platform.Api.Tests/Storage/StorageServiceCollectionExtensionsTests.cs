@@ -30,6 +30,32 @@ public sealed class StorageServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddStorage_with_only_legacy_storage_keys_registers_dev_provider()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["Storage:SupabaseUrl"] = "https://legacy.supabase.co",
+            ["Storage:ServiceRoleKey"] = "legacy-service-role-not-a-real-key",
+            ["Supabase:Url"] = "",
+            ["Supabase:ServiceRoleKey"] = "",
+        };
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+
+        var hostEnvironment = new FakeHostEnvironment("Development");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+        services.AddSingleton<IHostEnvironment>(hostEnvironment);
+        services.AddStorage(configuration, hostEnvironment);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Equal("DevStorageProvider", provider.GetRequiredService<IStorageProvider>().GetType().Name);
+    }
+
+    [Fact]
     public async Task Production_without_credentials_logs_error_for_dev_storage_provider()
     {
         const string secretKey = "service-role-not-a-real-key";
@@ -45,8 +71,8 @@ public sealed class StorageServiceCollectionExtensionsTests
             log => log.Level == LogLevel.Error
                 && log.Message.Contains("DevStorageProvider", StringComparison.Ordinal)
                 && log.Message.Contains("Production", StringComparison.Ordinal)
-                && (log.Message.Contains("Storage:SupabaseUrl", StringComparison.Ordinal)
-                    || log.Message.Contains("Storage:ServiceRoleKey", StringComparison.Ordinal)));
+                && (log.Message.Contains("Supabase:Url", StringComparison.Ordinal)
+                    || log.Message.Contains("Supabase:ServiceRoleKey", StringComparison.Ordinal)));
         Assert.DoesNotContain(
             logs,
             log => log.Message.Contains(secretKey, StringComparison.Ordinal));
@@ -75,12 +101,12 @@ public sealed class StorageServiceCollectionExtensionsTests
         var values = new Dictionary<string, string?>();
         if (supabaseUrl is not null)
         {
-            values["Storage:SupabaseUrl"] = supabaseUrl;
+            values["Supabase:Url"] = supabaseUrl;
         }
 
         if (serviceRoleKey is not null)
         {
-            values["Storage:ServiceRoleKey"] = serviceRoleKey;
+            values["Supabase:ServiceRoleKey"] = serviceRoleKey;
         }
 
         var configuration = new ConfigurationBuilder()
