@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
+using Platform.Api.Storage;
 using Platform.Core.Domain.Exceptions;
 
 namespace Platform.Api.Modules.Catalog.Controllers;
@@ -177,6 +178,18 @@ public sealed class CatalogPortalController(
         {
             return Unauthorized(new { error = ex.Message });
         }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
+        }
     }
 
     [HttpGet("product-requests/{id:guid}/files/{fileId:guid}/url")]
@@ -202,6 +215,18 @@ public sealed class CatalogPortalController(
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
         }
     }
 
