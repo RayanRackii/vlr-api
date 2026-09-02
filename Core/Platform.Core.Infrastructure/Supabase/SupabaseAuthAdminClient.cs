@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -304,8 +303,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
     private HttpRequestMessage CreateAdminRequest(HttpMethod method, string relativeUri)
     {
         var request = new HttpRequestMessage(method, relativeUri);
-        request.Headers.Add("apikey", _options.ServiceRoleKey);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ServiceRoleKey);
+        SupabaseCredentialHeaders.Apply(request.Headers, _options.ServiceRoleKey);
         return request;
     }
 }

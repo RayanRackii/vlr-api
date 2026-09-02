@@ -16,7 +16,7 @@ public sealed class StorageServiceCollectionExtensionsTests
         using var provider = BuildProvider(
             "Development",
             supabaseUrl: "https://example.supabase.co",
-            serviceRoleKey: "service-role-not-a-real-key");
+            serviceRoleKey: "sb_secret_dummy");
 
         Assert.Equal("SupabaseStorageProvider", provider.GetRequiredService<IStorageProvider>().GetType().Name);
     }
