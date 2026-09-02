@@ -2,7 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Platform.Api.Notifications;
+using Platform.Api.Tests.Infrastructure;
 
 namespace Platform.Api.Tests.Notifications;
 
@@ -190,6 +192,51 @@ public sealed class NotificationsServiceCollectionExtensionsTests
         Assert.Equal(expected, ExternalDeliveryResolution.IsEnabled(channel, global));
     }
 
+    [Fact]
+    public async Task Production_with_unset_email_gate_logs_error_for_dev_email_provider()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["Resend:ApiKey"] = "re_test_not_a_real_key",
+            ["Resend:FromEmail"] = "dev@rolvix.test",
+        };
+
+        var logs = await CaptureHostedStartLogsAsync("Production", values);
+
+        Assert.Contains(
+            logs,
+            log => log.Level == LogLevel.Information
+                && log.Message.Contains("External email delivery", StringComparison.Ordinal)
+                && log.Message.Contains("disabled", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            logs,
+            log => log.Level == LogLevel.Error
+                && log.Message.Contains("DevEmailProvider", StringComparison.Ordinal)
+                && log.Message.Contains("Production", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs, log => log.Message.Contains("re_test_not_a_real_key", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Email_gate_true_with_incomplete_resend_logs_error_without_api_key()
+    {
+        const string secretApiKey = "re_secret_must_not_appear";
+        var values = new Dictionary<string, string?>
+        {
+            ["Resend:ApiKey"] = secretApiKey,
+            ["Notifications:AllowExternalEmail"] = "true",
+        };
+
+        var logs = await CaptureHostedStartLogsAsync("Development", values);
+
+        Assert.Contains(
+            logs,
+            log => log.Level == LogLevel.Error
+                && log.Message.Contains("Resend", StringComparison.OrdinalIgnoreCase)
+                && log.Message.Contains("incomplete", StringComparison.OrdinalIgnoreCase)
+                && log.Message.Contains("Dev", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(logs, log => log.Message.Contains(secretApiKey, StringComparison.Ordinal));
+    }
+
     private static void AssertProviders(
         ServiceProvider provider,
         string expectedEmail,
@@ -236,17 +283,51 @@ public sealed class NotificationsServiceCollectionExtensionsTests
 
     private static ServiceProvider BuildProviderFromValues(
         string environmentName,
-        Dictionary<string, string?> values)
+        Dictionary<string, string?> values,
+        CapturingLoggerProvider? capturingLogger = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();
 
         var services = new ServiceCollection();
-        services.AddLogging();
+        if (capturingLogger is not null)
+        {
+            services.AddLogging(builder => builder.AddProvider(capturingLogger));
+        }
+        else
+        {
+            services.AddLogging();
+        }
+
         services.AddOptions();
         services.AddNotificationInfrastructure(configuration, new FakeHostEnvironment(environmentName));
         return services.BuildServiceProvider();
+    }
+
+    private static async Task<IReadOnlyList<CapturedLog>> CaptureHostedStartLogsAsync(
+        string environmentName,
+        Dictionary<string, string?> values)
+    {
+        var capturingLogger = new CapturingLoggerProvider();
+        await using var provider = BuildProviderFromValues(environmentName, values, capturingLogger);
+        var hosted = provider.GetServices<IHostedService>().ToList();
+        foreach (var service in hosted)
+        {
+            await service.StartAsync(CancellationToken.None);
+        }
+
+        try
+        {
+            return capturingLogger.Entries;
+        }
+        finally
+        {
+            foreach (var service in hosted)
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
+        }
     }
 
     private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
