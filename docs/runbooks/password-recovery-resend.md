@@ -52,7 +52,7 @@ Startup also logs **Error** (no secret values — not ApiKey, FromEmail, or Serv
 
 - Host is Production **and** `DevEmailProvider` is selected (unset/false email gate, or incomplete Resend).
 - Email gate is true (`AllowExternalEmail` or global `AllowExternalDelivery`) **and** Resend is incomplete (missing ApiKey or FromEmail) — email stays on Dev. This Error can fire in Development too.
-- Host is Production **and** `DevStorageProvider` is selected (missing `Storage:SupabaseUrl` or `Storage:ServiceRoleKey`).
+- Host is Production **and** `DevStorageProvider` is selected (missing `Supabase:Url` or `Supabase:ServiceRoleKey`).
 
 The process still starts. Dev fallbacks are not silent in Production.
 
@@ -71,8 +71,8 @@ Set on the **production** Railway service (not implied by `ASPNETCORE_ENVIRONMEN
 | `Resend__FromEmail` | **yes** | Verified sender |
 | `Resend__FromName` | recommended | Default in code: `Rolvix` |
 | `App__FrontendBaseUrl` | **yes** | Invite/recovery links; must be `https://rolvix.com.br`, never localhost |
-| `Storage__SupabaseUrl` | **yes** | Public Supabase project URL (`https://<ref>.supabase.co`). Used for Storage HTTP **and** public/signed URLs. |
-| `Storage__ServiceRoleKey` | **yes** | Service role; backend only |
+| `Supabase__Url` | **yes** (existing Auth) | Same project URL for Auth **and** Storage HTTP / public/signed URL prefix. Do **not** set `Storage__SupabaseUrl`. |
+| `Supabase__ServiceRoleKey` | **yes** (existing Auth) | Same service role as Auth. Do **not** set `Storage__ServiceRoleKey`. |
 | `Storage__PublicBucket` | optional | Default `catalog-public` |
 | `Storage__PrivateBucket` | optional | Default `catalog-private` |
 | `Storage__SignedUrlTtlSeconds` | optional | Default `900` |
@@ -88,7 +88,8 @@ This repo cannot write Railway. A human must set the variables above.
 - [ ] `Notifications__AllowExternalEmail=true` on Railway **production** (required for invite/recovery; not DEV-only).
 - [ ] `Resend__ApiKey` / `Resend__FromEmail` / `Resend__FromName` set on Railway (same as invites).
 - [ ] **`App__FrontendBaseUrl=https://rolvix.com.br` on Railway** — never `localhost`.
-- [ ] `Storage__SupabaseUrl` and `Storage__ServiceRoleKey` on Railway production (catalog files).
+- [ ] Reuse existing `Supabase__Url` and `Supabase__ServiceRoleKey` on Railway production (catalog files). Do **not** duplicate as `Storage__SupabaseUrl` / `Storage__ServiceRoleKey`.
+- [ ] Confirm Supabase Storage buckets `catalog-public` and `catalog-private` exist (public bucket allows read of customer-visible objects).
 - [ ] Confirm boot logs: `External email delivery enabled`; no Error for `DevEmailProvider` / `DevStorageProvider` in Production.
 - [ ] Supabase Auth → URL Configuration:
   - Site URL: `https://rolvix.com.br` (not `localhost:3000`)

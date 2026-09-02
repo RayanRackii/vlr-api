@@ -91,7 +91,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
 - [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
 - [x] Gates por canal: `AllowExternalEmail` / `AllowExternalWhatsApp` (override do global). Unset continua fail-closed. SMS Catalog permanece Dev.
-- [ ] **Ops (humano):** no Railway **production**, setar `Notifications__AllowExternalEmail=true` + Resend + Storage + `App__FrontendBaseUrl` (código LogError se Dev permanecer; processo sobe).
+- [ ] **Ops (humano):** no Railway **production**, setar `Notifications__AllowExternalEmail=true` + Resend + `App__FrontendBaseUrl`. Storage reuses existing `Supabase__Url` / `Supabase__ServiceRoleKey` (do not duplicate `Storage__*` secrets). Código LogError se Dev permanecer; processo sobe.
 - [ ] Config externa Meta no Railway + template Authentication.
 - [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
 - [x] Cadastro pending (`PhoneVerifiedAt` null) com o mesmo e-mail + telefone + documento **retoma** a linha; falha Twilio **não apaga** o Customer; DTO `verificationStarted`.
@@ -228,3 +228,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-08-31 | **Fix:** gates `AllowExternalEmail` / `AllowExternalWhatsApp` com fallback no global `AllowExternalDelivery`. Unset continua fail-closed. SMS Catalog permanece Dev. Sem alterar Railway/PROD. |
 | 2026-09-01 | **Fix:** SuperAdmin wizard Recursos — `GET /api/admin/asset-families` (PlatformAdmin, sem tenant). `GET /api/asset-families` permanece fail-closed sem `tenant_id`. Spec `docs/plans/active/2026-09-01-admin-asset-families-catalog.md`. |
 | 2026-09-02 | **Fix:** hotfix silent Dev email/storage in PROD. Explicit `AllowExternalEmail=true` still required (F-05 Production default not restored). LogError when Production selects DevEmailProvider/DevStorageProvider, or email gate true with incomplete Resend (no secrets). Invite HTML polish (table/td) is not the incident cause. |
+| 2026-09-02 | **Follow-up:** unify catalog storage on `Supabase:Url` / `Supabase:ServiceRoleKey`. Removed `Storage:SupabaseUrl` / `Storage:ServiceRoleKey` (no legacy fallback). Spec `docs/plans/active/2026-09-02-unify-supabase-storage-config.md`. |

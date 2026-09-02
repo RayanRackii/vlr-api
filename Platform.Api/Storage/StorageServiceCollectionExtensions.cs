@@ -1,3 +1,5 @@
+using Platform.Core.Infrastructure.Supabase;
+
 namespace Platform.Api.Storage;
 
 public static class StorageServiceCollectionExtensions
@@ -10,9 +12,10 @@ public static class StorageServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(hostEnvironment);
 
         services.Configure<StorageOptions>(configuration.GetSection(StorageOptions.SectionName));
+        services.Configure<SupabaseOptions>(configuration.GetSection(SupabaseOptions.SectionName));
 
-        var supabaseUrl = configuration["Storage:SupabaseUrl"];
-        var serviceRoleKey = configuration["Storage:ServiceRoleKey"];
+        var supabaseUrl = configuration["Supabase:Url"];
+        var serviceRoleKey = configuration["Supabase:ServiceRoleKey"];
         var supabaseConfigured = !string.IsNullOrWhiteSpace(supabaseUrl)
             && !string.IsNullOrWhiteSpace(serviceRoleKey);
 
@@ -44,7 +47,7 @@ internal sealed class StorageProviderGateHostedService(
         if (isProduction && usingDevStorage)
         {
             logger.LogError(
-                "DevStorageProvider is selected in Production. Storage:SupabaseUrl or Storage:ServiceRoleKey is missing; catalog files will use local/dev URLs.");
+                "DevStorageProvider is selected in Production. Supabase:Url or Supabase:ServiceRoleKey is missing; catalog files will use local/dev URLs.");
         }
 
         return Task.CompletedTask;
