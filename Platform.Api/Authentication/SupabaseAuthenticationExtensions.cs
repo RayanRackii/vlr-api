@@ -40,7 +40,6 @@ public static class SupabaseAuthenticationExtensions
                 {
                     ValidateIssuerSigningKey = true,
                     // Legacy HS256 fallback when tokens are still signed with the JWT secret.
-                    // Also used to validate platform-issued B2C Customer OTPs.
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
                     ValidateIssuer = false,
                     ValidateAudience = false,
@@ -54,6 +53,12 @@ public static class SupabaseAuthenticationExtensions
                         SecurityAlgorithms.HmacSha256,
                     ],
                 };
+            })
+            .AddJwtBearer(CustomerJwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.MapInboundClaims = false;
+                options.Audience = CustomerJwtIssuer.Audience;
+                options.TokenValidationParameters = CreateCustomerJwtTokenValidationParameters(jwtSecret);
             });
 
         services.AddAuthorization(options => options.AddRolvixPolicies());
@@ -62,5 +67,26 @@ public static class SupabaseAuthenticationExtensions
         services.AddSingleton<ICustomerJwtIssuer, CustomerJwtIssuer>();
 
         return services;
+    }
+
+    public static TokenValidationParameters CreateCustomerJwtTokenValidationParameters(string jwtSecret)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jwtSecret);
+
+        return new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            ValidateIssuer = true,
+            ValidIssuer = CustomerJwtIssuer.Issuer,
+            ValidateAudience = true,
+            ValidAudience = CustomerJwtIssuer.Audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+            RoleClaimType = CustomerClaimTypes.Role,
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+        };
     }
 }
