@@ -89,9 +89,9 @@ public sealed class AdminAssetFamiliesControllerTests
                     services.AddSingleton<IAssetFamilyService, FakeCatalogAssetFamilyService>();
                     services.AddSingleton<IPlatformAdminChecker>(_ => new FakePlatformAdminChecker(AdminEmail));
                     services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
-                    services.AddAuthentication(TestAuthHandler.SchemeName)
+                    services.AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                            TestAuthHandler.SchemeName,
+                            SupabaseJwtBearerDefaults.AuthenticationScheme,
                             _ => { });
                     services.AddAuthorization(options => options.AddRolvixPolicies());
                     services.AddControllers()
@@ -166,7 +166,6 @@ public sealed class AdminAssetFamiliesControllerTests
         UrlEncoder encoder)
         : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string SchemeName = "Test";
         public const string HeaderName = "X-Test-User";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -189,8 +188,8 @@ public sealed class AdminAssetFamiliesControllerTests
                 new(ClaimTypes.Name, email),
             ];
 
-            var identity = new ClaimsIdentity(claims, SchemeName);
-            var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);
+            var identity = new ClaimsIdentity(claims, Scheme.Name);
+            var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name);
             return Task.FromResult(AuthenticateResult.Success(ticket));
         }
     }

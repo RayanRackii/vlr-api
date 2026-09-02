@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -28,7 +29,11 @@ public static class SupabaseAuthenticationExtensions
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+            .AddPolicyScheme(JwtBearerDefaults.AuthenticationScheme, "JWT scheme router", options =>
+            {
+                options.ForwardDefaultSelector = context => JwtBearerSchemeSelector.Select(context);
+            })
+            .AddJwtBearer(SupabaseJwtBearerDefaults.AuthenticationScheme, options =>
             {
                 // Current Supabase projects sign access tokens with asymmetric keys (ES256/RS256)
                 // exposed at the JWKS discovery document — not only with the legacy HS256 secret.

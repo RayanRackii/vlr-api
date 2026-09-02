@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Controllers;
@@ -35,10 +36,11 @@ namespace Platform.Api.Tests.Authentication;
 public sealed class CustomerJwtBearerPipelineTests
 {
     private const string CustomerJwtSecret = "customer-jwt-test-secret-key-32bytes!";
-    private const string B2BJwtSecret = "b2b-jwt-test-secret-key-different32!";
     private const string B2BIssuer = "https://example.supabase.co/auth/v1";
     private const string ProductsPath = "/api/catalog/portal/products";
     private const string B2BProbePath = "/api/test/b2b-probe";
+    private const string PlatformAdminProbePath = "/api/test/platform-admin-probe";
+    private const string AdminEmail = "admin@rolvix.test";
 
     [Fact]
     public async Task AddSupabaseAuthentication_registers_CustomerJwt_without_oidc_and_keeps_B2B_default()
@@ -52,6 +54,14 @@ public sealed class CustomerJwtBearerPipelineTests
 
         var defaultAuthenticate = await schemes.GetDefaultAuthenticateSchemeAsync();
         Assert.Equal(JwtBearerDefaults.AuthenticationScheme, defaultAuthenticate?.Name);
+
+        var bearerScheme = await schemes.GetSchemeAsync(JwtBearerDefaults.AuthenticationScheme);
+        Assert.NotNull(bearerScheme);
+        Assert.Equal(typeof(PolicySchemeHandler), bearerScheme.HandlerType);
+
+        var supabaseScheme = await schemes.GetSchemeAsync(SupabaseJwtBearerDefaults.AuthenticationScheme);
+        Assert.NotNull(supabaseScheme);
+        Assert.Equal(typeof(JwtBearerHandler), supabaseScheme.HandlerType);
 
         var customerScheme = await schemes.GetSchemeAsync(CustomerJwtBearerDefaults.AuthenticationScheme);
         Assert.NotNull(customerScheme);
@@ -70,9 +80,11 @@ public sealed class CustomerJwtBearerPipelineTests
             [SecurityAlgorithms.HmacSha256],
             customerOptions.TokenValidationParameters.ValidAlgorithms);
 
-        var b2bOptions = jwtOptions.Get(JwtBearerDefaults.AuthenticationScheme);
+        var b2bOptions = jwtOptions.Get(SupabaseJwtBearerDefaults.AuthenticationScheme);
         Assert.False(string.IsNullOrEmpty(b2bOptions.MetadataAddress));
         Assert.Contains("/.well-known/openid-configuration", b2bOptions.MetadataAddress, StringComparison.Ordinal);
+        Assert.False(b2bOptions.TokenValidationParameters.ValidateIssuer);
+        Assert.False(b2bOptions.TokenValidationParameters.ValidateAudience);
 
         var authz = provider.GetRequiredService<IOptions<AuthorizationOptions>>().Value;
         var customerPolicy = authz.GetPolicy("Customer");
@@ -81,8 +93,19 @@ public sealed class CustomerJwtBearerPipelineTests
             [CustomerJwtBearerDefaults.AuthenticationScheme],
             customerPolicy.AuthenticationSchemes);
         Assert.DoesNotContain(JwtBearerDefaults.AuthenticationScheme, customerPolicy.AuthenticationSchemes);
-        Assert.Empty(authz.DefaultPolicy.AuthenticationSchemes);
-        Assert.Empty(authz.GetPolicy(SupabaseAuthenticationExtensions.PlatformAdminPolicy)!.AuthenticationSchemes);
+        Assert.DoesNotContain(SupabaseJwtBearerDefaults.AuthenticationScheme, customerPolicy.AuthenticationSchemes);
+        Assert.Equal(
+            [SupabaseJwtBearerDefaults.AuthenticationScheme],
+            authz.DefaultPolicy.AuthenticationSchemes);
+        Assert.DoesNotContain(
+            CustomerJwtBearerDefaults.AuthenticationScheme,
+            authz.DefaultPolicy.AuthenticationSchemes);
+        Assert.Equal(
+            [SupabaseJwtBearerDefaults.AuthenticationScheme],
+            authz.GetPolicy(SupabaseAuthenticationExtensions.PlatformAdminPolicy)!.AuthenticationSchemes);
+        Assert.DoesNotContain(
+            CustomerJwtBearerDefaults.AuthenticationScheme,
+            authz.GetPolicy(SupabaseAuthenticationExtensions.PlatformAdminPolicy)!.AuthenticationSchemes);
     }
 
     [Fact]
@@ -101,6 +124,12 @@ public sealed class CustomerJwtBearerPipelineTests
         var item = Assert.Single(doc.RootElement.EnumerateArray());
         Assert.Equal(seed.TenantAProductId, item.GetProperty("id").GetGuid());
         Assert.Equal("Tenant A Ball", item.GetProperty("name").GetString());
+
+        var principalResponse = await client.GetAsync("/api/test/default-auth");
+        Assert.Equal(HttpStatusCode.OK, principalResponse.StatusCode);
+        using var principalDoc = JsonDocument.Parse(await principalResponse.Content.ReadAsStringAsync());
+        Assert.True(principalDoc.RootElement.GetProperty("authenticated").GetBoolean());
+        Assert.True(principalDoc.RootElement.GetProperty("isCustomer").GetBoolean());
     }
 
     [Fact]
@@ -185,7 +214,7 @@ public sealed class CustomerJwtBearerPipelineTests
     {
         using var host = await StartHostAsync();
         var token = MintHs256(
-            secret: B2BJwtSecret,
+            secret: CustomerJwtSecret,
             issuer: B2BIssuer,
             audience: "authenticated",
             claims: [new Claim("sub", Guid.NewGuid().ToString("N"))]);
@@ -194,7 +223,7 @@ public sealed class CustomerJwtBearerPipelineTests
     }
 
     [Fact]
-    public async Task Valid_customer_jwt_against_b2b_only_endpoint_returns_401()
+    public async Task Valid_customer_jwt_against_b2b_only_endpoint_is_rejected()
     {
         using var host = await StartHostAsync();
         var seed = host.Services.GetRequiredService<SeededCatalog>();
@@ -204,7 +233,85 @@ public sealed class CustomerJwtBearerPipelineTests
 
         var response = await client.GetAsync(B2BProbePath);
 
+        Assert.True(
+            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+            $"Expected 401 or 403 from DefaultPolicy, got {(int)response.StatusCode}.");
+    }
+
+    [Theory]
+    [InlineData("not-a-jwt")]
+    [InlineData("a.b")]
+    public async Task Malformed_bearer_token_returns_401_without_throwing(string token)
+    {
+        using var host = await StartHostAsync();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await client.GetAsync(ProductsPath);
+
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Customer_jwt_with_platform_admin_email_never_reads_null_tenant_id()
+    {
+        using var host = await StartHostAsync();
+        var seed = host.Services.GetRequiredService<SeededCatalog>();
+        var recorder = host.Services.GetRequiredService<TenantIdReadRecorder>();
+        recorder.Clear();
+
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.AdminEmailCustomer));
+
+        var response = await client.GetAsync(ProductsPath);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(doc.RootElement.EnumerateArray());
+        Assert.Equal(seed.TenantAProductId, item.GetProperty("id").GetGuid());
+
+        var reads = recorder.Reads;
+        Assert.NotEmpty(reads);
+        Assert.All(reads, tenantId => Assert.Equal(seed.AdminEmailCustomer.TenantId, tenantId));
+        Assert.DoesNotContain((Guid?)null, reads);
+    }
+
+    [Fact]
+    public async Task Customer_jwt_with_platform_admin_email_is_rejected_by_platform_admin_policy()
+    {
+        using var host = await StartHostAsync();
+        var seed = host.Services.GetRequiredService<SeededCatalog>();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.AdminEmailCustomer));
+
+        var response = await client.GetAsync(PlatformAdminProbePath);
+
+        Assert.True(
+            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+            $"Expected 401 or 403 from PlatformAdmin policy, got {(int)response.StatusCode}.");
+    }
+
+    [Fact]
+    public async Task Successful_products_request_never_reads_null_tenant_id()
+    {
+        using var host = await StartHostAsync();
+        var seed = host.Services.GetRequiredService<SeededCatalog>();
+        var recorder = host.Services.GetRequiredService<TenantIdReadRecorder>();
+        recorder.Clear();
+
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.TenantACustomer));
+
+        var response = await client.GetAsync(ProductsPath);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var reads = recorder.Reads;
+        Assert.NotEmpty(reads);
+        Assert.All(reads, tenantId => Assert.Equal(seed.TenantACustomer.TenantId, tenantId));
+        Assert.DoesNotContain((Guid?)null, reads);
     }
 
     [Fact]
@@ -319,8 +426,17 @@ public sealed class CustomerJwtBearerPipelineTests
                     services.AddHttpContextAccessor();
                     services.AddScoped<AmbientTenantContext>();
                     services.AddSingleton<IPlatformAdminChecker>(_ =>
-                        new PlatformAdminChecker(Options.Create(new PlatformAdminOptions())));
-                    services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
+                        new PlatformAdminChecker(Options.Create(new PlatformAdminOptions
+                        {
+                            Emails = [AdminEmail],
+                        })));
+                    services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
+                    services.AddSingleton<TenantIdReadRecorder>();
+                    services.AddScoped<HttpContextTenantProvider>();
+                    services.AddScoped<ITenantProvider>(sp =>
+                        new RecordingTenantProvider(
+                            sp.GetRequiredService<HttpContextTenantProvider>(),
+                            sp.GetRequiredService<TenantIdReadRecorder>()));
                     services.AddScoped<AppDbContext>(sp =>
                     {
                         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -336,19 +452,23 @@ public sealed class CustomerJwtBearerPipelineTests
                     services.AddSingleton<INotificationOutboxScheduler, NoOpNotificationOutboxScheduler>();
                     services
                         .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                        .AddJwtBearer(options =>
+                        .AddPolicyScheme(JwtBearerDefaults.AuthenticationScheme, "JWT scheme router", options =>
+                        {
+                            options.ForwardDefaultSelector = context => JwtBearerSchemeSelector.Select(context);
+                        })
+                        .AddJwtBearer(SupabaseJwtBearerDefaults.AuthenticationScheme, options =>
                         {
                             options.MapInboundClaims = false;
                             options.RequireHttpsMetadata = false;
                             options.TokenValidationParameters = new TokenValidationParameters
                             {
                                 ValidateIssuerSigningKey = true,
-                                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(B2BJwtSecret)),
-                                ValidateIssuer = true,
-                                ValidIssuer = B2BIssuer,
+                                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(CustomerJwtSecret)),
+                                ValidateIssuer = false,
                                 ValidateAudience = false,
                                 ValidateLifetime = true,
                                 ClockSkew = TimeSpan.FromMinutes(1),
+                                RoleClaimType = CustomerClaimTypes.Role,
                                 ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
                             };
                         })
@@ -378,13 +498,29 @@ public sealed class CustomerJwtBearerPipelineTests
                             manager.FeatureProviders.Add(
                                 new ExplicitControllerFeatureProvider(
                                     typeof(CatalogPortalController),
-                                    typeof(B2BAuthorizeProbeController)));
+                                    typeof(B2BAuthorizeProbeController),
+                                    typeof(PlatformAdminProbeController)));
                         });
                 });
                 web.Configure(app =>
                 {
                     app.UseRouting();
                     app.UseAuthentication();
+                    app.Use(async (ctx, next) =>
+                    {
+                        if (HttpMethods.IsGet(ctx.Request.Method)
+                            && ctx.Request.Path.Equals("/api/test/default-auth", StringComparison.Ordinal))
+                        {
+                            await ctx.Response.WriteAsJsonAsync(new
+                            {
+                                authenticated = ctx.User.Identities.Any(identity => identity.IsAuthenticated),
+                                isCustomer = ctx.User.IsInRole(AuthRoles.Customer),
+                            });
+                            return;
+                        }
+
+                        await next();
+                    });
                     app.UseAuthorization();
                     app.UseEndpoints(endpoints => endpoints.MapControllers());
                 });
@@ -418,7 +554,13 @@ public sealed class CustomerJwtBearerPipelineTests
             Name = "Bruno",
             Email = "bruno@club.test",
         };
-        db.Customers.AddRange(customerA, customerB);
+        var customerAdmin = new Customer
+        {
+            TenantId = tenantA.Id,
+            Name = "Admin Member",
+            Email = AdminEmail,
+        };
+        db.Customers.AddRange(customerA, customerB, customerAdmin);
 
         var productA = new CatalogProduct
         {
@@ -439,12 +581,13 @@ public sealed class CustomerJwtBearerPipelineTests
         db.CatalogProducts.AddRange(productA, productB);
         await db.SaveChangesAsync();
 
-        return new SeededCatalog(customerA, customerB, productA.Id, productB.Id);
+        return new SeededCatalog(customerA, customerB, customerAdmin, productA.Id, productB.Id);
     }
 
     private sealed record SeededCatalog(
         Customer TenantACustomer,
         Customer TenantBCustomer,
+        Customer AdminEmailCustomer,
         Guid TenantAProductId,
         Guid TenantBProductId);
 
@@ -493,10 +636,66 @@ public sealed class CustomerJwtBearerPipelineTests
     }
 }
 
+internal sealed class TenantIdReadRecorder
+{
+    private readonly List<Guid?> _reads = [];
+    private readonly object _gate = new();
+
+    public IReadOnlyList<Guid?> Reads
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _reads];
+            }
+        }
+    }
+
+    public void Record(Guid? tenantId)
+    {
+        lock (_gate)
+        {
+            _reads.Add(tenantId);
+        }
+    }
+
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _reads.Clear();
+        }
+    }
+}
+
+internal sealed class RecordingTenantProvider(ITenantProvider inner, TenantIdReadRecorder recorder)
+    : ITenantProvider
+{
+    public Guid? TenantId
+    {
+        get
+        {
+            var tenantId = inner.TenantId;
+            recorder.Record(tenantId);
+            return tenantId;
+        }
+    }
+}
+
 [ApiController]
 [Authorize]
 [Route("api/test/b2b-probe")]
 public sealed class B2BAuthorizeProbeController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult Get() => Ok();
+}
+
+[ApiController]
+[Authorize(Policy = SupabaseAuthenticationExtensions.PlatformAdminPolicy)]
+[Route("api/test/platform-admin-probe")]
+public sealed class PlatformAdminProbeController : ControllerBase
 {
     [HttpGet]
     public IActionResult Get() => Ok();
