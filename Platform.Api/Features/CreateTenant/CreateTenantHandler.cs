@@ -23,7 +23,6 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
     private static readonly string[] TrialModules =
     [
         PlatformModules.Inventory,
-        PlatformModules.Maintenance,
         PlatformModules.Pmoc,
         PlatformModules.WorkOrders,
         PlatformModules.Rentals,
@@ -117,7 +116,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 
             if (request.IsTrial)
             {
-                foreach (var moduleName in TrialModules)
+                foreach (var moduleName in PlatformModuleCatalog.NormalizeEntitlements(TrialModules))
                 {
                     _dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
                 }

@@ -88,7 +88,7 @@ public sealed class AdminTenantService(
                 "Subdomain must contain only lowercase letters, numbers, and hyphens.");
         }
 
-        var modules = NormalizeModules(request.ActiveModules);
+        var modules = PlatformModuleCatalog.NormalizeEntitlements(request.ActiveModules);
 
         if (modules.Count == 0)
         {
@@ -222,13 +222,6 @@ public sealed class AdminTenantService(
                 "Subdomain must contain only lowercase letters, numbers, and hyphens.");
         }
 
-        var modules = NormalizeModules(request.ActiveModules);
-
-        if (modules.Count == 0)
-        {
-            throw new ArgumentException("At least one active module is required.");
-        }
-
         var familyIds = await ResolveFamilyIdsAsync(request.AssetFamilyKeys, cancellationToken);
 
         var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
@@ -249,6 +242,20 @@ public sealed class AdminTenantService(
             if (tenant is null)
             {
                 throw new KeyNotFoundException("Tenant not found.");
+            }
+
+            var existingActive = tenant.Modules
+                .Where(m => m.IsActive)
+                .Select(m => m.ModuleName)
+                .ToList();
+
+            var modules = PlatformModuleCatalog.NormalizeEntitlements(
+                request.ActiveModules,
+                existingActive);
+
+            if (modules.Count == 0)
+            {
+                throw new ArgumentException("At least one active module is required.");
             }
 
             tenant.UpdateProfile(
@@ -491,11 +498,12 @@ public sealed class AdminTenantService(
 
     private void SyncTenantModules(Tenant tenant, IReadOnlyList<string> desiredModules)
     {
-        var remainingDesired = new HashSet<string>(desiredModules, StringComparer.OrdinalIgnoreCase);
+        var desired = new HashSet<string>(desiredModules, StringComparer.OrdinalIgnoreCase);
+        var remainingDesired = new HashSet<string>(desired, StringComparer.OrdinalIgnoreCase);
 
         foreach (var module in tenant.Modules.ToList())
         {
-            if (remainingDesired.Contains(module.ModuleName))
+            if (desired.Contains(module.ModuleName))
             {
                 remainingDesired.Remove(module.ModuleName);
 
@@ -507,11 +515,21 @@ public sealed class AdminTenantService(
                 continue;
             }
 
+            if (!PlatformModuleCatalog.ShouldRemoveStoredModule(module.ModuleName, desired))
+            {
+                continue;
+            }
+
             dbContext.TenantModules.Remove(module);
         }
 
         foreach (var moduleName in remainingDesired)
         {
+            if (PlatformModuleCatalog.IsLegacy(moduleName))
+            {
+                continue;
+            }
+
             dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
         }
     }
@@ -651,28 +669,6 @@ public sealed class AdminTenantService(
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<string>)g.Select(x => x.Key).ToList());
-    }
-
-    private static IReadOnlyList<string> NormalizeModules(IReadOnlyList<string>? activeModules)
-    {
-        if (activeModules is null || activeModules.Count == 0)
-        {
-            return [];
-        }
-
-        var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var module in activeModules)
-        {
-            if (!PlatformModules.TryNormalize(module, out var canonical))
-            {
-                throw new ArgumentException($"Unknown module '{module}'.");
-            }
-
-            normalized.Add(canonical);
-        }
-
-        return normalized.OrderBy(m => m, StringComparer.Ordinal).ToList();
     }
 
     private static bool IsValidSubdomain(string subdomain)

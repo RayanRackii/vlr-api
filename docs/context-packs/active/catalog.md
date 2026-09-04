@@ -4,8 +4,8 @@ Derived context — NOT canonical.
 
 - Scope: Catalog & Orders module (tenant-owned product catalog + customer requests)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
-- Canonical sources: `CONTEXT.md`; `docs/plans/active/2026-08-28-catalog-orders.md`
-- Last verified: 2026-08-28
+- Canonical sources: `CONTEXT.md`; `docs/plans/active/2026-08-28-catalog-orders.md`; `docs/adr/0004-module-dependencies-asset-registry.md`
+- Last verified: 2026-09-04
 
 ## Purpose
 
@@ -16,6 +16,8 @@ Load when the question is CatalogProduct, CatalogOrder, ProductRequest, catalog 
 - `CONTEXT.md` — glossary
 - `docs/plans/active/2026-08-28-catalog-orders.md` — approved v1 spec
 - `Core/Platform.Core.Domain/Constants/PlatformModules.cs` — key `catalog`
+- `Core/Platform.Core.Domain/Constants/PlatformModuleCatalog.cs` — catalog requires no Asset Registry; `orders`/`pedidos` aliases
+- `docs/adr/0004-module-dependencies-asset-registry.md` — Catalog is independent of Inventory / Asset Registry
 - `Core/Platform.Core.Domain/Constants/Permissions.cs` — `Permissions.Catalog`
 
 ## Domain vocabulary
