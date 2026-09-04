@@ -135,12 +135,12 @@ Digits-only CPF (11) or CNPJ (14) stored on Customer. Distinct from `Tenant.TaxI
 _Avoid_: TaxId (tenant); DocumentType as a second persisted enum
 
 **CatalogProduct**:
-A tenant-owned product offered to that tenant's Customers. Not Asset (what the tenant owns) and not Rentable (what the tenant rents).
-_Avoid_: Product (bare); linking CatalogProduct to Asset in v1
+A tenant-owned product offered to that tenant's Customers. Not Asset (what the tenant owns) and not Rentable (what the tenant rents). Does not require Inventory or Asset Registry.
+_Avoid_: Product (bare); linking CatalogProduct to Asset in v1; treating Catalog as an Assets module
 
 **CatalogOrder**:
-A Customer request for one or more CatalogProducts with quantities. Not a payment and not a Reservation.
-_Avoid_: Order (bare); Pedido in code; treating cart as a persisted entity
+A Customer request for one or more CatalogProducts with quantities. Not a payment and not a Reservation. Belongs to the Catalog module (`orders` / `pedidos` are aliases of `catalog`, not a separate entitlement).
+_Avoid_: Order (bare); Pedido in code; treating cart as a persisted entity; a standalone Orders module
 
 **ProductRequest**:
 A Customer request for something not found in the catalog. Does not auto-create a CatalogProduct.
@@ -151,12 +151,20 @@ A persisted platform notification event with one or more NotificationDelivery ro
 _Avoid_: WhatsAppNotification / SmsNotification / EmailNotification as separate domains
 
 **Asset**:
-A Tenant-scoped inventory resource (space, electrical equipment, good, …). Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`. Create/edit wizard: Geral → Operação → Preços (if rentable) → Revisão. Pricing UI offers same-every-day, weekday+weekend, or per-day presets and expands them into per-weekday `RentalPricing` rows. Bulk create: Location quantity is N entities (each `TotalQuantity` 1); Good quantity is stock on one entity.
-_Avoid_: One physical table per use case; dynamic per-tenant tables; asking the admin to type seven identical price rows as the default path
+A Tenant-scoped registry resource (space, electrical equipment, good, …). Persistence stays in `assets.*`. Core fields are shared; family-specific values live in `Attributes` (JSONB). Linked 1:1 to a Rentable when `IsRentable`. Distinct from the commercial Inventory (Ativos) module: Rentals, PMOC and OS may use Asset rows without that entitlement. Create/edit wizard: Geral → Operação → Preços (if rentable) → Revisão. Pricing UI offers same-every-day, weekday+weekend, or per-day presets and expands them into per-weekday `RentalPricing` rows. Bulk create: Location quantity is N entities (each `TotalQuantity` 1); Good quantity is stock on one entity.
+_Avoid_: One physical table per use case; dynamic per-tenant tables; asking the admin to type seven identical price rows as the default path; treating Asset as the Inventory module; moving Asset to Core; a second registry table
 
 **AssetFamily**:
-A platform catalog entry (`spaces`, `electrical`, `goods`, `generic`, …) with a FieldSchema describing extra attribute fields. Tenants enable families at onboarding (`TenantAssetFamily`). Drives asset forms and copy tone.
-_Avoid_: STI / child tables per family; inventing new CREATE TABLE migrations for each vertical
+A platform catalog entry (`spaces`, `electrical`, `goods`, `generic`, …) with a FieldSchema describing extra attribute fields. Tenants enable families at onboarding (`TenantAssetFamily`). Drives asset forms and copy tone. Family opt-in is Asset Registry provisioning, not Inventory entitlement.
+_Avoid_: STI / child tables per family; inventing new CREATE TABLE migrations for each vertical; requiring `inventory` in `tenant_modules` before families can exist
+
+**AssetRegistry**:
+Internal platform capability to persist and reference Asset, AssetCategory, and AssetFamily for a tenant. Not a `tenant_modules` row. Not the Ativos product. Auto-provisioned when Rentals, PMOC, or OS is activated (default family opt-in if none). Inventory provides the same tables plus the commercial UX.
+_Avoid_: Showing “Asset Registry” in tenant UI; auto-enabling the Inventory module; a second store; Core.Asset
+
+**TenantModule**:
+Commercial entitlement in `core.tenant_modules` (what the tenant may use in product UX and `inventory.*` / module permission filtering). Distinct from required capabilities. Canonical commercial keys: `inventory`, `pmoc`, `os`, `rentals`, `catalog`. `maintenance` is legacy — do not activate on new tenants.
+_Avoid_: Using tenant_modules as the technical dependency graph; inserting `inventory` because Rentals needs Asset rows; a module key `asset-registry`
 
 **ResourceCategory**:
 A Tenant-defined label for grouping Rentables (for example padel, society, tennis, meeting room, van). Used for filters, legends, and layout meaning — not a hard-coded enum in the platform. In inventory UI this is **AssetCategory** (Tipo) within an AssetFamily.
@@ -215,7 +223,7 @@ The tenant-owned URL slug used to resolve which Tenant a public B2C request belo
 _Avoid_: custom domain (until real custom hostnames are supported), slug alone without tenant resolution
 
 ## 2. Dinâmica de Módulos e Customização (Requisitos Core)
-- **O Cardápio de Módulos:** Super Admin habilita/desabilita módulos por Tenant (chaves canônicas: `inventory`, `maintenance`, `pmoc`, `os`, `rentals`). Persistência em `core.tenant_modules`. **Meta:** API e UI devem bloquear módulos inativos (enforcement ainda incompleto — ver ROADMAPs).
+- **O Cardápio de Módulos:** Super Admin habilita/desabilita **módulos comerciais** por Tenant (chaves: `inventory`, `pmoc`, `os`, `rentals`, `catalog`). Persistência em `core.tenant_modules`. Inventory (Ativos) é opcional. Rentals / PMOC / OS exigem a capability interna **Asset Registry**, não o entitlement de Inventory — nunca autoativar `inventory`. `maintenance` é legado (bloquear uso novo). **Meta:** API e UI devem bloquear módulos inativos (enforcement ainda incompleto — ver ROADMAPs). ADR [`docs/adr/0004-module-dependencies-asset-registry.md`](./docs/adr/0004-module-dependencies-asset-registry.md).
 - **Extensibilidade de Entidades (Schema Flexível):** Campos base padronizados + `JSONB` no PostgreSQL para customizações por cliente. **Jamais** crie tabelas dinâmicas por cliente.
 - **Regra de ouro de segurança:** Administradores **nunca** definem a senha de outros usuários. Fluxo alvo: convite por token → link `/invite?token=` → o próprio usuário define a senha. Super-Admin convida o admin inicial no wizard/edit do tenant. Onboarding público que ainda coleta senha do admin é legado.
 - **Modo suporte (Super-Admin):** no painel de clientes, “Abrir ambiente” (mesma aba em `rolvix.com.br`) garante membership Admin + seta `app_metadata.tenant_id` e refresh — console B2B daquele tenant. **Não** é o portal B2C (`{subdomain}.rolvix.com.br`), que usa CustomerAuth. “Voltar à plataforma” limpa o `tenant_id`. No create, e-mails `PlatformAdmin` viram Admin (recria Auth se sumiu). Excluir tenant **não** apaga Auth de PlatformAdmin nem de quem ainda tem membership noutro tenant. Schema: `User` único por `(TenantId, SupabaseAuthId)`. **PlatformAdmin** (allowlist) não conta como assento do tenant, não aparece em listas de usuários/técnicos e não pode ser convidado/promovido/excluído pela UI de users. Detalhe operacional: `docs/sessions/2026-08-05-platform-admin-membership.md` e `docs/runbooks/platform-admin-enter.md`.
@@ -231,12 +239,15 @@ Core (Fundação Multi-Tenant e Agnóstica)
 ├── Users (B2B)
 ├── Customers (B2C — por Tenant; CPF, CEP, phone verified via SMS)
 ├── Permissions / Roles
-└── Units
+├── Units
+└── Asset Registry (capability interna; tabelas em assets.*; não é módulo comercial)
 
-Módulos (Fatias Verticais Plugáveis)
-├── Inventory / Ativos          (entregue; base para Rentals)
-├── Maintenance / PMOC / OS    (entregue; espinha de conformidade)
-├── Rentals                    (FOCO ATUAL — agnóstico: espaços, bens, veículos; beachhead clube)
+Módulos comerciais (fatias ativáveis em tenant_modules)
+├── Inventory / Ativos         (opcional; UX + inventory.* ; fornece Asset Registry)
+├── Rentals                    (FOCO ATUAL; exige Asset Registry, não Ativos)
+├── PMOC                       (exige Asset Registry, não Ativos)
+├── OS                         (exige Asset Registry, não Ativos)
+├── Catalog                    (inclui Orders; não usa Asset Registry)
 ├── Checklists                 (Futuro)
 ├── Documentos                 (Futuro)
 ├── Estoque                    (Futuro)
@@ -245,6 +256,7 @@ Módulos (Fatias Verticais Plugáveis)
 ├── Dashboard
 └── Notifications              (fila + Resend / Meta WhatsApp)
 ```
+`maintenance` não é módulo vivo. Não ativar em tenants novos.
 
 **Dois repositórios Git (não monorepo versionado):**
 ```
@@ -268,7 +280,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 - **Fase 1: O Core (Esqueleto Agnóstico)** — em andamento
   - Multi-tenant via Global Query Filters no EF Core (RLS Postgres ainda não é requisito bloqueante do beachhead).
   - Tenants, Units, Users, RBAC (Roles + Permissions; tenant enforcement via `RequirePermission`).
-  - Catálogo de módulos por tenant (persistido; gating de API/UI pendente).
+  - Catálogo de módulos comerciais por tenant (persistido; gating de API/UI pendente). Asset Registry é capability, não linha de `tenant_modules`.
   - Subdomain + branding (`LogoSvg`, cores, tagline) no cadastro do tenant; portal UI em uso.
 
 - **Fase 1.5: Notificações reais (Resend + WhatsApp)** — etapa principal de infra; **adiada**
@@ -277,6 +289,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 
 - **Fase 2a: MVP operacional (PMOC + OS + Inventário)** — entregue como base
   - Planos PMOC, geração de OS (Hangfire), inventário de ativos.
+  - Inventário comercial é opcional; PMOC/OS usam Asset Registry.
   - Mantém-se no cardápio; não é o foco de feature do ciclo atual.
 
 - **Fase 2b: Beachhead Rentals (clube)** — foco atual de produto
