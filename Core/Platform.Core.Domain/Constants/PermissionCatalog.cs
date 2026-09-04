@@ -43,7 +43,7 @@ public static class PermissionCatalog
         Define(Permissions.Rentals.ScheduleRead, "Read schedule", "View schedule templates and days."),
         Define(Permissions.Rentals.ScheduleWrite, "Write schedule", "Create and update schedule templates and slots."),
         Define(Permissions.Rentals.AssetsRead, "Read rental assets", "List rentable assets."),
-        Define(Permissions.Rentals.AssetsWrite, "Write rental assets", "Update rental schedule policy."),
+        Define(Permissions.Rentals.AssetsWrite, "Write rental assets", "Create and update rentable assets and their schedule policy."),
         Define(Permissions.Rentals.PricingRead, "Read rental pricing", "List rental pricing windows."),
         Define(Permissions.Rentals.PricingWrite, "Write rental pricing", "Create, update, and delete rental pricing."),
         Define(Permissions.Rentals.PricingBulkWrite, "Bulk write rental pricing", "Apply rental pricing in bulk."),

@@ -187,6 +187,97 @@ public sealed class PermissionResolverTests
         Assert.Contains(Permissions.Pmoc.PlansWrite, effective);
         Assert.DoesNotContain(Permissions.Rentals.LayoutsWrite, effective);
     }
+
+    [Fact]
+    public async Task Inventory_off_rentals_on_includes_rentals_assets_write_not_inventory_assets_write()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Inventory, isActive: false));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: true));
+        var role = harness.AddCustomRole(
+            "RentalOps",
+            Permissions.Rentals.AssetsWrite,
+            Permissions.Inventory.AssetsWrite);
+        var user = harness.AddUser("rental-ops");
+        harness.Assign(user, role);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            user.Id);
+
+        Assert.Contains(Permissions.Rentals.AssetsWrite, effective);
+        Assert.DoesNotContain(Permissions.Inventory.AssetsWrite, effective);
+        Assert.DoesNotContain(Permissions.Inventory.AssetsRead, effective);
+    }
+
+    [Fact]
+    public async Task Inventory_off_pmoc_on_includes_plans_read_not_inventory_categories_read()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Inventory, isActive: false));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Pmoc, isActive: true));
+        var role = harness.AddCustomRole(
+            "PmocOps",
+            Permissions.Pmoc.PlansRead,
+            Permissions.Inventory.CategoriesRead);
+        var user = harness.AddUser("pmoc-ops");
+        harness.Assign(user, role);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            user.Id);
+
+        Assert.Contains(Permissions.Pmoc.PlansRead, effective);
+        Assert.DoesNotContain(Permissions.Inventory.CategoriesRead, effective);
+    }
+
+    [Fact]
+    public async Task Inventory_off_os_on_includes_work_orders_read_not_inventory_assets_read()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Inventory, isActive: false));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.WorkOrders, isActive: true));
+        var role = harness.AddCustomRole(
+            "OsOps",
+            Permissions.Os.WorkOrdersRead,
+            Permissions.Inventory.AssetsRead);
+        var user = harness.AddUser("os-ops");
+        harness.Assign(user, role);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            user.Id);
+
+        Assert.Contains(Permissions.Os.WorkOrdersRead, effective);
+        Assert.DoesNotContain(Permissions.Inventory.AssetsRead, effective);
+    }
+
+    [Fact]
+    public async Task Catalog_only_effective_set_has_no_inventory_permissions()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: true));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("catalog-only-admin");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            admin.Id);
+
+        Assert.Contains(Permissions.Catalog.ProductsRead, effective);
+        Assert.Contains(Permissions.Catalog.OrdersManage, effective);
+        Assert.DoesNotContain(Permissions.Inventory.AssetsRead, effective);
+        Assert.DoesNotContain(Permissions.Inventory.AssetsWrite, effective);
+        Assert.DoesNotContain(Permissions.Inventory.CategoriesRead, effective);
+        Assert.DoesNotContain(Permissions.Inventory.CategoriesWrite, effective);
+        Assert.DoesNotContain(Permissions.Inventory.FamiliesRead, effective);
+        Assert.DoesNotContain(effective, key => key.StartsWith("inventory.", StringComparison.Ordinal));
+    }
 }
 
 internal sealed class RbacResolverHarness : IAsyncDisposable

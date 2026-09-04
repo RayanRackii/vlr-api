@@ -212,6 +212,58 @@ public sealed class PermissionAuthorizationMatrixTests
         Assert.False((await harness.Authorization.AuthorizeAsync(customer, "PlatformAdmin")).Succeeded);
     }
 
+    [Fact]
+    public async Task Inventory_assets_read_is_denied_when_inventory_module_is_off()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Inventory, isActive: false));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var user = harness.SeedUserWithKeys(
+            "rentals-only",
+            Permissions.Rentals.AssetsWrite,
+            Permissions.Inventory.AssetsRead);
+        var principal = AuthenticatedPrincipal(
+            new Claim("sub", user.SupabaseAuthId),
+            new Claim("email", user.Email));
+
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Rentals.AssetsWrite))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Inventory.AssetsRead))).Succeeded);
+    }
+
+    [Fact]
+    public async Task Inventory_categories_read_is_denied_when_inventory_module_is_off()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Inventory, isActive: false));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Pmoc, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var user = harness.SeedUserWithKeys(
+            "pmoc-only",
+            Permissions.Pmoc.PlansRead,
+            Permissions.Inventory.CategoriesRead);
+        var principal = AuthenticatedPrincipal(
+            new Claim("sub", user.SupabaseAuthId),
+            new Claim("email", user.Email));
+
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Pmoc.PlansRead))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Inventory.CategoriesRead))).Succeeded);
+    }
+
     private static ClaimsPrincipal AuthenticatedPrincipal(params Claim[] claims) =>
         new(new ClaimsIdentity(claims, authenticationType: "Test"));
 

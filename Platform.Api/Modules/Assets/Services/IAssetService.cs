@@ -20,4 +20,13 @@ public interface IAssetService
     Task<BulkCreateAssetsResponse> BulkCreateAsync(
         BulkCreateAssetsRequest request,
         CancellationToken cancellationToken);
+
+    Task<AssetResponse> CreateRentableAsync(
+        CreateRentableRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AssetResponse> UpdateRentableAsync(
+        Guid id,
+        UpdateRentableRequest request,
+        CancellationToken cancellationToken);
 }

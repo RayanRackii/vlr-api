@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Api.Modules.Pmoc.Services;
 using Platform.Core.Domain.Constants;
@@ -9,7 +11,8 @@ namespace Platform.Api.Modules.Pmoc.Controllers;
 [ApiController]
 [Route("api/maintenance-plans")]
 public sealed class MaintenancePlansController(
-    IMaintenancePlanService maintenancePlanService) : ControllerBase
+    IMaintenancePlanService maintenancePlanService,
+    IAssetRegistry assetRegistry) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Pmoc.PlansRead)]
@@ -18,6 +21,15 @@ public sealed class MaintenancePlansController(
     {
         var plans = await maintenancePlanService.ListAsync(cancellationToken);
         return Ok(plans);
+    }
+
+    [HttpGet("asset-categories")]
+    [RequirePermission(Permissions.Pmoc.PlansRead)]
+    public async Task<ActionResult<IReadOnlyList<RegistryCategoryListItem>>> ListAssetCategories(
+        CancellationToken cancellationToken)
+    {
+        var categories = await assetRegistry.ListCategoriesAsync(cancellationToken);
+        return Ok(categories);
     }
 
     [HttpGet("{id:guid}")]

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -8,7 +9,8 @@ namespace Platform.Api.Modules.Pmoc.Services;
 
 public sealed class MaintenancePlanService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IMaintenancePlanService
+    ITenantProvider tenantProvider,
+    IAssetRegistry assetRegistry) : IMaintenancePlanService
 {
     public async Task<IReadOnlyList<MaintenancePlanResponse>> ListAsync(
         CancellationToken cancellationToken)
@@ -156,14 +158,7 @@ public sealed class MaintenancePlanService(
         Guid assetCategoryId,
         CancellationToken cancellationToken)
     {
-        var exists = await dbContext.AssetCategories
-            .AsNoTracking()
-            .AnyAsync(c => c.Id == assetCategoryId, cancellationToken);
-
-        if (!exists)
-        {
-            throw new KeyNotFoundException($"Asset category '{assetCategoryId}' was not found.");
-        }
+        await assetRegistry.RequireCategoryAsync(assetCategoryId, cancellationToken);
     }
 
     private static void ValidateTasks(IReadOnlyList<CreatePlanTaskDto> tasks)

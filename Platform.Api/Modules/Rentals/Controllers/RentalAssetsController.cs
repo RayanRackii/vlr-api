@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Constants;
@@ -12,7 +14,8 @@ namespace Platform.Api.Modules.Rentals.Controllers;
 [Route("api/rental-assets")]
 public sealed class RentalAssetsController(
     IRentalAssetService rentalAssetService,
-    IReservationQueueService reservationQueueService) : ControllerBase
+    IReservationQueueService reservationQueueService,
+    IAssetRegistry assetRegistry) : ControllerBase
 {
     [RequirePermission(Permissions.Rentals.AssetsRead)]
     [HttpGet]
@@ -21,6 +24,48 @@ public sealed class RentalAssetsController(
     {
         var assets = await rentalAssetService.ListRentableAsync(cancellationToken);
         return Ok(assets);
+    }
+
+    [RequirePermission(Permissions.Rentals.AssetsRead)]
+    [HttpGet("categories")]
+    public async Task<ActionResult<IReadOnlyList<RegistryCategoryListItem>>> ListCategories(
+        CancellationToken cancellationToken)
+    {
+        var categories = await assetRegistry.ListCategoriesAsync(cancellationToken);
+        return Ok(categories);
+    }
+
+    [RequirePermission(Permissions.Rentals.AssetsRead)]
+    [HttpGet("families")]
+    public async Task<ActionResult<IReadOnlyList<AssetFamilyDetailResponse>>> ListFamilies(
+        CancellationToken cancellationToken)
+    {
+        var families = await assetRegistry.ListActiveFamiliesAsync(cancellationToken);
+        return Ok(families);
+    }
+
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
+    [HttpPost]
+    public async Task<ActionResult<RentalAssetResponse>> Create(
+        [FromBody] CreateRentableRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var asset = await assetRegistry.CreateRentableAsync(request, cancellationToken);
+            var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
+                ?? throw new InvalidOperationException("Rentable configuration was not created.");
+
+            return CreatedAtAction(nameof(GetByAssetId), new { assetId = asset.Id }, rental);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
     }
 
     [RequirePermission(Permissions.Rentals.AssetsRead)]
@@ -71,6 +116,31 @@ public sealed class RentalAssetsController(
         {
             return Ok(
                 await rentalAssetService.UpdateSchedulePolicyAsync(id, request, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<RentalAssetResponse>> Update(
+        Guid id,
+        [FromBody] UpdateRentableRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var asset = await assetRegistry.UpdateRentableAsync(id, request, cancellationToken);
+            var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
+                ?? throw new InvalidOperationException("Rentable configuration was not found.");
+
+            return Ok(rental);
         }
         catch (KeyNotFoundException ex)
         {
