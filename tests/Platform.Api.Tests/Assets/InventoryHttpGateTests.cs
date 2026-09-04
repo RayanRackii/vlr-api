@@ -1,6 +1,7 @@
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -19,6 +20,7 @@ using Platform.Api.Modules.Assets.Controllers;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Core.Domain.Constants;
+using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Tests.Assets;
 
@@ -48,6 +50,31 @@ public sealed class InventoryHttpGateTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Post_assets_without_inventory_assets_write_returns_403()
+    {
+        using var host = StartHost(Permissions.Rentals.AssetsWrite);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await client.PostAsync("/api/assets", content);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_asset_families_without_inventory_families_read_returns_403()
+    {
+        using var host = StartHost(Permissions.Rentals.AssetsWrite);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+
+        var response = await client.GetAsync("/api/asset-families");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private static IHost StartHost(params string[] allowedPermissionKeys) =>
         new HostBuilder()
             .ConfigureWebHost(web =>
@@ -58,6 +85,8 @@ public sealed class InventoryHttpGateTests
                     services.AddLogging();
                     services.AddSingleton<IAssetService, StubAssetService>();
                     services.AddSingleton<IAssetCategoryService, StubAssetCategoryService>();
+                    services.AddSingleton<IAssetFamilyService, StubAssetFamilyService>();
+                    services.AddSingleton<ITenantProvider, StubTenantProvider>();
                     services.AddSingleton<IAuthorizationHandler>(
                         new AllowlistedPermissionHandler(allowedPermissionKeys));
                     services.AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme)
@@ -79,7 +108,8 @@ public sealed class InventoryHttpGateTests
                             manager.FeatureProviders.Add(
                                 new MultiControllerFeatureProvider(
                                     typeof(AssetsController),
-                                    typeof(AssetCategoriesController)));
+                                    typeof(AssetCategoriesController),
+                                    typeof(AssetFamiliesController)));
                         });
                 });
                 web.Configure(app =>
@@ -170,6 +200,23 @@ public sealed class InventoryHttpGateTests
             Guid id,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class StubAssetFamilyService : IAssetFamilyService
+    {
+        public Task<IReadOnlyList<AssetFamilyDetailResponse>> ListCatalogAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AssetFamilyDetailResponse>>([]);
+
+        public Task<IReadOnlyList<AssetFamilyDetailResponse>> ListActiveForTenantAsync(
+            Guid tenantId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AssetFamilyDetailResponse>>([]);
+    }
+
+    private sealed class StubTenantProvider : ITenantProvider
+    {
+        public Guid? TenantId => Guid.Parse("11111111-1111-1111-1111-111111111111");
     }
 
     private sealed class MultiControllerFeatureProvider(params Type[] controllerTypes)

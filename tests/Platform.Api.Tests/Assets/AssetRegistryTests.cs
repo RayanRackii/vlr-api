@@ -99,20 +99,23 @@ public sealed class AssetRegistryTests
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var registry = harness.CreateRegistry();
-        var service = harness.CreateService();
-        await service.CreateAsync(
-            new CreateAssetRequest
+        var created = await registry.CreateRentableAsync(
+            new CreateRentableRequest
             {
+                Name = "Quadra",
+                Tag = "Q1",
                 UnitId = harness.UnitId,
                 CategoryId = harness.CategoryId,
                 FamilyId = harness.FamilyId,
-                Name = "Não alugável",
-                Tag = "NR1",
-                Status = AssetStatus.Active,
-                IsRentable = false,
+                RentalType = RentalAssetType.Location,
+                TotalQuantity = 1,
             },
             CancellationToken.None);
 
+        created.IsRentable = false;
+        await harness.Db.SaveChangesAsync();
+
+        var rentalId = created.RentalConfiguration!.Id;
         var request = new UpdateRentableRequest
         {
             Name = "X",
@@ -124,6 +127,8 @@ public sealed class AssetRegistryTests
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             registry.UpdateRentableAsync(Guid.NewGuid(), request, CancellationToken.None));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            registry.UpdateRentableAsync(rentalId, request, CancellationToken.None));
     }
 
     [Fact]
