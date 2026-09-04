@@ -55,6 +55,7 @@ public sealed class AdminModulesControllerTests
         Assert.True(byKey.ContainsKey(PlatformModules.Rentals));
         Assert.True(byKey.ContainsKey(PlatformModules.Catalog));
         Assert.False(byKey.ContainsKey(AssetRegistry));
+        Assert.False(byKey.ContainsKey(PlatformModules.Maintenance));
 
         AssertProvides(byKey[PlatformModules.Inventory], AssetRegistry);
         AssertRequires(byKey[PlatformModules.Rentals], AssetRegistry);
@@ -62,12 +63,6 @@ public sealed class AdminModulesControllerTests
         AssertRequires(byKey[PlatformModules.WorkOrders], AssetRegistry);
         Assert.Equal(0, byKey[PlatformModules.Catalog].GetProperty("requiredCapabilities").GetArrayLength());
         Assert.Equal(0, byKey[PlatformModules.Catalog].GetProperty("provides").GetArrayLength());
-
-        if (byKey.TryGetValue(PlatformModules.Maintenance, out var maintenance))
-        {
-            Assert.True(maintenance.GetProperty("isLegacy").GetBoolean());
-            Assert.False(maintenance.GetProperty("isCommercial").GetBoolean());
-        }
 
         foreach (var item in doc.RootElement.EnumerateArray())
         {
