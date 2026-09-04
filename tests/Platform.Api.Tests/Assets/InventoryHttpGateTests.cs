@@ -64,6 +64,19 @@ public sealed class InventoryHttpGateTests
     }
 
     [Fact]
+    public async Task Put_assets_without_inventory_assets_write_returns_403()
+    {
+        using var host = StartHost(Permissions.Rentals.AssetsWrite);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        var response = await client.PutAsync($"/api/assets/{Guid.NewGuid()}", content);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Get_asset_families_without_inventory_families_read_returns_403()
     {
         using var host = StartHost(Permissions.Rentals.AssetsWrite);
