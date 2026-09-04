@@ -5,7 +5,7 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`
-- Last verified: 2026-08-22
+- Last verified: 2026-09-04
 
 ## Purpose
 
@@ -54,6 +54,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Book persisted slot: `POST /api/schedule/slots/book` (`slotId`)
 - Book derived window: `POST /api/reservations` (date + start/end + items)
 - Queue (Customer): `GET/POST /api/rental-assets/{id}/queue`, `POST .../queue/join`, `POST .../queue/leave`
+- Registry without Ativos (Wave 2): `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families` (`rentals.assets.*`)
 - Admin day/exceptions: `GET /api/schedule/days/{date}`, `POST /api/schedule/slots/daily-occurrence`
 
 ## Important implementation seams

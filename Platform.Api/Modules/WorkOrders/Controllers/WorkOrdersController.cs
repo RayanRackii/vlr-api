@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Core.Domain.Constants;
@@ -9,7 +11,8 @@ namespace Platform.Api.Modules.WorkOrders.Controllers;
 [ApiController]
 [Route("api/work-orders")]
 public sealed class WorkOrdersController(
-    IWorkOrderService workOrderService) : ControllerBase
+    IWorkOrderService workOrderService,
+    IAssetRegistry assetRegistry) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Os.WorkOrdersRead)]
@@ -19,6 +22,15 @@ public sealed class WorkOrdersController(
     {
         var workOrders = await workOrderService.ListAsync(assetId, cancellationToken);
         return Ok(workOrders);
+    }
+
+    [HttpGet("assets")]
+    [RequirePermission(Permissions.Os.WorkOrdersRead)]
+    public async Task<ActionResult<IReadOnlyList<RegistryAssetListItem>>> ListAssets(
+        CancellationToken cancellationToken)
+    {
+        var assets = await assetRegistry.ListAssetsAsync(cancellationToken);
+        return Ok(assets);
     }
 
     [HttpGet("{id:guid}")]

@@ -105,7 +105,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 
 - [x] Glossário + ADR 0004 + plano (docs). `inventory` comercialmente opcional; Rentals/PMOC/OS não autoativam Ativos.
 - [x] Wave 1: catálogo estático `PlatformModuleCatalog` (`provides` / `requiredCapabilities`); `NormalizeEntitlements` rejeita `maintenance` novo e nunca insere `inventory`; `GET /api/admin/modules`; trial sem `maintenance`. Sem auto-insert de `TenantAssetFamily` neste wave (create já defaulta famílias quando keys omitidas).
-- [ ] Wave 2: autorização de registry sem Ativos (Rentals/PMOC/OS escrevem Asset sem `inventory.*`).
+- [x] Wave 2: autorização de registry sem Ativos — `IAssetRegistry` (Rentals/PMOC/OS); `POST/PUT /api/rental-assets` + pickers; `/api/assets*` permanece `inventory.*`. Sem keys novas, sem migration, sem backfill de `tenant_modules`.
 - [ ] Wave 5: middleware/filtro API → 403 para módulo comercial inativo (menu B2C já filtra). Catalog B2C já tem gate.
 
 ## 5. Fluxo de convite B2B real — EM ANDAMENTO
@@ -239,3 +239,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-02 | **Fix:** Bearer default is PolicyScheme (`iss=platform.b2c` → `CustomerJwt`, else `Supabase`); TenantProvider reads only authenticated identities so catalog GQF/gate get the customer tenant. Customer principal is never treated as PlatformAdmin (policy + checker + Customer-first tenant resolution). |
 | 2026-09-04 | **Docs:** ADR 0004 — Asset Registry (capability) ≠ Inventory (módulo comercial). Catalog independente. `maintenance` legado. Spec `docs/plans/active/2026-09-04-module-dependencies-asset-registry.md`. Sem código de enforcement nesta entrega. |
 | 2026-09-04 | **Executado (API):** Wave 1 Asset Registry — `PlatformModuleCatalog` (capability `asset-registry` só em metadata), `GET /api/admin/modules`, `NormalizeEntitlements` sem auto-inventory, `maintenance` legado não ativável. Sem migration, sem backfill. Branch `feat/asset-registry-wave-1`. |
+| 2026-09-04 | **Executado (API):** Wave 2 Asset Registry access — `IAssetRegistry` + `CreateRentable`/`UpdateRentable`; HTTP `POST/PUT /api/rental-assets`, `GET /api/rental-assets/categories|families`, `GET /api/maintenance-plans/asset-categories`, `GET /api/work-orders/assets`. `/api/assets*` permanece Inventory-gated. Reusa `rentals.assets.*` / `pmoc.plans.read` / `os.work_orders.read`. Sem `asset-registry.*`, sem migration, sem backfill. Branch `feat/asset-registry-capability-access`. |

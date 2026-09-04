@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
+using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -16,7 +17,8 @@ public sealed class WorkOrderService(
     ITenantProvider tenantProvider,
     IHttpContextAccessor httpContextAccessor,
     IUserDirectoryService userDirectoryService,
-    IPermissionResolver permissionResolver) : IWorkOrderService
+    IPermissionResolver permissionResolver,
+    IAssetRegistry assetRegistry) : IWorkOrderService
 {
     public async Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
         Guid? assetId,
@@ -81,9 +83,7 @@ public sealed class WorkOrderService(
     {
         var tenantId = EnsureTenantContext();
 
-        var asset = await dbContext.Assets
-            .FirstOrDefaultAsync(a => a.Id == request.AssetId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Asset '{request.AssetId}' was not found.");
+        var asset = await assetRegistry.RequireAssetAsync(request.AssetId, cancellationToken);
 
         if (request.MaintenancePlanId is Guid planId)
         {
