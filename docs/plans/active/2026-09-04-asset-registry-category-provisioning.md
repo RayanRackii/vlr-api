@@ -1,8 +1,8 @@
 # 2026-09-04 — Asset Registry category provisioning (no Inventory)
 
-Status: blocked (`USER_DECISION_REQUIRED` — combo `pmoc`/`os` + only `generic`)
+Status: **approved / implemented** (Wave: `PMOC_GENERIC_POLICY = FAIL FAST`; `OS_GENERIC_POLICY = ALLOW`)
 
-The **seed-on-update / idempotent example categories** slice is otherwise approved (P1/O2 already locked). Do not implement the 400-reject rule until the fork below is decided.
+The A/B fork is decided: PMOC + only non-provisioning families (`generic`, or omitted keys that default to generic) is **HTTP 400**. OS + generic-only remains **allowed**. Seed-on-create and seed-on-update (newly added families) are in code.
 
 ## Goal / Problem
 
@@ -14,23 +14,27 @@ The **seed-on-update / idempotent example categories** slice is otherwise approv
 |---|---|
 | PMOC_RESOURCE_POLICY | **P1** — no PMOC `AssetCategory` CRUD. Provision ≥1 usable tipo **when selected families support PMOC**. Do not invent fake generic PMOC tipos. |
 | OS_RESOURCE_POLICY | **O2** — OS consumes existing Assets. No `POST /api/work-orders/assets`. No `inventory.*`. OS-only entitlement is allowed and **not** self-sufficient from an empty tenant. |
-| Rentals | Self-service remains `POST/PUT /api/rental-assets` (`rentals.assets.*`). |
+| PMOC_GENERIC_POLICY | **FAIL FAST** — if entitlements include `pmoc` and selected families have **no** seed-map family (`spaces` / `electrical` / `goods`), throw `ArgumentException` → HTTP 400 `{ "error": "PMOC requires at least one asset family with available resource types." }`. Applies on create **and** update. Validate after resolving family keys (omitted keys still default to `generic`). |
+| OS_GENERIC_POLICY | **ALLOW** — OS + generic-only is 200. Do not apply the PMOC rule to OS. |
+| Rentals | Self-service remains `POST/PUT /api/rental-assets` (`rentals.assets.*`). Rentals + generic-only is commercially valid (no 400, no fake generic category). |
 | Schema | Do not add `FamilyId` to `AssetCategory` for this fix. No migration. No PROD rewrite. |
 
 ## Why generic-only has zero categories
 
 `AssetCategory` is tenant-scoped only — **no `FamilyId`** (`AssetCategory.cs`). Example tipos are a **hand-curated seed map**, not a family FK:
 
-| Family key | Seeded example (create only today) |
+| Family key | Seeded example |
 |---|---|
 | `spaces` | Quadra |
 | `electrical` | Quadro elétrico |
 | `goods` | Caçamba |
-| `generic` | **none** |
+| `generic` | **none** (no map entry) |
 
-`AdminTenantService.SeedExampleCategories` (`:602-625`) has no `Generic` entry. It runs **only on create** (`CreateAsync` `:135`). `SyncTenantAssetFamiliesAsync` (`:537-564`) adds/removes `TenantAssetFamily` on edit and **never seeds**.
+Canonical map: `AssetCategoryExampleSeeds` next to `AssetFamilyKeys`. `CanProvisionExampleCategory` / `HasPmocProvisioningFamily` derive from that map. Shared seeder: `AssetCategoryExampleSeeder` (create + trial + newly added families on edit). Idempotent skip if `(TenantId, Name)` already exists (`IgnoreQueryFilters`).
 
-Omitted `assetFamilyKeys` → `ResolveFamilyIdsAsync` inserts `generic` (rolling-deploy default, `:576-579`). WEB wizard now requires ≥1 family, so Super-Admin create usually sends keys; generic-only is still reachable if the admin picks only Genérico, or an old client omits the field.
+`AdminTenantService.CreateAsync` and `CreateTenantHandler` trial seed use the same helper. `SyncTenantAssetFamiliesAsync` seeds example categories **only for newly added** family ids.
+
+Omitted `assetFamilyKeys` → `ResolveFamiliesAsync` inserts `generic` (rolling-deploy default). WEB wizard now requires ≥1 family, so Super-Admin create usually sends keys; generic-only is still reachable if the admin picks only Genérico, or an old client omits the field.
 
 Trial (`CreateTenantHandler`) always opts into spaces+electrical+goods+generic and seeds the three named tipos (generic still adds no extra row).
 
@@ -47,9 +51,9 @@ Wave 1 “auto-provision `TenantAssetFamily` when a requiring module is on and f
 
 **Rentals is not fully self-sufficient** for a tenant whose only family is `generic`. The HTTP surface exists; `EnsureCategoryExistsAsync` still 404s without a category. Club path: Super-Admin selects `spaces` (or `goods`).
 
-**PMOC is usable without Inventory** when at least one of spaces/electrical/goods was selected at provision (or added later **and** seeded — today add-on-edit does not seed).
+**PMOC is usable without Inventory** when at least one of spaces/electrical/goods was selected at provision (or added later and seeded). PMOC + generic-only is rejected at the API.
 
-**OS** stays a consumer (O2).
+**OS** stays a consumer (O2) and may be enabled with generic-only.
 
 ## Smallest canonical provisioning fix (no extra product fork)
 
@@ -62,24 +66,24 @@ This closes: “edit tenant, add Electrical, PMOC still has zero tipos.”
 
 This does **not** make generic-only Rentals or PMOC self-sufficient. That is intentional under P1.
 
-## Visible behavior (after implementation of the smallest fix)
+## Visible behavior
 
 - Create with `spaces` → Quadra exists; Rentals `POST /api/rental-assets` works; PMOC picker lists Quadra.
-- Create with `generic` only → 0 categories (unchanged).
-- Update: add `electrical` → Quadro elétrico appears once; re-add does not duplicate.
-- Omitted `assetFamilyKeys` → still `[generic]`, 0 categories (rolling deploy preserved).
+- Create with `generic` only → 0 categories (unchanged). Rentals/OS/Catalog remain valid; PMOC → 400.
+- Update: add `electrical` → Quadro elétrico appears once; re-save does not duplicate.
+- Omitted `assetFamilyKeys` → still `[generic]`, 0 categories (rolling deploy preserved). PMOC + omitted keys → 400.
 - Catalog-only + generic → Catalog unaffected.
 
 ## Repositories
 
-- vlr-api (implementation after this spec is unblocked / seed slice approved)
-- vlr-web: none required for the seed slice. Combo error i18n only if Option A is chosen.
+- vlr-api (implemented on `feat/asset-category-family-provisioning`)
+- vlr-web: none required for seed/PMOC 400 (WEB shows `parseApiError`)
 
 ## Architecture / execution route
 
 - rolvix-architect (this audit)
-- api-implementer after the fork is decided **or** after parent splits “seed-on-update” as its own PR with A/B deferred
-- Fable on the **implementation** PR (persisted domain seed). This docs handoff: `FABLE_MERGE_REVIEW_NOT_REQUIRED`
+- api-implementer (this implementation)
+- Fable on the **implementation** PR (persisted domain seed + PMOC combination rule). This docs handoff: `FABLE_MERGE_REVIEW_NOT_REQUIRED`
 
 ## Invariants
 
@@ -89,16 +93,13 @@ This does **not** make generic-only Rentals or PMOC self-sufficient. That is int
 - `MaintenancePlan.AssetCategoryId` remains required.
 - GQF on `AssetCategory.TenantId` unchanged.
 
-## USER_DECISION_REQUIRED
+## Decided combo policy
 
-When Super-Admin activates `pmoc` and/or `os` and selects **only** `generic`:
+**PMOC** + only `generic` (or omitted keys → generic): **API 400**. Matches ADR 0004 “API owns combination rules.” WEB shows `parseApiError`.
 
-- **Option A — API 400** `{ "error": string }` if no PMOC-supporting family (`spaces` / `electrical` / `goods`) is selected. Fail-fast; matches ADR 0004 “API owns combination rules.” WEB shows `parseApiError`. **Recommended.**
-- **Option B — API 201/200**, tenant stays generic-only with 0 categories. PMOC/OS empty states already explain Super-Admin provisioning (Wave 4). Risk: silent unusable PMOC if nobody reads the empty state.
+**OS** + only `generic`: **allowed (200)** under O2. Do not apply the PMOC rule to OS.
 
-OS-only + generic is already accepted as “not self-sufficient” (O2). Option A would also 400 OS+generic-only, which is stricter than O2’s “allowed but not guaranteed.” If A is chosen, **prefer applying the reject only when `pmoc` is on**, and leave OS+generic as 200 (O2). Confirm that nuance.
-
-**Question:** Reject `pmoc` + only-`generic` at the API (A), or accept and rely on WEB empty states (B)? If A: should `os` + only-`generic` also 400, or stay allowed under O2?
+Combinations: PMOC + spaces/electrical/goods → valid; PMOC + generic + electrical → valid; edit that leaves PMOC with only generic → 400.
 
 ## Do not
 
@@ -114,14 +115,16 @@ OS-only + generic is already accepted as “not self-sufficient” (O2). Option 
 - create `generic` only → 0 categories
 - update add `electrical` → Quadro elétrico; idempotent re-add
 - omitted keys → generic family, 0 categories
-- (if A) `pmoc` + `generic` only → 400
+- `pmoc` + `generic` only → 400
+- `os` + `generic` only → 200
+- `rentals` + `generic` only → 200
 
 ## How to test (after code)
 
 1. Super-Admin: Rentals + `spaces`, no Inventory → Quadra; `/configuracoes/recursos` creates a space.
 2. Edit: add `electrical` → PMOC `/pmoc/novo` lists Quadro elétrico without Ativos.
 3. Catalog + `generic` → no tipos; Catalog works.
-4. Combo per A/B.
+4. PMOC + generic → 400. OS + generic → 200. Rentals + generic → 200.
 
 ## Documentation after code
 
