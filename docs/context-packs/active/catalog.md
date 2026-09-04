@@ -70,4 +70,7 @@ See spec HTTP tables: `/api/catalog/*` B2B; `/api/catalog/portal/*` B2C.
 - Per-customer pricing
 - Checkout/payment
 - CatalogProduct linked to Asset
+- Catalog requiring Inventory / Asset Registry
 - In-memory NotificationQueue as source of truth for orders
+
+Module dependency model (canonical): `vlr-api/docs/adr/0004-module-dependencies-asset-registry.md`.

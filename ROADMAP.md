@@ -101,7 +101,12 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 
 ## 4. Enforcement de módulos por tenant
 
-`core.tenant_modules` existe; menu B2C já filtra por ativos. Falta middleware/filtro API → 403.
+`core.tenant_modules` = entitlement comercial. Asset Registry é capability interna (ADR [`docs/adr/0004-module-dependencies-asset-registry.md`](./docs/adr/0004-module-dependencies-asset-registry.md); spec [`docs/plans/active/2026-09-04-module-dependencies-asset-registry.md`](./docs/plans/active/2026-09-04-module-dependencies-asset-registry.md)).
+
+- [x] Glossário + ADR 0004 + plano (docs). `inventory` comercialmente opcional; Rentals/PMOC/OS não autoativam Ativos.
+- [ ] Wave 1: metadata em `PlatformModules`; `NormalizeModules` rejeita `maintenance` novo; auto-provision de famílias; nunca inserir `inventory` por dependência.
+- [ ] Wave 2: autorização de registry sem Ativos (Rentals/PMOC/OS escrevem Asset sem `inventory.*`).
+- [ ] Wave 5: middleware/filtro API → 403 para módulo comercial inativo (menu B2C já filtra). Catalog B2C já tem gate.
 
 ## 5. Fluxo de convite B2B real — EM ANDAMENTO
 
@@ -232,3 +237,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-02 | **Fix:** Storage + Auth Admin send `sb_secret_` as `apikey` only (legacy JWT still `apikey` + Bearer). Capture Storage error bodies without credentials; map duplicate 409, file/mime 400, Invalid JWT/401/403 as upstream 502. Spec `docs/plans/active/2026-09-02-supabase-storage-secret-key-auth.md`. |
 | 2026-09-02 | **Fix:** named JwtBearer scheme `CustomerJwt` (HS256, `platform.b2c` / `platform.customer`); policy `"Customer"` binds only that scheme. B2B JwtBearer/JWKS unchanged. |
 | 2026-09-02 | **Fix:** Bearer default is PolicyScheme (`iss=platform.b2c` → `CustomerJwt`, else `Supabase`); TenantProvider reads only authenticated identities so catalog GQF/gate get the customer tenant. Customer principal is never treated as PlatformAdmin (policy + checker + Customer-first tenant resolution). |
+| 2026-09-04 | **Docs:** ADR 0004 — Asset Registry (capability) ≠ Inventory (módulo comercial). Catalog independente. `maintenance` legado. Spec `docs/plans/active/2026-09-04-module-dependencies-asset-registry.md`. Sem código de enforcement nesta entrega. |
