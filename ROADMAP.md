@@ -104,7 +104,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 `core.tenant_modules` = entitlement comercial. Asset Registry é capability interna (ADR [`docs/adr/0004-module-dependencies-asset-registry.md`](./docs/adr/0004-module-dependencies-asset-registry.md); spec [`docs/plans/active/2026-09-04-module-dependencies-asset-registry.md`](./docs/plans/active/2026-09-04-module-dependencies-asset-registry.md)).
 
 - [x] Glossário + ADR 0004 + plano (docs). `inventory` comercialmente opcional; Rentals/PMOC/OS não autoativam Ativos.
-- [ ] Wave 1: metadata em `PlatformModules`; `NormalizeModules` rejeita `maintenance` novo; auto-provision de famílias; nunca inserir `inventory` por dependência.
+- [x] Wave 1: catálogo estático `PlatformModuleCatalog` (`provides` / `requiredCapabilities`); `NormalizeEntitlements` rejeita `maintenance` novo e nunca insere `inventory`; `GET /api/admin/modules`; trial sem `maintenance`. Sem auto-insert de `TenantAssetFamily` neste wave (create já defaulta famílias quando keys omitidas).
 - [ ] Wave 2: autorização de registry sem Ativos (Rentals/PMOC/OS escrevem Asset sem `inventory.*`).
 - [ ] Wave 5: middleware/filtro API → 403 para módulo comercial inativo (menu B2C já filtra). Catalog B2C já tem gate.
 
@@ -238,3 +238,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-02 | **Fix:** named JwtBearer scheme `CustomerJwt` (HS256, `platform.b2c` / `platform.customer`); policy `"Customer"` binds only that scheme. B2B JwtBearer/JWKS unchanged. |
 | 2026-09-02 | **Fix:** Bearer default is PolicyScheme (`iss=platform.b2c` → `CustomerJwt`, else `Supabase`); TenantProvider reads only authenticated identities so catalog GQF/gate get the customer tenant. Customer principal is never treated as PlatformAdmin (policy + checker + Customer-first tenant resolution). |
 | 2026-09-04 | **Docs:** ADR 0004 — Asset Registry (capability) ≠ Inventory (módulo comercial). Catalog independente. `maintenance` legado. Spec `docs/plans/active/2026-09-04-module-dependencies-asset-registry.md`. Sem código de enforcement nesta entrega. |
+| 2026-09-04 | **Executado (API):** Wave 1 Asset Registry — `PlatformModuleCatalog` (capability `asset-registry` só em metadata), `GET /api/admin/modules`, `NormalizeEntitlements` sem auto-inventory, `maintenance` legado não ativável. Sem migration, sem backfill. Branch `feat/asset-registry-wave-1`. |

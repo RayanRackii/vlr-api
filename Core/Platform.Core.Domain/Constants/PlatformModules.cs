@@ -20,50 +20,6 @@ public static class PlatformModules
     /// <summary>
     /// Maps API / UI module labels (e.g. "Rentals", "PMOC") to canonical keys.
     /// </summary>
-    public static bool TryNormalize(string? moduleName, out string canonical)
-    {
-        canonical = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(moduleName))
-        {
-            return false;
-        }
-
-        switch (moduleName.Trim().ToLowerInvariant())
-        {
-            case "inventory":
-            case "inventario":
-            case "inventário":
-                canonical = Inventory;
-                return true;
-            case "pmoc":
-                canonical = Pmoc;
-                return true;
-            case "os":
-            case "workorders":
-            case "work_orders":
-                canonical = WorkOrders;
-                return true;
-            case "rentals":
-            case "aluguel":
-            case "alugueis":
-            case "aluguéis":
-                canonical = Rentals;
-                return true;
-            case "maintenance":
-            case "manutencao":
-            case "manutenção":
-                canonical = Maintenance;
-                return true;
-            case "catalog":
-            case "catalogo":
-            case "catálogo":
-            case "orders":
-            case "pedidos":
-                canonical = Catalog;
-                return true;
-            default:
-                return false;
-        }
-    }
+    public static bool TryNormalize(string? moduleName, out string canonical) =>
+        PlatformModuleCatalog.TryNormalize(moduleName, out canonical);
 }
