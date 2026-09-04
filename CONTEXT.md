@@ -155,11 +155,11 @@ A Tenant-scoped registry resource (space, electrical equipment, good, …). Pers
 _Avoid_: One physical table per use case; dynamic per-tenant tables; asking the admin to type seven identical price rows as the default path; treating Asset as the Inventory module; moving Asset to Core; a second registry table
 
 **AssetFamily**:
-A platform catalog entry (`spaces`, `electrical`, `goods`, `generic`, …) with a FieldSchema describing extra attribute fields. Tenants enable families at onboarding (`TenantAssetFamily`). Drives asset forms and copy tone. Family opt-in is Asset Registry provisioning, not Inventory entitlement.
-_Avoid_: STI / child tables per family; inventing new CREATE TABLE migrations for each vertical; requiring `inventory` in `tenant_modules` before families can exist
+A platform catalog entry (`spaces`, `electrical`, `goods`, `generic`, …) with a FieldSchema describing extra attribute fields. Tenants enable families at onboarding (`TenantAssetFamily`). Drives asset forms and copy tone. Family opt-in is Asset Registry provisioning, not Inventory entitlement. Example tipos are seeded only for `spaces` (Quadra), `electrical` (Quadro elétrico), and `goods` (Caçamba); **`generic` has no example tipo**.
+_Avoid_: STI / child tables per family; inventing new CREATE TABLE migrations for each vertical; requiring `inventory` in `tenant_modules` before families can exist; inventing “Tipo genérico” / “PMOC genérico” for `generic`
 
 **AssetRegistry**:
-Internal platform capability to persist and reference Asset, AssetCategory, and AssetFamily for a tenant. Not a `tenant_modules` row. Not the Ativos product. Auto-provisioned when Rentals, PMOC, or OS is activated (default family opt-in if none). Inventory provides the same tables plus the commercial UX.
+Internal platform capability to persist and reference Asset, AssetCategory, and AssetFamily for a tenant. Not a `tenant_modules` row. Not the Ativos product. Auto-provisioned when Rentals, PMOC, or OS is activated (default family opt-in if none). Inventory provides the same tables plus the commercial UX. **PMOC** requires at least one provisioning family (`spaces` / `electrical` / `goods`) so a usable tipo exists — generic-only is rejected. **Rentals** still needs a `CategoryId` (generic-only has none until a tipo exists). **OS** consumes existing Assets and does not provision tipos.
 _Avoid_: Showing “Asset Registry” in tenant UI; auto-enabling the Inventory module; a second store; Core.Asset
 
 **TenantModule**:
@@ -167,7 +167,7 @@ Commercial entitlement in `core.tenant_modules` (what the tenant may use in prod
 _Avoid_: Using tenant_modules as the technical dependency graph; inserting `inventory` because Rentals needs Asset rows; a module key `asset-registry`
 
 **ResourceCategory**:
-A Tenant-defined label for grouping Rentables (for example padel, society, tennis, meeting room, van). Used for filters, legends, and layout meaning — not a hard-coded enum in the platform. In inventory UI this is **AssetCategory** (Tipo) within an AssetFamily.
+A Tenant-defined label for grouping Rentables (for example padel, society, tennis, meeting room, van). Used for filters, legends, and layout meaning — not a hard-coded enum in the platform. In inventory UI this is **AssetCategory** (Tipo) within an AssetFamily. Super-Admin provisioning seeds Quadra / Quadro elétrico / Caçamba when those families are selected; Rentals create requires `CategoryId`. OS does not create categories.
 _Avoid_: Fixed platform enum of sport types
 
 **OccupancyKind**:
