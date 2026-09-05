@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Platform.Core.Domain.Constants;
 
 namespace Platform.Core.Domain.Services;
 
@@ -100,7 +101,8 @@ public static class TrialSubdomainGenerator
         var candidate = SuggestBase(legalName);
         var guard = 0;
 
-        while (await isTakenAsync(candidate).ConfigureAwait(false))
+        while (ReservedTenantSubdomains.IsReserved(candidate)
+            || await isTakenAsync(candidate).ConfigureAwait(false))
         {
             candidate = IncrementLastChar(candidate);
             guard++;
