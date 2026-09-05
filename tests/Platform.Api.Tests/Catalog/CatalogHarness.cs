@@ -25,7 +25,6 @@ internal sealed class CatalogHarness : IAsyncDisposable
         CatalogNotificationPublisher publisher,
         NotificationOutboxProcessor processor,
         RecordingOutboxScheduler scheduler,
-        CatalogModuleGate gate,
         FakePermissionResolver permissionResolver)
     {
         Db = db;
@@ -38,7 +37,6 @@ internal sealed class CatalogHarness : IAsyncDisposable
         Publisher = publisher;
         Processor = processor;
         Scheduler = scheduler;
-        Gate = gate;
         PermissionResolver = permissionResolver;
     }
 
@@ -61,8 +59,6 @@ internal sealed class CatalogHarness : IAsyncDisposable
     public NotificationOutboxProcessor Processor { get; }
 
     public RecordingOutboxScheduler Scheduler { get; }
-
-    public CatalogModuleGate Gate { get; }
 
     public FakePermissionResolver PermissionResolver { get; }
 
@@ -98,7 +94,6 @@ internal sealed class CatalogHarness : IAsyncDisposable
             publisher,
             scheduler);
         var notifications = new CatalogNotificationService(db, tenantProvider, publisher, processor);
-        var gate = new CatalogModuleGate(db, tenantProvider);
 
         return new CatalogHarness(
             db,
@@ -111,7 +106,6 @@ internal sealed class CatalogHarness : IAsyncDisposable
             publisher,
             processor,
             scheduler,
-            gate,
             permissions);
     }
 

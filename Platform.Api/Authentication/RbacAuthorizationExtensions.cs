@@ -10,6 +10,7 @@ public static class RbacAuthorizationExtensions
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, JsonForbiddenAuthorizationResultHandler>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
         services.AddScoped<IPermissionResolver, PermissionResolver>();
         services.AddScoped<ITenantAccessBootstrapper, TenantAccessBootstrapper>();
         services.AddScoped<IRbacActorAccessor, RbacActorAccessor>();

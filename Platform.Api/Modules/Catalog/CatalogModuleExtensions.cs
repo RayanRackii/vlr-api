@@ -7,7 +7,6 @@ public static class CatalogModuleExtensions
 {
     public static IServiceCollection AddCatalogModule(this IServiceCollection services)
     {
-        services.AddScoped<ICatalogModuleGate, CatalogModuleGate>();
         services.AddScoped<ICatalogProductService, CatalogProductService>();
         services.AddScoped<ICatalogOrderService, CatalogOrderService>();
         services.AddScoped<ICatalogPortalService, CatalogPortalService>();

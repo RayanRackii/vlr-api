@@ -7,6 +7,7 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.Assets.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Inventory)]
 [Route("api/asset-categories")]
 public sealed class AssetCategoriesController(
     IAssetCategoryService assetCategoryService) : ControllerBase

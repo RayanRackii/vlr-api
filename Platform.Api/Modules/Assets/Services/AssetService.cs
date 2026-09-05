@@ -265,6 +265,75 @@ public sealed class AssetService(
         return new BulkCreateAssetsResponse(responses.Count, responses);
     }
 
+    public Task<AssetResponse> CreateRentableAsync(
+        CreateRentableRequest request,
+        CancellationToken cancellationToken)
+    {
+        return CreateAsync(
+            new CreateAssetRequest
+            {
+                UnitId = request.UnitId,
+                CategoryId = request.CategoryId,
+                FamilyId = request.FamilyId,
+                Name = request.Name,
+                Tag = request.Tag,
+                Location = request.Location,
+                Status = AssetStatus.Active,
+                IsRentable = true,
+                RequiresMaintenance = false,
+                RentalType = request.RentalType,
+                TotalQuantity = request.TotalQuantity,
+                RequiresDeposit = request.RequiresDeposit,
+                QueueEnabled = request.QueueEnabled,
+                QueueOpeningTime = request.QueueOpeningTime,
+            },
+            cancellationToken);
+    }
+
+    public async Task<AssetResponse> UpdateRentableAsync(
+        Guid id,
+        UpdateRentableRequest request,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var asset = await dbContext.Assets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+        if (asset is null || !asset.IsRentable)
+        {
+            throw new KeyNotFoundException($"Rentable asset '{id}' was not found.");
+        }
+
+        var updated = await UpdateAsync(
+            id,
+            new UpdateAssetRequest
+            {
+                UnitId = request.UnitId,
+                CategoryId = request.CategoryId,
+                FamilyId = request.FamilyId,
+                Name = request.Name,
+                Tag = request.Tag,
+                Location = request.Location,
+                SerialNumber = asset.SerialNumber,
+                InstallationDate = asset.InstallationDate,
+                Status = asset.Status,
+                IsRentable = true,
+                RequiresMaintenance = asset.RequiresMaintenance,
+                RentalType = request.RentalType,
+                TotalQuantity = request.TotalQuantity,
+                RequiresDeposit = request.RequiresDeposit,
+                QueueEnabled = request.QueueEnabled,
+                QueueOpeningTime = request.QueueOpeningTime,
+                Attributes = asset.Attributes,
+            },
+            cancellationToken);
+
+        return updated
+            ?? throw new KeyNotFoundException($"Rentable asset '{id}' was not found.");
+    }
+
     private void SyncRentalConfiguration(
         Asset asset,
         bool isRentable,

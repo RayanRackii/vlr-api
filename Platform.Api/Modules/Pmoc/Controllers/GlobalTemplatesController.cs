@@ -7,6 +7,7 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.Pmoc.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Pmoc)]
 [Route("api/global-templates")]
 public sealed class GlobalTemplatesController(
     IGlobalTemplateService globalTemplateService) : ControllerBase

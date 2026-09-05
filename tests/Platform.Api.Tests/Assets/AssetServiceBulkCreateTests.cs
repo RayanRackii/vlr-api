@@ -265,5 +265,12 @@ internal sealed class BulkCreateAssetsHarness : IAsyncDisposable
     public AssetService CreateService() =>
         new(Db, TenantProvider, new FakeTrialGuard());
 
+    public IAssetRegistry CreateRegistry()
+    {
+        var assetService = CreateService();
+        var families = new AssetFamilyService(Db);
+        return new AssetRegistry(Db, TenantProvider, assetService, families);
+    }
+
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 }

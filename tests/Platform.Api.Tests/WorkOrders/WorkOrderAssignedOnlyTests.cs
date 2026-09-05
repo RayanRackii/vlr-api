@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Api.Notifications;
@@ -157,7 +158,7 @@ internal sealed class WorkOrderRbacHarness : IAsyncDisposable
         await db.SaveChangesAsync();
 
         var http = new FakeHttpContextAccessor();
-        var resolver = new PermissionResolver(db, NullLogger<PermissionResolver>.Instance);
+        var resolver = TestPermissionResolvers.Create(db, tenantProvider);
         var grantGuard = new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance);
         var users = new UserDirectoryService(
             db,
@@ -170,7 +171,17 @@ internal sealed class WorkOrderRbacHarness : IAsyncDisposable
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),
             NullLogger<UserDirectoryService>.Instance);
-        var service = new WorkOrderService(db, tenantProvider, http, users, resolver);
+        var service = new WorkOrderService(
+            db,
+            tenantProvider,
+            http,
+            users,
+            resolver,
+            new AssetRegistry(
+                db,
+                tenantProvider,
+                new AssetService(db, tenantProvider, new FakeTrialGuard()),
+                new AssetFamilyService(db)));
 
         return new WorkOrderRbacHarness(
             db,

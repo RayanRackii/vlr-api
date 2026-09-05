@@ -8,6 +8,7 @@ using Platform.Core.Domain.Enums;
 namespace Platform.Api.Modules.Catalog.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog")]
 public sealed class CatalogNotificationsController(
     ICatalogNotificationService notificationService) : ControllerBase

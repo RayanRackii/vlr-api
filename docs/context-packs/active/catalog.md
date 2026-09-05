@@ -4,8 +4,8 @@ Derived context — NOT canonical.
 
 - Scope: Catalog & Orders module (tenant-owned product catalog + customer requests)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
-- Canonical sources: `CONTEXT.md`; `docs/plans/active/2026-08-28-catalog-orders.md`
-- Last verified: 2026-08-28
+- Canonical sources: `CONTEXT.md`; `docs/plans/active/2026-08-28-catalog-orders.md`; `docs/adr/0004-module-dependencies-asset-registry.md`
+- Last verified: 2026-09-04
 
 ## Purpose
 
@@ -16,6 +16,8 @@ Load when the question is CatalogProduct, CatalogOrder, ProductRequest, catalog 
 - `CONTEXT.md` — glossary
 - `docs/plans/active/2026-08-28-catalog-orders.md` — approved v1 spec
 - `Core/Platform.Core.Domain/Constants/PlatformModules.cs` — key `catalog`
+- `Core/Platform.Core.Domain/Constants/PlatformModuleCatalog.cs` — catalog requires no Asset Registry; `orders`/`pedidos` aliases
+- `docs/adr/0004-module-dependencies-asset-registry.md` — Catalog is independent of Inventory / Asset Registry
 - `Core/Platform.Core.Domain/Constants/Permissions.cs` — `Permissions.Catalog`
 
 ## Domain vocabulary
@@ -38,7 +40,7 @@ Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queu
 
 ## Critical invariants
 
-- Tenant isolation via ITenantScoped + GQF; B2C also needs explicit catalog module gate
+- Tenant isolation via ITenantScoped + GQF; B2C/public commercial surfaces use `[RequireActiveModule]` (Wave 5), not a Catalog-only gate
 - Never authorize with role name
 - Internal files never public
 - Client-supplied prices ignored
@@ -70,4 +72,7 @@ See spec HTTP tables: `/api/catalog/*` B2B; `/api/catalog/portal/*` B2C.
 - Per-customer pricing
 - Checkout/payment
 - CatalogProduct linked to Asset
+- Catalog requiring Inventory / Asset Registry
 - In-memory NotificationQueue as source of truth for orders
+
+Module dependency model (canonical): `vlr-api/docs/adr/0004-module-dependencies-asset-registry.md`.

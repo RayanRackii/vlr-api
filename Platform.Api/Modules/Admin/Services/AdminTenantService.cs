@@ -88,14 +88,15 @@ public sealed class AdminTenantService(
                 "Subdomain must contain only lowercase letters, numbers, and hyphens.");
         }
 
-        var modules = NormalizeModules(request.ActiveModules);
+        var modules = PlatformModuleCatalog.NormalizeEntitlements(request.ActiveModules);
 
         if (modules.Count == 0)
         {
             throw new ArgumentException("At least one active module is required.");
         }
 
-        var familyIds = await ResolveFamilyIdsAsync(request.AssetFamilyKeys, cancellationToken);
+        var families = await ResolveFamiliesAsync(request.AssetFamilyKeys, cancellationToken);
+        EnsurePmocHasProvisioningFamily(modules, families.Select(f => f.Key));
 
         var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
 
@@ -104,7 +105,9 @@ public sealed class AdminTenantService(
             request.AccentColor,
             request.WelcomeTagline);
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
@@ -127,15 +130,22 @@ public sealed class AdminTenantService(
                 dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
             }
 
-            foreach (var familyId in familyIds)
+            foreach (var family in families)
             {
-                dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenant.Id, familyId));
+                dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenant.Id, family.Id));
             }
 
-            SeedExampleCategories(tenant.Id, familyIds);
+            await AssetCategoryExampleSeeder.SeedForFamilyIdsAsync(
+                dbContext,
+                tenant.Id,
+                families.Select(f => f.Id).ToList(),
+                cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             await tenantAccessBootstrapper.EnsureAsync(tenant.Id, cancellationToken);
 
@@ -180,14 +190,22 @@ public sealed class AdminTenantService(
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw new InvalidOperationException(
                 "A tenant with the same TaxId or Subdomain already exists.",
                 ex);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw;
         }
     }
@@ -222,14 +240,7 @@ public sealed class AdminTenantService(
                 "Subdomain must contain only lowercase letters, numbers, and hyphens.");
         }
 
-        var modules = NormalizeModules(request.ActiveModules);
-
-        if (modules.Count == 0)
-        {
-            throw new ArgumentException("At least one active module is required.");
-        }
-
-        var familyIds = await ResolveFamilyIdsAsync(request.AssetFamilyKeys, cancellationToken);
+        var families = await ResolveFamiliesAsync(request.AssetFamilyKeys, cancellationToken);
 
         var logoSvg = SvgMarkupValidator.Normalize(request.LogoSvg);
 
@@ -238,7 +249,9 @@ public sealed class AdminTenantService(
             request.AccentColor,
             request.WelcomeTagline);
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
@@ -251,6 +264,22 @@ public sealed class AdminTenantService(
                 throw new KeyNotFoundException("Tenant not found.");
             }
 
+            var existingActive = tenant.Modules
+                .Where(m => m.IsActive)
+                .Select(m => m.ModuleName)
+                .ToList();
+
+            var modules = PlatformModuleCatalog.NormalizeEntitlements(
+                request.ActiveModules,
+                existingActive);
+
+            if (modules.Count == 0)
+            {
+                throw new ArgumentException("At least one active module is required.");
+            }
+
+            EnsurePmocHasProvisioningFamily(modules, families.Select(f => f.Key));
+
             tenant.UpdateProfile(
                 legalName,
                 taxId,
@@ -262,11 +291,14 @@ public sealed class AdminTenantService(
                 welcomeTagline: request.WelcomeTagline);
 
             SyncTenantModules(tenant, modules);
-            await SyncTenantAssetFamiliesAsync(tenant.Id, familyIds, cancellationToken);
+            await SyncTenantAssetFamiliesAsync(tenant.Id, families, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await tenantAccessBootstrapper.EnsureAsync(id, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             var updated = await dbContext.Tenants
                 .AsNoTracking()
@@ -278,14 +310,22 @@ public sealed class AdminTenantService(
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw new InvalidOperationException(
                 "A tenant with the same TaxId or Subdomain already exists.",
                 ex);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw;
         }
     }
@@ -491,11 +531,12 @@ public sealed class AdminTenantService(
 
     private void SyncTenantModules(Tenant tenant, IReadOnlyList<string> desiredModules)
     {
-        var remainingDesired = new HashSet<string>(desiredModules, StringComparer.OrdinalIgnoreCase);
+        var desired = new HashSet<string>(desiredModules, StringComparer.OrdinalIgnoreCase);
+        var remainingDesired = new HashSet<string>(desired, StringComparer.OrdinalIgnoreCase);
 
         foreach (var module in tenant.Modules.ToList())
         {
-            if (remainingDesired.Contains(module.ModuleName))
+            if (desired.Contains(module.ModuleName))
             {
                 remainingDesired.Remove(module.ModuleName);
 
@@ -507,25 +548,35 @@ public sealed class AdminTenantService(
                 continue;
             }
 
+            if (!PlatformModuleCatalog.ShouldRemoveStoredModule(module.ModuleName, desired))
+            {
+                continue;
+            }
+
             dbContext.TenantModules.Remove(module);
         }
 
         foreach (var moduleName in remainingDesired)
         {
+            if (PlatformModuleCatalog.IsLegacy(moduleName))
+            {
+                continue;
+            }
+
             dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
         }
     }
 
     private async Task SyncTenantAssetFamiliesAsync(
         Guid tenantId,
-        IReadOnlyList<Guid> desiredFamilyIds,
+        IReadOnlyList<ResolvedAssetFamily> desiredFamilies,
         CancellationToken cancellationToken)
     {
         var existing = await dbContext.TenantAssetFamilies
             .Where(t => t.TenantId == tenantId)
             .ToListAsync(cancellationToken);
 
-        var desired = desiredFamilyIds.ToHashSet();
+        var desired = desiredFamilies.Select(f => f.Id).ToHashSet();
 
         foreach (var row in existing)
         {
@@ -536,16 +587,26 @@ public sealed class AdminTenantService(
         }
 
         var existingIds = existing.Select(e => e.FamilyId).ToHashSet();
-        foreach (var familyId in desired)
+        var newlyAddedIds = new List<Guid>();
+        foreach (var family in desiredFamilies)
         {
-            if (!existingIds.Contains(familyId))
+            if (existingIds.Contains(family.Id))
             {
-                dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenantId, familyId));
+                continue;
             }
+
+            dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenantId, family.Id));
+            newlyAddedIds.Add(family.Id);
         }
+
+        await AssetCategoryExampleSeeder.SeedForFamilyIdsAsync(
+            dbContext,
+            tenantId,
+            newlyAddedIds,
+            cancellationToken);
     }
 
-    private async Task<IReadOnlyList<Guid>> ResolveFamilyIdsAsync(
+    private async Task<IReadOnlyList<ResolvedAssetFamily>> ResolveFamiliesAsync(
         IReadOnlyList<string>? assetFamilyKeys,
         CancellationToken cancellationToken)
     {
@@ -577,35 +638,29 @@ public sealed class AdminTenantService(
 
         return families
             .OrderBy(f => f.SortOrder)
-            .Select(f => f.Id)
+            .Select(f => new ResolvedAssetFamily(f.Id, f.Key))
             .ToList();
     }
 
-    private void SeedExampleCategories(Guid tenantId, IReadOnlyList<Guid> familyIds)
+    private static void EnsurePmocHasProvisioningFamily(
+        IReadOnlyList<string> modules,
+        IEnumerable<string> familyKeys)
     {
-        var seeds = new List<(Guid FamilyId, string Name)>
-        {
-            (AssetFamilyKeys.Ids.Spaces, "Quadra"),
-            (AssetFamilyKeys.Ids.Electrical, "Quadro elétrico"),
-            (AssetFamilyKeys.Ids.Goods, "Caçamba"),
-        };
+        var pmocOn = modules.Any(module =>
+            string.Equals(module, PlatformModules.Pmoc, StringComparison.OrdinalIgnoreCase));
 
-        foreach (var (familyId, name) in seeds)
+        if (!pmocOn)
         {
-            if (!familyIds.Contains(familyId))
-            {
-                continue;
-            }
+            return;
+        }
 
-            dbContext.AssetCategories.Add(new AssetCategory
-            {
-                TenantId = tenantId,
-                Name = name,
-                Description = null,
-                Manufacturer = null,
-            });
+        if (!AssetCategoryExampleSeeds.HasPmocProvisioningFamily(familyKeys))
+        {
+            throw new ArgumentException(AssetCategoryExampleSeeds.PmocRequiresProvisioningFamilyMessage);
         }
     }
+
+    private sealed record ResolvedAssetFamily(Guid Id, string Key);
 
     private async Task<IReadOnlyList<string>> LoadFamilyKeysAsync(
         Guid tenantId,
@@ -651,28 +706,6 @@ public sealed class AdminTenantService(
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<string>)g.Select(x => x.Key).ToList());
-    }
-
-    private static IReadOnlyList<string> NormalizeModules(IReadOnlyList<string>? activeModules)
-    {
-        if (activeModules is null || activeModules.Count == 0)
-        {
-            return [];
-        }
-
-        var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var module in activeModules)
-        {
-            if (!PlatformModules.TryNormalize(module, out var canonical))
-            {
-                throw new ArgumentException($"Unknown module '{module}'.");
-            }
-
-            normalized.Add(canonical);
-        }
-
-        return normalized.OrderBy(m => m, StringComparer.Ordinal).ToList();
     }
 
     private static bool IsValidSubdomain(string subdomain)

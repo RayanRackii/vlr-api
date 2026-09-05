@@ -20,16 +20,15 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 {
     private const int MinimumPasswordLength = 8;
 
-    private static readonly string[] TrialModules =
+    internal static readonly string[] TrialModules =
     [
         PlatformModules.Inventory,
-        PlatformModules.Maintenance,
         PlatformModules.Pmoc,
         PlatformModules.WorkOrders,
         PlatformModules.Rentals,
     ];
 
-    private static readonly string[] TrialFamilyKeys =
+    internal static readonly string[] TrialFamilyKeys =
     [
         AssetFamilyKeys.Spaces,
         AssetFamilyKeys.Electrical,
@@ -117,7 +116,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 
             if (request.IsTrial)
             {
-                foreach (var moduleName in TrialModules)
+                foreach (var moduleName in PlatformModuleCatalog.NormalizeEntitlements(TrialModules))
                 {
                     _dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
                 }
@@ -128,7 +127,11 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
                     _dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenant.Id, familyId));
                 }
 
-                SeedTrialExampleCategories(tenant.Id, familyIds);
+                await AssetCategoryExampleSeeder.SeedForFamilyIdsAsync(
+                    _dbContext,
+                    tenant.Id,
+                    familyIds,
+                    cancellationToken);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -235,32 +238,6 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
         }
 
         return families.Select(f => f.Id).ToList();
-    }
-
-    private void SeedTrialExampleCategories(Guid tenantId, IReadOnlyList<Guid> familyIds)
-    {
-        var seeds = new List<(Guid FamilyId, string Name)>
-        {
-            (AssetFamilyKeys.Ids.Spaces, "Quadra"),
-            (AssetFamilyKeys.Ids.Electrical, "Quadro elétrico"),
-            (AssetFamilyKeys.Ids.Goods, "Caçamba"),
-        };
-
-        foreach (var (familyId, name) in seeds)
-        {
-            if (!familyIds.Contains(familyId))
-            {
-                continue;
-            }
-
-            _dbContext.AssetCategories.Add(new AssetCategory
-            {
-                TenantId = tenantId,
-                Name = name,
-                Description = null,
-                Manufacturer = null,
-            });
-        }
     }
 
     private static string? ValidateRequest(CreateTenantRequest request)

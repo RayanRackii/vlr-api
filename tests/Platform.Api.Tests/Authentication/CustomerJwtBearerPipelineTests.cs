@@ -22,6 +22,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Controllers;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Notifications;
@@ -444,7 +445,7 @@ public sealed class CustomerJwtBearerPipelineTests
                             .Options;
                         return new TestAppDbContext(options, sp.GetRequiredService<ITenantProvider>());
                     });
-                    services.AddScoped<ICatalogModuleGate, CatalogModuleGate>();
+                    services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
                     services.AddScoped<ICatalogPortalService, CatalogPortalService>();
                     services.AddSingleton<IStorageProvider, NoOpStorageProvider>();
                     services.AddSingleton(Options.Create(new StorageOptions()));

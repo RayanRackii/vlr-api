@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Features.CreateTenant;
@@ -103,6 +104,8 @@ try
     });
 
     var app = builder.Build();
+    ModuleGateStartupValidator.Validate(
+        app.Services.GetRequiredService<IActionDescriptorCollectionProvider>());
 
     app.UseExceptionHandler(errorApp =>
     {

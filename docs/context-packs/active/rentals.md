@@ -4,8 +4,8 @@ Derived context — NOT canonical.
 
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
-- Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `.cursor/rules/30-rentals.mdc`
-- Last verified: 2026-08-22
+- Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`
+- Last verified: 2026-09-04
 
 ## Purpose
 
@@ -16,6 +16,7 @@ Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, sche
 - `CONTEXT.md` — glossary (Reservation, Slot, OccupancyKind, ScheduleTemplate, OpenHours, SlotGrid, Layout, WaitingQueue, …)
 - `docs/adr/0001-rentals-slot-schedule.md` — Slot-first schedule; OccupancyKind catalog; derived days; 2026-08-22 overlap addendum
 - `docs/adr/0003-reservation-waiting-queue.md` — optional per-Location daily FIFO; T = QueueOpeningTime
+- `docs/adr/0004-module-dependencies-asset-registry.md` — Rentals requires Asset Registry, not Inventory entitlement
 - `.cursor/rules/30-rentals.mdc` — invariants and current gaps
 
 ## Domain vocabulary
@@ -53,6 +54,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Book persisted slot: `POST /api/schedule/slots/book` (`slotId`)
 - Book derived window: `POST /api/reservations` (date + start/end + items)
 - Queue (Customer): `GET/POST /api/rental-assets/{id}/queue`, `POST .../queue/join`, `POST .../queue/leave`
+- Registry without Ativos (Wave 2): `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families` (`rentals.assets.*`)
 - Admin day/exceptions: `GET /api/schedule/days/{date}`, `POST /api/schedule/slots/daily-occurrence`
 
 ## Important implementation seams
@@ -75,3 +77,5 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), complete-reserv
 - Court-only language in the module core
 - Start time alone identifies a weekly template (that caused ApplyWeeklyRule 500s)
 - Last-write-wins / timestamps / shorter interval as occupancy precedence
+- The Inventory (Ativos) module must be entitled for Rentals to work (Rentable still needs an Asset row; that is Asset Registry, not `tenant_modules.inventory`)
+- The Inventory (Ativos) module must be entitled for Rentals to work (Rentable still needs an Asset row; that is Asset Registry, not `tenant_modules.inventory`)

@@ -8,6 +8,7 @@ using Platform.Core.Infrastructure.Persistence;
 namespace Platform.Api.Modules.Assets.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Inventory)]
 [Route("api/asset-families")]
 public sealed class AssetFamiliesController(
     IAssetFamilyService assetFamilyService,

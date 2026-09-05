@@ -15,13 +15,15 @@ Chaves canônicas em `Core/Platform.Core.Domain/Constants/PlatformModules.cs`:
 
 | Chave | Módulo |
 |---|---|
-| `inventory` | Inventário de ativos |
-| `maintenance` | Manutenção |
-| `pmoc` | Planos PMOC |
-| `os` | Ordens de serviço |
-| `rentals` | Aluguéis/Reservas |
+| `inventory` | Inventário / Ativos (comercial, **opcional**) |
+| `pmoc` | Planos PMOC (exige Asset Registry, não Ativos) |
+| `os` | Ordens de serviço (exige Asset Registry, não Ativos) |
+| `rentals` | Aluguéis/Reservas (exige Asset Registry, não Ativos) |
+| `catalog` | Catálogo e Pedidos (não usa Asset Registry) |
 
-A ativação por tenant é persistida em `core.tenant_modules` (`TenantModule`). **Meta de arquitetura:** a API deve bloquear endpoints de módulos inativos para o tenant (enforcement ainda não implementado — ver `ROADMAP.md`).
+`maintenance` é legado — não ativar em tenants novos até redefinição explícita. **Asset Registry** é capability interna (`assets.*`); não é linha de `tenant_modules` e não se mostra com esse nome na UI. Nunca autoativar `inventory` porque Rentals/PMOC/OS precisa de Asset. ADR `docs/adr/0004-module-dependencies-asset-registry.md`.
+
+A ativação comercial por tenant é persistida em `core.tenant_modules` (`TenantModule`). **Meta de arquitetura:** a API deve bloquear endpoints de módulos inativos para o tenant (enforcement ainda não implementado — ver `ROADMAP.md`).
 
 ## Cliente atual e prioridade
 

@@ -11,7 +11,7 @@ Monólito modular .NET 10, três projetos: `Platform.Api` (host) → `Core/Platf
 
 - **Padrão dominante:** `Platform.Api/Modules/<Área>/` com Controller + Service + DTOs, registrados via extensão `AddXxxModule` no `Program.cs`. Novos endpoints seguem este padrão.
 - **Exceções históricas:** `Platform.Api/Features/` usa Minimal APIs + MediatR (`CreateTenant`, `InviteUser`). Não expandir MediatR para novos módulos sem decisão explícita.
-- Módulos existentes: Admin, Assets, CustomerAuth, Dashboard, Pmoc, Rentals, Users, Units, WorkOrders.
+- Módulos existentes: Admin, Assets, Catalog, CustomerAuth, Dashboard, Pmoc, Rentals, Users, Units, WorkOrders.
 
 ## Multi-tenancy
 
