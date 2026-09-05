@@ -9,6 +9,7 @@ using Platform.Core.Domain.Exceptions;
 namespace Platform.Api.Modules.Catalog.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog")]
 public sealed class CatalogOrdersController(ICatalogOrderService orderService) : ControllerBase
 {

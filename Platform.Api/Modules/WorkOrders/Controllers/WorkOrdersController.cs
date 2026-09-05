@@ -9,6 +9,7 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.WorkOrders.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.WorkOrders)]
 [Route("api/work-orders")]
 public sealed class WorkOrdersController(
     IWorkOrderService workOrderService,

@@ -314,7 +314,7 @@ internal sealed class RbacResolverHarness : IAsyncDisposable
         }
 
         await db.SaveChangesAsync();
-        var resolver = new PermissionResolver(db, NullLogger<PermissionResolver>.Instance);
+        var resolver = TestPermissionResolvers.Create(db, tenantProvider);
         return new RbacResolverHarness(db, tenantProvider, tenant, resolver);
     }
 

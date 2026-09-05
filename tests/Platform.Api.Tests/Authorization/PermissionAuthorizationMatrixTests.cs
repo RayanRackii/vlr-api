@@ -318,7 +318,7 @@ public sealed class PermissionAuthorizationMatrixTests
             services.AddSingleton(db);
             services.AddSingleton<AppDbContext>(db);
             services.AddSingleton<IPermissionResolver>(_ =>
-                new PermissionResolver(db, NullLogger<PermissionResolver>.Instance));
+                TestPermissionResolvers.Create(db, tenantProvider));
             services.AddSingleton<IAuthorizationHandler>(sp =>
                 new PermissionAuthorizationHandler(
                     sp.GetRequiredService<IPermissionResolver>(),

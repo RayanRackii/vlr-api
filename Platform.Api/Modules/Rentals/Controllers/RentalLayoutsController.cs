@@ -9,6 +9,7 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.Rentals.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Rentals)]
 [Route("api/rental-layouts")]
 public sealed class RentalLayoutsController(
     IRentalLayoutService rentalLayoutService,

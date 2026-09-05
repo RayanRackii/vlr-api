@@ -390,7 +390,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
 
         await db.SaveChangesAsync();
 
-        var resolver = new PermissionResolver(db, NullLogger<PermissionResolver>.Instance);
+        var resolver = TestPermissionResolvers.Create(db, tenantProvider);
         var grantGuard = new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance);
         var configuration = new ConfigurationBuilder().Build();
         var users = new UserDirectoryService(

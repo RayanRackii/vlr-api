@@ -9,6 +9,7 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.Pmoc.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Pmoc)]
 [Route("api/maintenance-plans")]
 public sealed class MaintenancePlansController(
     IMaintenancePlanService maintenancePlanService,

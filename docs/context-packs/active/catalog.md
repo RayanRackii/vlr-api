@@ -40,7 +40,7 @@ Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queu
 
 ## Critical invariants
 
-- Tenant isolation via ITenantScoped + GQF; B2C also needs explicit catalog module gate
+- Tenant isolation via ITenantScoped + GQF; B2C/public commercial surfaces use `[RequireActiveModule]` (Wave 5), not a Catalog-only gate
 - Never authorize with role name
 - Internal files never public
 - Client-supplied prices ignored
