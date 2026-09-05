@@ -1,18 +1,20 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Storage;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Exceptions;
 
 namespace Platform.Api.Modules.Catalog.Controllers;
 
 [ApiController]
 [Authorize(Policy = "Customer")]
+[RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog/portal")]
 public sealed class CatalogPortalController(
-    ICatalogModuleGate catalogModuleGate,
     ICatalogPortalService portalService) : ControllerBase
 {
     [HttpGet("products")]
@@ -20,12 +22,6 @@ public sealed class CatalogPortalController(
         [FromQuery] string? search,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         return Ok(await portalService.ListProductsAsync(search, cancellationToken));
     }
 
@@ -34,12 +30,6 @@ public sealed class CatalogPortalController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         var product = await portalService.GetProductAsync(id, cancellationToken);
         return product is null ? NotFound() : Ok(product);
     }
@@ -49,12 +39,6 @@ public sealed class CatalogPortalController(
         [FromBody] CreatePortalOrderRequest request,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         try
         {
             var order = await portalService.CreateOrderAsync(
@@ -77,12 +61,6 @@ public sealed class CatalogPortalController(
     public async Task<ActionResult<IReadOnlyList<CatalogOrderResponse>>> ListOrders(
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         return Ok(await portalService.ListOrdersAsync(ResolveCustomerId(), cancellationToken));
     }
 
@@ -91,12 +69,6 @@ public sealed class CatalogPortalController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         var order = await portalService.GetOrderAsync(ResolveCustomerId(), id, cancellationToken);
         return order is null ? NotFound() : Ok(order);
     }
@@ -106,12 +78,6 @@ public sealed class CatalogPortalController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         try
         {
             return Ok(await portalService.CancelOrderAsync(ResolveCustomerId(), id, cancellationToken));
@@ -135,12 +101,6 @@ public sealed class CatalogPortalController(
         [FromForm] IFormFileCollection? files,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         try
         {
             var uploads = new List<PortalUpload>();
@@ -198,12 +158,6 @@ public sealed class CatalogPortalController(
         Guid fileId,
         CancellationToken cancellationToken)
     {
-        var gate = await EnsureModuleAsync(cancellationToken);
-        if (gate is not null)
-        {
-            return gate;
-        }
-
         try
         {
             return Ok(await portalService.GetOwnProductRequestFileUrlAsync(
@@ -227,23 +181,6 @@ public sealed class CatalogPortalController(
         catch (HttpRequestException)
         {
             return StorageProviderActionResults.FromHttpRequestException();
-        }
-    }
-
-    private async Task<ActionResult?> EnsureModuleAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await catalogModuleGate.EnsureActiveAsync(cancellationToken);
-            return null;
-        }
-        catch (CatalogModuleInactiveException ex)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(new { error = ex.Message });
         }
     }
 

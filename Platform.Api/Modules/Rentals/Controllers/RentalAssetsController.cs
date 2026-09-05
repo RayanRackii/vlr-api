@@ -11,6 +11,7 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.Rentals.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Rentals)]
 [Route("api/rental-assets")]
 public sealed class RentalAssetsController(
     IRentalAssetService rentalAssetService,

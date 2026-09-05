@@ -7,6 +7,7 @@ namespace Platform.Api.Authorization;
 
 public sealed class PermissionResolver(
     AppDbContext dbContext,
+    ITenantModuleAccessor tenantModuleAccessor,
     ILogger<PermissionResolver> logger) : IPermissionResolver
 {
     private readonly Dictionary<(Guid TenantId, Guid UserId), IReadOnlySet<string>> _memo = [];
@@ -52,7 +53,7 @@ public sealed class PermissionResolver(
     {
         try
         {
-            var activeModules = await LoadActiveModulesAsync(tenantId, cancellationToken);
+            var activeModules = await tenantModuleAccessor.GetActiveModuleKeysAsync(cancellationToken);
             return FilterCatalog(activeModules);
         }
         catch (Exception ex)
@@ -99,7 +100,7 @@ public sealed class PermissionResolver(
             return FrozenEmpty;
         }
 
-        var activeModules = await LoadActiveModulesAsync(tenantId, cancellationToken);
+        var activeModules = await tenantModuleAccessor.GetActiveModuleKeysAsync(cancellationToken);
 
         IReadOnlySet<string> effective;
         if (HasAdminWildcard(user))
@@ -126,22 +127,6 @@ public sealed class PermissionResolver(
 
         _memo[cacheKey] = effective;
         return effective;
-    }
-
-    private async Task<HashSet<string>> LoadActiveModulesAsync(
-        Guid tenantId,
-        CancellationToken cancellationToken)
-    {
-        var names = await dbContext.TenantModules
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .Where(module => module.TenantId == tenantId && module.IsActive)
-            .Select(module => module.ModuleName)
-            .ToListAsync(cancellationToken);
-
-        return names
-            .Select(name => name.Trim().ToLowerInvariant())
-            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static IReadOnlySet<string> FilterCatalog(IReadOnlySet<string> activeModules)

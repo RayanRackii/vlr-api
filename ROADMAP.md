@@ -107,7 +107,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] Wave 1: catálogo estático `PlatformModuleCatalog` (`provides` / `requiredCapabilities`); `NormalizeEntitlements` rejeita `maintenance` novo e nunca insere `inventory`; `GET /api/admin/modules`; trial sem `maintenance`. Sem auto-insert de `TenantAssetFamily` neste wave (create já defaulta famílias quando keys omitidas).
 - [x] Wave 2: autorização de registry sem Ativos — `IAssetRegistry` (Rentals/PMOC/OS); `POST/PUT /api/rental-assets` + pickers; `/api/assets*` permanece `inventory.*`. Sem keys novas, sem migration, sem backfill de `tenant_modules`.
 - [x] Provisioning P1/O2: seed idempotente de tipos exemplo no create **e** no update ao adicionar família (`spaces`/`electrical`/`goods`; `generic` sem seed). PMOC + só generic → 400; OS + generic permitido. Sem CRUD PMOC/OS. Spec [`docs/plans/active/2026-09-04-asset-registry-category-provisioning.md`](./docs/plans/active/2026-09-04-asset-registry-category-provisioning.md).
-- [ ] Wave 5: middleware/filtro API → 403 para módulo comercial inativo (menu B2C já filtra). Catalog B2C já tem gate.
+- [x] Wave 5: `[RequireActiveModule]` IAsyncAuthorizationFilter → 403 `{ "error": "Module is not active for this tenant." }` for inactive commercial modules (B2B, B2C Customer, anonymous public). Replaces `CatalogModuleGate`. Support mode enforces; Platform Admin administration stays ungated. Spec [`docs/plans/active/2026-09-04-generic-module-runtime-gate.md`](./docs/plans/active/2026-09-04-generic-module-runtime-gate.md).
 
 ## 5. Fluxo de convite B2B real — EM ANDAMENTO
 
@@ -159,7 +159,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - [x] `AllowExternalDelivery` unset = false
 - [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
 - [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
-- [x] B2C portal: explicit 403 when `catalog` module inactive (other modules still pending generic middleware, §4)
+- [x] B2C portal: explicit 403 when `catalog` module inactive via canonical `[RequireActiveModule]` (Wave 5).
 
 ## Dívidas técnicas conhecidas
 
@@ -243,3 +243,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-04 | **Executado (API):** Wave 2 Asset Registry access — `IAssetRegistry` + `CreateRentable`/`UpdateRentable`; HTTP `POST/PUT /api/rental-assets`, `GET /api/rental-assets/categories|families`, `GET /api/maintenance-plans/asset-categories`, `GET /api/work-orders/assets`. `/api/assets*` permanece Inventory-gated. Reusa `rentals.assets.*` / `pmoc.plans.read` / `os.work_orders.read`. Sem `asset-registry.*`, sem migration, sem backfill. Branch `feat/asset-registry-capability-access`. |
 | 2026-09-04 | **Docs:** P1/O2 locked. Plan `docs/plans/active/2026-09-04-asset-registry-category-provisioning.md` — why generic has 0 tipos; seed idempotente no update; **no** fake PMOC generic; Rentals not self-sufficient on generic-only. Implementation blocked on A/B (`pmoc` + só `generic`). Sem código, sem PROD. |
 | 2026-09-04 | **Executado (API):** AssetCategory example seed (`AssetCategoryExampleSeeds` + `AssetCategoryExampleSeeder`) on create and on newly added families at edit; PMOC fail-fast without a provisioning family; OS+generic allowed. Sem inventory auto-enable, sem migration. Branch `feat/asset-category-family-provisioning`. |
+| 2026-09-04 | **Executado (API):** Wave 5 generic commercial module runtime gate — `[RequireActiveModule]` as `IAsyncAuthorizationFilter`, scoped `ITenantModuleAccessor`, startup `MODULE_KEY_INVALID`. Replaces `CatalogModuleGate`. Inventory OFF + rentals/PMOC/OS ON keeps Wave 2 surfaces. Sem migration. Branch `feat/generic-module-runtime-gate`. |

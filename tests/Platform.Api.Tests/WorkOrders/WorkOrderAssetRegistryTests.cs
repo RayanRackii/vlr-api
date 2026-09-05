@@ -73,7 +73,7 @@ public sealed class WorkOrderAssetRegistryTests
     private static WorkOrderService CreateWorkOrderService(BulkCreateAssetsHarness harness)
     {
         var http = new FakeHttpContextAccessor();
-        var resolver = new PermissionResolver(harness.Db, NullLogger<PermissionResolver>.Instance);
+        var resolver = TestPermissionResolvers.Create(harness.Db, harness.TenantProvider);
         var grantGuard = new RbacGrantGuard(harness.Db, resolver, NullLogger<RbacGrantGuard>.Instance);
         var users = new UserDirectoryService(
             harness.Db,

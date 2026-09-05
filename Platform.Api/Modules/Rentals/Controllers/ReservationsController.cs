@@ -10,6 +10,7 @@ using Platform.Core.Domain.Enums;
 namespace Platform.Api.Modules.Rentals.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Rentals)]
 [Route("api/reservations")]
 public sealed class ReservationsController(
     IReservationService reservationService,

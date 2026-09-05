@@ -158,7 +158,7 @@ internal sealed class WorkOrderRbacHarness : IAsyncDisposable
         await db.SaveChangesAsync();
 
         var http = new FakeHttpContextAccessor();
-        var resolver = new PermissionResolver(db, NullLogger<PermissionResolver>.Instance);
+        var resolver = TestPermissionResolvers.Create(db, tenantProvider);
         var grantGuard = new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance);
         var users = new UserDirectoryService(
             db,

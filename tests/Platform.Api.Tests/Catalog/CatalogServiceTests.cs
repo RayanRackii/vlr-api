@@ -179,14 +179,6 @@ public sealed class CatalogServiceTests
     }
 
     [Fact]
-    public async Task Module_gate_rejects_when_catalog_disabled()
-    {
-        await using var harness = await CatalogHarness.CreateAsync(catalogEnabled: false);
-        await Assert.ThrowsAsync<CatalogModuleInactiveException>(
-            () => harness.Gate.EnsureActiveAsync());
-    }
-
-    [Fact]
     public async Task Portal_product_omits_internal_files()
     {
         await using var harness = await CatalogHarness.CreateAsync();

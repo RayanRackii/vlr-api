@@ -9,6 +9,7 @@ using Platform.Core.Domain.Enums;
 namespace Platform.Api.Modules.Catalog.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog/products")]
 public sealed class CatalogProductsController(ICatalogProductService productService) : ControllerBase
 {
