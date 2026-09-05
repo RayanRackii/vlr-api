@@ -215,6 +215,40 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
     }
 
     [Fact]
+    public async Task Update_enabling_pmoc_on_generic_only_tenant_throws()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("enable-pmoc", [PlatformModules.Catalog], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            harness.Service.UpdateAsync(
+                created.Id,
+                UpdateRequest(
+                    created,
+                    [PlatformModules.Catalog, PlatformModules.Pmoc],
+                    [AssetFamilyKeys.Generic]),
+                CancellationToken.None));
+
+        Assert.Equal(
+            "PMOC requires at least one asset family with available resource types.",
+            ex.Message);
+        Assert.Empty(await harness.CategoryNamesAsync(created.Id));
+        Assert.Equal([AssetFamilyKeys.Generic], await harness.FamilyKeysAsync(created.Id));
+
+        var stored = await harness.Db.TenantModules
+            .IgnoreQueryFilters()
+            .Where(m => m.TenantId == created.Id)
+            .Select(m => m.ModuleName)
+            .ToListAsync();
+
+        Assert.Contains(PlatformModules.Catalog, stored);
+        Assert.DoesNotContain(PlatformModules.Pmoc, stored);
+    }
+
+    [Fact]
     public async Task Update_pmoc_from_electrical_to_generic_only_throws()
     {
         await using var harness = await Harness.CreateAsync();
