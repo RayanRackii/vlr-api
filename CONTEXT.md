@@ -219,7 +219,7 @@ A Tenant-authored visual arrangement of Rentables on a 2D canvas (positions and 
 _Avoid_: Hard-coding a single FICC court map; hiding unavailable Rentables; requiring court-first selection as the only path
 
 **Subdomain**:
-The tenant-owned URL slug used to resolve which Tenant a public B2C request belongs to (for example `clube-x` → `clube-x.rolvix.com.br`). It is identity routing, not the branded experience itself.
+The tenant-owned URL slug used to resolve which Tenant a public B2C request belongs to (for example `clube-x` → `clube-x.rolvix.com.br`). It is identity routing, not the branded experience itself. Create and rename reject a frozen reserved set (`www`, `api`, `app`, `admin`, `dev`, `staging`, `preview`, `mail`, `support`); trial allocation skips those labels; existing rows are not renamed.
 _Avoid_: custom domain (until real custom hostnames are supported), slug alone without tenant resolution
 
 ## 2. Dinâmica de Módulos e Customização (Requisitos Core)

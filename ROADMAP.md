@@ -30,6 +30,7 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [ ] Aplicar migration menu no Railway.
 - [ ] Garantir assets/pricing no FICC para demo.
 - [x] Admin B2B de reservas (listar/confirmar/cancelar).
+- [x] Reserved tenant subdomains: create/rename reject frozen set (`www`, `api`, `app`, `admin`, `dev`, `staging`, `preview`, `mail`, `support`); trial allocation skips them; existing rows grandfathered. DNS/wildcard unchanged.
 
 ## 2.8. Dashboard B2B dinâmico — FEITO (código)
 
@@ -249,3 +250,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-04 | **Executado (API):** Wave 5 generic commercial module runtime gate — `[RequireActiveModule]` as `IAsyncAuthorizationFilter`, scoped `ITenantModuleAccessor`, startup `MODULE_KEY_INVALID`. Replaces `CatalogModuleGate`. Inventory OFF + rentals/PMOC/OS ON keeps Wave 2 surfaces. Sem migration. Branch `feat/generic-module-runtime-gate`. |
 | 2026-09-05 | **Executado (API):** Wave 5 follow-up #1 — convention test so omitted/wrong `[RequireActiveModule]` fails in CI; PMOC enable-on-generic update regression; trial family-keys PMOC guard. `TrialModules`/`TrialFamilyKeys` `internal` (visibility only). Sem mudança de runtime/auth. Branch `test/module-runtime-gate-hardening`. |
 | 2026-09-05 | **PROD:** Human Gate approved. Squash `develop` → `main` API PR #51 SHA `48ad32a1e2ac3c71ec7df59a895ef1eecae55140`. Railway production SUCCESS. `/health` 200. WEB PR #48 SHA `37a5266381ad5061cfda0299acb2c84a2726b050`. DEV E2E_CERTIFIED (51 tests, 32/32). Migrations/backfill/permission/config **NONE**. Rollback baselines: API `575adb205c8eff856d67c79d31d4bbc75a9eeed6`, WEB `4b048c4f0e4f4a54efc5dca74404627699b9259d`. |
+| 2026-09-05 | **Executado (API):** reserved tenant subdomains — frozen set in Domain; Admin create/rename 400 with `This subdomain is reserved and cannot be used.`; trial allocator skips reserved candidates; existing rows grandfathered. DNS/wildcard unchanged. Branch `feat/reserved-tenant-subdomains`. |
