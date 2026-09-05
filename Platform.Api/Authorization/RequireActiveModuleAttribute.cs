@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.Api.Authentication;
@@ -22,14 +24,11 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
         var services = context.HttpContext.RequestServices;
         var tenantProvider = services.GetRequiredService<ITenantProvider>();
 
-        if (tenantProvider.TenantId is null)
+        var resourceSubdomain = ResolveResourceSubdomain(context);
+        if (!string.IsNullOrWhiteSpace(resourceSubdomain))
         {
-            var subdomain = ResolvePublicSubdomain(context);
-            if (!string.IsNullOrWhiteSpace(subdomain))
-            {
-                var binder = services.GetRequiredService<IPublicTenantBinder>();
-                await binder.BindFromSubdomainAsync(subdomain, context.HttpContext.RequestAborted);
-            }
+            var binder = services.GetRequiredService<IPublicTenantBinder>();
+            await binder.BindFromSubdomainAsync(resourceSubdomain, context.HttpContext.RequestAborted);
         }
 
         if (tenantProvider.TenantId is null)
@@ -52,13 +51,18 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
         };
     }
 
-    private static string? ResolvePublicSubdomain(AuthorizationFilterContext context)
+    private static string? ResolveResourceSubdomain(AuthorizationFilterContext context)
     {
         if (context.RouteData.Values.TryGetValue("subdomain", out var routeValue)
             && routeValue is string routeSubdomain
             && !string.IsNullOrWhiteSpace(routeSubdomain))
         {
             return routeSubdomain;
+        }
+
+        if (!IsAllowAnonymous(context))
+        {
+            return null;
         }
 
         if (context.HttpContext.Request.Headers.TryGetValue(TenantHeaders.Subdomain, out var headerValues))
@@ -71,5 +75,15 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
         }
 
         return null;
+    }
+
+    private static bool IsAllowAnonymous(AuthorizationFilterContext context)
+    {
+        if (context.ActionDescriptor.EndpointMetadata.OfType<IAllowAnonymous>().Any())
+        {
+            return true;
+        }
+
+        return context.Filters.OfType<IAllowAnonymousFilter>().Any();
     }
 }

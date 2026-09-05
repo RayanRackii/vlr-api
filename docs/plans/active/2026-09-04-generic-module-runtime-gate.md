@@ -80,10 +80,12 @@ Lazy-load `tenant_modules` once per request for `ITenantProvider.TenantId`. Empt
 
 ### 3. Filter algorithm
 
-1. If `TenantId` is null and a public subdomain is available (route `subdomain` or `X-Tenant-Subdomain`), bind via `IPublicTenantBinder.BindFromSubdomainAsync`, then continue.
+1. If a **public resource tenant** is identifiable, bind it **before** reading entitlements — even when a JWT already set `TenantId`. Route `subdomain` always wins. `X-Tenant-Subdomain` is used only on `[AllowAnonymous]` actions (availability). Authenticated B2B must not switch tenant via that header.
 2. If `TenantId` is still null → **skip** (platform mode / non-tenant public).
 3. If declared key is in the active set → pass.
 4. Else 403 `{ "error": "Module is not active for this tenant." }` (ObjectResult, do not throw).
+
+Invariant: Tenant A’s JWT must not satisfy Tenant B’s public module surface. `AmbientTenantContext` (set by the binder) takes precedence in `HttpContextTenantProvider`.
 
 Support mode with tenant_id present **enforces**. Platform-mode PlatformAdmin on unannotated admin endpoints is unaffected.
 
@@ -137,7 +139,7 @@ Infra: health, hangfire, WhatsApp webhooks.
 16. `ITenantModuleAccessor` loads `tenant_modules` once per request when both RequireActiveModule and PermissionResolver run.
 17. Core endpoint (e.g. `/api/users/me` or dashboard) available regardless of commercial module selection.
 18. `GET /api/admin/modules` still available to PlatformAdmin.
-19. Tenant A entitlement never satisfies tenant B.
+19. Tenant A entitlement never satisfies tenant B — including Customer JWT for A + public `/api/public/tenants/{B}/…` (and availability `X-Tenant-Subdomain: B`) when B’s module is off.
 
 Existing `CustomerJwtBearerPipelineTests` and `InventoryHttpGateTests` must stay green. Run full `dotnet test tests/Platform.Api.Tests`.
 

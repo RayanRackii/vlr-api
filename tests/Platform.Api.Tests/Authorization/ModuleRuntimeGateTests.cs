@@ -143,6 +143,53 @@ public sealed class ModuleRuntimeGateTests
     }
 
     [Fact]
+    public async Task Customer_jwt_for_tenant_A_cannot_open_public_rentals_of_inactive_tenant_B()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [PlatformModules.Rentals],
+            tenantBModules: [PlatformModules.Catalog]);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+
+        await AssertModuleInactiveAsync(
+            await GetCustomerAsync(
+                host,
+                $"/api/public/tenants/{seed.TenantB.Subdomain}/rental-assets",
+                seed.CustomerAId,
+                seed.TenantA.Id));
+    }
+
+    [Fact]
+    public async Task Customer_jwt_for_tenant_A_cannot_open_availability_of_inactive_tenant_B()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [PlatformModules.Rentals],
+            tenantBModules: [PlatformModules.Catalog]);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.CustomerHeader, seed.CustomerAId.ToString());
+        client.DefaultRequestHeaders.Add(TestAuthHandler.TenantHeader, seed.TenantA.Id.ToString());
+        client.DefaultRequestHeaders.Add(TenantHeaders.Subdomain, seed.TenantB.Subdomain!);
+
+        await AssertModuleInactiveAsync(await client.GetAsync("/api/reservations/availability"));
+    }
+
+    [Fact]
+    public async Task Customer_jwt_for_tenant_A_can_read_public_rentals_of_active_tenant_B()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [PlatformModules.Rentals],
+            tenantBModules: [PlatformModules.Rentals]);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+
+        var response = await GetCustomerAsync(
+            host,
+            $"/api/public/tenants/{seed.TenantB.Subdomain}/rental-assets",
+            seed.CustomerAId,
+            seed.TenantA.Id);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task PlatformAdmin_platform_mode_on_annotated_endpoint_is_not_200_from_gate_skip()
     {
         using var host = await StartHostAsync(
