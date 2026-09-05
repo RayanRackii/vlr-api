@@ -20,7 +20,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 {
     private const int MinimumPasswordLength = 8;
 
-    private static readonly string[] TrialModules =
+    internal static readonly string[] TrialModules =
     [
         PlatformModules.Inventory,
         PlatformModules.Pmoc,
@@ -28,7 +28,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
         PlatformModules.Rentals,
     ];
 
-    private static readonly string[] TrialFamilyKeys =
+    internal static readonly string[] TrialFamilyKeys =
     [
         AssetFamilyKeys.Spaces,
         AssetFamilyKeys.Electrical,
