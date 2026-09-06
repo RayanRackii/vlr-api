@@ -5,6 +5,7 @@ using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -356,18 +357,14 @@ public sealed class ReservationService(
 
         if (from is DateOnly fromDate)
         {
-            var fromStart = new DateTimeOffset(
-                fromDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
-                TimeSpan.Zero);
-            query = query.Where(r => r.EndDateTime >= fromStart);
+            var fromStart = BrazilTimeZone.StartOfCivilDay(fromDate);
+            query = query.Where(r => r.EndDateTime > fromStart);
         }
 
         if (to is DateOnly toDate)
         {
-            var toEnd = new DateTimeOffset(
-                toDate.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Unspecified),
-                TimeSpan.Zero);
-            query = query.Where(r => r.StartDateTime <= toEnd);
+            var toEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(toDate);
+            query = query.Where(r => r.StartDateTime < toEnd);
         }
 
         if (status is ReservationStatus statusFilter)
@@ -732,8 +729,8 @@ public sealed class ReservationService(
         TimeOnly startTime,
         TimeOnly endTime)
     {
-        var start = new DateTimeOffset(date.ToDateTime(startTime, DateTimeKind.Unspecified), TimeSpan.Zero);
-        var end = new DateTimeOffset(date.ToDateTime(endTime, DateTimeKind.Unspecified), TimeSpan.Zero);
+        var start = BrazilTimeZone.AtLocal(date, startTime);
+        var end = BrazilTimeZone.AtLocal(date, endTime);
         return (start, end);
     }
 

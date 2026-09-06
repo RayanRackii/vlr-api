@@ -8,6 +8,7 @@ using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Tests.Rentals;
 
@@ -155,12 +156,12 @@ public sealed class ReservationQueueTests
             CustomerId = harness.CustomerB,
             CustomerName = "Other",
             CustomerWhatsApp = "11988880000",
-            StartDateTime = new DateTimeOffset(
-                ReservationQueueHarness.BookDate.ToDateTime(ReservationQueueHarness.BookStart),
-                TimeSpan.Zero),
-            EndDateTime = new DateTimeOffset(
-                ReservationQueueHarness.BookDate.ToDateTime(ReservationQueueHarness.BookEnd),
-                TimeSpan.Zero),
+            StartDateTime = BrazilTimeZone.AtLocal(
+                ReservationQueueHarness.BookDate,
+                ReservationQueueHarness.BookStart),
+            EndDateTime = BrazilTimeZone.AtLocal(
+                ReservationQueueHarness.BookDate,
+                ReservationQueueHarness.BookEnd),
             Status = ReservationStatus.Confirmed,
             TotalAmount = 100m,
             DepositPaid = 0m,

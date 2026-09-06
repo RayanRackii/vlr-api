@@ -64,7 +64,8 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
 - [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
 - [x] Wave 1 Phase A: `rentals.reservations.complete` + `POST /api/reservations/{id}/complete`; Complete × Cancel exclusive-winner via `ReservationLocks` then (Cancel) `RentalAssetLocks`. Sem TZ / backfill nesta fase. DEV permission seed applied 2026-09-06. Phase B TZ still gated on PROD timestamp classification.
-- [x] Confirm × Cancel: `ConfirmAsync` serializa com `ReservationLocks` (lock then load). Confirm não é terminal — Confirm→Cancel ambos legais; Cancel→Confirm 409. Stale Confirm não sobrescreve `Canceled`. PROD timestamps **EMPTY** (`reservations=0`). Phase B not started.
+- [x] Confirm × Cancel: `ConfirmAsync` serializa com `ReservationLocks` (lock then load). Confirm não é terminal — Confirm→Cancel ambos legais; Cancel→Confirm 409. Stale Confirm não sobrescreve `Canceled`. PROD timestamps **EMPTY** (`reservations=0`).
+- [x] Wave 1 Phase B T1: Reservation writers use `BrazilTimeZone.AtLocal`; civil-day list/overlay bounds `StartOfCivilDay`/`ExclusiveEndOfCivilDay`; API JSON UTC instant only; Slot remains civil; no schema migration; no PROD backfill (`reservations=0`, keep Slot). **Not** deployed to PROD/`main`.
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -179,6 +180,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-06 | **Fix (API):** Phase B T1 — `ToDateTimeRange` / `ToDateTime` persist real `America/Sao_Paulo` instants; admin list and reserved-window overlay use Brazil civil-day bounds. Slot/pricing stay civil. No schema migration. No PROD backfill. Not deployed to PROD. |
 | 2026-09-06 | **Fix (API):** Confirm × Cancel — `ConfirmAsync` `ReservationLocks` FOR UPDATE then load. Occupancy split closed. Confirm→Cancel remains legal. PROD timestamps **EMPTY**; Phase B not started. |
 | 2026-09-06 | **Fix (API):** Complete × Cancel exclusive-winner — `ReservationLocks` `FOR UPDATE` then (Cancel only) `RentalAssetLocks` ascending. Dual success closed. Confirm × Cancel still unserialized (follow-up, later this date). Phase B still blocked; PROD timestamps still **INSUFFICIENT_EVIDENCE**. |
 | 2026-09-06 | **Gate (DEV):** re-list `PENDING_COUNT=0` for Complete permission seed. Complete × Cancel **PHASE_A_CONCURRENCY_DEFECT** (both can succeed; not patched). PROD timestamps **INSUFFICIENT_EVIDENCE**. Phase B not started. |

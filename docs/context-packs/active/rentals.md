@@ -6,7 +6,7 @@ Derived context — NOT canonical.
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; spec `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
 - Last verified: 2026-09-06
-- Verified at commit(s): `vlr-api` `fix/rentals-confirm-cancel-concurrency` (Confirm row lock); `vlr-web` `5359942ace3daf1f6ff72e7cbe73678e78d7ec02`
+- Verified at commit(s): `vlr-api` `fix/rentals-timezone-t1`; `vlr-web` `fix/rentals-timezone-t1`
 
 ## Purpose
 
@@ -46,11 +46,18 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - **Deposit gate:** `RentalAsset.RequiresDeposit` — if any item’s rentable has it, reservation starts `PendingDeposit`; else `Confirmed`.
 - Pricing-row `RequiresDeposit` / `DepositPercentage` do **not** gate the reservation (see `CONTEXT.md` RequiresDeposit). `DepositPaid` is still always 0 (payment not implemented).
 
-### Timezone split (Phase B gated)
+### Timezone (T1 implemented in DEV code)
 
-- **Queue clock:** `ReservationQueueClock` uses `BrazilTimeZone.AtLocal` / civil date in America/Sao_Paulo.
-- **Reservation writes:** `ReservationService.ToDateTimeRange` and `ScheduleService.ToDateTime` still stamp civil `DateOnly`+`TimeOnly` with `TimeSpan.Zero` (10:00 stored as `10:00+00:00`).
-- **Phase B** (switch writers to `BrazilTimeZone.AtLocal`, list bounds, optional backfill) is **not started**. Requires PROD timestamp classification + a separate Human Gate. No backfill SQL in tree.
+- **Business clock:** `America/Sao_Paulo` via `BrazilTimeZone` (Windows `E. South America Standard Time`). Do not hard-code `-03:00`.
+- **Civil (unchanged):** Slot `Date`/`StartTime`/`EndTime`, ScheduleTemplate, OpenHours, RentalPricing windows, CreateReservation request Date/StartTime/EndTime, day URLs, booking pickers.
+- **Instant:** `Reservation.StartDateTime` / `EndDateTime` are real UTC instants (`DateTimeOffset` / `timestamptz`). Writers: `BrazilTimeZone.AtLocal`. Example: civil `2026-09-10 10:00` SP → API `2026-09-10T13:00:00Z`.
+- **Civil-day queries:** inclusive `StartOfCivilDay(D)`, exclusive `ExclusiveEndOfCivilDay(D)` (`AtLocal(D+1, 00:00)`). Do not use UTC midnight or `TimeOnly.MaxValue`.
+- **API JSON:** UTC instant only on Reservation DTOs. No parallel `date`/`startTime`/`endTime` fields in this phase.
+- **WEB:** format reservation clocks and Rentals “today” with `timeZone: "America/Sao_Paulo"` (`src/lib/brazilTimeZone.ts`).
+- **Queue:** already used `BrazilTimeZone.AtLocal`; unchanged.
+- **Confirm / Cancel / Complete / CreatedAt / UpdatedAt:** do not timezone-convert.
+- **Schema:** no migration. Columns were already `timestamptz`.
+- **PROD:** `reservation_count = 0` → no historical backfill. Keep the single PROD Slot. Not rolled out to `main`/PROD.
 
 ## Critical invariants
 
@@ -88,18 +95,18 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 - `Platform.Api/Modules/Rentals/Services/ReservationService.cs` (`ToDateTimeRange`, Confirm/Complete/Cancel lock-then-load)
 - `Platform.Api/Modules/Rentals/Services/ReservationLocks.cs` / `RentalAssetLocks.cs` (`FOR UPDATE`; no-op when `!IsRelational()`)
-- `Platform.Api/Modules/Rentals/Services/ScheduleService.cs` (`ToDateTime` still `TimeSpan.Zero`)
+- `Platform.Api/Modules/Rentals/Services/ScheduleService.cs` (`ToDateTime` → `BrazilTimeZone.AtLocal`; `LoadReservedWindowsAsync` civil-day bounds)
 - `Platform.Api/Modules/Rentals/Services/ReservationQueueService.cs` / `ReservationQueueClock.cs` (`BrazilTimeZone`)
 - `Platform.Api/Modules/Rentals/Services/OccupancyPrecedence.cs`
 - `Core/Platform.Core.Domain/Entities/Reservation.cs`, `Slot.cs`, `ScheduleTemplate.cs`, `ReservationQueueSession.cs`, `ReservationQueueTicket.cs`
 - `Core/Platform.Core.Domain/Constants/Permissions.cs` — `rentals.reservations.complete`
-- WEB: `src/features/rentals/pages/ReservationsPage.tsx`, `src/features/rentals/services/reservationsService.ts`
+- WEB: `src/lib/brazilTimeZone.ts`, `src/features/rentals/pages/ReservationsPage.tsx`, `src/features/rentals/services/reservationsService.ts`, `src/features/tenantPortal/pages/TenantPortalAgendaPage.tsx`
 
 ## Known gaps / open constraints
 
 From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
 
-**Phase B timezone** is **not started**. PROD timestamp classify: **`EMPTY`** (`reservation_count = 0`, `slot_count = 1` on `kbptdzfbngelzdhriyhf`). No historical Reservation backfill. Phase B still needs a separate Human Gate.
+**Phase B T1** is implemented on `fix/rentals-timezone-t1` (not PROD). PROD classify remains **`EMPTY`** (`reservation_count = 0`, `slot_count = 1`). No Reservation backfill. Do not delete the PROD Slot. No schema migration.
 
 **DEV permission seed:** `20260906034111_AddRentalsReservationsCompletePermission` applied on development (`PENDING_COUNT=0`, `rentals.reservations.complete` exists once). Not applied on PROD.
 
@@ -116,7 +123,8 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Start time alone identifies a weekly template (that caused ApplyWeeklyRule 500s)
 - Last-write-wins / timestamps / shorter interval as occupancy precedence
 - The Inventory (Ativos) module must be entitled for Rentals to work (Rentable still needs an Asset row; that is Asset Registry, not `tenant_modules.inventory`)
-- Booking clocks already use `BrazilTimeZone.AtLocal` on reservation writes (they do not)
+- Booking clocks are browser-local (WEB formats Reservation instants in `America/Sao_Paulo`)
+- Reservation JSON includes civil `date`/`startTime`/`endTime` in this phase (it does not; UTC instant only)
 - Complete reuses `rentals.reservations.confirm`
 - Customer portal can Complete or Cancel in Wave 1
 - Complete and Cancel may both return success on the same Confirmed reservation (forbidden; now serialized)
