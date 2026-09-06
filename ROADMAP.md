@@ -64,7 +64,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
 - [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
 - [x] Wave 1 Phase A: `rentals.reservations.complete` + `POST /api/reservations/{id}/complete`; Complete × Cancel exclusive-winner via `ReservationLocks` then (Cancel) `RentalAssetLocks`. Sem TZ / backfill nesta fase. DEV permission seed applied 2026-09-06. Phase B TZ still gated on PROD timestamp classification.
-- [ ] Follow-up (não Phase B): serializar Confirm × Cancel com `ReservationLocks` na row. `ConfirmAsync` ainda não locka; mesma classe de corrida, fora do invariante Confirmed Complete × Cancel deste PR.
+- [x] Confirm × Cancel: `ConfirmAsync` serializa com `ReservationLocks` (lock then load). Confirm não é terminal — Confirm→Cancel ambos legais; Cancel→Confirm 409. Stale Confirm não sobrescreve `Canceled`. PROD timestamps **EMPTY** (`reservations=0`). Phase B not started.
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -179,7 +179,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
-| 2026-09-06 | **Fix (API):** Complete × Cancel exclusive-winner — `ReservationLocks` `FOR UPDATE` then (Cancel only) `RentalAssetLocks` ascending. Dual success closed. Confirm × Cancel still unserialized (follow-up, not this PR). Phase B still blocked; PROD timestamps still **INSUFFICIENT_EVIDENCE**. |
+| 2026-09-06 | **Fix (API):** Confirm × Cancel — `ConfirmAsync` `ReservationLocks` FOR UPDATE then load. Occupancy split closed. Confirm→Cancel remains legal. PROD timestamps **EMPTY**; Phase B not started. |
 | 2026-09-06 | **Gate (DEV):** re-list `PENDING_COUNT=0` for Complete permission seed. Complete × Cancel **PHASE_A_CONCURRENCY_DEFECT** (both can succeed; not patched). PROD timestamps **INSUFFICIENT_EVIDENCE**. Phase B not started. |
 | 2026-09-06 | **Ops (DEV):** `database-migrations` `target=development` apply `AddRentalsReservationsCompletePermission`. `PENDING_COUNT=0`. `rentals.reservations.complete` exists once in `core.permissions`. PROD timestamps **not** classified (no SELECT path this session). Phase B not started. |
 | 2026-09-06 | **Executado (API, Phase A):** `rentals.reservations.complete` + `POST /api/reservations/{id}/complete` (Confirmed→Completed, idempotente em Completed, rejeita PendingDeposit/Canceled). Cancel passa a lockar `RentalAsset` (`OrderBy Id`) antes de liberar slots. Sem TZ, sem backfill. Branch `feat/rentals-wave1-phase-a-lifecycle`. Migration não aplicada. |

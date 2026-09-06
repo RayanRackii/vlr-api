@@ -10,6 +10,52 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ReservationLifecycleTests
 {
     [Fact]
+    public async Task ConfirmAsync_pending_deposit_becomes_confirmed()
+    {
+        await using var harness = await LocationBookingHarness.CreateAsync();
+        var reservation = harness.SeedOverlappingReservation(ReservationStatus.PendingDeposit);
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.CreateReservationService()
+            .ConfirmAsync(reservation.Id, CancellationToken.None);
+
+        Assert.Equal(ReservationStatus.Confirmed, result.Status);
+        Assert.Equal(
+            ReservationStatus.Confirmed,
+            await harness.Db.Reservations.Where(r => r.Id == reservation.Id).Select(r => r.Status).SingleAsync());
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_confirmed_is_idempotent()
+    {
+        await using var harness = await LocationBookingHarness.CreateAsync();
+        var reservation = harness.SeedOverlappingReservation(ReservationStatus.Confirmed);
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.CreateReservationService()
+            .ConfirmAsync(reservation.Id, CancellationToken.None);
+
+        Assert.Equal(ReservationStatus.Confirmed, result.Status);
+        Assert.Equal(1, await harness.Db.Reservations.CountAsync());
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_canceled_throws()
+    {
+        await using var harness = await LocationBookingHarness.CreateAsync();
+        var reservation = harness.SeedOverlappingReservation(ReservationStatus.Canceled);
+        await harness.Db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.CreateReservationService().ConfirmAsync(reservation.Id, CancellationToken.None));
+
+        Assert.Contains(nameof(ReservationStatus.Canceled), ex.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            ReservationStatus.Canceled,
+            await harness.Db.Reservations.Where(r => r.Id == reservation.Id).Select(r => r.Status).SingleAsync());
+    }
+
+    [Fact]
     public async Task CompleteAsync_confirmed_becomes_completed()
     {
         await using var harness = await LocationBookingHarness.CreateAsync();

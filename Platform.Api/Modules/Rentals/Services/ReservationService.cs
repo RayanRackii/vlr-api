@@ -404,35 +404,50 @@ public sealed class ReservationService(
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
 
-        var reservation = await dbContext.Reservations
-            .Include(r => r.Items)
-                .ThenInclude(i => i.RentalAsset)
-                    .ThenInclude(a => a.Asset)
-            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
-        if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
+        try
         {
-            throw new InvalidOperationException(
-                $"Cannot confirm a reservation in status '{reservation.Status}'.");
-        }
+            await ReservationLocks.LockByReservationIdAsync(
+                dbContext,
+                reservationId,
+                cancellationToken);
 
-        if (reservation.Status == ReservationStatus.Confirmed)
-        {
+            var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+            if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot confirm a reservation in status '{reservation.Status}'.");
+            }
+
+            if (reservation.Status == ReservationStatus.Confirmed)
+            {
+                await CommitIfPresentAsync(transaction, cancellationToken);
+                return ToResponseFromEntity(reservation);
+            }
+
+            if (reservation.Status != ReservationStatus.PendingDeposit)
+            {
+                throw new InvalidOperationException(
+                    $"Only pending reservations can be confirmed (current: '{reservation.Status}').");
+            }
+
+            reservation.Status = ReservationStatus.Confirmed;
+            reservation.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+
             return ToResponseFromEntity(reservation);
         }
-
-        if (reservation.Status != ReservationStatus.PendingDeposit)
+        catch
         {
-            throw new InvalidOperationException(
-                $"Only pending reservations can be confirmed (current: '{reservation.Status}').");
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
         }
-
-        reservation.Status = ReservationStatus.Confirmed;
-        reservation.Touch();
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return ToResponseFromEntity(reservation);
     }
 
     public async Task<ReservationResponseDto> CompleteAsync(
