@@ -590,6 +590,13 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
                 Assert.Contains(nameof(ReservationStatus.Canceled), ioe.Message, StringComparison.Ordinal);
                 cancelThenConfirmConflict++;
             }
+            else
+            {
+                Assert.Fail(
+                    $"Unclassified Confirm × Cancel serial history at iteration {iteration}: " +
+                    $"confirmOk={confirmWon} cancelOk={cancelWon} status={reservation.Status} " +
+                    $"slot={slot.Status} slotReservationId={slot.ReservationId}.");
+            }
         }
 
         _output.WriteLine(
@@ -606,6 +613,10 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
                 $"cancelLostUpdate={cancelLostUpdate} dualSuccess={dualSuccess} " +
                 $"confirmSuccess={confirmSuccess} cancelSuccess={cancelSuccess}.");
         }
+
+        Assert.Equal(
+            ConfirmCancelRaceIterations,
+            legalConfirmThenCancel + cancelThenConfirmConflict);
     }
 
     private PostgresAppDbFactory RequireFactory()
