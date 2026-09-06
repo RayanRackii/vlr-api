@@ -6,7 +6,7 @@ Derived context — NOT canonical.
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; spec `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
 - Last verified: 2026-09-06
-- Verified at commit(s): `vlr-api` `fe10c9535a39e2731e90d3c8abb2cb1cf8bde7ab`; `vlr-web` `5359942ace3daf1f6ff72e7cbe73678e78d7ec02`
+- Verified at commit(s): `vlr-api` `034b051` (`fix/rentals-complete-cancel-concurrency`); `vlr-web` `5359942ace3daf1f6ff72e7cbe73678e78d7ec02`
 
 ## Purpose
 
@@ -61,10 +61,11 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Product UI never shows `OpenHours` / `SlotGrid` as copy
 - Same OccupancyKind cannot overlap itself on a Rentable+weekday; different kinds may
 - `PublishDay` gap-fills by rentable + start; does not wipe existing slots
-- Create/book/cancel serialize occupancy with `RentalAssetLocks` `FOR UPDATE` on `rentals.rental_assets` ordered by `RentalAssetId`
+- Create/book serialize occupancy with `RentalAssetLocks` `FOR UPDATE` on `rentals.rental_assets` ordered by `RentalAssetId` (reservation rows are not locked on create/book)
+- Complete/Cancel serialize terminal transitions with `ReservationLocks` `FOR UPDATE` on `rentals.reservations` **first**. Cancel then locks distinct `RentalAssetId`s ascending via `RentalAssetLocks` before `MarkAvailable`. Complete does not lock rentables and does not free slots
 - Complete is staff-only: `Confirmed → Completed`; `Completed` is idempotent 200; `PendingDeposit`/`Canceled` → 409. Does not free slots.
 - Customer JWT cannot Complete (no B2C Complete UI; no B2C cancel in Wave 1)
-- **Complete × Cancel (human):** `Confirmed` is the source. Complete and Cancel are competing terminals with **no priority**. Exactly one may succeed (first serialized commit). The loser must see non-`Confirmed` and fail with the existing invalid-transition contract (`InvalidOperationException` → HTTP 409). If Cancel wins: status `Canceled` and occupancy-release (`MarkAvailable`) runs. If Complete wins: status `Completed`, Cancel fails, `MarkAvailable` must **not** run. Both returning success is invalid.
+- **Complete × Cancel (human):** `Confirmed` is the source. Complete and Cancel are competing terminals with **no priority**. Exactly one may succeed (first serialized commit). The loser must see non-`Confirmed` and fail with the existing invalid-transition contract (`InvalidOperationException` → HTTP 409). If Cancel wins: status `Canceled` and occupancy-release (`MarkAvailable`) runs. If Complete wins: status `Completed`, Cancel fails, `MarkAvailable` must **not** run. Both returning success is invalid. Serialized; `PHASE_A_CONCURRENCY_DEFECT` closed.
 
 ## Current contracts
 
@@ -78,12 +79,13 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Admin list: `GET /api/reservations`
 - Admin confirm: `POST /api/reservations/{id}/confirm` — permission `rentals.reservations.confirm`
 - Admin complete: `POST /api/reservations/{id}/complete` — permission `rentals.reservations.complete` (not confirm)
-- Admin cancel: `POST /api/reservations/{id}/cancel` — locks rentables then `MarkAvailable` on linked slots
+- Admin cancel: `POST /api/reservations/{id}/cancel` — `ReservationLocks` then rentables (`OrderBy Id`) then `MarkAvailable` on linked slots
 - WEB admin Concluir: `/configuracoes/reservas` when status is Confirmed **and** `can("rentals.reservations.complete")`
 
 ## Important implementation seams
 
-- `Platform.Api/Modules/Rentals/Services/ReservationService.cs` (`ToDateTimeRange`, `CompleteAsync`, `CancelAsync` locks)
+- `Platform.Api/Modules/Rentals/Services/ReservationService.cs` (`ToDateTimeRange`, `CompleteAsync`/`CancelAsync` reservation-row then optional rentable locks)
+- `Platform.Api/Modules/Rentals/Services/ReservationLocks.cs` / `RentalAssetLocks.cs` (`FOR UPDATE`; no-op when `!IsRelational()`)
 - `Platform.Api/Modules/Rentals/Services/ScheduleService.cs` (`ToDateTime` still `TimeSpan.Zero`)
 - `Platform.Api/Modules/Rentals/Services/ReservationQueueService.cs` / `ReservationQueueClock.cs` (`BrazilTimeZone`)
 - `Platform.Api/Modules/Rentals/Services/OccupancyPrecedence.cs`
@@ -99,7 +101,7 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 
 **DEV permission seed:** `20260906034111_AddRentalsReservationsCompletePermission` applied on development (`PENDING_COUNT=0`, `rentals.reservations.complete` exists once). Not applied on PROD.
 
-**Complete × Cancel:** current `CompleteAsync` has no reservation-row lock; `CancelAsync` locks rentables then writes. Concurrent Complete+Cancel can **both return success** (PHASE_A_CONCURRENCY_DEFECT; 8/8 Testcontainers runs). Dedicated fix required; not patched in the DEV gate.
+**Complete × Cancel:** serialized. `CompleteAsync`/`CancelAsync` begin a relational transaction, `FOR UPDATE` the reservation row, then evaluate status. Cancel acquires `RentalAssetLocks` only after winning the reservation lock. Dual success is invalid and covered by `ReservationConcurrencyTests` (8 independent races + sequential occupancy).
 
 ## Do not assume
 
@@ -113,4 +115,4 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Booking clocks already use `BrazilTimeZone.AtLocal` on reservation writes (they do not)
 - Complete reuses `rentals.reservations.confirm`
 - Customer portal can Complete or Cancel in Wave 1
-- Complete and Cancel may both return success on the same Confirmed reservation (forbidden; current code still can)
+- Complete and Cancel may both return success on the same Confirmed reservation (forbidden; now serialized)
