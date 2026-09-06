@@ -16,14 +16,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 VALUES
                     (gen_random_uuid(), 'rentals.reservations.complete', 'Complete reservations', 'Mark confirmed reservations as completed.', 'rentals', now())
                 ON CONFLICT (key) DO NOTHING;
-
-                INSERT INTO core.role_permissions (role_id, permission_id, granted_at)
-                SELECT r.id, p.id, now()
-                FROM core.roles r
-                CROSS JOIN core.permissions p
-                WHERE lower(r.name) IN ('admin', 'superadmin')
-                  AND p.key = 'rentals.reservations.complete'
-                ON CONFLICT DO NOTHING;
                 """);
         }
 

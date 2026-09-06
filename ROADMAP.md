@@ -176,6 +176,8 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 ## Histórico
 
+| Data | Mudança |
+|---|---|
 | 2026-09-06 | **Executado (API, Phase A):** `rentals.reservations.complete` + `POST /api/reservations/{id}/complete` (Confirmed→Completed, idempotente em Completed, rejeita PendingDeposit/Canceled). Cancel passa a lockar `RentalAsset` (`OrderBy Id`) antes de liberar slots. Sem TZ, sem backfill. Branch `feat/rentals-wave1-phase-a-lifecycle`. Migration não aplicada. |
 | 2026-08-03 | Beachhead clube/Rentals; portal e registro dinâmico. |
 | 2026-08-04 | CPF único FICC; início agenda B2C. |
