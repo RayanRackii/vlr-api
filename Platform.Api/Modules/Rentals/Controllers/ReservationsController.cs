@@ -110,6 +110,31 @@ public sealed class ReservationsController(
         }
     }
 
+    /// <summary>Mark a confirmed reservation as completed (B2B staff).</summary>
+    [RequirePermission(Permissions.Rentals.ReservationsComplete)]
+    [HttpPost("{id:guid}/complete")]
+    public async Task<ActionResult<ReservationResponseDto>> Complete(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await reservationService.CompleteAsync(id, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
     /// <summary>Cancel a reservation and free linked slots (B2B staff).</summary>
     [RequirePermission(Permissions.Rentals.ReservationsCancel)]
     [HttpPost("{id:guid}/cancel")]
