@@ -88,6 +88,11 @@ public sealed class AdminTenantService(
                 "Subdomain must contain only lowercase letters, numbers, and hyphens.");
         }
 
+        if (ReservedTenantSubdomains.IsReserved(subdomain))
+        {
+            throw new ArgumentException(ReservedTenantSubdomains.ReservedMessage);
+        }
+
         var modules = PlatformModuleCatalog.NormalizeEntitlements(request.ActiveModules);
 
         if (modules.Count == 0)
@@ -262,6 +267,12 @@ public sealed class AdminTenantService(
             if (tenant is null)
             {
                 throw new KeyNotFoundException("Tenant not found.");
+            }
+
+            if (ReservedTenantSubdomains.IsReserved(subdomain)
+                && !string.Equals(tenant.Subdomain, subdomain, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(ReservedTenantSubdomains.ReservedMessage);
             }
 
             var existingActive = tenant.Modules

@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -355,18 +357,14 @@ public sealed class ReservationService(
 
         if (from is DateOnly fromDate)
         {
-            var fromStart = new DateTimeOffset(
-                fromDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
-                TimeSpan.Zero);
-            query = query.Where(r => r.EndDateTime >= fromStart);
+            var fromStart = BrazilTimeZone.StartOfCivilDay(fromDate);
+            query = query.Where(r => r.EndDateTime > fromStart);
         }
 
         if (to is DateOnly toDate)
         {
-            var toEnd = new DateTimeOffset(
-                toDate.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Unspecified),
-                TimeSpan.Zero);
-            query = query.Where(r => r.StartDateTime <= toEnd);
+            var toEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(toDate);
+            query = query.Where(r => r.StartDateTime < toEnd);
         }
 
         if (status is ReservationStatus statusFilter)
@@ -403,35 +401,103 @@ public sealed class ReservationService(
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
 
-        var reservation = await dbContext.Reservations
-            .Include(r => r.Items)
-                .ThenInclude(i => i.RentalAsset)
-                    .ThenInclude(a => a.Asset)
-            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
-        if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
+        try
         {
-            throw new InvalidOperationException(
-                $"Cannot confirm a reservation in status '{reservation.Status}'.");
-        }
+            await ReservationLocks.LockByReservationIdAsync(
+                dbContext,
+                reservationId,
+                cancellationToken);
 
-        if (reservation.Status == ReservationStatus.Confirmed)
-        {
+            var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+            if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot confirm a reservation in status '{reservation.Status}'.");
+            }
+
+            if (reservation.Status == ReservationStatus.Confirmed)
+            {
+                await CommitIfPresentAsync(transaction, cancellationToken);
+                return ToResponseFromEntity(reservation);
+            }
+
+            if (reservation.Status != ReservationStatus.PendingDeposit)
+            {
+                throw new InvalidOperationException(
+                    $"Only pending reservations can be confirmed (current: '{reservation.Status}').");
+            }
+
+            reservation.Status = ReservationStatus.Confirmed;
+            reservation.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+
             return ToResponseFromEntity(reservation);
         }
-
-        if (reservation.Status != ReservationStatus.PendingDeposit)
+        catch
         {
-            throw new InvalidOperationException(
-                $"Only pending reservations can be confirmed (current: '{reservation.Status}').");
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
         }
+    }
 
-        reservation.Status = ReservationStatus.Confirmed;
-        reservation.Touch();
-        await dbContext.SaveChangesAsync(cancellationToken);
+    public async Task<ReservationResponseDto> CompleteAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
 
-        return ToResponseFromEntity(reservation);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        try
+        {
+            await ReservationLocks.LockByReservationIdAsync(
+                dbContext,
+                reservationId,
+                cancellationToken);
+
+            var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+            if (reservation.Status is ReservationStatus.PendingDeposit or ReservationStatus.Canceled)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot complete a reservation in status '{reservation.Status}'.");
+            }
+
+            if (reservation.Status == ReservationStatus.Completed)
+            {
+                await CommitIfPresentAsync(transaction, cancellationToken);
+                return ToResponseFromEntity(reservation);
+            }
+
+            if (reservation.Status != ReservationStatus.Confirmed)
+            {
+                throw new InvalidOperationException(
+                    $"Only confirmed reservations can be completed (current: '{reservation.Status}').");
+            }
+
+            reservation.Status = ReservationStatus.Completed;
+            reservation.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+
+            return ToResponseFromEntity(reservation);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<ReservationResponseDto> CancelAsync(
@@ -441,27 +507,45 @@ public sealed class ReservationService(
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
 
-        var reservation = await dbContext.Reservations
-            .Include(r => r.Items)
-                .ThenInclude(i => i.RentalAsset)
-                    .ThenInclude(a => a.Asset)
-            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
-
-        if (reservation.Status == ReservationStatus.Canceled)
-        {
-            return ToResponseFromEntity(reservation);
-        }
-
-        if (reservation.Status == ReservationStatus.Completed)
-        {
-            throw new InvalidOperationException("Cannot cancel a completed reservation.");
-        }
-
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
+            await ReservationLocks.LockByReservationIdAsync(
+                dbContext,
+                reservationId,
+                cancellationToken);
+
+            var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+            if (reservation.Status == ReservationStatus.Canceled)
+            {
+                await CommitIfPresentAsync(transaction, cancellationToken);
+                return ToResponseFromEntity(reservation);
+            }
+
+            if (reservation.Status == ReservationStatus.Completed)
+            {
+                throw new InvalidOperationException("Cannot cancel a completed reservation.");
+            }
+
+            var rentalAssetIds = reservation.Items
+                .Select(item => item.RentalAssetId)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+
+            foreach (var rentalAssetId in rentalAssetIds)
+            {
+                await RentalAssetLocks.LockByRentalAssetIdAsync(
+                    dbContext,
+                    rentalAssetId,
+                    cancellationToken);
+            }
+
             reservation.Status = ReservationStatus.Canceled;
             reservation.Touch();
 
@@ -475,13 +559,13 @@ public sealed class ReservationService(
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
 
             return ToResponseFromEntity(reservation);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await RollbackIfPresentAsync(transaction, cancellationToken);
             throw;
         }
     }
@@ -495,6 +579,35 @@ public sealed class ReservationService(
                     i.RentalAsset.AssetId,
                     i.RentalAsset.Asset.Name))
                 .ToList());
+
+    private Task<Reservation?> LoadReservationWithItemsAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken) =>
+        dbContext.Reservations
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken);
+
+    private static async Task CommitIfPresentAsync(
+        IDbContextTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+    }
+
+    private static async Task RollbackIfPresentAsync(
+        IDbContextTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        if (transaction is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+        }
+    }
 
     private async Task<bool> IsSlotGridIntervalOpenAsync(
         Guid rentalAssetId,
@@ -616,8 +729,8 @@ public sealed class ReservationService(
         TimeOnly startTime,
         TimeOnly endTime)
     {
-        var start = new DateTimeOffset(date.ToDateTime(startTime, DateTimeKind.Unspecified), TimeSpan.Zero);
-        var end = new DateTimeOffset(date.ToDateTime(endTime, DateTimeKind.Unspecified), TimeSpan.Zero);
+        var start = BrazilTimeZone.AtLocal(date, startTime);
+        var end = BrazilTimeZone.AtLocal(date, endTime);
         return (start, end);
     }
 

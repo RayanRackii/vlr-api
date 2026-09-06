@@ -48,6 +48,7 @@ public static class Permissions
     {
         public const string ReservationsRead = "rentals.reservations.read";
         public const string ReservationsConfirm = "rentals.reservations.confirm";
+        public const string ReservationsComplete = "rentals.reservations.complete";
         public const string ReservationsCancel = "rentals.reservations.cancel";
         public const string ScheduleRead = "rentals.schedule.read";
         public const string ScheduleWrite = "rentals.schedule.write";

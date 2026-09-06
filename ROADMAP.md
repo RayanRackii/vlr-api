@@ -29,7 +29,8 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).
 - [ ] Aplicar migration menu no Railway.
 - [ ] Garantir assets/pricing no FICC para demo.
-- [x] Admin B2B de reservas (listar/confirmar/cancelar).
+- [x] Admin B2B de reservas (listar / confirmar / completar / cancelar). `POST /api/reservations/{id}/complete` exige `rentals.reservations.complete` (não reutiliza confirm). Complete × Cancel: `ReservationLocks` na row primeiro; Cancel depois locka `RentalAsset` (`OrderBy Id`) e só então `MarkAvailable`. Migration `AddRentalsReservationsCompletePermission` aplicada em **DEV** (`database-migrations` list→apply, `PENDING_COUNT=0`). **Não** aplicada em PROD.
+- [x] Reserved tenant subdomains: create/rename reject frozen set (`www`, `api`, `app`, `admin`, `dev`, `staging`, `preview`, `mail`, `support`); trial allocation skips them; existing rows grandfathered. DNS/wildcard unchanged.
 
 ## 2.8. Dashboard B2B dinâmico — FEITO (código)
 
@@ -62,6 +63,9 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
 - [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
+- [x] Wave 1 Phase A: `rentals.reservations.complete` + `POST /api/reservations/{id}/complete`; Complete × Cancel exclusive-winner via `ReservationLocks` then (Cancel) `RentalAssetLocks`. Sem TZ / backfill nesta fase. DEV permission seed applied 2026-09-06. Phase B TZ still gated on PROD timestamp classification.
+- [x] Confirm × Cancel: `ConfirmAsync` serializa com `ReservationLocks` (lock then load). Confirm não é terminal — Confirm→Cancel ambos legais; Cancel→Confirm 409. Stale Confirm não sobrescreve `Canceled`. PROD timestamps **EMPTY** (`reservations=0`).
+- [x] Wave 1 Phase B T1: Reservation writers use `BrazilTimeZone.AtLocal`; civil-day list/overlay bounds `StartOfCivilDay`/`ExclusiveEndOfCivilDay`; API JSON UTC instant only; Slot remains civil; no schema migration; no PROD backfill (`reservations=0`, keep Slot). **Not** deployed to PROD/`main`.
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -175,7 +179,13 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 ## Histórico
 
 | Data | Mudança |
-|------|---------|
+|---|---|
+| 2026-09-06 | **Fix (API):** Phase B T1 — `ToDateTimeRange` / `ToDateTime` persist real `America/Sao_Paulo` instants; admin list and reserved-window overlay use Brazil civil-day bounds. Slot/pricing stay civil. No schema migration. No PROD backfill. Not deployed to PROD. |
+| 2026-09-06 | **Fix (API):** Confirm × Cancel — `ConfirmAsync` `ReservationLocks` FOR UPDATE then load. Occupancy split closed. Confirm→Cancel remains legal. PROD timestamps **EMPTY**; Phase B not started. |
+| 2026-09-06 | **Fix (API):** Complete × Cancel exclusive-winner — `ReservationLocks` `FOR UPDATE` then (Cancel only) `RentalAssetLocks` ascending. Dual success closed. Confirm × Cancel still unserialized (follow-up, later this date). Phase B still blocked; PROD timestamps still **INSUFFICIENT_EVIDENCE**. |
+| 2026-09-06 | **Gate (DEV):** re-list `PENDING_COUNT=0` for Complete permission seed. Complete × Cancel **PHASE_A_CONCURRENCY_DEFECT** (both can succeed; not patched). PROD timestamps **INSUFFICIENT_EVIDENCE**. Phase B not started. |
+| 2026-09-06 | **Ops (DEV):** `database-migrations` `target=development` apply `AddRentalsReservationsCompletePermission`. `PENDING_COUNT=0`. `rentals.reservations.complete` exists once in `core.permissions`. PROD timestamps **not** classified (no SELECT path this session). Phase B not started. |
+| 2026-09-06 | **Executado (API, Phase A):** `rentals.reservations.complete` + `POST /api/reservations/{id}/complete` (Confirmed→Completed, idempotente em Completed, rejeita PendingDeposit/Canceled). Cancel passa a lockar `RentalAsset` (`OrderBy Id`) antes de liberar slots. Sem TZ, sem backfill. Branch `feat/rentals-wave1-phase-a-lifecycle`. Migration não aplicada. |
 | 2026-08-03 | Beachhead clube/Rentals; portal e registro dinâmico. |
 | 2026-08-04 | CPF único FICC; início agenda B2C. |
 | 2026-08-04 | **Executado:** `tenant_module_menu_items` + APIs públicas/admin; seed FICC. Shell B2C no frontend. |
@@ -248,3 +258,5 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-04 | **Executado (API):** AssetCategory example seed (`AssetCategoryExampleSeeds` + `AssetCategoryExampleSeeder`) on create and on newly added families at edit; PMOC fail-fast without a provisioning family; OS+generic allowed. Sem inventory auto-enable, sem migration. Branch `feat/asset-category-family-provisioning`. |
 | 2026-09-04 | **Executado (API):** Wave 5 generic commercial module runtime gate — `[RequireActiveModule]` as `IAsyncAuthorizationFilter`, scoped `ITenantModuleAccessor`, startup `MODULE_KEY_INVALID`. Replaces `CatalogModuleGate`. Inventory OFF + rentals/PMOC/OS ON keeps Wave 2 surfaces. Sem migration. Branch `feat/generic-module-runtime-gate`. |
 | 2026-09-05 | **Executado (API):** Wave 5 follow-up #1 — convention test so omitted/wrong `[RequireActiveModule]` fails in CI; PMOC enable-on-generic update regression; trial family-keys PMOC guard. `TrialModules`/`TrialFamilyKeys` `internal` (visibility only). Sem mudança de runtime/auth. Branch `test/module-runtime-gate-hardening`. |
+| 2026-09-05 | **PROD:** Human Gate approved. Squash `develop` → `main` API PR #51 SHA `48ad32a1e2ac3c71ec7df59a895ef1eecae55140`. Railway production SUCCESS. `/health` 200. WEB PR #48 SHA `37a5266381ad5061cfda0299acb2c84a2726b050`. DEV E2E_CERTIFIED (51 tests, 32/32). Migrations/backfill/permission/config **NONE**. Rollback baselines: API `575adb205c8eff856d67c79d31d4bbc75a9eeed6`, WEB `4b048c4f0e4f4a54efc5dca74404627699b9259d`. |
+| 2026-09-05 | **Executado (API):** reserved tenant subdomains — frozen set in Domain; Admin create/rename 400 with `This subdomain is reserved and cannot be used.`; trial allocator skips reserved candidates; existing rows grandfathered. DNS/wildcard unchanged. Branch `feat/reserved-tenant-subdomains`. |
