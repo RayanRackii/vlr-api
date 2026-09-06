@@ -6,7 +6,7 @@ Derived context — NOT canonical.
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; spec `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
 - Last verified: 2026-09-06
-- Verified at commit(s): `vlr-api` `fix/rentals-complete-cancel-concurrency` (SHA after landing); `vlr-web` `5359942ace3daf1f6ff72e7cbe73678e78d7ec02`
+- Verified at commit(s): `vlr-api` `034b051` (`fix/rentals-complete-cancel-concurrency`); `vlr-web` `5359942ace3daf1f6ff72e7cbe73678e78d7ec02`
 
 ## Purpose
 
