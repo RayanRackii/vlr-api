@@ -13,6 +13,7 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContainerFixture>
 {
     private const int CompleteCancelRaceIterations = 8;
+    private const int ConfirmCancelRaceIterations = 16;
 
     private static readonly DateOnly Date = new(2026, 9, 1);
     private static readonly TimeOnly Start = new(10, 0);
@@ -431,6 +432,193 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
         Assert.Null(slot.ReservationId);
     }
 
+    [DockerFact]
+    public async Task ConfirmAsync_then_CancelAsync_cancels_confirmed_and_releases_occupancy()
+    {
+        var factory = RequireFactory();
+        var tenantProvider = new FakeTenantProvider();
+        var occupied = await SeedConfirmedOccupancyAsync(
+            factory,
+            tenantProvider,
+            includeSlot: true,
+            status: ReservationStatus.PendingDeposit);
+
+        await using var dbConfirm = factory.Create(tenantProvider);
+        await using var dbCancel = factory.Create(tenantProvider);
+        var confirmService = CreateReservationService(dbConfirm, tenantProvider);
+        var cancelService = CreateReservationService(dbCancel, tenantProvider);
+
+        var confirmed = await confirmService.ConfirmAsync(occupied.ReservationId, CancellationToken.None);
+        Assert.Equal(ReservationStatus.Confirmed, confirmed.Status);
+
+        var canceled = await cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None);
+        Assert.Equal(ReservationStatus.Canceled, canceled.Status);
+
+        await using var verify = factory.Create(tenantProvider);
+        var reservation = await verify.Reservations.SingleAsync(r => r.Id == occupied.ReservationId);
+        var slot = await verify.Slots.SingleAsync(s => s.Id == occupied.Seed.SlotId);
+        Assert.Equal(ReservationStatus.Canceled, reservation.Status);
+        Assert.Equal(SlotStatus.Available, slot.Status);
+        Assert.Null(slot.ReservationId);
+    }
+
+    [DockerFact]
+    public async Task CancelAsync_then_ConfirmAsync_rejects_confirm_and_keeps_released_occupancy()
+    {
+        var factory = RequireFactory();
+        var tenantProvider = new FakeTenantProvider();
+        var occupied = await SeedConfirmedOccupancyAsync(
+            factory,
+            tenantProvider,
+            includeSlot: true,
+            status: ReservationStatus.PendingDeposit);
+
+        await using var dbCancel = factory.Create(tenantProvider);
+        await using var dbConfirm = factory.Create(tenantProvider);
+        var cancelService = CreateReservationService(dbCancel, tenantProvider);
+        var confirmService = CreateReservationService(dbConfirm, tenantProvider);
+
+        var canceled = await cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None);
+        Assert.Equal(ReservationStatus.Canceled, canceled.Status);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            confirmService.ConfirmAsync(occupied.ReservationId, CancellationToken.None));
+        Assert.Contains(nameof(ReservationStatus.Canceled), ex.Message, StringComparison.Ordinal);
+
+        await using var verify = factory.Create(tenantProvider);
+        var reservation = await verify.Reservations.SingleAsync(r => r.Id == occupied.ReservationId);
+        var slot = await verify.Slots.SingleAsync(s => s.Id == occupied.Seed.SlotId);
+        Assert.Equal(ReservationStatus.Canceled, reservation.Status);
+        Assert.Equal(SlotStatus.Available, slot.Status);
+        Assert.Null(slot.ReservationId);
+    }
+
+    [DockerFact]
+    public async Task ConfirmAsync_vs_CancelAsync_pending_deposit_does_not_split_occupancy()
+    {
+        var factory = RequireFactory();
+        var confirmSuccess = 0;
+        var cancelSuccess = 0;
+        var dualSuccess = 0;
+        var occupancySplit = 0;
+        var confirmOverwroteCancel = 0;
+        var cancelLostUpdate = 0;
+        var legalConfirmThenCancel = 0;
+        var cancelThenConfirmConflict = 0;
+
+        for (var iteration = 0; iteration < ConfirmCancelRaceIterations; iteration++)
+        {
+            var tenantProvider = new FakeTenantProvider();
+            var occupied = await SeedConfirmedOccupancyAsync(
+                factory,
+                tenantProvider,
+                includeSlot: true,
+                status: ReservationStatus.PendingDeposit);
+
+            await using var dbConfirm = factory.Create(tenantProvider);
+            await using var dbCancel = factory.Create(tenantProvider);
+            var confirmService = CreateReservationService(dbConfirm, tenantProvider);
+            var cancelService = CreateReservationService(dbCancel, tenantProvider);
+
+            // Alternate start order so Cancel-first (row lock) is not starved by Confirm-listed-first.
+            Exception?[] captured;
+            if (iteration % 2 == 0)
+            {
+                captured = await Task.WhenAll(
+                    CaptureAsync(cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None)),
+                    CaptureAsync(confirmService.ConfirmAsync(occupied.ReservationId, CancellationToken.None)));
+            }
+            else
+            {
+                captured = await Task.WhenAll(
+                    CaptureAsync(confirmService.ConfirmAsync(occupied.ReservationId, CancellationToken.None)),
+                    CaptureAsync(cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None)));
+            }
+
+            var cancelEx = iteration % 2 == 0 ? captured[0] : captured[1];
+            var confirmEx = iteration % 2 == 0 ? captured[1] : captured[0];
+            var confirmWon = confirmEx is null;
+            var cancelWon = cancelEx is null;
+            if (confirmWon)
+            {
+                confirmSuccess++;
+            }
+
+            if (cancelWon)
+            {
+                cancelSuccess++;
+            }
+
+            if (confirmWon && cancelWon)
+            {
+                dualSuccess++;
+            }
+
+            await using var verify = factory.Create(tenantProvider);
+            var reservation = await verify.Reservations.SingleAsync(r => r.Id == occupied.ReservationId);
+            var slot = await verify.Slots.SingleAsync(s => s.Id == occupied.Seed.SlotId);
+            var slotReleased = slot.Status == SlotStatus.Available && slot.ReservationId is null;
+            var slotHeld = slot.Status == SlotStatus.Booked && slot.ReservationId == occupied.ReservationId;
+
+            _output.WriteLine(
+                $"iteration {iteration} start={(iteration % 2 == 0 ? "cancel-first" : "confirm-first")} " +
+                $"confirmOk={confirmWon} cancelOk={cancelWon} status={reservation.Status} " +
+                $"slot={slot.Status} slotReservationId={slot.ReservationId} " +
+                $"confirmEx={confirmEx?.GetType().Name}:{confirmEx?.Message} " +
+                $"cancelEx={cancelEx?.GetType().Name}:{cancelEx?.Message}");
+
+            if (reservation.Status == ReservationStatus.Confirmed && slotReleased)
+            {
+                occupancySplit++;
+                confirmOverwroteCancel++;
+            }
+            else if (reservation.Status == ReservationStatus.Canceled && slotHeld)
+            {
+                occupancySplit++;
+            }
+            else if (confirmWon && cancelWon && reservation.Status == ReservationStatus.Confirmed && slotHeld)
+            {
+                cancelLostUpdate++;
+            }
+            else if (confirmWon && cancelWon && reservation.Status == ReservationStatus.Canceled && slotReleased)
+            {
+                legalConfirmThenCancel++;
+            }
+            else if (cancelWon && !confirmWon && reservation.Status == ReservationStatus.Canceled && slotReleased)
+            {
+                var ioe = Assert.IsType<InvalidOperationException>(confirmEx);
+                Assert.Contains(nameof(ReservationStatus.Canceled), ioe.Message, StringComparison.Ordinal);
+                cancelThenConfirmConflict++;
+            }
+            else
+            {
+                Assert.Fail(
+                    $"Unclassified Confirm × Cancel serial history at iteration {iteration}: " +
+                    $"confirmOk={confirmWon} cancelOk={cancelWon} status={reservation.Status} " +
+                    $"slot={slot.Status} slotReservationId={slot.ReservationId}.");
+            }
+        }
+
+        _output.WriteLine(
+            $"confirmSuccess={confirmSuccess} cancelSuccess={cancelSuccess} dualSuccess={dualSuccess} " +
+            $"occupancySplit={occupancySplit} confirmOverwroteCancel={confirmOverwroteCancel} " +
+            $"cancelLostUpdate={cancelLostUpdate} legalConfirmThenCancel={legalConfirmThenCancel} " +
+            $"cancelThenConfirmConflict={cancelThenConfirmConflict}");
+
+        if (occupancySplit > 0 || cancelLostUpdate > 0)
+        {
+            Assert.Fail(
+                "PHASE_A_CONFIRM_CANCEL_CONCURRENCY_DEFECT: Confirm × Cancel split occupancy or lost a write. " +
+                $"occupancySplit={occupancySplit} confirmOverwroteCancel={confirmOverwroteCancel} " +
+                $"cancelLostUpdate={cancelLostUpdate} dualSuccess={dualSuccess} " +
+                $"confirmSuccess={confirmSuccess} cancelSuccess={cancelSuccess}.");
+        }
+
+        Assert.Equal(
+            ConfirmCancelRaceIterations,
+            legalConfirmThenCancel + cancelThenConfirmConflict);
+    }
+
     private PostgresAppDbFactory RequireFactory()
     {
         Assert.NotNull(_postgres.Factory);
@@ -574,7 +762,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
     private static async Task<SeededOccupied> SeedConfirmedOccupancyAsync(
         PostgresAppDbFactory factory,
         FakeTenantProvider tenantProvider,
-        bool includeSlot)
+        bool includeSlot,
+        ReservationStatus status = ReservationStatus.Confirmed)
     {
         var seed = await SeedLocationAsync(factory, tenantProvider, includeSlot);
         await using var db = factory.Create(tenantProvider);
@@ -588,7 +777,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             CustomerWhatsApp = "11999999999",
             StartDateTime = new DateTimeOffset(Date.ToDateTime(Start, DateTimeKind.Unspecified), TimeSpan.Zero),
             EndDateTime = new DateTimeOffset(Date.ToDateTime(End, DateTimeKind.Unspecified), TimeSpan.Zero),
-            Status = ReservationStatus.Confirmed,
+            Status = status,
             TotalAmount = 100m,
             DepositPaid = 0m,
         };
