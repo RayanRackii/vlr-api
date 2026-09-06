@@ -4,6 +4,7 @@ using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -202,7 +203,7 @@ public sealed class ScheduleService(
                 while (true)
                 {
                     var end = cursor.AddMinutes(slotMinutes);
-                    if (end > close)
+                    if (end > close || end <= cursor)
                     {
                         break;
                     }
@@ -308,7 +309,7 @@ public sealed class ScheduleService(
                 while (true)
                 {
                     var end = cursor.AddMinutes(slotMinutes);
-                    if (end > request.CloseTime)
+                    if (end > request.CloseTime || end <= cursor)
                     {
                         break;
                     }
@@ -867,7 +868,9 @@ public sealed class ScheduleService(
             throw new UnauthorizedAccessException("Customer does not belong to the current tenant.");
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         try
         {
             var rentalAssetId = await dbContext.Slots
@@ -972,7 +975,10 @@ public sealed class ScheduleService(
                 cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             return new ReservationResponseDto(
                 reservation.Id,
@@ -1000,7 +1006,10 @@ public sealed class ScheduleService(
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
             throw;
         }
     }
@@ -1385,7 +1394,7 @@ public sealed class ScheduleService(
                 while (true)
                 {
                     var end = cursor.AddMinutes(minutes);
-                    if (end > close)
+                    if (end > close || end <= cursor)
                     {
                         break;
                     }
@@ -1625,8 +1634,8 @@ public sealed class ScheduleService(
             return [];
         }
 
-        var dayStart = ToDateTime(date, TimeOnly.MinValue);
-        var dayEnd = dayStart.AddDays(1);
+        var dayStart = BrazilTimeZone.StartOfCivilDay(date);
+        var dayEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(date);
 
         var rows = await (
             from item in dbContext.ReservationItems.AsNoTracking()
@@ -1958,7 +1967,7 @@ public sealed class ScheduleService(
         string.IsNullOrWhiteSpace(label) ? null : label.Trim();
 
     private static DateTimeOffset ToDateTime(DateOnly date, TimeOnly time) =>
-        new(date.ToDateTime(time), TimeSpan.Zero);
+        BrazilTimeZone.AtLocal(date, time);
 
     private static decimal RoundMoney(decimal value) =>
         Math.Round(value, 2, MidpointRounding.AwayFromZero);

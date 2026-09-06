@@ -24,6 +24,7 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 4. Snapshots de nome/WhatsApp na reserva não são atualizados se o `Customer` mudar depois.
 5. **Complete × Cancel:** `Confirmed` é a origem; Complete e Cancel são terminais concorrentes **sem prioridade**. Exatamente um vence (primeiro commit serializado). O perdedor observa não-`Confirmed` e lança `InvalidOperationException` (HTTP 409). Cancel vence → `Canceled` + `MarkAvailable`. Complete vence → `Completed`; Cancel falha; `MarkAvailable` **não** roda. Ambos com sucesso é inválido.
 6. **Ordem de lock:** qualquer transição da Reservation que serializa estado (`Confirm`, `Complete`, `Cancel`) faz `FOR UPDATE` em `rentals.reservations` primeiro. Cancel, depois de vencer esse lock, faz `FOR UPDATE` em `rentals.rental_assets` por `RentalAssetId` **ascendente**. Create/Book continuam só com lock de RentalAsset. Confirm e Complete só lockam a Reservation. Confirm **não** é terminal: Confirm→Cancel ambos podem suceder; Cancel→Confirm deve 409. Stale Confirm **não** pode sobrescrever `Canceled`.
+7. **Timezone T1:** `Reservation.StartDateTime` / `EndDateTime` são instantes reais: `DateOnly`+`TimeOnly` civis passam por `BrazilTimeZone.AtLocal` (`America/Sao_Paulo`) → UTC `DateTimeOffset` (`timestamptz`). Slot, ScheduleTemplate, OpenHours, janelas de `RentalPricing` e o request de CreateReservation continuam civis. Preço permanece em `DayOfWeek`/`TimeOnly` civis. JSON da API emite só instante UTC (sem campos civis paralelos). WEB formata relógio da reserva e o “hoje” de Rentals em `America/Sao_Paulo`. Confirm/Cancel/Complete não reescrevem início/fim. Consultas de dia civil: `StartOfCivilDay(D)` inclusivo e `ExclusiveEndOfCivilDay(D)` exclusivo. Não hard-codar `-03:00` nem persistir relógio civil com `TimeSpan.Zero`.
 
 ## Estado atual e lacunas
 
@@ -35,5 +36,7 @@ Implementado (ver `ROADMAP.md` + ADR `docs/adr/0001-rentals-slot-schedule.md`):
 - admin de agenda completo no `vlr-web` (diária, templates, kinds) + B2C book por `slotId`;
 - operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish;
 - **Layout** canvas (admin em Operação) + picker B2C data+horário; sem layout ativo, grade com todos os Rentables (indisponíveis visíveis).
+
+T1 timezone implementado no código (sem migration de schema; sem backfill histórico de PROD — `reservation_count = 0`; manter o Slot de PROD). **Não** promovido a PROD/`main`.
 
 Faltando: pagamento de depósito (`DepositPaid` hoje sempre 0), SMS real e avisos WhatsApp.

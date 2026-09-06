@@ -6,6 +6,7 @@ using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 using Xunit.Abstractions;
 
 namespace Platform.Api.Tests.Rentals;
@@ -775,8 +776,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             CustomerId = seed.CustomerId,
             CustomerName = "Existing",
             CustomerWhatsApp = "11999999999",
-            StartDateTime = new DateTimeOffset(Date.ToDateTime(Start, DateTimeKind.Unspecified), TimeSpan.Zero),
-            EndDateTime = new DateTimeOffset(Date.ToDateTime(End, DateTimeKind.Unspecified), TimeSpan.Zero),
+            StartDateTime = BrazilTimeZone.AtLocal(Date, Start),
+            EndDateTime = BrazilTimeZone.AtLocal(Date, End),
             Status = status,
             TotalAmount = 100m,
             DepositPaid = 0m,
@@ -911,8 +912,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             CustomerId = seed.CustomerId,
             CustomerName = "Existing",
             CustomerWhatsApp = "11999999999",
-            StartDateTime = new DateTimeOffset(Date.ToDateTime(Start, DateTimeKind.Unspecified), TimeSpan.Zero),
-            EndDateTime = new DateTimeOffset(Date.ToDateTime(End, DateTimeKind.Unspecified), TimeSpan.Zero),
+            StartDateTime = BrazilTimeZone.AtLocal(Date, Start),
+            EndDateTime = BrazilTimeZone.AtLocal(Date, End),
             Status = ReservationStatus.Confirmed,
             TotalAmount = 200m,
             DepositPaid = 0m,

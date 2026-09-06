@@ -52,4 +52,17 @@ public static class BrazilTimeZone
         var utc = TimeZoneInfo.ConvertTimeToUtc(localUnspecified, brazilTimeZone);
         return new DateTimeOffset(utc, TimeSpan.Zero);
     }
+
+    /// <summary>
+    /// Inclusive start of civil date <paramref name="date"/> in America/Sao_Paulo, as a UTC instant.
+    /// </summary>
+    public static DateTimeOffset StartOfCivilDay(DateOnly date) =>
+        AtLocal(date, TimeOnly.MinValue);
+
+    /// <summary>
+    /// Exclusive end of civil date <paramref name="date"/> in America/Sao_Paulo
+    /// (<c>AtLocal(date + 1 day, 00:00)</c>).
+    /// </summary>
+    public static DateTimeOffset ExclusiveEndOfCivilDay(DateOnly date) =>
+        AtLocal(date.AddDays(1), TimeOnly.MinValue);
 }

@@ -4,6 +4,7 @@ using Platform.Api.Tests.Fakes;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Tests.Infrastructure;
 
@@ -46,10 +47,9 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
 
     public Guid RentalAssetId { get; }
 
-    public static DateTimeOffset RangeStart =>
-        new(Date.ToDateTime(Start, DateTimeKind.Unspecified), TimeSpan.Zero);
+    public static DateTimeOffset RangeStart => BrazilTimeZone.AtLocal(Date, Start);
 
-    public static DateTimeOffset RangeEnd => RangeStart.AddHours(1);
+    public static DateTimeOffset RangeEnd => BrazilTimeZone.AtLocal(Date, End);
 
     public static async Task<LocationBookingHarness> CreateAsync()
     {
