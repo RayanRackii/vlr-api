@@ -434,6 +434,44 @@ public sealed class ReservationService(
         return ToResponseFromEntity(reservation);
     }
 
+    public async Task<ReservationResponseDto> CompleteAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
+
+        var reservation = await dbContext.Reservations
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+
+        if (reservation.Status is ReservationStatus.PendingDeposit or ReservationStatus.Canceled)
+        {
+            throw new InvalidOperationException(
+                $"Cannot complete a reservation in status '{reservation.Status}'.");
+        }
+
+        if (reservation.Status == ReservationStatus.Completed)
+        {
+            return ToResponseFromEntity(reservation);
+        }
+
+        if (reservation.Status != ReservationStatus.Confirmed)
+        {
+            throw new InvalidOperationException(
+                $"Only confirmed reservations can be completed (current: '{reservation.Status}').");
+        }
+
+        reservation.Status = ReservationStatus.Completed;
+        reservation.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return ToResponseFromEntity(reservation);
+    }
+
     public async Task<ReservationResponseDto> CancelAsync(
         Guid reservationId,
         CancellationToken cancellationToken)
@@ -462,6 +500,20 @@ public sealed class ReservationService(
 
         try
         {
+            var rentalAssetIds = reservation.Items
+                .Select(item => item.RentalAssetId)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+
+            foreach (var rentalAssetId in rentalAssetIds)
+            {
+                await RentalAssetLocks.LockByRentalAssetIdAsync(
+                    dbContext,
+                    rentalAssetId,
+                    cancellationToken);
+            }
+
             reservation.Status = ReservationStatus.Canceled;
             reservation.Touch();
 

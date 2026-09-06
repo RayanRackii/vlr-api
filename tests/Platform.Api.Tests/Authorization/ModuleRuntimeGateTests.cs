@@ -123,6 +123,54 @@ public sealed class ModuleRuntimeGateTests
     }
 
     [Fact]
+    public async Task B2B_complete_module_off_returns_module_403()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [],
+            allowedPermissions: [Permissions.Rentals.ReservationsComplete]);
+        await AssertModuleInactiveAsync(
+            await PostB2BAsync(host, $"/api/reservations/{Guid.NewGuid()}/complete"));
+    }
+
+    [Fact]
+    public async Task B2B_complete_without_permission_returns_rbac_403()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [PlatformModules.Rentals],
+            allowedPermissions: []);
+        var response = await PostB2BAsync(host, $"/api/reservations/{Guid.NewGuid()}/complete");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(RbacErrorCodes.Forbidden, doc.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task B2B_complete_module_on_with_permission_returns_200()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [PlatformModules.Rentals],
+            allowedPermissions: [Permissions.Rentals.ReservationsComplete]);
+        var response = await PostB2BAsync(host, $"/api/reservations/{Guid.NewGuid()}/complete");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Customer_cannot_complete_reservation()
+    {
+        using var host = await StartHostAsync(
+            tenantAModules: [PlatformModules.Rentals],
+            realRbac: true);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+        var response = await PostCustomerAsync(
+            host,
+            $"/api/reservations/{Guid.NewGuid()}/complete",
+            seed.CustomerAId);
+        Assert.True(
+            response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized,
+            $"Customer JWT must not complete a reservation (got {(int)response.StatusCode}).");
+    }
+
+    [Fact]
     public async Task Anonymous_public_module_on_returns_200()
     {
         using var host = await StartHostAsync(tenantAModules: [PlatformModules.Rentals]);
@@ -484,6 +532,30 @@ public sealed class ModuleRuntimeGateTests
         client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, StaffEmail);
         client.DefaultRequestHeaders.Add(TestAuthHandler.TenantHeader, seed.TenantA.Id.ToString());
         return await client.GetAsync(path);
+    }
+
+    private static async Task<HttpResponseMessage> PostB2BAsync(IHost host, string path)
+    {
+        var seed = host.Services.GetRequiredService<SeededGate>();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, StaffEmail);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.TenantHeader, seed.TenantA.Id.ToString());
+        return await client.PostAsync(path, content: null);
+    }
+
+    private static async Task<HttpResponseMessage> PostCustomerAsync(
+        IHost host,
+        string path,
+        Guid customerId,
+        Guid? tenantId = null)
+    {
+        var seed = host.Services.GetRequiredService<SeededGate>();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.CustomerHeader, customerId.ToString());
+        client.DefaultRequestHeaders.Add(
+            TestAuthHandler.TenantHeader,
+            (tenantId ?? seed.TenantA.Id).ToString());
+        return await client.PostAsync(path, content: null);
     }
 
     private static async Task<HttpResponseMessage> GetSupportAsync(IHost host, string path, Guid tenantId)
@@ -991,10 +1063,30 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<ReservationResponseDto> CompleteAsync(
+            Guid reservationId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(EmptyReservation);
+
         public Task<ReservationResponseDto> CancelAsync(
             Guid reservationId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        private static readonly ReservationResponseDto EmptyReservation = new(
+            Guid.Empty,
+            Guid.Empty,
+            Guid.Empty,
+            Guid.Empty,
+            string.Empty,
+            string.Empty,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            ReservationStatus.Completed,
+            0m,
+            0m,
+            DateTimeOffset.UnixEpoch,
+            []);
     }
 
     private sealed class StubMaintenancePlanService : IMaintenancePlanService

@@ -117,7 +117,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             rental.Id);
     }
 
-    public void SeedOverlappingReservation(ReservationStatus status)
+    public Reservation SeedOverlappingReservation(ReservationStatus status)
     {
         var reservation = new Reservation
         {
@@ -142,6 +142,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             SubTotal = 100m,
         });
         Db.Reservations.Add(reservation);
+        return reservation;
     }
 
     public ReservationService CreateReservationService() =>

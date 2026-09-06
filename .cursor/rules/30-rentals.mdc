@@ -29,9 +29,9 @@ Implementado (ver `ROADMAP.md` + ADR `docs/adr/0001-rentals-slot-schedule.md`):
 - pricing CRUD, availability pública, criação de reserva, auth B2C e-mail+senha (+ OTP legado);
 - OccupancyKind / ScheduleTemplate / Slot / PublishDay / BookSlot;
 - `SchedulePolicy` OpenHours | SlotGrid (UI: Horário padrão | Grade personalizada);
-- admin de reservas (listar / confirmar / cancelar);
+- admin de reservas (listar / confirmar / completar / cancelar); `rentals.reservations.complete` é chave própria (não reutiliza confirm);
 - admin de agenda completo no `vlr-web` (diária, templates, kinds) + B2C book por `slotId`;
 - operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish;
 - **Layout** canvas (admin em Operação) + picker B2C data+horário; sem layout ativo, grade com todos os Rentables (indisponíveis visíveis).
 
-Faltando: pagamento de depósito (`DepositPaid` hoje sempre 0), completar reserva, listagem de reservas do Customer, SMS real e avisos WhatsApp.
+Faltando: pagamento de depósito (`DepositPaid` hoje sempre 0), SMS real e avisos WhatsApp.

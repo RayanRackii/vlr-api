@@ -29,6 +29,10 @@ public interface IReservationService
         Guid reservationId,
         CancellationToken cancellationToken);
 
+    Task<ReservationResponseDto> CompleteAsync(
+        Guid reservationId,
+        CancellationToken cancellationToken);
+
     Task<ReservationResponseDto> CancelAsync(
         Guid reservationId,
         CancellationToken cancellationToken);
