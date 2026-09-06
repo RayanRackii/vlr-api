@@ -29,7 +29,7 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).
 - [ ] Aplicar migration menu no Railway.
 - [ ] Garantir assets/pricing no FICC para demo.
-- [x] Admin B2B de reservas (listar / confirmar / completar / cancelar). `POST /api/reservations/{id}/complete` exige `rentals.reservations.complete` (não reutiliza confirm). Cancel serializa occupancy com `RentalAssetLocks` (mesmo `OrderBy Id` do create). Migration `AddRentalsReservationsCompletePermission` — aplicar via workflow, não do laptop.
+- [x] Admin B2B de reservas (listar / confirmar / completar / cancelar). `POST /api/reservations/{id}/complete` exige `rentals.reservations.complete` (não reutiliza confirm). Cancel serializa occupancy com `RentalAssetLocks` (mesmo `OrderBy Id` do create). Migration `AddRentalsReservationsCompletePermission` aplicada em **DEV** (`database-migrations` list→apply, `PENDING_COUNT=0`). **Não** aplicada em PROD.
 - [x] Reserved tenant subdomains: create/rename reject frozen set (`www`, `api`, `app`, `admin`, `dev`, `staging`, `preview`, `mail`, `support`); trial allocation skips them; existing rows grandfathered. DNS/wildcard unchanged.
 
 ## 2.8. Dashboard B2B dinâmico — FEITO (código)
@@ -63,7 +63,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
 - [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
-- [x] Wave 1 Phase A: `rentals.reservations.complete` + `POST /api/reservations/{id}/complete`; cancel lock F-01 antes de `MarkAvailable`. Sem TZ / backfill nesta fase.
+- [x] Wave 1 Phase A: `rentals.reservations.complete` + `POST /api/reservations/{id}/complete`; cancel lock F-01 antes de `MarkAvailable`. Sem TZ / backfill nesta fase. DEV permission seed applied 2026-09-06. Phase B TZ still gated on PROD timestamp classification.
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -178,6 +178,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-06 | **Ops (DEV):** `database-migrations` `target=development` apply `AddRentalsReservationsCompletePermission`. `PENDING_COUNT=0`. `rentals.reservations.complete` exists once in `core.permissions`. PROD timestamps **not** classified (no SELECT path this session). Phase B not started. |
 | 2026-09-06 | **Executado (API, Phase A):** `rentals.reservations.complete` + `POST /api/reservations/{id}/complete` (Confirmed→Completed, idempotente em Completed, rejeita PendingDeposit/Canceled). Cancel passa a lockar `RentalAsset` (`OrderBy Id`) antes de liberar slots. Sem TZ, sem backfill. Branch `feat/rentals-wave1-phase-a-lifecycle`. Migration não aplicada. |
 | 2026-08-03 | Beachhead clube/Rentals; portal e registro dinâmico. |
 | 2026-08-04 | CPF único FICC; início agenda B2C. |
