@@ -6,20 +6,25 @@ using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Xunit.Abstractions;
 
 namespace Platform.Api.Tests.Rentals;
 
 public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContainerFixture>
 {
+    private const int CompleteCancelRaceIterations = 8;
+
     private static readonly DateOnly Date = new(2026, 9, 1);
     private static readonly TimeOnly Start = new(10, 0);
     private static readonly TimeOnly End = new(11, 0);
 
     private readonly PostgresContainerFixture _postgres;
+    private readonly ITestOutputHelper _output;
 
-    public ReservationConcurrencyTests(PostgresContainerFixture postgres)
+    public ReservationConcurrencyTests(PostgresContainerFixture postgres, ITestOutputHelper output)
     {
         _postgres = postgres;
+        _output = output;
     }
 
     [DockerFact]
@@ -310,6 +315,120 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
         {
             Assert.IsType<InvalidOperationException>(captured[1]);
         }
+    }
+
+    [DockerFact]
+    public async Task CompleteAsync_vs_CancelAsync_exactly_one_terminal_transition_wins()
+    {
+        var factory = RequireFactory();
+        var completeWins = 0;
+        var cancelWins = 0;
+
+        for (var iteration = 0; iteration < CompleteCancelRaceIterations; iteration++)
+        {
+            var tenantProvider = new FakeTenantProvider();
+            var occupied = await SeedConfirmedOccupancyAsync(factory, tenantProvider, includeSlot: true);
+
+            await using var dbComplete = factory.Create(tenantProvider);
+            await using var dbCancel = factory.Create(tenantProvider);
+            var completeService = CreateReservationService(dbComplete, tenantProvider);
+            var cancelService = CreateReservationService(dbCancel, tenantProvider);
+
+            var captured = await Task.WhenAll(
+                CaptureAsync(completeService.CompleteAsync(occupied.ReservationId, CancellationToken.None)),
+                CaptureAsync(cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None)));
+
+            var completeEx = captured[0];
+            var cancelEx = captured[1];
+            var completeWon = completeEx is null;
+            var cancelWon = cancelEx is null;
+
+            if (completeWon && cancelWon)
+            {
+                Assert.Fail(
+                    "PHASE_A_CONCURRENCY_DEFECT: CompleteAsync and CancelAsync both succeeded on a Confirmed reservation.");
+            }
+
+            Assert.True(
+                completeWon ^ cancelWon,
+                $"Expected exactly one terminal winner; completeEx={completeEx}, cancelEx={cancelEx}.");
+
+            await using var verify = factory.Create(tenantProvider);
+            var reservation = await verify.Reservations.SingleAsync(r => r.Id == occupied.ReservationId);
+            var slot = await verify.Slots.SingleAsync(s => s.Id == occupied.Seed.SlotId);
+
+            if (completeWon)
+            {
+                var loser = Assert.IsType<InvalidOperationException>(cancelEx);
+                Assert.Equal(ReservationStatus.Completed, reservation.Status);
+                Assert.Equal(SlotStatus.Booked, slot.Status);
+                Assert.Equal(occupied.ReservationId, slot.ReservationId);
+                completeWins++;
+                _output.WriteLine(
+                    $"iteration {iteration}: Complete won; Cancel threw {loser.Message}");
+            }
+            else
+            {
+                var loser = Assert.IsType<InvalidOperationException>(completeEx);
+                Assert.Equal(ReservationStatus.Canceled, reservation.Status);
+                Assert.Equal(SlotStatus.Available, slot.Status);
+                Assert.Null(slot.ReservationId);
+                cancelWins++;
+                _output.WriteLine(
+                    $"iteration {iteration}: Cancel won; Complete threw {loser.Message}");
+            }
+        }
+
+        Assert.Equal(CompleteCancelRaceIterations, completeWins + cancelWins);
+        _output.WriteLine($"Complete wins: {completeWins}; Cancel wins: {cancelWins}");
+    }
+
+    [DockerFact]
+    public async Task CompleteAsync_then_CancelAsync_keeps_completed_occupancy()
+    {
+        var factory = RequireFactory();
+        var tenantProvider = new FakeTenantProvider();
+        var occupied = await SeedConfirmedOccupancyAsync(factory, tenantProvider, includeSlot: true);
+
+        await using var dbComplete = factory.Create(tenantProvider);
+        await using var dbCancel = factory.Create(tenantProvider);
+        var completeService = CreateReservationService(dbComplete, tenantProvider);
+        var cancelService = CreateReservationService(dbCancel, tenantProvider);
+
+        await completeService.CompleteAsync(occupied.ReservationId, CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None));
+
+        await using var verify = factory.Create(tenantProvider);
+        var reservation = await verify.Reservations.SingleAsync(r => r.Id == occupied.ReservationId);
+        var slot = await verify.Slots.SingleAsync(s => s.Id == occupied.Seed.SlotId);
+        Assert.Equal(ReservationStatus.Completed, reservation.Status);
+        Assert.Equal(SlotStatus.Booked, slot.Status);
+        Assert.Equal(occupied.ReservationId, slot.ReservationId);
+    }
+
+    [DockerFact]
+    public async Task CancelAsync_then_CompleteAsync_keeps_released_occupancy()
+    {
+        var factory = RequireFactory();
+        var tenantProvider = new FakeTenantProvider();
+        var occupied = await SeedConfirmedOccupancyAsync(factory, tenantProvider, includeSlot: true);
+
+        await using var dbCancel = factory.Create(tenantProvider);
+        await using var dbComplete = factory.Create(tenantProvider);
+        var cancelService = CreateReservationService(dbCancel, tenantProvider);
+        var completeService = CreateReservationService(dbComplete, tenantProvider);
+
+        await cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            completeService.CompleteAsync(occupied.ReservationId, CancellationToken.None));
+
+        await using var verify = factory.Create(tenantProvider);
+        var reservation = await verify.Reservations.SingleAsync(r => r.Id == occupied.ReservationId);
+        var slot = await verify.Slots.SingleAsync(s => s.Id == occupied.Seed.SlotId);
+        Assert.Equal(ReservationStatus.Canceled, reservation.Status);
+        Assert.Equal(SlotStatus.Available, slot.Status);
+        Assert.Null(slot.ReservationId);
     }
 
     private PostgresAppDbFactory RequireFactory()

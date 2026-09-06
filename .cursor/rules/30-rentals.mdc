@@ -22,6 +22,8 @@ Schema Postgres `rentals`. Entidades em `Core/Platform.Core.Domain`, endpoints e
 2. Reserva nasce `PendingDeposit` se **qualquer** Rentable da reserva tem `RequiresDeposit`; senão nasce `Confirmed` (sem espera de pagamento no admin).
 3. Cliente B2C autentica com **e-mail + senha** (policy `Customer`); disponibilidade é pública com header `X-Tenant-Subdomain`. Celular é para SMS/WhatsApp, não login.
 4. Snapshots de nome/WhatsApp na reserva não são atualizados se o `Customer` mudar depois.
+5. **Complete × Cancel:** `Confirmed` é a origem; Complete e Cancel são terminais concorrentes **sem prioridade**. Exatamente um vence (primeiro commit serializado). O perdedor observa não-`Confirmed` e lança `InvalidOperationException` (HTTP 409). Cancel vence → `Canceled` + `MarkAvailable`. Complete vence → `Completed`; Cancel falha; `MarkAvailable` **não** roda. Ambos com sucesso é inválido.
+6. **Ordem de lock:** qualquer transição terminal da Reservation faz `FOR UPDATE` em `rentals.reservations` primeiro. Cancel, depois de vencer esse lock, faz `FOR UPDATE` em `rentals.rental_assets` por `RentalAssetId` **ascendente**. Create/Book continuam só com lock de RentalAsset. Complete só locka a Reservation.
 
 ## Estado atual e lacunas
 
@@ -29,7 +31,7 @@ Implementado (ver `ROADMAP.md` + ADR `docs/adr/0001-rentals-slot-schedule.md`):
 - pricing CRUD, availability pública, criação de reserva, auth B2C e-mail+senha (+ OTP legado);
 - OccupancyKind / ScheduleTemplate / Slot / PublishDay / BookSlot;
 - `SchedulePolicy` OpenHours | SlotGrid (UI: Horário padrão | Grade personalizada);
-- admin de reservas (listar / confirmar / completar / cancelar); `rentals.reservations.complete` é chave própria (não reutiliza confirm);
+- admin de reservas (listar / confirmar / completar / cancelar); `rentals.reservations.complete` é chave própria (não reutiliza confirm); Complete × Cancel serializados (`ReservationLocks` + `RentalAssetLocks`);
 - admin de agenda completo no `vlr-web` (diária, templates, kinds) + B2C book por `slotId`;
 - operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish;
 - **Layout** canvas (admin em Operação) + picker B2C data+horário; sem layout ativo, grade com todos os Rentables (indisponíveis visíveis).
