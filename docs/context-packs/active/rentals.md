@@ -6,6 +6,7 @@ Derived context — NOT canonical.
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; spec `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
 - Last verified: 2026-09-06
+- Verified at commit(s): `vlr-api` `fe10c9535a39e2731e90d3c8abb2cb1cf8bde7ab`; `vlr-web` `5359942ace3daf1f6ff72e7cbe73678e78d7ec02`
 
 ## Purpose
 
@@ -63,6 +64,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Create/book/cancel serialize occupancy with `RentalAssetLocks` `FOR UPDATE` on `rentals.rental_assets` ordered by `RentalAssetId`
 - Complete is staff-only: `Confirmed → Completed`; `Completed` is idempotent 200; `PendingDeposit`/`Canceled` → 409. Does not free slots.
 - Customer JWT cannot Complete (no B2C Complete UI; no B2C cancel in Wave 1)
+- **Complete × Cancel (human):** `Confirmed` is the source. Complete and Cancel are competing terminals with **no priority**. Exactly one may succeed (first serialized commit). The loser must see non-`Confirmed` and fail with the existing invalid-transition contract (`InvalidOperationException` → HTTP 409). If Cancel wins: status `Canceled` and occupancy-release (`MarkAvailable`) runs. If Complete wins: status `Completed`, Cancel fails, `MarkAvailable` must **not** run. Both returning success is invalid.
 
 ## Current contracts
 
@@ -93,9 +95,11 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
 
-**Phase B timezone** is blocked until PROD reservation timestamps are classified read-only (`EMPTY` / `CIVIL_MISLABELED_AS_UTC` / `ALREADY_BRAZIL_INSTANT` / `MIXED_OR_OTHER` / `INSUFFICIENT_EVIDENCE`). No Phase B code until that Human Gate.
+**Phase B timezone** is blocked. PROD timestamp classification this gate: **INSUFFICIENT_EVIDENCE** (no Dashboard/SQL Editor session to `kbptdzfbngelzdhriyhf`; inspector list does not SELECT rentals rows). No Phase B code until a conclusive read-only classify + Human Gate.
 
-**Complete × Cancel:** Complete does not lock the reservation row; Cancel locks rentables then writes status. Concurrent Complete+Cancel can both return success while persistence last-write-wins (observed: Canceled + slot Available). Occupancy stayed consistent in sampled runs; dedicated fix (serialize status transitions) is a follow-up, not Phase B.
+**DEV permission seed:** `20260906034111_AddRentalsReservationsCompletePermission` applied on development (`PENDING_COUNT=0`, `rentals.reservations.complete` exists once). Not applied on PROD.
+
+**Complete × Cancel:** current `CompleteAsync` has no reservation-row lock; `CancelAsync` locks rentables then writes. Concurrent Complete+Cancel can **both return success** (PHASE_A_CONCURRENCY_DEFECT; 8/8 Testcontainers runs). Dedicated fix required; not patched in the DEV gate.
 
 ## Do not assume
 
@@ -109,3 +113,4 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Booking clocks already use `BrazilTimeZone.AtLocal` on reservation writes (they do not)
 - Complete reuses `rentals.reservations.confirm`
 - Customer portal can Complete or Cancel in Wave 1
+- Complete and Cancel may both return success on the same Confirmed reservation (forbidden; current code still can)

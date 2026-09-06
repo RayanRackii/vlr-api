@@ -178,6 +178,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-06 | **Gate (DEV):** re-list `PENDING_COUNT=0` for Complete permission seed. Complete × Cancel **PHASE_A_CONCURRENCY_DEFECT** (both can succeed; not patched). PROD timestamps **INSUFFICIENT_EVIDENCE**. Phase B not started. |
 | 2026-09-06 | **Ops (DEV):** `database-migrations` `target=development` apply `AddRentalsReservationsCompletePermission`. `PENDING_COUNT=0`. `rentals.reservations.complete` exists once in `core.permissions`. PROD timestamps **not** classified (no SELECT path this session). Phase B not started. |
 | 2026-09-06 | **Executado (API, Phase A):** `rentals.reservations.complete` + `POST /api/reservations/{id}/complete` (Confirmed→Completed, idempotente em Completed, rejeita PendingDeposit/Canceled). Cancel passa a lockar `RentalAsset` (`OrderBy Id`) antes de liberar slots. Sem TZ, sem backfill. Branch `feat/rentals-wave1-phase-a-lifecycle`. Migration não aplicada. |
 | 2026-08-03 | Beachhead clube/Rentals; portal e registro dinâmico. |
