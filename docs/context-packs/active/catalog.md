@@ -36,7 +36,7 @@ Tenant-wide catalog (no Unit). Price nullable = “Sob consulta”. Orders start
 
 Files: public bucket for customer-visible images; private bucket + signed URL for technical files. Keys `{tenantId}/{productId}/{fileId}`.
 
-Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queued). InApp committed with the order. External channels default off. `AllowExternalDelivery` unset = false. Per-channel `AllowExternalEmail` / `AllowExternalWhatsApp` override the global flag. Customer WhatsApp order-status events use **one** Meta template `catalog_order_status_update` (`pt_BR`, four body params, Portuguese status labels). Legacy per-state Meta names are reconciled on `EnsureReady`. Company-initiated WhatsApp has no free-text fallback.
+Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queued). InApp committed with the order. External channels default off. `AllowExternalDelivery` unset = false. Per-channel `AllowExternalEmail` / `AllowExternalWhatsApp` override the global flag. Customer WhatsApp order-status events use **one** Meta template `catalog_order_status_update` (`pt_BR`, four body params, Portuguese status labels). Legacy per-state Meta names are reconciled on `EnsureReady`. Company-initiated WhatsApp has no free-text fallback. Tenant channel matrix for Catalog+Rentals is `GET/PUT /api/notifications/channel-configs` (`core.notifications.read` / `core.notifications.write`). Catalog `GET/PUT /api/catalog/notification-channels` remain wrappers; delivery history + resend stay on Catalog.
 
 ## Critical invariants
 

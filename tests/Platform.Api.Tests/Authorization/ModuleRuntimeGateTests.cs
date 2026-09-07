@@ -530,6 +530,8 @@ public sealed class ModuleRuntimeGateTests
             .GetCustomAttribute<RequireActiveModuleAttribute>());
         Assert.Null(typeof(Platform.Api.Modules.Webhooks.Controllers.WhatsAppWebhookController)
             .GetCustomAttribute<RequireActiveModuleAttribute>());
+        Assert.Null(typeof(Platform.Api.Modules.Notifications.Controllers.NotificationChannelConfigsController)
+            .GetCustomAttribute<RequireActiveModuleAttribute>());
     }
 
     [Fact]

@@ -18,6 +18,14 @@ namespace Platform.Api.Tests.Rbac;
 public sealed class TenantRbacAccessTests
 {
     [Fact]
+    public void Default_user_keys_do_not_include_core_notifications_write()
+    {
+        Assert.DoesNotContain(Permissions.Core.NotificationsRead, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsWrite, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsWrite, PermissionCatalog.TechnicianLegacyKeys);
+    }
+
+    [Fact]
     public async Task EnsureAsync_inserts_missing_catalog_keys_so_custom_role_can_persist_them()
     {
         await using var harness = await RbacAccessHarness.CreateAsync(includeCatalogPermissionRows: false);

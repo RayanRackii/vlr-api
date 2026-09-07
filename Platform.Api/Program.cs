@@ -11,6 +11,7 @@ using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.ModuleMenuItems;
+using Platform.Api.Modules.Notifications;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
@@ -61,6 +62,7 @@ try
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
     builder.Services.AddCatalogModule();
+    builder.Services.AddTenantNotificationsModule();
     builder.Services.AddUsersModule();
     builder.Services.AddRolesModule();
     builder.Services.AddAuthModule();

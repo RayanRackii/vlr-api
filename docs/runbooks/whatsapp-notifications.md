@@ -84,8 +84,8 @@ On the **development** Railway service only:
 Restart and confirm boot: `External WhatsApp delivery enabled`.
 If AppSecret is missing in Production host, treat WhatsApp as **BLOCKED**.
 
-Catalog tenant channel: existing UI `/catalogo/notificacoes` (`PUT /api/catalog/notification-channels`).
-Rentals tenant channel: no WEB UI in this slice. Enable a single DEV tenant/event with SQL, for example:
+Catalog tenant channel: existing wrapper `/api/catalog/notification-channels` (history UI stays on `/catalogo/notificacoes`).
+Rentals and Catalog tenant channels: normal enablement is the unified API `PUT /api/notifications/channel-configs` (WEB `/configuracoes/notificacoes`). SQL below is **emergency/diagnostic only**.
 
 ```sql
 UPDATE core.tenant_notification_channel_configs
@@ -114,7 +114,7 @@ If `Queued` > 0, do **not** enable Meta. Drain/decision is a separate Human Gate
 
 ## DEV live smoke (after merge + deploy + Meta active + tenant channel on)
 
-If reminder scheduler is deployed, prove reminder only with a Human-owned reservation whose `StartDateTime` is inside the next 24h (not Canceled/Completed). Enable `rentals.reservation.reminder` WhatsApp for that DEV tenant via SQL. One Notification row; Hangfire sweep must not duplicate.
+If reminder scheduler is deployed, prove reminder only with a Human-owned reservation whose `StartDateTime` is inside the next 24h (not Canceled/Completed). Enable `rentals.reservation.reminder` WhatsApp for that DEV tenant via `PUT /api/notifications/channel-configs` (SQL only if the API is unavailable). One Notification row; Hangfire sweep must not duplicate.
 
 No PROD send.
 

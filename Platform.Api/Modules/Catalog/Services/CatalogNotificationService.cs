@@ -108,8 +108,10 @@ public sealed class CatalogNotificationService(
         EnsureTenant();
         await EnsureDefaultsAsync(cancellationToken);
 
+        var notifying = CatalogEventTypes.Notifying;
         var configs = await dbContext.TenantNotificationChannelConfigs
             .AsNoTracking()
+            .Where(c => notifying.Contains(c.EventType))
             .OrderBy(c => c.EventType)
             .ThenBy(c => c.Channel)
             .ToListAsync(cancellationToken);

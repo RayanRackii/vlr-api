@@ -138,7 +138,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
 
-WhatsApp (2026-09-07, API): reservation lifecycle publishes durable outbox events (`rentals.reservation.pending_deposit|confirmed|canceled|completed|reminder`) using `rental_reservation_status_update` / `rental_reservation_reminder`. Tenant WhatsApp default off. Reminder scheduler: Hangfire `rentals-reservation-reminder`, **24h before `StartDateTime`**, one occurrence, skip Canceled/Completed/after start. Notifications must not drive Confirm/Complete/Cancel. Spec `docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`.
+WhatsApp (2026-09-07, API): reservation lifecycle publishes durable outbox events (`rentals.reservation.pending_deposit|confirmed|canceled|completed|reminder`) using `rental_reservation_status_update` / `rental_reservation_reminder`. Tenant WhatsApp default off. Enable/disable via unified `PUT /api/notifications/channel-configs` (`core.notifications.write`); SQL is emergency only. Reminder scheduler: Hangfire `rentals-reservation-reminder`, **24h before `StartDateTime`**, one occurrence, skip Canceled/Completed/after start. Notifications must not drive Confirm/Complete/Cancel. Spec `docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`.
 
 **Non-blocking follow-ups** (not blockers; not authorized by Wave 1 closeout):
 
