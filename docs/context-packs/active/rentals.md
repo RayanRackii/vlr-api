@@ -6,10 +6,10 @@ Derived context — NOT canonical.
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
 - Last verified: 2026-09-07
-- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **API code** (not PROD)
+- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD)
   - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
   - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
-  - B2C self-cancel: `feat/rentals-b2c-self-cancel` (API); WEB pending
+  - B2C self-cancel DEV: API `89b3e6d` / PR #64; WEB `3478355` / PR #59
 - Historical spec (delivered, do not re-implement): `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
 - Current spec: `docs/plans/active/2026-09-07-rentals-b2c-self-cancel.md`
 
@@ -147,7 +147,7 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Concurrent Confirm × Confirm coverage
 - Tenant predicate on raw lock SQL
 
-**Next product work is not automatically authorized.** Remaining roadmap items (queue E2E validation, notifications, deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started. B2C self-cancel API is in `feat/rentals-b2c-self-cancel`; WEB CTA is the paired slice.
+**Next product work is not automatically authorized.** Remaining roadmap items (notifications, deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started. B2C self-cancel is **CLOSED_DEV** (not PROD).
 
 ## Do not assume
 
