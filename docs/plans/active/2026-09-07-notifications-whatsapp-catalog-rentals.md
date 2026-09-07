@@ -1,6 +1,6 @@
 # 2026-09-07-notifications-whatsapp-catalog-rentals
 
-Status: approved (reminder **scheduler** deferred — `RENTALS_REMINDER_TIMING_HUMAN_GATE_REQUIRED`)
+Status: approved (`RENTALS_REMINDER_LEAD_TIME = 24_HOURS`)
 
 ## Goal / Problem
 
@@ -10,7 +10,7 @@ Use approved Meta WhatsApp templates for Catalog order-status and Rentals reserv
 
 - Catalog customer WhatsApp status events send `catalog_order_status_update` (`pt_BR`, 4 body params) when tenant WhatsApp channel is on **and** `AllowExternalWhatsApp` is on.
 - Rentals customer WhatsApp status events send `rental_reservation_status_update` under the same two gates.
-- Reminder EventType/template/rendering exist; **no Hangfire reminder job**.
+- Reminder EventType/template/rendering exist; Hangfire `rentals-reservation-reminder` publishes one occurrence at approximately `StartDateTime - 24h`.
 - Missing template → permanent failure (no `type=text` fallback, no 5 retries).
 - Meta `messages[0].id` persisted on `NotificationDelivery.ProviderMessageId`.
 - Tenant WhatsApp defaults **off**.
@@ -78,7 +78,7 @@ Same as Catalog: mutation transaction → `Notification` + `NotificationDelivery
 
 ### Idempotency (no migration)
 
-Publish only when a **new** lifecycle transition is persisted. Confirm/Complete/Cancel already-idempotent returns must not publish. Create publishes once for the opening status (`PendingDeposit` or `Confirmed`). Reminder publish is explicit (tests / future job). `MIGRATION_REQUIRED = NO`
+Publish only when a **new** lifecycle transition is persisted. Confirm/Complete/Cancel already-idempotent returns must not publish. Create publishes once for the opening status (`PendingDeposit` or `Confirmed`). Reminder: at most one `rentals.reservation.reminder` Notification per reservation (`AggregateType=Reservation`). Duplicate Hangfire sweeps no-op. `MIGRATION_REQUIRED = NO`
 
 ### Template seed reconciliation (no migration)
 
@@ -116,7 +116,7 @@ Reservation locks, occupancy, Confirm/Complete/Cancel semantics, queue, timezone
 
 - Catalog WhatsApp template consolidation + PT status in payload
 - RentalsNotificationPublisher + wire Create/Book/Confirm/Complete/Cancel (staff + B2C)
-- Reminder publish API for tests; **no scheduler**
+- Reminder Hangfire job (`StartDateTime - 24h`)
 - Meta id + error classification + PII logs
 - Move outbox processor DI to `AddNotificationInfrastructure`
 - Tests as requested
@@ -141,19 +141,9 @@ CatalogHarness, LocationBookingHarness, HttpMessageHandler fake for Meta, existi
 
 Enable PROD WhatsApp; invent reminder hours; create EF migration; change email/SMS runtime; WEB UI; drive reservation lifecycle from notifications.
 
-## Reminder timing (Human Gate)
+## Reminder timing (locked)
 
-No canonical lead time in ROADMAP/CONTEXT/plans/jobs.
-
-Options:
-
-1. **24h before `StartDateTime`** (one shot) — simple, common for clubs.
-2. **Same civil morning in America/Sao_Paulo** (e.g. 08:00 on reservation date) — aligns with club ops day.
-3. **2h before start** — last-minute only; easy to miss if job cadence is 1 minute but noisy.
-
-Recommendation: **(1) 24h before start**, one reminder, skip if start is already within 24h at booking time. Do **not** implement until Human picks.
-
-`RENTALS_REMINDER_TIMING_HUMAN_GATE_REQUIRED`
+`RENTALS_REMINDER_LEAD_TIME = 24_HOURS`. One reminder per reservation when `now` is in `[StartDateTime - 24h, StartDateTime)`. Skip Canceled, Completed, and `now >= StartDateTime`. Sweep job `rentals-reservation-reminder` every minute with `DisableConcurrentExecution`. Bookings already inside the 24h window are reminded on the next sweep (still one occurrence). Do not use 2h. No tenant-configurable lead time.
 
 ## PROD blast preflight (later, read-only)
 

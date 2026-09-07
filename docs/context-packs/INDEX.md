@@ -8,7 +8,7 @@ Read this file to choose a pack. Do not load all packs.
 
 File: [`active/rentals.md`](./active/rentals.md)
 
-Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker), B2C self-cancel. Wave 1 **PROD_COMPLETE** (2026-09-06). B2C self-cancel **CLOSED_DEV** (2026-09-07, not PROD). Rentals WhatsApp mapping **CLOSED_DEV** (PROD external off; reminder scheduler gated).
+Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker), B2C self-cancel. Wave 1 **PROD_COMPLETE** (2026-09-06). B2C self-cancel **CLOSED_DEV** (2026-09-07, not PROD). Rentals WhatsApp + 24h reminder **in code** (PROD external off).
 
 ### `catalog`
 
