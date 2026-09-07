@@ -1,6 +1,8 @@
 # 2026-09-05-rentals-wave1-lifecycle-integrity
 
-Status: approved (product) · **TZ PROD cutover blocked** until read-only PROD timestamp classification + separate Human Gate for any data correction
+Status: **PROD_COMPLETE** (2026-09-06). Historical spec — do not implement from this file. This closeout does not authorize Wave 2, Layout, or timezone follow-ups.
+
+Shipped: API PROD `54b385d5d14d0438fceb0c358872cf7ef1e1f589`; WEB PROD `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`. Complete permission migration applied (`PENDING_COUNT=0`). T1 live. `PROD_TIMESTAMP_STATE=EMPTY` (no Reservation backfill). Public/read-only smoke passed. No customer write smoke.
 
 ## Goal / Problem
 
@@ -63,6 +65,8 @@ API first (permission seed + TZ helper usage + Complete + cancel lock). Then WEB
 |---|---|---|---|---|
 | DEV | live `SELECT` on `rentals.reservations` / `rentals.slots` | 0 | 0 | **no historical rows** |
 | PROD | not queried | unknown | unknown | **NOT_VERIFIED** |
+
+**Update 2026-09-06:** PROD classified **`EMPTY`** (`reservation_count=0`; single Slot kept). No Reservation backfill. T1 shipped. See header.
 
 Classification rules for when rows exist (do not apply now):
 
@@ -193,19 +197,20 @@ WEB: do not invent a second TZ. After T1, ISO instants with real UTC offset disp
 |---|---|---|
 | Product T1 / Complete / no B2C cancel | **done** 2026-09-05 | — |
 | DEV timestamp classify | **done** — empty | DEV backfill (none) |
-| PROD timestamp classify (read-only) | **open** | Phase B **production** deploy |
-| PROD data correction | **closed unless asked** | any UPDATE |
-| Permission migration apply DEV | after implementation PR | DEV Complete |
-| Permission migration apply PROD | separate apply Human Gate | PROD Complete |
-| Fable Merge Risk Gate | at implementation PR | merge to `develop` |
+| PROD timestamp classify (read-only) | **done** — `EMPTY` (0 reservations; Slot kept) | — |
+| PROD data correction | **not required** | any UPDATE |
+| Permission migration apply DEV | **done** | — |
+| Permission migration apply PROD | **done** (`PENDING_COUNT=0`) | — |
+| Fable Merge Risk Gate | **done** at implementation PRs | — |
+| Wave 1 PROD release | **PROD_COMPLETE** 2026-09-06 | — |
 
 ## Migration / backfill impact
 
 | Change | Migration? | DEV | PROD |
 |---|---|---|---|
 | `rentals.reservations.complete` permission row | **Yes** (seed `core.permissions`) | apply via workflow after PR | apply via workflow + production confirm; bootstrap grants Admin/SuperAdmin |
-| TZ storage meaning | **No schema change** | 0 rows — code-only | **unknown row count** — do not rewrite |
-| Historical timestamp rewrite | **Not in this wave** | N/A | **Human Gate required** if rows are mislabeled |
+| TZ storage meaning | **No schema change** | 0 rows — code-only | **EMPTY** — no rewrite |
+| Historical timestamp rewrite | **Not in this wave** | N/A | **not required** (`EMPTY`) |
 | Cancel lock | No | — | — |
 | Complete status | No (enum already exists) | — | — |
 

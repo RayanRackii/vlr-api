@@ -8,7 +8,7 @@ Read this file to choose a pack. Do not load all packs.
 
 File: [`active/rentals.md`](./active/rentals.md)
 
-Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker).
+Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker). Wave 1 **PROD_COMPLETE** (2026-09-06).
 
 ### `catalog`
 
