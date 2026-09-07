@@ -215,10 +215,23 @@ internal sealed class ReservationQueueHarness : IAsyncDisposable
         TestReservationQueue.Create(Db, TenantProvider, Time);
 
     public ReservationService Reservations() =>
-        new(Db, TenantProvider, new FakeTrialGuard(), Queue());
+        new(
+            Db,
+            TenantProvider,
+            new FakeTrialGuard(),
+            Queue(),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
     public ScheduleService Schedule() =>
-        new(Db, TenantProvider, new UnusedOccupancyKindService(), new FakeTrialGuard(), Queue());
+        new(
+            Db,
+            TenantProvider,
+            new UnusedOccupancyKindService(),
+            new FakeTrialGuard(),
+            Queue(),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
     public Platform.Api.Modules.Rentals.Dtos.CreateReservationRequestDto BookRequest() =>
         new()

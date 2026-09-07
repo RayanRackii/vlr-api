@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Platform.Api.Notifications;
 
 namespace Platform.Api.Modules.Webhooks.Services;
 
@@ -18,7 +19,7 @@ public sealed class WhatsAppWebhookProcessor(ILogger<WhatsAppWebhookProcessor> l
 
             if (!document.RootElement.TryGetProperty("entry", out var entries))
             {
-                logger.LogWarning("WhatsApp webhook payload without 'entry': {Payload}", payload);
+                logger.LogWarning("WhatsApp webhook payload without 'entry'.");
                 return;
             }
 
@@ -43,7 +44,7 @@ public sealed class WhatsAppWebhookProcessor(ILogger<WhatsAppWebhookProcessor> l
         }
         catch (JsonException ex)
         {
-            logger.LogWarning(ex, "WhatsApp webhook payload is not valid JSON: {Payload}", payload);
+            logger.LogWarning(ex, "WhatsApp webhook payload is not valid JSON.");
         }
     }
 
@@ -63,18 +64,17 @@ public sealed class WhatsAppWebhookProcessor(ILogger<WhatsAppWebhookProcessor> l
             if (status.TryGetProperty("errors", out var errors))
             {
                 logger.LogWarning(
-                    "WhatsApp message {MessageId} to {Recipient} failed with status '{Status}'. Errors: {Errors}",
+                    "WhatsApp message {MessageId} to phone ending {Last4} failed with status '{Status}'. ErrorCount present.",
                     messageId,
-                    recipient,
-                    state,
-                    errors.GetRawText());
+                    PhoneLogMask.Last4(recipient),
+                    state);
                 continue;
             }
 
             logger.LogInformation(
-                "WhatsApp message {MessageId} to {Recipient} updated to status '{Status}'.",
+                "WhatsApp message {MessageId} to phone ending {Last4} updated to status '{Status}'.",
                 messageId,
-                recipient,
+                PhoneLogMask.Last4(recipient),
                 state);
         }
     }
@@ -90,15 +90,11 @@ public sealed class WhatsAppWebhookProcessor(ILogger<WhatsAppWebhookProcessor> l
         {
             var from = GetString(message, "from");
             var type = GetString(message, "type");
-            var text = message.TryGetProperty("text", out var textElement)
-                ? GetString(textElement, "body")
-                : null;
 
             logger.LogInformation(
-                "WhatsApp inbound message from {From} (type: {Type}): {Text}",
-                from,
-                type,
-                text ?? "<non-text>");
+                "WhatsApp inbound message from phone ending {Last4} (type: {Type}).",
+                PhoneLogMask.Last4(from),
+                type);
         }
     }
 

@@ -20,6 +20,8 @@ public static class NotificationsServiceCollectionExtensions
 
         services.AddSingleton<NotificationQueue>();
         services.AddHostedService<NotificationDispatcherService>();
+        services.AddScoped<INotificationOutboxProcessor, NotificationOutboxProcessor>();
+        services.AddScoped<INotificationOutboxScheduler, HangfireNotificationOutboxScheduler>();
 
         services.Configure<NotificationsOptions>(configuration.GetSection(NotificationsOptions.SectionName));
         services.Configure<ResendOptions>(configuration.GetSection(ResendOptions.SectionName));
@@ -70,6 +72,8 @@ public static class NotificationsServiceCollectionExtensions
             hostEnvironment.IsProduction(),
             emailGate,
             resendConfigured,
+            whatsAppGate,
+            !string.IsNullOrWhiteSpace(configuration["WhatsApp:AppSecret"]),
             sp.GetRequiredService<ILogger<NotificationDeliveryGateHostedService>>()));
 
         return services;
@@ -82,6 +86,8 @@ internal sealed class NotificationDeliveryGateHostedService(
     bool isProduction,
     bool emailGate,
     bool resendConfigured,
+    bool whatsAppGate,
+    bool appSecretConfigured,
     ILogger<NotificationDeliveryGateHostedService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
@@ -103,6 +109,18 @@ internal sealed class NotificationDeliveryGateHostedService(
         {
             logger.LogError(
                 "Resend configuration is incomplete (missing ApiKey or FromEmail). Email stays on DevEmailProvider.");
+        }
+
+        if (isProduction && whatsAppEnabled && !appSecretConfigured)
+        {
+            logger.LogError(
+                "WhatsApp:AppSecret is not configured in Production. Webhook signature validation is skipped; treat PROD WhatsApp as BLOCKED until AppSecret is set.");
+        }
+
+        if (whatsAppGate && !whatsAppEnabled)
+        {
+            logger.LogError(
+                "WhatsApp gate is true but Meta credentials are incomplete (missing AccessToken or PhoneNumberId). WhatsApp stays on DevWhatsAppProvider.");
         }
 
         return Task.CompletedTask;

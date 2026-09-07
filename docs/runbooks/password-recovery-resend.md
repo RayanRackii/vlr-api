@@ -48,6 +48,8 @@ Do not bake `false` into `appsettings.Production.json` for the global flag — t
 
 Startup always logs Information `External email delivery enabled|disabled` and `External WhatsApp delivery enabled|disabled` (no secrets).
 
+WhatsApp operational templates, DEV enablement, blast preflight, and SMS branding: [`whatsapp-notifications.md`](./whatsapp-notifications.md). Do **not** enable WhatsApp on Railway production from this email runbook.
+
 Startup also logs **Error** (no secret values — not ApiKey, FromEmail, or ServiceRoleKey):
 
 - Host is Production **and** `DevEmailProvider` is selected (unset/false email gate, or incomplete Resend).

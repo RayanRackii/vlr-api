@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -13,7 +15,9 @@ public sealed class ReservationService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     ITrialGuard trialGuard,
-    IReservationQueueService reservationQueueService) : IReservationService
+    IReservationQueueService reservationQueueService,
+    IRentalsNotificationPublisher notificationPublisher,
+    INotificationOutboxScheduler outboxScheduler) : IReservationService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -117,6 +121,7 @@ public sealed class ReservationService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
         ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
 
         if (request.Items is null || request.Items.Count == 0)
@@ -276,6 +281,7 @@ public sealed class ReservationService(
                 };
 
                 reservation.AddItem(item);
+                item.RentalAsset = rental;
                 itemResponses.Add((item, rental.AssetId, rental.Asset.Name));
             }
 
@@ -293,11 +299,17 @@ public sealed class ReservationService(
                     cancellationToken);
             }
 
+            var queuedDeliveries = await PublishOpeningNotificationAsync(
+                reservation,
+                cancellationToken);
+
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
             }
+
+            ScheduleDeliveries(queuedDeliveries);
 
             return ToResponse(reservation, itemResponses);
         }
@@ -400,6 +412,7 @@ public sealed class ReservationService(
     {
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -435,8 +448,13 @@ public sealed class ReservationService(
 
             reservation.Status = ReservationStatus.Confirmed;
             reservation.Touch();
+            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
+                reservation,
+                RentalEventTypes.ReservationConfirmed,
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
+            ScheduleDeliveries(queuedDeliveries);
 
             return ToResponseFromEntity(reservation);
         }
@@ -453,6 +471,7 @@ public sealed class ReservationService(
     {
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -488,8 +507,13 @@ public sealed class ReservationService(
 
             reservation.Status = ReservationStatus.Completed;
             reservation.Touch();
+            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
+                reservation,
+                RentalEventTypes.ReservationCompleted,
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
+            ScheduleDeliveries(queuedDeliveries);
 
             return ToResponseFromEntity(reservation);
         }
@@ -506,6 +530,7 @@ public sealed class ReservationService(
     {
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -533,7 +558,13 @@ public sealed class ReservationService(
             }
 
             await ReleaseOccupancyAsync(reservation, cancellationToken);
+            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
+                reservation,
+                RentalEventTypes.ReservationCanceled,
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
+            ScheduleDeliveries(queuedDeliveries);
 
             return ToResponseFromEntity(reservation);
         }
@@ -551,6 +582,7 @@ public sealed class ReservationService(
     {
         EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -587,7 +619,13 @@ public sealed class ReservationService(
             }
 
             await ReleaseOccupancyAsync(reservation, cancellationToken);
+            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
+                reservation,
+                RentalEventTypes.ReservationCanceled,
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
+            ScheduleDeliveries(queuedDeliveries);
 
             return ToResponseFromEntity(reservation);
         }
@@ -645,10 +683,32 @@ public sealed class ReservationService(
         Guid reservationId,
         CancellationToken cancellationToken) =>
         dbContext.Reservations
+            .Include(r => r.Customer)
             .Include(r => r.Items)
                 .ThenInclude(i => i.RentalAsset)
                     .ThenInclude(a => a.Asset)
             .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken);
+
+    private async Task<IReadOnlyList<Guid>> PublishOpeningNotificationAsync(
+        Reservation reservation,
+        CancellationToken cancellationToken)
+    {
+        var eventType = reservation.Status == ReservationStatus.PendingDeposit
+            ? RentalEventTypes.ReservationPendingDeposit
+            : RentalEventTypes.ReservationConfirmed;
+        return await notificationPublisher.PublishReservationEventAsync(
+            reservation,
+            eventType,
+            cancellationToken);
+    }
+
+    private void ScheduleDeliveries(IReadOnlyList<Guid> deliveryIds)
+    {
+        foreach (var deliveryId in deliveryIds)
+        {
+            outboxScheduler.Schedule(deliveryId);
+        }
+    }
 
     private static async Task CommitIfPresentAsync(
         IDbContextTransaction? transaction,

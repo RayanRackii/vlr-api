@@ -258,7 +258,9 @@ public sealed class ReservationLifecycleTests
             dbB,
             providerB,
             new FakeTrialGuard(),
-            TestReservationQueue.Create(dbB, providerB));
+            TestReservationQueue.Create(dbB, providerB),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             serviceB.CompleteAsync(reservationAId, CancellationToken.None));

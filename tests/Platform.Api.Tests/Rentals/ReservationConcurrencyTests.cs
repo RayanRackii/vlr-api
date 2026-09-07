@@ -44,12 +44,16 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             db1,
             tenantProvider,
             new FakeTrialGuard(),
-            TestReservationQueue.Create(db1, tenantProvider));
+            TestReservationQueue.Create(db1, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
         var service2 = new ReservationService(
             db2,
             tenantProvider,
             new FakeTrialGuard(),
-            TestReservationQueue.Create(db2, tenantProvider));
+            TestReservationQueue.Create(db2, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
         var request = new CreateReservationRequestDto
         {
@@ -88,13 +92,17 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             tenantProvider,
             occupancyKinds,
             new FakeTrialGuard(),
-            TestReservationQueue.Create(db1, tenantProvider));
+            TestReservationQueue.Create(db1, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
         var service2 = new ScheduleService(
             db2,
             tenantProvider,
             occupancyKinds,
             new FakeTrialGuard(),
-            TestReservationQueue.Create(db2, tenantProvider));
+            TestReservationQueue.Create(db2, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
         var request = new BookSlotRequestDto
         {
@@ -156,7 +164,9 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             tenantProvider,
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
-            TestReservationQueue.Create(db, tenantProvider));
+            TestReservationQueue.Create(db, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
         var booked = await scheduleService.BookSlotAsync(
             occupied.Seed.CustomerId,
             new BookSlotRequestDto
@@ -226,7 +236,9 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             tenantProvider,
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
-            TestReservationQueue.Create(dbBook, tenantProvider));
+            TestReservationQueue.Create(dbBook, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
         var captured = await Task.WhenAll(
             CaptureAsync(cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None)),
@@ -943,7 +955,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
     private static ReservationService CreateReservationService(
         AppDbContext db,
         FakeTenantProvider tenantProvider) =>
-        new(db, tenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(db, tenantProvider));
+        new(db, tenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(db, tenantProvider), SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler);
 
     private static CreateReservationRequestDto CreateRequest(SeededLocation seed) =>
         new()

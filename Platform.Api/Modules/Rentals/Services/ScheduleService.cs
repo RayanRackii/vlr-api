@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -13,7 +15,9 @@ public sealed class ScheduleService(
     ITenantProvider tenantProvider,
     IOccupancyKindService occupancyKindService,
     ITrialGuard trialGuard,
-    IReservationQueueService reservationQueueService) : IScheduleService
+    IReservationQueueService reservationQueueService,
+    IRentalsNotificationPublisher notificationPublisher,
+    INotificationOutboxScheduler outboxScheduler) : IScheduleService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -856,6 +860,7 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await notificationPublisher.EnsureReadyAsync(cancellationToken);
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
 
         var customer = await dbContext.Customers
@@ -963,6 +968,7 @@ public sealed class ScheduleService(
                 SubTotal = subTotal,
             };
             reservation.AddItem(item);
+            item.RentalAsset = slot.RentalAsset;
 
             dbContext.Reservations.Add(reservation);
             reservation.OpenAccordingToPaymentPolicy(slot.RentalAsset.RequiresDeposit);
@@ -974,10 +980,23 @@ public sealed class ScheduleService(
                 reservation.Id,
                 cancellationToken);
 
+            var eventType = reservation.Status == ReservationStatus.PendingDeposit
+                ? RentalEventTypes.ReservationPendingDeposit
+                : RentalEventTypes.ReservationConfirmed;
+            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
+                reservation,
+                eventType,
+                cancellationToken);
+
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
+            }
+
+            foreach (var deliveryId in queuedDeliveries)
+            {
+                outboxScheduler.Schedule(deliveryId);
             }
 
             return new ReservationResponseDto(
