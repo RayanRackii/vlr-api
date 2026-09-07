@@ -25,7 +25,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
         CatalogNotificationPublisher publisher,
         NotificationOutboxProcessor processor,
         RecordingOutboxScheduler scheduler,
-        FakePermissionResolver permissionResolver)
+        FakePermissionResolver permissionResolver,
+        DevWhatsAppRecorder whatsApp)
     {
         Db = db;
         TenantProvider = tenantProvider;
@@ -38,6 +39,7 @@ internal sealed class CatalogHarness : IAsyncDisposable
         Processor = processor;
         Scheduler = scheduler;
         PermissionResolver = permissionResolver;
+        WhatsApp = whatsApp;
     }
 
     public AppDbContext Db { get; }
@@ -61,6 +63,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
     public RecordingOutboxScheduler Scheduler { get; }
 
     public FakePermissionResolver PermissionResolver { get; }
+
+    public DevWhatsAppRecorder WhatsApp { get; }
 
     public static async Task<CatalogHarness> CreateAsync(bool catalogEnabled = true)
     {
@@ -106,7 +110,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
             publisher,
             processor,
             scheduler,
-            permissions);
+            permissions,
+            whatsApp);
     }
 
     public Customer AddCustomer(string name = "Ana", Guid? id = null)
@@ -193,16 +198,38 @@ internal sealed class DevWhatsAppRecorder : IWhatsAppProvider
 {
     public int SendCount { get; private set; }
 
+    public int FreeTextCount { get; private set; }
+
+    public string? LastRecipient { get; private set; }
+
+    public string? LastTemplateName { get; private set; }
+
+    public string? LastLanguage { get; private set; }
+
+    public IReadOnlyList<string> LastParameters { get; private set; } = [];
+
+    public void Reset()
+    {
+        SendCount = 0;
+        FreeTextCount = 0;
+        LastRecipient = null;
+        LastTemplateName = null;
+        LastLanguage = null;
+        LastParameters = [];
+    }
+
     public Task SendAsync(
         string recipient,
         string body,
         CancellationToken cancellationToken = default)
     {
         SendCount++;
+        FreeTextCount++;
+        LastRecipient = recipient;
         return Task.CompletedTask;
     }
 
-    public Task SendTemplateAsync(
+    public Task<string?> SendTemplateAsync(
         string recipient,
         string templateName,
         string languageCode,
@@ -210,6 +237,10 @@ internal sealed class DevWhatsAppRecorder : IWhatsAppProvider
         CancellationToken cancellationToken = default)
     {
         SendCount++;
-        return Task.CompletedTask;
+        LastRecipient = recipient;
+        LastTemplateName = templateName;
+        LastLanguage = languageCode;
+        LastParameters = bodyParameters.ToArray();
+        return Task.FromResult<string?>("wamid.test");
     }
 }

@@ -3,7 +3,7 @@
 Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `ROADMAP.md` do repo irmão **`vlr-web`**.
 
 **Foco de produto agora:** portal B2C estável + **agenda por Slot** (API pronta; UI no `vlr-web`).  
-**Adiado:** fechar configuração externa Resend + WhatsApp (Meta).
+**Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals em código (`CLOSED_DEV` mapping); **PROD externo continua desligado**. Lembrete de reserva: Human Gate de timing. SMS branding = Twilio Console.
 
 ## 0. Disciplina
 
@@ -92,13 +92,23 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] UI portal `/app/perfil` + menu da conta (repo `vlr-web`, mesma branch)
 - FOLLOW_UP (fora deste MVP): alteração de e-mail com verificação; telefone com SMS; CPF; senha B2C (troca/recuperação); CEP/endereço; ExtraAttributes. Upload de foto **não** aberto — o fluxo de cadastro (`fileToCompressedDataUrl`) foi reutilizado.
 
-## 3. Notificações reais (Resend + WhatsApp) — ADIADA
+## 3. Notificações reais (Resend + WhatsApp) — EMAIL OK; WHATSAPP MAPPING CLOSED_DEV
+
+Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-notifications.md). Spec: [`docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`](./docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md).
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
 - [x] F-05: gate `Notifications:AllowExternalDelivery` (bool?). **v1 Catalog (2026-08-28):** unset/null → false in **every** environment (including Production host names). Explicit `true` required for Resend/Meta.
 - [x] Gates por canal: `AllowExternalEmail` / `AllowExternalWhatsApp` (override do global). Unset continua fail-closed. SMS Catalog permanece Dev.
+- [x] Catalog WhatsApp: eventos existentes mapeiam para `catalog_order_status_update` (`pt_BR`, 4 params, labels PT). Seed reconcilia nomes legados.
+- [x] Rentals WhatsApp: outbox durável nas transições PendingDeposit / Confirmed / Canceled / Completed (staff + B2C). Template `rental_reservation_status_update`. Canal tenant default **off**.
+- [x] Meta: persiste `messages[0].id` em `ProviderMessageId`; template obrigatório (sem `type=text`); 4xx permanentes vs 429/5xx transientes; logs com telefone mascarado.
+- [x] Reminder EventType + template `rental_reservation_reminder` + relógio `America/Sao_Paulo`. **Scheduler Hangfire não registrado** até Human Gate de timing.
+- [ ] **Human Gate:** timing do lembrete (24h / manhã civil 08:00 SP / 2h). Não inventar no código.
+- [ ] **Human:** re-submeter body Meta de `rental_reservation_reminder`.
+- [ ] **Human:** Twilio Verify PROD Friendly Name → `Rolvix` (não `ROLVIX PROD`).
+- [ ] **Ops DEV (humano):** `Notifications__AllowExternalWhatsApp=true` + credenciais Meta + `WhatsApp__AppSecret` + canal tenant explícito. Smoke 1 número de teste. Não usar `AllowExternalDelivery=true`.
+- [ ] **Ops PROD:** WhatsApp permanece **desligado**. Antes de qualquer enablement: SELECT de `core.notification_deliveries` WhatsApp (Queued/Failed/Sent). `Queued` > 0 = blast vector.
 - [ ] **Ops (humano):** no Railway **production**, setar `Notifications__AllowExternalEmail=true` + Resend + `App__FrontendBaseUrl`. Storage reuses existing `Supabase__Url` / `Supabase__ServiceRoleKey` (do not duplicate `Storage__*` secrets). Código LogError se Dev permanecer; processo sobe.
-- [ ] Config externa Meta no Railway + template Authentication.
 - [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
 - [x] Cadastro pending (`PhoneVerifiedAt` null) com o mesmo e-mail + telefone + documento **retoma** a linha; falha Twilio **não apaga** o Customer; DTO `verificationStarted`.
 - [x] `resend-verification` devolve 202 se o e-mail não existir, já estiver verificado, sem telefone, ou em cooldown 45s (anti-enumeração).
@@ -182,6 +192,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-07 | **Executado (API):** WhatsApp Catalog+Rentals — templates Meta aprovados, outbox durável, ProviderMessageId, fail-closed sem fallback texto. E-mail inalterado. SMS branding = Twilio Console. Reminder mapping sem scheduler (`RENTALS_REMINDER_TIMING_HUMAN_GATE_REQUIRED`). Sem migration. PROD WhatsApp continua desligado. Branch `feat/notifications-whatsapp-catalog-rentals`. Runbook `docs/runbooks/whatsapp-notifications.md`. |
 | 2026-09-07 | **DEV:** B2C self-cancel **CLOSED_DEV** (not PROD). API `89b3e6d` / PR #64; WEB `3478355` / PR #59. Owner cancels `PendingDeposit`/`Confirmed` before start; occupancy released; no queue restore. Playwright Confirmed path passed on Railway DEV + develop Preview. Wave 1 remains **PROD_COMPLETE**. |
 | 2026-09-07 | **Executado (API):** B2C self-cancel — `POST /api/reservations/mine/{id}/cancel` (`CancelByCustomerAsync`). Occupancy release compartilhada com staff Cancel. Cutoff só no Customer (`UtcNow >= StartDateTime` → 409). Staff cancel após início permanece. Sem migration. Branch `feat/rentals-b2c-self-cancel`. |
 | 2026-09-06 | **PROD:** Rentals Wave 1 **PROD_COMPLETE**. API `54b385d5d14d0438fceb0c358872cf7ef1e1f589` (PR #62); WEB `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`. Complete permission migration applied (`PENDING_COUNT=0`). T1 live. Public/read-only smoke passed. No customer write smoke. No Reservation backfill. PROD Slot kept. This closeout does not authorize Wave 2 / Layout / timezone follow-up implementation. |

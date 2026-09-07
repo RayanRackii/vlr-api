@@ -280,13 +280,17 @@ public sealed class ReservationTimezoneTests
                 db,
                 tenantProvider,
                 new FakeTrialGuard(),
-                queue);
+                queue,
+                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Scheduler);
             var schedule = new ScheduleService(
                 db,
                 tenantProvider,
                 kinds,
                 new FakeTrialGuard(),
-                queue);
+                queue,
+                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Scheduler);
 
             return new TimezoneBookingHarness(
                 db,

@@ -133,27 +133,34 @@ public sealed class NotificationOutboxProcessor(
                 case NotificationChannel.WhatsApp:
                     if (string.IsNullOrWhiteSpace(delivery.RecipientPhone))
                     {
-                        throw new InvalidOperationException("WhatsApp recipient is missing.");
+                        throw new WhatsAppSendException(
+                            "WhatsApp recipient is missing.",
+                            isTransient: false);
                     }
 
-                    if (!string.IsNullOrWhiteSpace(template.WhatsAppTemplateName))
+                    if (string.IsNullOrWhiteSpace(template.WhatsAppTemplateName))
                     {
-                        await whatsAppProvider.SendTemplateAsync(
-                            delivery.RecipientPhone,
-                            template.WhatsAppTemplateName,
-                            "pt_BR",
-                            ExtractWhatsAppParameters(delivery.Notification.Payload),
-                            cancellationToken);
-                    }
-                    else
-                    {
-                        await whatsAppProvider.SendAsync(
-                            delivery.RecipientPhone,
-                            body,
-                            cancellationToken);
+                        throw new WhatsAppSendException(
+                            $"Approved WhatsApp template is not configured for {delivery.Notification.EventType}.",
+                            isTransient: false);
                     }
 
-                    break;
+                    var providerMessageId = await whatsAppProvider.SendTemplateAsync(
+                        delivery.RecipientPhone,
+                        template.WhatsAppTemplateName,
+                        "pt_BR",
+                        WhatsAppParameterBinder.Bind(
+                            delivery.Notification.EventType,
+                            delivery.Notification.Payload),
+                        cancellationToken);
+
+                    attempt.Finish(
+                        NotificationAttemptOutcome.Success,
+                        providerResponse: Truncate(providerMessageId, 200),
+                        errorMessage: null);
+                    delivery.MarkSent(providerMessageId);
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    return;
                 default:
                     throw new InvalidOperationException($"Unsupported channel {delivery.Channel}.");
             }
@@ -167,7 +174,7 @@ public sealed class NotificationOutboxProcessor(
             var outcome = IsTransient(ex)
                 ? NotificationAttemptOutcome.TransientFailure
                 : NotificationAttemptOutcome.PermanentFailure;
-            attempt.Finish(outcome, providerResponse: null, ex.Message);
+            attempt.Finish(outcome, providerResponse: Truncate(ex.Message, 200), ex.Message);
 
             if (outcome == NotificationAttemptOutcome.PermanentFailure || attemptNumber >= MaxAttempts)
             {
@@ -191,7 +198,14 @@ public sealed class NotificationOutboxProcessor(
     }
 
     private static bool IsTransient(Exception ex) =>
-        ex is HttpRequestException or TimeoutException or TaskCanceledException;
+        ex switch
+        {
+            WhatsAppSendException whatsApp => whatsApp.IsTransient,
+            HttpRequestException => true,
+            TimeoutException => true,
+            TaskCanceledException => true,
+            _ => false,
+        };
 
     private static string Render(string template, IReadOnlyDictionary<string, string?> payload)
     {
@@ -204,10 +218,13 @@ public sealed class NotificationOutboxProcessor(
         return result;
     }
 
-    private static IReadOnlyList<string> ExtractWhatsAppParameters(
-        IReadOnlyDictionary<string, string?> payload)
+    private static string? Truncate(string? value, int max)
     {
-        string[] keys = ["tenantName", "customerName", "orderNumber", "orderStatus"];
-        return keys.Select(key => payload.GetValueOrDefault(key) ?? string.Empty).ToArray();
+        if (string.IsNullOrEmpty(value) || value.Length <= max)
+        {
+            return value;
+        }
+
+        return value[..max];
     }
 }

@@ -66,7 +66,7 @@ public sealed class NotificationDispatcherService(
 
                 if (!string.IsNullOrWhiteSpace(message.TemplateName))
                 {
-                    await whatsAppProvider.SendTemplateAsync(
+                    _ = await whatsAppProvider.SendTemplateAsync(
                         message.Recipient,
                         message.TemplateName,
                         message.TemplateLanguage ?? "pt_BR",
@@ -96,9 +96,9 @@ public sealed class NotificationDispatcherService(
 
             default:
                 logger.LogWarning(
-                    "Unknown notification type '{Type}' for recipient {Recipient}.",
+                    "Unknown notification type '{Type}' for recipient ending {Last4}.",
                     message.Type,
-                    message.Recipient);
+                    PhoneLogMask.Last4(message.Recipient));
                 break;
         }
     }
@@ -131,9 +131,9 @@ public sealed class NotificationDispatcherService(
         }
 
         logger.LogInformation(
-            "Skipping WhatsApp for tenant {TenantId} (email-only/trial). Recipient {Recipient}.",
+            "Skipping WhatsApp for tenant {TenantId} (email-only/trial). Recipient phone ending {Last4}.",
             tenantId,
-            message.Recipient);
+            PhoneLogMask.Last4(message.Recipient));
         return true;
     }
 }
