@@ -52,6 +52,23 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Customer_cannot_authorize_core_notifications_write()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        var customer = AuthenticatedPrincipal(
+            new Claim(ClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+            new Claim("email", "member@club.test"));
+
+        var result = await harness.Authorization.AuthorizeAsync(
+            customer,
+            PermissionPolicies.Name(Permissions.Core.NotificationsWrite));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
     public async Task User_without_permission_is_denied()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();

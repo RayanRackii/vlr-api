@@ -7,8 +7,8 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(44, PermissionCatalog.All.Length);
-        Assert.Equal(44, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(46, PermissionCatalog.All.Length);
+        Assert.Equal(46, PermissionCatalog.AllKeys.Count);
         Assert.Contains(Permissions.Catalog.ProductsRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Catalog.ProductsManage, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Catalog.OrdersRead, PermissionCatalog.AllKeys);
@@ -16,10 +16,16 @@ public sealed class PermissionCatalogCatalogTests
         Assert.Contains(Permissions.Catalog.NotificationsRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Catalog.NotificationsResend, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Rentals.ReservationsComplete, PermissionCatalog.AllKeys);
+        Assert.Contains(Permissions.Core.NotificationsRead, PermissionCatalog.AllKeys);
+        Assert.Contains(Permissions.Core.NotificationsWrite, PermissionCatalog.AllKeys);
         Assert.DoesNotContain(Permissions.Catalog.ProductsRead, PermissionCatalog.DefaultUserKeys);
         Assert.DoesNotContain(Permissions.Catalog.OrdersManage, PermissionCatalog.DefaultUserKeys);
         Assert.DoesNotContain(Permissions.Rentals.ReservationsComplete, PermissionCatalog.DefaultUserKeys);
         Assert.DoesNotContain(Permissions.Rentals.ReservationsComplete, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsRead, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsWrite, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsRead, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsWrite, PermissionCatalog.TechnicianLegacyKeys);
     }
 
     [Fact]
