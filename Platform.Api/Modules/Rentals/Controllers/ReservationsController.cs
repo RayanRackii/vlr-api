@@ -178,6 +178,35 @@ public sealed class ReservationsController(
         }
     }
 
+    /// <summary>Cancel an eligible reservation owned by the authenticated B2C customer.</summary>
+    [Authorize(Policy = "Customer")]
+    [HttpPost("mine/{id:guid}/cancel")]
+    public async Task<ActionResult<ReservationResponseDto>> CancelMine(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var customerId = ResolveCustomerId();
+            return Ok(await reservationService.CancelByCustomerAsync(
+                customerId,
+                id,
+                cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
     /// <summary>
     /// Create reservation for the authenticated B2C customer.
     /// Tenant comes from the Customer JWT (tenant_id claim).

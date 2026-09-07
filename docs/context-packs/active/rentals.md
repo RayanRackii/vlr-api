@@ -5,11 +5,13 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
-- Last verified: 2026-09-06
-- Verified at: Wave 1 **PROD_COMPLETE**
+- Last verified: 2026-09-07
+- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **API code** (not PROD)
   - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
   - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
+  - B2C self-cancel: `feat/rentals-b2c-self-cancel` (API); WEB pending
 - Historical spec (delivered, do not re-implement): `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
+- Current spec: `docs/plans/active/2026-09-07-rentals-b2c-self-cancel.md`
 
 ## Purpose
 
@@ -101,8 +103,8 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Confirm/Complete/Cancel serialize on `ReservationLocks` `FOR UPDATE` **first** (load only after lock). Cancel then locks distinct `RentalAssetId`s ascending via `RentalAssetLocks` before `MarkAvailable`. Confirm and Complete lock the reservation only and do not free slots
 - Confirm is not terminal: `PendingDeposit → Confirmed` (idempotent 200 on Confirmed); `Canceled`/`Completed` → 409. Sequential Confirm then Cancel both succeed
 - Complete is staff-only: `Confirmed → Completed`; `Completed` is idempotent 200; `PendingDeposit`/`Canceled` → 409. Does not free slots.
-- Customer JWT cannot Complete (no B2C Complete UI; no B2C cancel in Wave 1)
-- **Complete × Cancel (human):** `Confirmed` is the source. Competing terminals, no priority. Exactly one succeeds. Serialized.
+- Customer JWT cannot Complete. Customer can self-cancel own eligible reservation (`POST /api/reservations/mine/{id}/cancel`) when status is `PendingDeposit`/`Confirmed` and `UtcNow < StartDateTime`. Non-owner → 404 `"Reservation not found."`. Staff Cancel has no cutoff.
+- **Complete × Cancel (human):** `Confirmed` is the source. Competing terminals, no priority. Exactly one succeeds. Serialized. Customer Cancel uses the same occupancy-release tail as staff Cancel.
 - **Confirm × Cancel:** shared source `PendingDeposit`. Confirm is not terminal. Legal: Confirm→Cancel both succeed, final `Canceled` + occupancy released. Legal: Cancel→Confirm, Confirm 409, stays `Canceled`. Invalid: stale Confirm overwrites `Canceled` after occupancy release (`Confirmed` + slot `Available`).
 
 ## Current contracts
@@ -111,6 +113,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Book persisted slot: `POST /api/schedule/slots/book` (`slotId`)
 - Book derived window: `POST /api/reservations` (date + start/end + items)
 - Customer list: `GET /api/reservations/mine` (Customer JWT)
+- Customer self-cancel: `POST /api/reservations/mine/{id}/cancel` (Customer JWT; cutoff before start; 404 if not owner)
 - Queue (Customer): `GET/POST /api/rental-assets/{id}/queue`, `POST .../queue/join`, `POST .../queue/leave`
 - Registry without Ativos: `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families` (`rentals.assets.*`)
 - Admin day/exceptions: `GET /api/schedule/days/{date}`, `POST /api/schedule/slots/daily-occurrence`
@@ -133,7 +136,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 ## Known gaps / open constraints
 
-From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope. Customer self-cancel was deferred (not Wave 1).
+From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
 
 **Non-blocking follow-ups** (not blockers; not authorized by Wave 1 closeout):
 
@@ -144,7 +147,7 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Concurrent Confirm × Confirm coverage
 - Tenant predicate on raw lock SQL
 
-**Next product work is not automatically authorized.** Remaining roadmap items (queue E2E validation, B2C self-cancel, notifications, deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started.
+**Next product work is not automatically authorized.** Remaining roadmap items (queue E2E validation, notifications, deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started. B2C self-cancel API is in `feat/rentals-b2c-self-cancel`; WEB CTA is the paired slice.
 
 ## Do not assume
 
@@ -158,7 +161,7 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Booking clocks are browser-local (WEB formats Reservation instants in `America/Sao_Paulo`)
 - Reservation JSON includes civil `date`/`startTime`/`endTime` in this phase (it does not; UTC instant only)
 - Complete reuses `rentals.reservations.confirm`
-- Customer portal can Complete or Cancel in Wave 1
+- Customer portal can Complete (forbidden). Wave 1 had no B2C cancel; Customer self-cancel is `POST /api/reservations/mine/{id}/cancel` only (not staff `POST /{id}/cancel`)
 - Complete and Cancel may both return success on the same Confirmed reservation (forbidden; now serialized)
 - Stale Confirm may overwrite `Canceled` after occupancy release (forbidden; Confirm now lock-then-load)
 - Wave 1 is still DEV-only / blocked for PROD / waiting on timestamp classification or a pending migration

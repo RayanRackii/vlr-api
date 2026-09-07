@@ -117,17 +117,23 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             rental.Id);
     }
 
-    public Reservation SeedOverlappingReservation(ReservationStatus status)
+    public Reservation SeedOverlappingReservation(
+        ReservationStatus status,
+        DateTimeOffset? start = null,
+        DateTimeOffset? end = null,
+        Guid? customerId = null,
+        Guid? rentalAssetId = null,
+        int quantity = 1)
     {
         var reservation = new Reservation
         {
             TenantId = TenantId,
             UnitId = UnitId,
-            CustomerId = CustomerId,
+            CustomerId = customerId ?? CustomerId,
             CustomerName = "Existing",
             CustomerWhatsApp = "11999999999",
-            StartDateTime = RangeStart,
-            EndDateTime = RangeEnd,
+            StartDateTime = start ?? RangeStart,
+            EndDateTime = end ?? RangeEnd,
             Status = status,
             TotalAmount = 100m,
             DepositPaid = 0m,
@@ -136,13 +142,84 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
         {
             TenantId = TenantId,
             ReservationId = reservation.Id,
-            RentalAssetId = RentalAssetId,
-            Quantity = 1,
+            RentalAssetId = rentalAssetId ?? RentalAssetId,
+            Quantity = quantity,
             UnitPrice = 100m,
             SubTotal = 100m,
         });
         Db.Reservations.Add(reservation);
         return reservation;
+    }
+
+    public Customer SeedCustomer(string name, string email)
+    {
+        var customer = new Customer
+        {
+            TenantId = TenantId,
+            Name = name,
+            Email = email,
+        };
+        Db.Customers.Add(customer);
+        return customer;
+    }
+
+    public Guid SeedGoodRentalAsset(int totalQuantity)
+    {
+        var asset = new Asset
+        {
+            TenantId = TenantId,
+            UnitId = UnitId,
+            CategoryId = Db.AssetCategories.Select(c => c.Id).First(),
+            FamilyId = Db.AssetFamilies.Select(f => f.Id).First(),
+            Name = "Raquete",
+            Tag = "G1",
+            Status = AssetStatus.Active,
+            IsRentable = true,
+        };
+        var rental = new RentalAsset
+        {
+            TenantId = TenantId,
+            AssetId = asset.Id,
+            Type = RentalAssetType.Good,
+            TotalQuantity = totalQuantity,
+            IsActive = true,
+            RequiresDeposit = false,
+            SchedulePolicy = SchedulePolicy.OpenHours,
+            OpenTime = new TimeOnly(8, 0),
+            CloseTime = new TimeOnly(22, 0),
+            QueueEnabled = false,
+        };
+        Db.Assets.Add(asset);
+        Db.RentalAssets.Add(rental);
+        return rental.Id;
+    }
+
+    public Slot SeedBookedSlot(Reservation reservation)
+    {
+        var kind = new OccupancyKind
+        {
+            TenantId = TenantId,
+            Key = "open",
+            Label = "Aberto",
+            IsBookableByCustomer = true,
+            BlocksCapacity = true,
+            SortOrder = 0,
+            IsActive = true,
+        };
+        var slot = new Slot
+        {
+            TenantId = TenantId,
+            RentalAssetId = reservation.Items.Select(i => i.RentalAssetId).First(),
+            Date = Date,
+            StartTime = Start,
+            EndTime = End,
+            OccupancyKindId = kind.Id,
+            Status = SlotStatus.Booked,
+            ReservationId = reservation.Id,
+        };
+        Db.OccupancyKinds.Add(kind);
+        Db.Slots.Add(slot);
+        return slot;
     }
 
     public ReservationService CreateReservationService() =>
