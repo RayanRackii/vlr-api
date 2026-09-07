@@ -95,6 +95,19 @@ public sealed class RentalsNotificationPublisher(
             return [];
         }
 
+        if (eventType == RentalEventTypes.ReservationReminder)
+        {
+            var alreadyReminded = await dbContext.Notifications.AnyAsync(
+                n => n.EventType == RentalEventTypes.ReservationReminder
+                     && n.AggregateType == "Reservation"
+                     && n.AggregateId == reservation.Id,
+                cancellationToken);
+            if (alreadyReminded)
+            {
+                return [];
+            }
+        }
+
         var tenant = await dbContext.Tenants
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == reservation.TenantId, cancellationToken);

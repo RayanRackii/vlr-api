@@ -1,5 +1,6 @@
 using Hangfire;
 using Hangfire.PostgreSql;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.Time;
 
@@ -14,6 +15,8 @@ public static class HangfireExtensions
     public const string TrialLifecycleJobId = "trial-lifecycle-purge";
 
     public const string NotificationOutboxJobId = "notification-outbox";
+
+    public const string ReservationReminderJobId = ReservationReminderSchedule.HangfireJobId;
 
     private const int HangfireMaxPoolSize = 3;
 
@@ -89,6 +92,12 @@ public static class HangfireExtensions
 
         RecurringJob.AddOrUpdate<NotificationOutboxJob>(
             NotificationOutboxJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            "* * * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<ReservationReminderJob>(
+            ReservationReminderJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "* * * * *",
             recurringJobOptions);

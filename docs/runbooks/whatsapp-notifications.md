@@ -61,15 +61,15 @@ Variables: 1 tenantName, 2 customerName, 3 reservationReference, 4 reservationDa
 
 DEV live send of reminders cannot happen until Meta marks this template active.
 
-## Human — reminder timing (scheduler not implemented)
+## Human — reminder timing (locked)
 
-No canonical lead time exists. Options (do not invent in code until chosen):
+`RENTALS_REMINDER_LEAD_TIME = 24_HOURS`. Hangfire job `rentals-reservation-reminder` every minute. One reminder per reservation. Not 2h. No tenant setting.
 
-1. 24h before `StartDateTime` (recommended; skip if start is already within 24h)
-2. Same civil morning 08:00 America/Sao_Paulo
-3. 2h before start
+Skip Canceled, Completed, and after start. Idempotent via existing `core.notifications` row (`EventType = rentals.reservation.reminder`, `AggregateType = Reservation`).
 
-`RENTALS_REMINDER_TIMING_HUMAN_GATE_REQUIRED`
+Job only considers tenants with WhatsApp `rentals.reservation.reminder` **IsActive**. Default remains off.
+
+Each Hangfire sweep uses a **fresh DI scope per tenant** (`IServiceScopeFactory`) so `AppDbContext` / `AmbientTenantContext` / publisher tracking cannot bleed channel configs from tenant A into tenant B. Do not reuse one tracked `DbContext` across tenant switches.
 
 ## DEV enablement (names only — never print values)
 
@@ -94,7 +94,8 @@ WHERE tenant_id = '<dev-tenant-id>'
   AND channel = 'WhatsApp'
   AND event_type IN (
     'catalog.order.created',
-    'rentals.reservation.confirmed'
+    'rentals.reservation.confirmed',
+    'rentals.reservation.reminder'
   );
 ```
 
@@ -113,10 +114,7 @@ If `Queued` > 0, do **not** enable Meta. Drain/decision is a separate Human Gate
 
 ## DEV live smoke (after merge + deploy + Meta active + tenant channel on)
 
-Prefer first: Catalog `catalog_order_status_update` to a Human-owned test number.
-Then one Rentals status event.
-
-Evidence: Queued → Sent; attempt Success; `ProviderMessageId` populated; no duplicate after Hangfire outbox sweep.
+If reminder scheduler is deployed, prove reminder only with a Human-owned reservation whose `StartDateTime` is inside the next 24h (not Canceled/Completed). Enable `rentals.reservation.reminder` WhatsApp for that DEV tenant via SQL. One Notification row; Hangfire sweep must not duplicate.
 
 No PROD send.
 

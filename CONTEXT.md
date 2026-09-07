@@ -9,7 +9,7 @@ Você atua como Arquiteto de Software e Desenvolvedor Full-Stack Sênior. O sist
 A visão de Hub permanece. O primeiro cliente pagante é um **clube** que precisa (1) avisar clientes sobre o estado das quadras e (2) permitir **reserva de horários**. O módulo **Rentals** (`rentals`) é o foco do ciclo atual. Inventário, PMOC e OS já existem como espinha dorsal e continuam no cardápio; não expandir RH, Financeiro, Estoque etc. enquanto o beachhead não estiver operacional.
 
 **Ordem de etapas (ciclo atual):**
-1. **Notificações (Resend + WhatsApp Meta)** — e-mail Resend saudável. WhatsApp: templates Catalog/Rentals mapeados no código; entrega externa **desligada em PROD**. Timing do lembrete de reserva ainda é Human Gate. SMS de branding = Twilio Console (`Rolvix`). Não bloquear o beachhead de slots por ops Meta.
+1. **Notificações (Resend + WhatsApp Meta)** — e-mail Resend saudável. WhatsApp Catalog/Rentals + lembrete 24h mapeados no código; entrega externa **desligada em PROD**. SMS de branding = Twilio Console (`Rolvix`). Não bloquear o beachhead de slots por ops Meta.
 2. **Portal B2C do tenant (login + cadastro branded)** — shell e login e-mail+senha já em código; fechar deploy/DNS e SMS real quando a Fase 1.5 voltar. Ver seção **Portal B2C do Tenant**.
 3. **Agenda Rentals por Slot** (admin templates/kinds + B2C book por `slotId`) — próximo salto de produto após o portal estável. Ver `ROADMAP.md` §2.6 e `docs/adr/0001-rentals-slot-schedule.md`.
 4. Demais itens de Rentals / convite / gating — conforme `ROADMAP.md`.
@@ -285,7 +285,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 
 - **Fase 1.5: Notificações reais (Resend + WhatsApp)** — e-mail OK; WhatsApp operacional em código (outbox + templates aprovados), **PROD externo ainda desligado**.
   - Catalog: um template `catalog_order_status_update`. Rentals: `rental_reservation_status_update` + `rental_reservation_reminder`.
-  - Lembrete: mapping existe; **scheduler não** até Human escolher o lead time.
+  - Lembrete: uma ocorrência em `StartDateTime - 24h` (Hangfire `rentals-reservation-reminder`); sem lead time por tenant.
   - Ops: runbook [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-notifications.md).
 
 - **Fase 2a: MVP operacional (PMOC + OS + Inventário)** — entregue como base
@@ -317,7 +317,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 - **Frontend (`vlr-web`):** React + Vite, shadcn/ui, TailwindCSS. Deploy: **Vercel**. Consome a API com JWT Bearer (`VITE_API_URL`).
 - **Dados e Auth (PaaS):** **Supabase** = PostgreSQL + Supabase Auth (B2B). Proibido provisionar AWS “pura” (RDS/Cognito/EC2) neste momento. EF Core permanece agnóstico à connection string.
 - **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Celular verificado por **SMS (Twilio Verify)** no cadastro; celular **não autentica**. WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.
-- **Notificações:** dois pipelines. Convite/recovery: fila em memória (`NotificationQueue`). Catalog/Rentals operacionais: `Notification` + `NotificationDelivery` + Hangfire outbox. Providers: **Resend** (e-mail, inalterado), **Meta WhatsApp** (templates `pt_BR`; sem fallback `type=text` nesses envios), **SMS de catálogo** via `ISmsProvider` (ainda Dev). Verificação de celular B2C usa **Twilio Verify** (síncrono; branding = Friendly Name do serviço, não setting da API). Gates: `AllowExternalEmail` / `AllowExternalWhatsApp` (override); fallback no global `AllowExternalDelivery`. Unset/null = false em **todo** ambiente; credencial sozinha não basta. Canal WhatsApp do tenant nasce **off**. Nunca enviar e-mail/WhatsApp de catálogo/reservas de forma síncrona dentro da request HTTP. PROD WhatsApp permanece desligado até preflight humano. Runbook: `docs/runbooks/whatsapp-notifications.md`.
+- **Notificações:** dois pipelines. Convite/recovery: fila em memória (`NotificationQueue`). Catalog/Rentals operacionais: `Notification` + `NotificationDelivery` + Hangfire outbox. Lembrete de reserva: Hangfire `rentals-reservation-reminder`, **24h antes de `StartDateTime`**, uma ocorrência. Providers: **Resend** (e-mail, inalterado), **Meta WhatsApp** (templates `pt_BR`; sem fallback `type=text` nesses envios), **SMS de catálogo** via `ISmsProvider` (ainda Dev). Verificação de celular B2C usa **Twilio Verify** (síncrono; branding = Friendly Name do serviço, não setting da API). Gates: `AllowExternalEmail` / `AllowExternalWhatsApp` (override); fallback no global `AllowExternalDelivery`. Unset/null = false em **todo** ambiente; credencial sozinha não basta. Canal WhatsApp do tenant nasce **off**. Nunca enviar e-mail/WhatsApp de catálogo/reservas de forma síncrona dentro da request HTTP. PROD WhatsApp permanece desligado até preflight humano. Runbook: `docs/runbooks/whatsapp-notifications.md`.
 - **TypeScript:** Zero `any`; validação Zod espelhando DTOs da API. Frontend **nunca** consulta o banco via SDK Supabase — só auth.
 - **Isolamento:** Dados de módulo com `TenantId` (e `UnitId` quando aplicável).
 
