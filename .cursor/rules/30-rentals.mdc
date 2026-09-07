@@ -37,6 +37,6 @@ Implementado (ver `ROADMAP.md` + ADR `docs/adr/0001-rentals-slot-schedule.md`):
 - operações multi-Rentable: `PUT /api/rental-assets/schedule-policy` (transacional) e `rentalAssetIds` em GET templates/days, seed e publish;
 - **Layout** canvas (admin em Operação) + picker B2C data+horário; sem layout ativo, grade com todos os Rentables (indisponíveis visíveis).
 
-T1 timezone implementado no código (sem migration de schema; sem backfill histórico de PROD — `reservation_count = 0`; manter o Slot de PROD). **Não** promovido a PROD/`main`.
+Wave 1 **PROD_COMPLETE** (Phase A + Phase B T1). API PROD `54b385d5d14d0438fceb0c358872cf7ef1e1f589`; WEB PROD `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`. T1 live (`America/Sao_Paulo`; sem migration de schema; sem backfill histórico — `PROD_TIMESTAMP_STATE=EMPTY`; Slot de PROD mantido). `rentals.reservations.complete` aplicado em PROD (`PENDING_COUNT=0`). Smoke público/somente-leitura passou; não houve write smoke em tenant de cliente. Follow-ups (teste ListAdmin D+1, OpenHours wrap-guard, WEB today-boundary, `AtLocal` DST midnight, Confirm × Confirm, predicado de tenant no SQL de lock) são não-bloqueantes e **não** autorizam Wave 2 / Layout / trabalho novo.
 
 Faltando: pagamento de depósito (`DepositPaid` hoje sempre 0), SMS real e avisos WhatsApp.

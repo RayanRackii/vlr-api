@@ -29,7 +29,7 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).
 - [ ] Aplicar migration menu no Railway.
 - [ ] Garantir assets/pricing no FICC para demo.
-- [x] Admin B2B de reservas (listar / confirmar / completar / cancelar). `POST /api/reservations/{id}/complete` exige `rentals.reservations.complete` (não reutiliza confirm). Complete × Cancel: `ReservationLocks` na row primeiro; Cancel depois locka `RentalAsset` (`OrderBy Id`) e só então `MarkAvailable`. Migration `AddRentalsReservationsCompletePermission` aplicada em **DEV** (`database-migrations` list→apply, `PENDING_COUNT=0`). **Não** aplicada em PROD.
+- [x] Admin B2B de reservas (listar / confirmar / completar / cancelar). `POST /api/reservations/{id}/complete` exige `rentals.reservations.complete` (não reutiliza confirm). Complete × Cancel: `ReservationLocks` na row primeiro; Cancel depois locka `RentalAsset` (`OrderBy Id`) e só então `MarkAvailable`. Migration `AddRentalsReservationsCompletePermission` aplicada em DEV e **PROD** (`PENDING_COUNT=0`).
 - [x] Reserved tenant subdomains: create/rename reject frozen set (`www`, `api`, `app`, `admin`, `dev`, `staging`, `preview`, `mail`, `support`); trial allocation skips them; existing rows grandfathered. DNS/wildcard unchanged.
 
 ## 2.8. Dashboard B2B dinâmico — FEITO (código)
@@ -63,9 +63,10 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
 - [x] Follow-up fila: isolamento tenant em DockerFact; `CompleteTurnAsync` revalida `TurnExpiresAt`; relógio na fronteira 00:00/WR e abertura perto da meia-noite. Não criar ação em `RentalAssetsController` sem `[Authorize]` (já atribuído por action; Customer policy nas rotas de fila).
-- [x] Wave 1 Phase A: `rentals.reservations.complete` + `POST /api/reservations/{id}/complete`; Complete × Cancel exclusive-winner via `ReservationLocks` then (Cancel) `RentalAssetLocks`. Sem TZ / backfill nesta fase. DEV permission seed applied 2026-09-06. Phase B TZ still gated on PROD timestamp classification.
-- [x] Confirm × Cancel: `ConfirmAsync` serializa com `ReservationLocks` (lock then load). Confirm não é terminal — Confirm→Cancel ambos legais; Cancel→Confirm 409. Stale Confirm não sobrescreve `Canceled`. PROD timestamps **EMPTY** (`reservations=0`).
-- [x] Wave 1 Phase B T1: Reservation writers use `BrazilTimeZone.AtLocal`; civil-day list/overlay bounds `StartOfCivilDay`/`ExclusiveEndOfCivilDay`; API JSON UTC instant only; Slot remains civil; no schema migration; no PROD backfill (`reservations=0`, keep Slot). **Not** deployed to PROD/`main`.
+- [x] Wave 1 **PROD_COMPLETE** (Phase A + Phase B T1). API PROD `54b385d5d14d0438fceb0c358872cf7ef1e1f589`; WEB PROD `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`. Railway production matched API `main`; Vercel Production matched WEB `main`. Migration `AddRentalsReservationsCompletePermission` applied (`PENDING_COUNT=0`). Public/read-only smoke passed. No customer-tenant write smoke. No Reservation backfill (`PROD_TIMESTAMP_STATE=EMPTY`). Single PROD Slot kept.
+- [x] Phase A lifecycle: staff-only Complete (`rentals.reservations.complete`); `Confirmed → Completed`; Complete × Cancel exclusive-winner; Confirm × Cancel serialized; reservation-row lock first; Cancel then `RentalAsset` locks ascending.
+- [x] Phase B T1 live: business TZ `America/Sao_Paulo`; Slot/Schedule remain civil; Reservation start/end are true instants; API returns UTC instants; WEB formats Rentals clocks in `America/Sao_Paulo`; Brazil civil-day query bounds; pricing remains civil-day/time; no schema migration for Phase B.
+- Follow-ups (non-blocking, **not** authorized as current work): ListAdmin D+1 absence test; dedicated OpenHours wrap-guard regression; WEB today-boundary; latent `AtLocal` DST midnight; concurrent Confirm × Confirm coverage; tenant predicate on raw lock SQL.
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -180,6 +181,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-06 | **PROD:** Rentals Wave 1 **PROD_COMPLETE**. API `54b385d5d14d0438fceb0c358872cf7ef1e1f589` (PR #62); WEB `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`. Complete permission migration applied (`PENDING_COUNT=0`). T1 live. Public/read-only smoke passed. No customer write smoke. No Reservation backfill. PROD Slot kept. This closeout does not authorize Wave 2 / Layout / timezone follow-up implementation. |
 | 2026-09-06 | **Fix (API):** Phase B T1 — `ToDateTimeRange` / `ToDateTime` persist real `America/Sao_Paulo` instants; admin list and reserved-window overlay use Brazil civil-day bounds. Slot/pricing stay civil. No schema migration. No PROD backfill. Not deployed to PROD. |
 | 2026-09-06 | **Fix (API):** Confirm × Cancel — `ConfirmAsync` `ReservationLocks` FOR UPDATE then load. Occupancy split closed. Confirm→Cancel remains legal. PROD timestamps **EMPTY**; Phase B not started. |
 | 2026-09-06 | **Fix (API):** Complete × Cancel exclusive-winner — `ReservationLocks` `FOR UPDATE` then (Cancel only) `RentalAssetLocks` ascending. Dual success closed. Confirm × Cancel still unserialized (follow-up, later this date). Phase B still blocked; PROD timestamps still **INSUFFICIENT_EVIDENCE**. |
