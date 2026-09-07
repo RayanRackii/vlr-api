@@ -9,10 +9,7 @@ using Platform.Core.Infrastructure.Persistence;
 namespace Platform.Api.Jobs;
 
 public sealed class ReservationReminderJob(
-    AppDbContext dbContext,
-    IRentalsNotificationPublisher notificationPublisher,
-    INotificationOutboxScheduler outboxScheduler,
-    AmbientTenantContext ambientTenantContext,
+    IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,
     ILogger<ReservationReminderJob> logger)
 {
@@ -26,25 +23,33 @@ public sealed class ReservationReminderJob(
             "Scanning reservations for WhatsApp reminders due before {WindowEnd}.",
             windowEnd);
 
-        var reminderTenantIds = await dbContext.TenantNotificationChannelConfigs
-            .AsNoTracking()
-            .Where(c =>
-                c.EventType == RentalEventTypes.ReservationReminder
-                && c.Channel == NotificationChannel.WhatsApp
-                && c.IsActive)
-            .Select(c => c.TenantId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-
+        var reminderTenantIds = await ListReminderTenantIdsAsync(cancellationToken);
         var published = 0;
 
         foreach (var tenantId in reminderTenantIds)
         {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var ambientTenantContext = scope.ServiceProvider.GetRequiredService<AmbientTenantContext>();
             ambientTenantContext.TenantId = tenantId;
             try
             {
+                var notificationPublisher = scope.ServiceProvider
+                    .GetRequiredService<IRentalsNotificationPublisher>();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var outboxScheduler = scope.ServiceProvider.GetRequiredService<INotificationOutboxScheduler>();
+
                 await notificationPublisher.EnsureReadyAsync(cancellationToken);
-                published += await PublishDueForCurrentTenantAsync(now, windowEnd, cancellationToken);
+                published += await PublishDueForTenantAsync(
+                    dbContext,
+                    notificationPublisher,
+                    outboxScheduler,
+                    now,
+                    windowEnd,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -53,9 +58,11 @@ public sealed class ReservationReminderJob(
                     "Failed to publish reservation reminders for tenant {TenantId}.",
                     tenantId);
             }
+            finally
+            {
+                ambientTenantContext.TenantId = null;
+            }
         }
-
-        ambientTenantContext.TenantId = null;
 
         logger.LogInformation(
             "Reservation reminder scan finished. Published {Published} reminder(s) across {TenantCount} tenant(s).",
@@ -63,7 +70,25 @@ public sealed class ReservationReminderJob(
             reminderTenantIds.Count);
     }
 
-    private async Task<int> PublishDueForCurrentTenantAsync(
+    private async Task<List<Guid>> ListReminderTenantIdsAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return await dbContext.TenantNotificationChannelConfigs
+            .AsNoTracking()
+            .Where(c =>
+                c.EventType == RentalEventTypes.ReservationReminder
+                && c.Channel == NotificationChannel.WhatsApp
+                && c.IsActive)
+            .Select(c => c.TenantId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<int> PublishDueForTenantAsync(
+        AppDbContext dbContext,
+        IRentalsNotificationPublisher notificationPublisher,
+        INotificationOutboxScheduler outboxScheduler,
         DateTimeOffset now,
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken)
@@ -127,6 +152,10 @@ public sealed class ReservationReminderJob(
                 {
                     published++;
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

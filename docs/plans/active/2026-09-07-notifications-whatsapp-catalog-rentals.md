@@ -145,6 +145,8 @@ Enable PROD WhatsApp; invent reminder hours; create EF migration; change email/S
 
 `RENTALS_REMINDER_LEAD_TIME = 24_HOURS`. One reminder per reservation when `now` is in `[StartDateTime - 24h, StartDateTime)`. Skip Canceled, Completed, and `now >= StartDateTime`. Sweep job `rentals-reservation-reminder` every minute with `DisableConcurrentExecution`. Bookings already inside the 24h window are reminded on the next sweep (still one occurrence). Do not use 2h. No tenant-configurable lead time.
 
+Hangfire fan-out creates one DI scope per tenant (`IServiceScopeFactory`). Reusing a tracked `AppDbContext` across tenant switches can merge `.Local` channel configs and duplicate WhatsApp deliveries.
+
 ## PROD blast preflight (later, read-only)
 
 ```sql

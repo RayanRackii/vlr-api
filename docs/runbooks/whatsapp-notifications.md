@@ -69,6 +69,8 @@ Skip Canceled, Completed, and after start. Idempotent via existing `core.notific
 
 Job only considers tenants with WhatsApp `rentals.reservation.reminder` **IsActive**. Default remains off.
 
+Each Hangfire sweep uses a **fresh DI scope per tenant** (`IServiceScopeFactory`) so `AppDbContext` / `AmbientTenantContext` / publisher tracking cannot bleed channel configs from tenant A into tenant B. Do not reuse one tracked `DbContext` across tenant switches.
+
 ## DEV enablement (names only — never print values)
 
 On the **development** Railway service only:
