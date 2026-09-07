@@ -95,7 +95,7 @@ A global, system-defined capability key (for example, `pmoc.work_orders.read`) t
 _Avoid_: Right, privilege (in code)
 
 **Reservation**:
-A booking of one Rentable by a Customer for a concrete time window, owned by a Tenant. Prefer linking to a Slot when the tenant uses slot schedules.
+A booking of one Rentable by a Customer for a concrete time window, owned by a Tenant. Prefer linking to a Slot when the tenant uses slot schedules. The owning Customer may self-cancel `PendingDeposit` or `Confirmed` only while `now < StartDateTime` (true instant). Staff cancel has no start cutoff. Cancel does not restore a queue ticket.
 _Avoid_: Booking, appointment, agendamento (in code)
 
 **Rentable**:
