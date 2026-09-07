@@ -4,13 +4,20 @@ Derived context — NOT canonical.
 
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
-- Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; spec `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
-- Last verified: 2026-09-06
-- Verified at commit(s): `vlr-api` `fix/rentals-timezone-t1`; `vlr-web` `fix/rentals-timezone-t1`
+- Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
+- Last verified: 2026-09-07
+- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD)
+  - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
+  - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
+  - B2C self-cancel DEV: API `89b3e6d` / PR #64; WEB `3478355` / PR #59
+- Historical spec (delivered, do not re-implement): `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
+- Current spec: `docs/plans/active/2026-09-07-rentals-b2c-self-cancel.md`
 
 ## Purpose
 
 Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout picker, the optional Location waiting queue, or reservation Complete/Cancel.
+
+This pack describes **shipped PROD**. It does **not** authorize Wave 2, Layout work, timezone follow-ups, or new product implementation.
 
 ## Canonical sources
 
@@ -19,7 +26,44 @@ Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, sche
 - `docs/adr/0003-reservation-waiting-queue.md` — optional per-Location daily FIFO; T = QueueOpeningTime
 - `docs/adr/0004-module-dependencies-asset-registry.md` — Rentals requires Asset Registry, not Inventory entitlement
 - `.cursor/rules/30-rentals.mdc` — invariants and current gaps
-- `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md` — Wave 1 Phase A (Complete + cancel locks) vs Phase B (timezone T1)
+- `ROADMAP.md` — Wave 1 closed as **PROD_COMPLETE**
+
+## Wave 1 shipped (PROD)
+
+`RENTALS_WAVE1 = PROD_COMPLETE`  
+`RENTALS_WAVE1_PHASE_A = PROD_COMPLETE`  
+`RENTALS_WAVE1_PHASE_B = PROD_COMPLETE`
+
+| | Identity |
+|---|---|
+| API PROD | `54b385d5d14d0438fceb0c358872cf7ef1e1f589` (Railway production matched `main`) |
+| WEB PROD | `0d995955dd56338cc8cbfda6bf8ff6950afb68f6` (Vercel Production matched `main`) |
+| Last migration | `20260906034111_AddRentalsReservationsCompletePermission` |
+| Pending | `PENDING_COUNT=0` |
+| Timestamp rows | `PROD_TIMESTAMP_STATE=EMPTY` — no historical Reservation backfill |
+| PROD Slot | single Slot **kept** |
+| Smoke | public/read-only **passed**; **no** customer-tenant write smoke |
+
+### Lifecycle integrity (Phase A)
+
+- Staff-only Complete; permission `rentals.reservations.complete` (not confirm)
+- `Confirmed → Completed` (idempotent on Completed; PendingDeposit/Canceled → 409)
+- Complete × Cancel serialized exclusive-winner
+- Confirm × Cancel serialized (`PendingDeposit` source; Confirm is not terminal)
+- Reservation-row `FOR UPDATE` first (`ReservationLocks`)
+- Cancel then `RentalAsset` locks ascending where occupancy is released
+
+### Timezone (Phase B T1 — live)
+
+- Business timezone = `America/Sao_Paulo` (`BrazilTimeZone`; do not hard-code `-03:00`)
+- Slot / Schedule / OpenHours / RentalPricing / CreateReservation request Date/StartTime/EndTime remain **civil**
+- Reservation `StartDateTime` / `EndDateTime` are true instants via `BrazilTimeZone.AtLocal` → UTC `DateTimeOffset` / `timestamptz`
+- API JSON returns UTC instants only (no parallel civil fields)
+- WEB formats Rentals reservation clocks and Rentals “today” in `America/Sao_Paulo` (`src/lib/brazilTimeZone.ts`)
+- Brazil civil-day query bounds: inclusive `StartOfCivilDay(D)`, exclusive `ExclusiveEndOfCivilDay(D)`
+- Pricing remains civil-day/time based
+- No schema migration for Phase B
+- No historical Reservation backfill required
 
 ## Domain vocabulary
 
@@ -46,19 +90,6 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - **Deposit gate:** `RentalAsset.RequiresDeposit` — if any item’s rentable has it, reservation starts `PendingDeposit`; else `Confirmed`.
 - Pricing-row `RequiresDeposit` / `DepositPercentage` do **not** gate the reservation (see `CONTEXT.md` RequiresDeposit). `DepositPaid` is still always 0 (payment not implemented).
 
-### Timezone (T1 implemented in DEV code)
-
-- **Business clock:** `America/Sao_Paulo` via `BrazilTimeZone` (Windows `E. South America Standard Time`). Do not hard-code `-03:00`.
-- **Civil (unchanged):** Slot `Date`/`StartTime`/`EndTime`, ScheduleTemplate, OpenHours, RentalPricing windows, CreateReservation request Date/StartTime/EndTime, day URLs, booking pickers.
-- **Instant:** `Reservation.StartDateTime` / `EndDateTime` are real UTC instants (`DateTimeOffset` / `timestamptz`). Writers: `BrazilTimeZone.AtLocal`. Example: civil `2026-09-10 10:00` SP → API `2026-09-10T13:00:00Z`.
-- **Civil-day queries:** inclusive `StartOfCivilDay(D)`, exclusive `ExclusiveEndOfCivilDay(D)` (`AtLocal(D+1, 00:00)`). Do not use UTC midnight or `TimeOnly.MaxValue`.
-- **API JSON:** UTC instant only on Reservation DTOs. No parallel `date`/`startTime`/`endTime` fields in this phase.
-- **WEB:** format reservation clocks and Rentals “today” with `timeZone: "America/Sao_Paulo"` (`src/lib/brazilTimeZone.ts`).
-- **Queue:** already used `BrazilTimeZone.AtLocal`; unchanged.
-- **Confirm / Cancel / Complete / CreatedAt / UpdatedAt:** do not timezone-convert.
-- **Schema:** no migration. Columns were already `timestamptz`.
-- **PROD:** `reservation_count = 0` → no historical backfill. Keep the single PROD Slot. Not rolled out to `main`/PROD.
-
 ## Critical invariants
 
 - Location: one blocking reservation per interval; Good: quantity vs `TotalQuantity`
@@ -72,8 +103,8 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Confirm/Complete/Cancel serialize on `ReservationLocks` `FOR UPDATE` **first** (load only after lock). Cancel then locks distinct `RentalAssetId`s ascending via `RentalAssetLocks` before `MarkAvailable`. Confirm and Complete lock the reservation only and do not free slots
 - Confirm is not terminal: `PendingDeposit → Confirmed` (idempotent 200 on Confirmed); `Canceled`/`Completed` → 409. Sequential Confirm then Cancel both succeed
 - Complete is staff-only: `Confirmed → Completed`; `Completed` is idempotent 200; `PendingDeposit`/`Canceled` → 409. Does not free slots.
-- Customer JWT cannot Complete (no B2C Complete UI; no B2C cancel in Wave 1)
-- **Complete × Cancel (human):** `Confirmed` is the source. Competing terminals, no priority. Exactly one succeeds. Serialized.
+- Customer JWT cannot Complete. Customer can self-cancel own eligible reservation (`POST /api/reservations/mine/{id}/cancel`) when status is `PendingDeposit`/`Confirmed` and `UtcNow < StartDateTime`. Non-owner → 404 `"Reservation not found."`. Staff Cancel has no cutoff.
+- **Complete × Cancel (human):** `Confirmed` is the source. Competing terminals, no priority. Exactly one succeeds. Serialized. Customer Cancel uses the same occupancy-release tail as staff Cancel.
 - **Confirm × Cancel:** shared source `PendingDeposit`. Confirm is not terminal. Legal: Confirm→Cancel both succeed, final `Canceled` + occupancy released. Legal: Cancel→Confirm, Confirm 409, stays `Canceled`. Invalid: stale Confirm overwrites `Canceled` after occupancy release (`Confirmed` + slot `Available`).
 
 ## Current contracts
@@ -82,8 +113,9 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Book persisted slot: `POST /api/schedule/slots/book` (`slotId`)
 - Book derived window: `POST /api/reservations` (date + start/end + items)
 - Customer list: `GET /api/reservations/mine` (Customer JWT)
+- Customer self-cancel: `POST /api/reservations/mine/{id}/cancel` (Customer JWT; cutoff before start; 404 if not owner)
 - Queue (Customer): `GET/POST /api/rental-assets/{id}/queue`, `POST .../queue/join`, `POST .../queue/leave`
-- Registry without Ativos (Wave 2): `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families` (`rentals.assets.*`)
+- Registry without Ativos: `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families` (`rentals.assets.*`)
 - Admin day/exceptions: `GET /api/schedule/days/{date}`, `POST /api/schedule/slots/daily-occurrence`
 - Admin list: `GET /api/reservations`
 - Admin confirm: `POST /api/reservations/{id}/confirm` — permission `rentals.reservations.confirm`; `ReservationLocks` then status decision
@@ -106,13 +138,16 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
 
-**Phase B T1** is implemented on `fix/rentals-timezone-t1` (not PROD). PROD classify remains **`EMPTY`** (`reservation_count = 0`, `slot_count = 1`). No Reservation backfill. Do not delete the PROD Slot. No schema migration.
+**Non-blocking follow-ups** (not blockers; not authorized by Wave 1 closeout):
 
-**DEV permission seed:** `20260906034111_AddRentalsReservationsCompletePermission` applied on development (`PENDING_COUNT=0`, `rentals.reservations.complete` exists once). Not applied on PROD.
+- ListAdmin D+1 absence test
+- Dedicated OpenHours wrap-guard regression
+- WEB today-boundary
+- Latent `AtLocal` DST midnight
+- Concurrent Confirm × Confirm coverage
+- Tenant predicate on raw lock SQL
 
-**Complete × Cancel:** serialized exclusive-winner on `Confirmed`.
-
-**Confirm × Cancel:** `ConfirmAsync` uses the same reservation `FOR UPDATE` (lock then load). Dual success is legal only as Confirm→Cancel. Occupancy split (`Confirmed` + slot `Available`) is invalid.
+**Next product work is not automatically authorized.** Remaining roadmap items (notifications, deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started. B2C self-cancel is **CLOSED_DEV** (not PROD).
 
 ## Do not assume
 
@@ -126,6 +161,8 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Booking clocks are browser-local (WEB formats Reservation instants in `America/Sao_Paulo`)
 - Reservation JSON includes civil `date`/`startTime`/`endTime` in this phase (it does not; UTC instant only)
 - Complete reuses `rentals.reservations.confirm`
-- Customer portal can Complete or Cancel in Wave 1
+- Customer portal can Complete (forbidden). Wave 1 had no B2C cancel; Customer self-cancel is `POST /api/reservations/mine/{id}/cancel` only (not staff `POST /{id}/cancel`)
 - Complete and Cancel may both return success on the same Confirmed reservation (forbidden; now serialized)
 - Stale Confirm may overwrite `Canceled` after occupancy release (forbidden; Confirm now lock-then-load)
+- Wave 1 is still DEV-only / blocked for PROD / waiting on timestamp classification or a pending migration
+- This closeout starts Wave 2, Layout, or timezone follow-up implementation

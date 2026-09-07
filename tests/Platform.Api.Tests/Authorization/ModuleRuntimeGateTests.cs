@@ -123,6 +123,41 @@ public sealed class ModuleRuntimeGateTests
     }
 
     [Fact]
+    public async Task B2C_rentals_cancel_mine_active_returns_200()
+    {
+        using var host = await StartHostAsync(tenantAModules: [PlatformModules.Rentals]);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+        var response = await PostCustomerAsync(
+            host,
+            $"/api/reservations/mine/{Guid.NewGuid()}/cancel",
+            seed.CustomerAId);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task B2C_rentals_cancel_mine_inactive_returns_module_403()
+    {
+        using var host = await StartHostAsync(tenantAModules: []);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+        await AssertModuleInactiveAsync(
+            await PostCustomerAsync(
+                host,
+                $"/api/reservations/mine/{Guid.NewGuid()}/cancel",
+                seed.CustomerAId));
+    }
+
+    [Fact]
+    public async Task B2C_rentals_cancel_mine_unauthenticated_returns_401()
+    {
+        using var host = await StartHostAsync(tenantAModules: [PlatformModules.Rentals]);
+        var client = host.GetTestClient();
+        var response = await client.PostAsync(
+            $"/api/reservations/mine/{Guid.NewGuid()}/cancel",
+            content: null);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task B2B_complete_module_off_returns_module_403()
     {
         using var host = await StartHostAsync(
@@ -1072,6 +1107,12 @@ public sealed class ModuleRuntimeGateTests
             Guid reservationId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<ReservationResponseDto> CancelByCustomerAsync(
+            Guid customerId,
+            Guid reservationId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(EmptyReservation);
 
         private static readonly ReservationResponseDto EmptyReservation = new(
             Guid.Empty,

@@ -36,4 +36,9 @@ public interface IReservationService
     Task<ReservationResponseDto> CancelAsync(
         Guid reservationId,
         CancellationToken cancellationToken);
+
+    Task<ReservationResponseDto> CancelByCustomerAsync(
+        Guid customerId,
+        Guid reservationId,
+        CancellationToken cancellationToken);
 }
