@@ -169,32 +169,46 @@ public sealed class NotificationOutboxProcessor(
             delivery.MarkSent(providerMessageId: null);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            var outcome = IsTransient(ex)
-                ? NotificationAttemptOutcome.TransientFailure
-                : NotificationAttemptOutcome.PermanentFailure;
-            attempt.Finish(outcome, providerResponse: Truncate(ex.Message, 200), ex.Message);
-
-            if (outcome == NotificationAttemptOutcome.PermanentFailure || attemptNumber >= MaxAttempts)
-            {
-                delivery.MarkFailed(ex.Message);
-            }
-            else
-            {
-                var delay = RetryDelays[Math.Min(attemptNumber - 1, RetryDelays.Length - 1)];
-                delivery.MarkQueuedForRetry(DateTimeOffset.UtcNow.Add(delay));
-            }
-
-            logger.LogWarning(
-                ex,
-                "Notification delivery {DeliveryId} attempt {Attempt} failed ({Outcome}).",
-                delivery.Id,
-                attemptNumber,
-                outcome);
-
+            FinishFailedAttempt(delivery, attempt, attemptNumber, ex, isTransient: true);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            FinishFailedAttempt(delivery, attempt, attemptNumber, ex, IsTransient(ex));
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private void FinishFailedAttempt(
+        NotificationDelivery delivery,
+        NotificationDeliveryAttempt attempt,
+        int attemptNumber,
+        Exception ex,
+        bool isTransient)
+    {
+        var outcome = isTransient
+            ? NotificationAttemptOutcome.TransientFailure
+            : NotificationAttemptOutcome.PermanentFailure;
+        attempt.Finish(outcome, providerResponse: Truncate(ex.Message, 200), ex.Message);
+
+        if (outcome == NotificationAttemptOutcome.PermanentFailure || attemptNumber >= MaxAttempts)
+        {
+            delivery.MarkFailed(ex.Message);
+        }
+        else
+        {
+            var delay = RetryDelays[Math.Min(attemptNumber - 1, RetryDelays.Length - 1)];
+            delivery.MarkQueuedForRetry(DateTimeOffset.UtcNow.Add(delay));
+        }
+
+        logger.LogWarning(
+            ex,
+            "Notification delivery {DeliveryId} attempt {Attempt} failed ({Outcome}).",
+            delivery.Id,
+            attemptNumber,
+            outcome);
     }
 
     private static bool IsTransient(Exception ex) =>

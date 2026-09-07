@@ -189,19 +189,7 @@ public sealed class RentalsNotificationPublisher(
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        if (names.Count > 0)
-        {
-            return string.Join(" + ", names);
-        }
-
-        var tags = reservation.Items
-            .Select(item => item.RentalAsset?.Asset?.Tag)
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
-            .Select(tag => tag!)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        return tags.Count > 0 ? string.Join(" + ", tags) : "reserva";
+        return names.Count > 0 ? string.Join(" + ", names) : "reserva";
     }
 
     private async Task EnsureTenantChannelDefaultsAsync(Guid tenantId, CancellationToken cancellationToken)

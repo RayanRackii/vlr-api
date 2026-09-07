@@ -109,6 +109,11 @@ public sealed class RentalsWhatsAppNotificationTests
         await ProcessQueuedAsync(ctx);
 
         AssertStatusSend(ctx, "Concluída", reservation.CustomerWhatsApp);
+
+        ctx.WhatsApp.Reset();
+        await ctx.Reservations.CompleteAsync(reservation.Id, CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+        Assert.Equal(0, ctx.WhatsApp.SendCount);
     }
 
     [Fact]
@@ -200,6 +205,25 @@ public sealed class RentalsWhatsAppNotificationTests
             ctx.WhatsApp.LastParameters[3]);
         Assert.Equal("01/09/2026 10:00", ctx.WhatsApp.LastParameters[3]);
         Assert.Equal(0, ctx.WhatsApp.FreeTextCount);
+    }
+
+    [Fact]
+    public async Task Reservation_reference_does_not_use_asset_tag()
+    {
+        await using var ctx = await CreateContextAsync(requiresDeposit: false);
+        await EnableWhatsAppAsync(ctx, RentalEventTypes.ReservationConfirmed);
+        var asset = await ctx.Harness.Db.Assets.FirstAsync(a => a.Id == ctx.Harness.AssetId);
+        asset.Name = " ";
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        await ctx.Reservations.CreateReservationAsync(
+            ctx.Harness.CustomerId,
+            CreateRequest(ctx.Harness),
+            CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal("reserva", ctx.WhatsApp.LastParameters[2]);
+        Assert.NotEqual("Q1", ctx.WhatsApp.LastParameters[2]);
     }
 
     [Fact]

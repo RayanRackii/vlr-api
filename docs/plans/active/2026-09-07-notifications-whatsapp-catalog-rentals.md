@@ -66,7 +66,7 @@ Rentals: PendingDeposit=Aguardando depósito, Confirmed=Confirmada, Canceled=Can
 
 ### reservationReference
 
-No booking code exists. Use customer-visible `Asset.Name` of reservation items, joined with ` + ` when multiple. Do not send a GUID. Do not add a DB identifier.
+No booking code exists. Use customer-visible `Asset.Name` of reservation items, joined with ` + ` when multiple. Do not send a GUID, `Asset.Tag`, or a new DB identifier. If names are missing (unloaded graph), the last-resort copy is the Portuguese word `reserva` — not an identifier.
 
 ### reservationDateTime
 

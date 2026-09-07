@@ -24,6 +24,11 @@ public static class WhatsAppParameterBinder
             return ["tenantName", "customerName", "reservationReference", "reservationStatus"];
         }
 
-        return ["tenantName", "customerName", "orderNumber", "orderStatus"];
+        if (eventType.StartsWith("catalog.", StringComparison.Ordinal))
+        {
+            return ["tenantName", "customerName", "orderNumber", "orderStatus"];
+        }
+
+        throw new InvalidOperationException($"No WhatsApp parameter map for '{eventType}'.");
     }
 }
