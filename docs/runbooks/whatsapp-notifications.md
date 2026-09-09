@@ -47,7 +47,9 @@ Twilio **PROD** Verify Service → Friendly Name → `Rolvix`. Also confirm the 
 
 ## Human — Meta reminder body
 
-Re-submit `rental_reservation_reminder` (`pt_BR`):
+Human confirmed 2026-09-09: `rental_reservation_reminder` (`pt_BR`) is **ACTIVE/APPROVED**. Do not skip reminder live smoke.
+
+Approved body:
 
 ```
 Olá, {{2}}!
@@ -59,7 +61,9 @@ Acesse a plataforma para consultar os detalhes da reserva.
 
 Variables: 1 tenantName, 2 customerName, 3 reservationReference, 4 reservationDateTime.
 
-DEV live send of reminders cannot happen until Meta marks this template active.
+DEV live smoke 2026-09-09 (Human-owned E2E customer; reminder StartDateTime in the next 24h; expected civil clock `09/09/2026 16:00` America/Sao_Paulo): Catalog `catalog_order_status_update`, Rentals `rental_reservation_status_update`, and `rental_reservation_reminder` all reached Meta and Failed Graph **404 / 132001** (template name does not exist in the specified language, or is not approved on that WABA). Permanent; Attempt=1; reminder Hangfire did not duplicate. Tenant WhatsApp left **off**. PROD WhatsApp was not enabled.
+
+Next Human check (no app code change): on the WABA bound to DEV `WhatsApp__PhoneNumberId`, list templates and confirm exact names + `pt_BR` + APPROVED, then re-smoke.
 
 ## Human — reminder timing (locked)
 
