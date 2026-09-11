@@ -9,7 +9,7 @@ Você atua como Arquiteto de Software e Desenvolvedor Full-Stack Sênior. O sist
 A visão de Hub permanece. O primeiro cliente pagante é um **clube** que precisa (1) avisar clientes sobre o estado das quadras e (2) permitir **reserva de horários**. O módulo **Rentals** (`rentals`) é o foco do ciclo atual. Inventário, PMOC e OS já existem como espinha dorsal e continuam no cardápio; não expandir RH, Financeiro, Estoque etc. enquanto o beachhead não estiver operacional.
 
 **Ordem de etapas (ciclo atual):**
-1. **Notificações (Resend + WhatsApp Meta)** — e-mail Resend saudável. WhatsApp Catalog/Rentals + lembrete 24h mapeados no código; entrega externa **desligada em PROD**. SMS de branding = Twilio Console (`Rolvix`). Não bloquear o beachhead de slots por ops Meta.
+1. **Notificações (Resend + WhatsApp Meta)** — e-mail Resend saudável. WhatsApp Catalog/Rentals + lembrete 24h **CLOSED_DEV**; entrega externa **desligada em PROD**. SMS de branding = Twilio Console (`Rolvix`). Não bloquear o beachhead de slots por ops Meta.
 2. **Portal B2C do tenant (login + cadastro branded)** — shell e login e-mail+senha já em código; fechar deploy/DNS e SMS real quando a Fase 1.5 voltar. Ver seção **Portal B2C do Tenant**.
 3. **Agenda Rentals por Slot** (admin templates/kinds + B2C book por `slotId`) — próximo salto de produto após o portal estável. Ver `ROADMAP.md` §2.6 e `docs/adr/0001-rentals-slot-schedule.md`.
 4. Demais itens de Rentals / convite / gating — conforme `ROADMAP.md`.
@@ -283,7 +283,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
   - Catálogo de módulos comerciais por tenant (persistido; gating de API/UI pendente). Asset Registry é capability, não linha de `tenant_modules`.
   - Subdomain + branding (`LogoSvg`, cores, tagline) no cadastro do tenant; portal UI em uso.
 
-- **Fase 1.5: Notificações reais (Resend + WhatsApp)** — e-mail OK; WhatsApp operacional em código (outbox + templates aprovados), **PROD externo ainda desligado**.
+- **Fase 1.5: Notificações reais (Resend + WhatsApp)** — e-mail OK; WhatsApp operacional **CLOSED_DEV** (outbox + templates aprovados + smoke Sent), **PROD externo ainda desligado**.
   - Catalog: um template `catalog_order_status_update`. Rentals: `rental_reservation_status_update` + `rental_reservation_reminder`.
   - Lembrete: uma ocorrência em `StartDateTime - 24h` (Hangfire `rentals-reservation-reminder`); sem lead time por tenant.
   - Ops: runbook [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-notifications.md).

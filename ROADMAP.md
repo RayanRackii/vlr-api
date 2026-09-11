@@ -92,7 +92,7 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 - [x] UI portal `/app/perfil` + menu da conta (repo `vlr-web`, mesma branch)
 - FOLLOW_UP (fora deste MVP): alteração de e-mail com verificação; telefone com SMS; CPF; senha B2C (troca/recuperação); CEP/endereço; ExtraAttributes. Upload de foto **não** aberto — o fluxo de cadastro (`fileToCompressedDataUrl`) foi reutilizado.
 
-## 3. Notificações reais (Resend + WhatsApp) — EMAIL OK; WHATSAPP MAPPING CLOSED_DEV
+## 3. Notificações reais (Resend + WhatsApp) — EMAIL OK; WHATSAPP CLOSED_DEV
 
 Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-notifications.md). Spec: [`docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`](./docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md).
 
@@ -107,7 +107,7 @@ Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-no
 - [x] Unified tenant notification settings API: `GET/PUT /api/notifications/channel-configs` (`core.notifications.read` / `core.notifications.write`). Catalog wrappers stay. No Rentals-only API. SMS never exposed. Migration `AddCoreNotificationPermissions`.
 - [x] **Human:** `rental_reservation_reminder` re-submitted and marked ACTIVE/APPROVED in Meta (2026-09-09). Timing stays `RENTALS_REMINDER_LEAD_TIME = 24_HOURS`.
 - [ ] **Human:** Twilio Verify PROD Friendly Name → `Rolvix` (não `ROLVIX PROD`).
-- [ ] **Ops DEV:** live smoke 2026-09-09 reached Meta (not DevWhatsApp). Catalog created, Rentals confirmed, and reminder all Failed with Graph **404 / 132001** (template name/language not found on the DEV WABA/phone). Outbox Queued→Failed, Attempt=1, no retry; reminder Hangfire published once and did not resend. Tenant WhatsApp toggles restored **off**. Re-smoke after Human confirms the three `pt_BR` templates exist on the same WABA as DEV `WhatsApp__PhoneNumberId`. Não usar `AllowExternalDelivery=true`.
+- [x] **Ops DEV:** live smoke 2026-09-11 **CLOSED_DEV** (not PROD). Human-owned E2E customer. Catalog `catalog.order.created`, Rentals `rentals.reservation.confirmed`, reminder `rentals.reservation.reminder` all Queued → **Sent**, Attempt=1, no error. Reminder start `2026-09-11T14:00:00+00:00` → civil `11/09/2026 11:00` America/Sao_Paulo; Hangfire published once and did not resend. Tenant WhatsApp restored **off**. 2026-09-09 attempt had failed **132001**. Não usar `AllowExternalDelivery=true`.
 - [ ] **Ops PROD:** WhatsApp permanece **desligado**. Antes de qualquer enablement: SELECT de `core.notification_deliveries` WhatsApp (Queued/Failed/Sent). `Queued` > 0 = blast vector.
 - [ ] **Ops (humano):** no Railway **production**, setar `Notifications__AllowExternalEmail=true` + Resend + `App__FrontendBaseUrl`. Storage reuses existing `Supabase__Url` / `Supabase__ServiceRoleKey` (do not duplicate `Storage__*` secrets). Código LogError se Dev permanecer; processo sobe.
 - [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
@@ -281,3 +281,4 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 | 2026-09-05 | **PROD:** Human Gate approved. Squash `develop` → `main` API PR #51 SHA `48ad32a1e2ac3c71ec7df59a895ef1eecae55140`. Railway production SUCCESS. `/health` 200. WEB PR #48 SHA `37a5266381ad5061cfda0299acb2c84a2726b050`. DEV E2E_CERTIFIED (51 tests, 32/32). Migrations/backfill/permission/config **NONE**. Rollback baselines: API `575adb205c8eff856d67c79d31d4bbc75a9eeed6`, WEB `4b048c4f0e4f4a54efc5dca74404627699b9259d`. |
 | 2026-09-05 | **Executado (API):** reserved tenant subdomains — frozen set in Domain; Admin create/rename 400 with `This subdomain is reserved and cannot be used.`; trial allocator skips reserved candidates; existing rows grandfathered. DNS/wildcard unchanged. Branch `feat/reserved-tenant-subdomains`. |
 | 2026-09-09 | **Ops DEV:** Human confirmed Meta template `rental_reservation_reminder` ACTIVE. Reminder live smoke no longer skipped. Pipeline hit Meta; Catalog/Rentals/reminder Failed **132001**. No runtime code change. PROD WhatsApp still off. |
+| 2026-09-11 | **Ops DEV:** WhatsApp live smoke **CLOSED_DEV**. Catalog created, Rentals confirmed, reminder 24h all Sent. Reminder civil clock `11/09/2026 11:00`. Second Hangfire sweep did not resend. Toggles off. PROD WhatsApp still off. |
