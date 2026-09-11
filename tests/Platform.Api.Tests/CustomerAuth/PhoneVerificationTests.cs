@@ -1,14 +1,20 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
+using Platform.Api.Tests.Fakes;
+using Platform.Core.Domain.Entities;
 
 namespace Platform.Api.Tests.CustomerAuth;
 
 public sealed class PhoneVerificationTests
 {
+    private const string EmailNotVerifiedMessage =
+        "Email is not verified. Complete email verification first.";
+
     [Fact]
     public async Task RequestOtp_phone_contact_starts_on_that_phone_and_does_not_overwrite_name()
     {
@@ -51,7 +57,7 @@ public sealed class PhoneVerificationTests
     }
 
     [Fact]
-    public async Task VerifyOtp_approved_marks_phone_verified_and_returns_jwt()
+    public async Task VerifyOtp_phone_only_pending_marks_phone_and_does_not_issue_jwt()
     {
         await using var harness = await CustomerAuthHarness.CreateAsync();
         var phone = "+5511955555555";
@@ -59,17 +65,129 @@ public sealed class PhoneVerificationTests
             new RequestOtpDto { Name = "OTP User", Contact = phone },
             CancellationToken.None);
 
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => harness.Auth.VerifyOtpAsync(
+                new VerifyOtpDto { Contact = phone, Code = "123456" },
+                CancellationToken.None));
+
+        Assert.Equal(EmailNotVerifiedMessage, ex.Message);
+        var customer = await harness.Db.Customers.SingleAsync(c => c.Phone == phone);
+        Assert.NotNull(customer.PhoneVerifiedAt);
+        Assert.Null(customer.EmailVerifiedAt);
+        Assert.Null(customer.Email);
+        Assert.Empty(harness.Db.OtpCodes);
+        Assert.Single(harness.Phone.StartedPhones);
+    }
+
+    [Fact]
+    public async Task VerifyOtp_register_pending_marks_phone_login_still_unauthorized()
+    {
+        await using var harness = await CustomerAuthHarness.CreateAsync();
+        var email = "pending-otp@club.test";
+        var phone = "+5511944442222";
+        var password = "secret123";
+        await harness.Auth.RegisterAsync(
+            CustomerAuthHarness.NewRegister(email: email, phone: phone, password: password),
+            CancellationToken.None);
+        harness.Phone.StartedPhones.Clear();
+
+        await harness.Auth.RequestOtpAsync(
+            new RequestOtpDto { Name = "Cliente Teste", Contact = phone },
+            CancellationToken.None);
+
+        var verifyEx = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => harness.Auth.VerifyOtpAsync(
+                new VerifyOtpDto { Contact = phone, Code = "123456" },
+                CancellationToken.None));
+
+        Assert.Equal(EmailNotVerifiedMessage, verifyEx.Message);
+        var customer = await harness.Db.Customers.SingleAsync(c => c.Email == email);
+        Assert.NotNull(customer.PhoneVerifiedAt);
+        Assert.Null(customer.EmailVerifiedAt);
+
+        var loginEx = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => harness.Auth.LoginAsync(
+                new CustomerLoginRequestDto { Email = email, Password = password },
+                CancellationToken.None));
+        Assert.Equal(EmailNotVerifiedMessage, loginEx.Message);
+    }
+
+    [Fact]
+    public async Task VerifyOtp_after_email_verified_returns_jwt_and_marks_phone()
+    {
+        await using var harness = await CustomerAuthHarness.CreateAsync();
+        var email = "verified-otp@club.test";
+        var phone = "+5511933330000";
+        var password = "secret123";
+        await harness.Auth.RegisterAsync(
+            CustomerAuthHarness.NewRegister(email: email, phone: phone, password: password),
+            CancellationToken.None);
+        var code = FakeEmailProvider.ExtractSixDigitCode(harness.Email.Sent[0].Body);
+        await harness.Auth.VerifyEmailAsync(
+            new VerifyEmailRequestDto { Email = email, Code = code },
+            CancellationToken.None);
+
+        var login = await harness.Auth.LoginAsync(
+            new CustomerLoginRequestDto { Email = email, Password = password },
+            CancellationToken.None);
+        Assert.Equal("test-token", login.Token);
+        Assert.True(login.Customer.EmailVerified);
+        Assert.False(login.Customer.PhoneVerified);
+
+        await harness.Auth.RequestOtpAsync(
+            new RequestOtpDto { Name = "Cliente Teste", Contact = phone },
+            CancellationToken.None);
         var auth = await harness.Auth.VerifyOtpAsync(
             new VerifyOtpDto { Contact = phone, Code = "123456" },
             CancellationToken.None);
 
         Assert.Equal("test-token", auth.Token);
+        Assert.True(auth.Customer.EmailVerified);
         Assert.True(auth.Customer.PhoneVerified);
-        var customer = await harness.Db.Customers.SingleAsync(c => c.Phone == phone);
+        var customer = await harness.Db.Customers.SingleAsync(c => c.Email == email);
+        Assert.NotNull(customer.EmailVerifiedAt);
         Assert.NotNull(customer.PhoneVerifiedAt);
-        Assert.Null(customer.EmailVerifiedAt);
-        Assert.Empty(harness.Db.OtpCodes);
-        Assert.Single(harness.Phone.StartedPhones);
+    }
+
+    [Fact]
+    public async Task VerifyOtp_grandfathered_email_verified_returns_jwt()
+    {
+        await using var harness = await CustomerAuthHarness.CreateAsync();
+        var at = DateTimeOffset.Parse("2026-08-01T12:00:00Z");
+        var phone = "+5511911110002";
+        var customer = new Customer
+        {
+            TenantId = harness.Tenant.Id,
+            Name = "Sócio Grandfathered",
+            Email = "legacy-otp@club.test",
+            Phone = phone,
+            EmailVerifiedAt = at,
+        };
+        var hasher = new PasswordHasher<Customer>();
+        customer.PasswordHash = hasher.HashPassword(customer, "secret123");
+        harness.Db.Customers.Add(customer);
+        await harness.Db.SaveChangesAsync();
+
+        var login = await harness.Auth.LoginAsync(
+            new CustomerLoginRequestDto { Email = "legacy-otp@club.test", Password = "secret123" },
+            CancellationToken.None);
+        Assert.Equal("test-token", login.Token);
+        Assert.True(login.Customer.EmailVerified);
+        Assert.False(login.Customer.PhoneVerified);
+
+        await harness.Auth.RequestOtpAsync(
+            new RequestOtpDto { Name = "Sócio Grandfathered", Contact = phone },
+            CancellationToken.None);
+        var auth = await harness.Auth.VerifyOtpAsync(
+            new VerifyOtpDto { Contact = phone, Code = "123456" },
+            CancellationToken.None);
+
+        Assert.Equal("test-token", auth.Token);
+        Assert.True(auth.Customer.EmailVerified);
+        Assert.True(auth.Customer.PhoneVerified);
+        var stored = await harness.Db.Customers.SingleAsync(c => c.Phone == phone);
+        Assert.NotNull(stored.EmailVerifiedAt);
+        Assert.NotNull(stored.PhoneVerifiedAt);
     }
 
     [Fact]
