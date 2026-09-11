@@ -8,7 +8,7 @@ MR = Pull Request.
 
 Ordem de tentativa:
 
-1. **GitHub CLI `gh`** — create, review, merge (`gh pr merge --squash --delete-branch` quando o cleanup for seguro).
+1. **GitHub CLI `gh`** — create, review, merge. Feature → `develop`: `gh pr merge --squash`. Release `develop` → `main` (só com Human Gate): `gh pr merge --merge`. Nunca squash de release.
 2. **GitLens / GitKraken MCP** (`user-eamodio.gitlens-extension-GitKraken`) — neste workspace: `pull_request_create`, `pull_request_create_review` (`approve: true` quando o gate interno passou). **Não há ferramenta de merge** neste MCP.
 3. Sem integração autenticada → `PR_AUTOMATION_UNAVAILABLE` + compare URL + título + body. Continuar review/Merge Risk Gate.
 
@@ -55,7 +55,9 @@ O Merge Risk Gate continua como aprovação técnica interna. Não contornar bra
 
 Somente depois dos gates de `AGENTS.md`. Nunca `main`.
 
-Preferir squash (padrão deste runbook se o GitHub do repo não definir outro):
+Feature / fix / refactor / test / chore → `develop`: **Squash and merge**.
+
+Exceção: PR de restauração de ancestrais (`merge origin/main` na feature) → `develop` usa **Create a merge commit** (`gh pr merge --merge`). Squash apagaria o parent `main`.
 
 ```powershell
 gh pr merge --squash
@@ -63,7 +65,19 @@ gh pr merge --squash
 
 Sem `--admin` para furar proteção. Sem force push. Sem rebase de `develop`.
 
-## Pós-merge (squash-aware)
+## Release `develop` → `main`
+
+Somente com `PRODUCTION_HUMAN_APPROVAL_REQUIRED`. **Create a merge commit** — nunca squash, nunca rebase-and-merge.
+
+```powershell
+gh pr merge --merge
+git fetch origin --prune
+git merge-base --is-ancestor <released-develop-sha> origin/main
+```
+
+Exit 0 esperado. Não abrir reconciliação rotineira `main` → `develop` depois disto. Back-merge só se `main` tiver hotfix ausente em `develop`.
+
+## Pós-merge em develop (squash-aware)
 
 ```powershell
 git fetch origin --prune

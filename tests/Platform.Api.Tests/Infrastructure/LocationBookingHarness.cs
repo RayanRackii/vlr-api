@@ -22,7 +22,8 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
         Guid unitId,
         Guid customerId,
         Guid assetId,
-        Guid rentalAssetId)
+        Guid rentalAssetId,
+        string databaseName)
     {
         Db = db;
         TenantProvider = tenantProvider;
@@ -31,6 +32,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
         CustomerId = customerId;
         AssetId = assetId;
         RentalAssetId = rentalAssetId;
+        DatabaseName = databaseName;
     }
 
     public AppDbContext Db { get; }
@@ -47,14 +49,17 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
 
     public Guid RentalAssetId { get; }
 
+    public string DatabaseName { get; }
+
     public static DateTimeOffset RangeStart => BrazilTimeZone.AtLocal(Date, Start);
 
     public static DateTimeOffset RangeEnd => BrazilTimeZone.AtLocal(Date, End);
 
-    public static async Task<LocationBookingHarness> CreateAsync()
+    public static async Task<LocationBookingHarness> CreateAsync(string? databaseName = null)
     {
+        var name = databaseName ?? $"trial-{Guid.NewGuid():N}";
         var tenantProvider = new FakeTenantProvider();
-        var db = InMemoryAppDb.Create(tenantProvider);
+        var db = InMemoryAppDb.Create(tenantProvider, name);
 
         var tenant = new Tenant("Clube Reserva", "99999999000191", subdomain: "clube-reserva");
         var unit = new Unit(tenant.Id, "Matriz");
@@ -114,7 +119,8 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             unit.Id,
             customer.Id,
             asset.Id,
-            rental.Id);
+            rental.Id,
+            name);
     }
 
     public Reservation SeedOverlappingReservation(
@@ -223,10 +229,23 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
     }
 
     public ReservationService CreateReservationService() =>
-        new(Db, TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider));
+        new(
+            Db,
+            TenantProvider,
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(Db, TenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
     public ScheduleService CreateScheduleService() =>
-        new(Db, TenantProvider, new UnusedOccupancyKindService(), new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider));
+        new(
+            Db,
+            TenantProvider,
+            new UnusedOccupancyKindService(),
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(Db, TenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler);
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 

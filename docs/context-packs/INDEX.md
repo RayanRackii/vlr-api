@@ -8,13 +8,13 @@ Read this file to choose a pack. Do not load all packs.
 
 File: [`active/rentals.md`](./active/rentals.md)
 
-Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker), B2C self-cancel. Wave 1 **PROD_COMPLETE** (2026-09-06). B2C self-cancel **CLOSED_DEV** (2026-09-07, not PROD).
+Use for: Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout (rentals picker), B2C self-cancel. Wave 1 **PROD_COMPLETE** (2026-09-06). B2C self-cancel **CLOSED_DEV** (2026-09-07, not PROD). Rentals WhatsApp + 24h reminder **in code** (PROD external off). Tenant WhatsApp on/off: unified `PUT /api/notifications/channel-configs`.
 
 ### `catalog`
 
 File: [`active/catalog.md`](./active/catalog.md)
 
-Use for: CatalogProduct, CatalogOrder, ProductRequest, catalog files/storage, catalog notifications, B2C catalog/cart.
+Use for: CatalogProduct, CatalogOrder, ProductRequest, catalog files/storage, catalog notifications, B2C catalog/cart. Tenant channel config for Catalog+Rentals is `GET/PUT /api/notifications/channel-configs` (`core.notifications.*`); catalog wrappers remain for delivery history.
 
 ## Planned / on-demand
 

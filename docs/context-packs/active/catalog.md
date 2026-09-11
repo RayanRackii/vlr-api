@@ -5,7 +5,7 @@ Derived context — NOT canonical.
 - Scope: Catalog & Orders module (tenant-owned product catalog + customer requests)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/plans/active/2026-08-28-catalog-orders.md`; `docs/adr/0004-module-dependencies-asset-registry.md`
-- Last verified: 2026-09-04
+- Last verified: 2026-09-07
 
 ## Purpose
 
@@ -36,7 +36,7 @@ Tenant-wide catalog (no Unit). Price nullable = “Sob consulta”. Orders start
 
 Files: public bucket for customer-visible images; private bucket + signed URL for technical files. Keys `{tenantId}/{productId}/{fileId}`.
 
-Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queued). InApp committed with the order. External channels default off. `AllowExternalDelivery` unset = false. Per-channel `AllowExternalEmail` / `AllowExternalWhatsApp` override the global flag.
+Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queued). InApp committed with the order. External channels default off. `AllowExternalDelivery` unset = false. Per-channel `AllowExternalEmail` / `AllowExternalWhatsApp` override the global flag. Customer WhatsApp order-status events use **one** Meta template `catalog_order_status_update` (`pt_BR`, four body params, Portuguese status labels). Legacy per-state Meta names are reconciled on `EnsureReady`. Company-initiated WhatsApp has no free-text fallback. Tenant channel matrix for Catalog+Rentals is `GET/PUT /api/notifications/channel-configs` (`core.notifications.read` / `core.notifications.write`). Catalog `GET/PUT /api/catalog/notification-channels` remain wrappers; delivery history + resend stay on Catalog.
 
 ## Critical invariants
 
@@ -65,6 +65,7 @@ See spec HTTP tables: `/api/catalog/*` B2B; `/api/catalog/portal/*` B2C.
 - No real SMS provider (activating SMS is rejected)
 - ProductRequest conversion is follow-up
 - Remote migration not applied in the implementation PR
+- PROD `Notifications__AllowExternalWhatsApp` stays false until Human blast preflight
 
 ## Do not assume
 

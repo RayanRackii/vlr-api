@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using Platform.Api.Authorization;
+using Platform.Api.Notifications;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -89,7 +90,7 @@ public sealed class CatalogNotificationPublisher(
             ["tenantName"] = tenant?.TradeName is { Length: > 0 } trade ? trade : tenant?.LegalName,
             ["customerName"] = order.CustomerNameSnapshot,
             ["orderNumber"] = $"#{order.OrderNumber}",
-            ["orderStatus"] = order.Status.ToString(),
+            ["orderStatus"] = NotificationCustomerCopy.Label(order.Status),
             ["rejectionReason"] = order.RejectedReason,
             ["cancellationReason"] = order.CancelledReason,
         };
@@ -216,31 +217,10 @@ public sealed class CatalogNotificationPublisher(
 
     private async Task EnsurePlatformTemplatesAsync(CancellationToken cancellationToken)
     {
-        var existing = await dbContext.NotificationTemplates
-            .AsNoTracking()
-            .Select(t => new { t.EventType, t.Channel, t.Language })
-            .ToListAsync(cancellationToken);
-
-        var existingSet = existing
-            .Select(t => $"{t.EventType}|{t.Channel}|{t.Language}")
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var local in dbContext.NotificationTemplates.Local)
-        {
-            existingSet.Add($"{local.EventType}|{local.Channel}|{local.Language}");
-        }
-
-        foreach (var seed in CatalogNotificationTemplates.Seeds)
-        {
-            var key = $"{seed.EventType}|{seed.Channel}|pt-BR";
-            if (existingSet.Contains(key))
-            {
-                continue;
-            }
-
-            dbContext.NotificationTemplates.Add(seed.ToEntity());
-            existingSet.Add(key);
-        }
+        await NotificationTemplateReconciler.ReconcileAsync(
+            dbContext,
+            CatalogNotificationTemplates.Seeds.Select(seed => seed.ToEntity()),
+            cancellationToken);
     }
 
     private async Task EnsureTenantChannelDefaultsAsync(Guid tenantId, CancellationToken cancellationToken)
@@ -290,8 +270,10 @@ public sealed class CatalogNotificationPublisher(
     private async Task SaveSeedIgnoringUniqueAsync(CancellationToken cancellationToken)
     {
         if (!dbContext.ChangeTracker.Entries().Any(entry =>
-                entry.State == EntityState.Added
-                && (entry.Entity is NotificationTemplate or TenantNotificationChannelConfig)))
+                (entry.State == EntityState.Added
+                 && (entry.Entity is NotificationTemplate or TenantNotificationChannelConfig))
+                || (entry.State == EntityState.Modified
+                    && entry.Entity is NotificationTemplate)))
         {
             return;
         }
@@ -353,18 +335,18 @@ internal static class CatalogNotificationTemplates
     [
         new(CatalogEventTypes.OrderCreated, NotificationChannel.InApp, "Pedido {{orderNumber}} recebido."),
         new(CatalogEventTypes.OrderCreated, NotificationChannel.Email, "Olá {{customerName}}, recebemos o pedido {{orderNumber}}.", "Pedido {{orderNumber}}"),
-        new(CatalogEventTypes.OrderCreated, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recebido.", WhatsAppTemplateName: "catalog_order_created"),
+        new(CatalogEventTypes.OrderCreated, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recebido.", WhatsAppTemplateName: "catalog_order_status_update"),
         new(CatalogEventTypes.OrderApproved, NotificationChannel.InApp, "Pedido {{orderNumber}} aprovado."),
         new(CatalogEventTypes.OrderApproved, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi aprovado.", "Pedido {{orderNumber}} aprovado"),
-        new(CatalogEventTypes.OrderApproved, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} aprovado.", WhatsAppTemplateName: "catalog_order_approved"),
+        new(CatalogEventTypes.OrderApproved, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} aprovado.", WhatsAppTemplateName: "catalog_order_status_update"),
         new(CatalogEventTypes.OrderReady, NotificationChannel.InApp, "Pedido {{orderNumber}} está pronto."),
         new(CatalogEventTypes.OrderReady, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} está pronto.", "Pedido {{orderNumber}} pronto"),
-        new(CatalogEventTypes.OrderReady, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} está pronto.", WhatsAppTemplateName: "catalog_order_ready"),
+        new(CatalogEventTypes.OrderReady, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} está pronto.", WhatsAppTemplateName: "catalog_order_status_update"),
         new(CatalogEventTypes.OrderRejected, NotificationChannel.InApp, "Pedido {{orderNumber}} recusado: {{rejectionReason}}"),
         new(CatalogEventTypes.OrderRejected, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi recusado. Motivo: {{rejectionReason}}", "Pedido {{orderNumber}} recusado"),
-        new(CatalogEventTypes.OrderRejected, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recusado: {{rejectionReason}}", WhatsAppTemplateName: "catalog_order_rejected"),
+        new(CatalogEventTypes.OrderRejected, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recusado: {{rejectionReason}}", WhatsAppTemplateName: "catalog_order_status_update"),
         new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.InApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}"),
         new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi cancelado. Motivo: {{cancellationReason}}", "Pedido {{orderNumber}} cancelado"),
-        new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}", WhatsAppTemplateName: "catalog_order_cancelled"),
+        new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}", WhatsAppTemplateName: "catalog_order_status_update"),
     ];
 }

@@ -38,7 +38,24 @@ Uma implementação = uma branch própria + N commits + uma review.
 
 **Branches:** `feat/<slug>`, `fix/<slug>`, `refactor/<slug>`, `test/<slug>`, `chore/<slug>`. Mudança cross-repo usa o **mesmo nome** em `vlr-api` e `vlr-web`.
 
-`main` permanece PROD-ready. `develop` permanece integration/DEV. Implementação só em `feat` / `fix` / `refactor` / `test` / `chore`.
+`main` permanece PROD-ready. `develop` permanece integration/DEV. Implementação só em `feat` / `fix` / `refactor` / `test` / `chore`. Commits diretos em `main` são proibidos.
+
+### Merge methods
+
+| PR | Método |
+|---|---|
+| `feat` / `fix` / `refactor` / `test` / `chore` → `develop` | **Squash and merge** |
+| Production release `develop` → `main` | **Create a merge commit** |
+
+Nunca squash nem rebase-and-merge de um PR `develop` → `main`. Squash de release destrói ancestrais: o Git deixa de reconhecer que os commits de `develop` já foram para `main`, e o próximo release reporta conflitos falsos (ex.: `ReservationService.cs`, `ROADMAP.md`, context packs) mesmo com trees equivalentes.
+
+Depois de um release merge, verificar:
+
+```bash
+git merge-base --is-ancestor <released-develop-sha> origin/main
+```
+
+Exit 0 esperado. **Não** abrir reconciliação rotineira `main` → `develop` depois de um merge-commit de release. Back-merge `main` → `develop` **somente** se `main` tiver hotfix de emergência que ainda não está em `develop`. Um PR cujo único objetivo é restaurar ancestrais (`merge origin/main` em branch a partir de `develop`) também entra em `develop` com **Create a merge commit** — squash apagaria o parent `main`.
 
 O usuário trabalha nos mesmos repos a partir de mais de um computador. Nenhum agente pode assumir que a branch local, os refs `origin/*` locais, os commits locais ou a working tree representam o estado remoto atual.
 
@@ -160,7 +177,7 @@ Se não estiver seguro continuar noutro PC, dizer o motivo explicitamente.
 
 O parent/orchestrator é dono do **ciclo técnico completo**. O usuário não precisa pedir separadamente: criar branch, commit, push, abrir PR, review, aprovar ou merge. Isso faz parte do fluxo padrão. “MR” em docs/prompts = Pull Request do GitHub.
 
-Detalhe operacional (ferramentas GitHub, squash-aware, cleanup): [`docs/runbooks/autonomous-delivery.md`](./docs/runbooks/autonomous-delivery.md).
+Detalhe operacional (ferramentas GitHub, merge methods, cleanup): [`docs/runbooks/autonomous-delivery.md`](./docs/runbooks/autonomous-delivery.md).
 
 ### Lifecycle por task independente
 
@@ -180,7 +197,7 @@ Detalhe operacional (ferramentas GitHub, squash-aware, cleanup): [`docs/runbooks
 14. Registrar/aplicar aprovação (`AI_APPROVED`) se a plataforma permitir.
 15. Mergear em `develop` **somente** se todos os gates passarem.
 16. `git fetch origin --prune` + `git switch develop` + `git pull --ff-only origin develop`.
-17. Verificar o estado integrado (squash-aware: tree/diff, não só ancestry do commit original).
+17. Verificar o estado integrado: feature → `develop` é squash-aware (tree/diff, não o SHA original da feature); release `develop` → `main` é ancestry (`git merge-base --is-ancestor <released-develop-sha> origin/main`).
 18. Remover branch remota/local **só** se o merge estiver confirmado e a tree limpa.
 19. Checkpoint / handoff.
 20. Próxima task da fila.
@@ -243,9 +260,9 @@ Detectar `gh`, GitHub MCP/plugin ou integração autorizada. Abrir PR automatica
 
 `AI_APPROVED` somente se: Critical/High = 0; nenhum Medium blocking; veredito Fable/GLM permite merge (`SAFE_TO_MERGE` ou `SAFE_WITH_FOLLOWUP`); testes exigidos passaram; Human Decision Gates resolvidos. `BLOCK_MERGE` impede merge. Se o GitHub bloquear self-approval do autor: `PLATFORM_SELF_APPROVAL_NOT_ALLOWED` — o Merge Risk Gate continua como aprovação técnica interna. Não contornar proteção.
 
-**Merge automático permitido:** feature/fix/refactor/test/chore → `develop`, quando **todos** os gates passarem. Preferir **Squash and merge** se o repo não tiver outra regra. Sem force push. Sem reescrever `develop`.
+**Merge automático permitido:** feature/fix/refactor/test/chore → `develop`, quando **todos** os gates passarem. **Squash and merge**. Sem force push. Sem reescrever `develop`.
 
-**Nunca** merge automático para `main`, production branch, ou promote `develop` → `main`.
+**Nunca** merge automático para `main`, production branch, ou promote `develop` → `main`. Quando o Human Gate autorizar o release: **Create a merge commit** (`gh pr merge --merge`). Nunca `gh pr merge --squash` nem rebase-and-merge em `develop` → `main`.
 
 **MERGE_BLOCKED** (não mergear `develop`) se: `BLOCK_MERGE`; Critical/High; build/test required falhou; Human Decision Gate aberto; migration sensível não aprovada; operação destrutiva de dados; impacto DEV/PROD desconhecido; risco auth/tenant aberto; conflito não trivial; branch divergida de forma inesperada. Registrar o motivo e seguir outra task `READY`.
 

@@ -18,6 +18,8 @@ public static class Permissions
         public const string RegistrationFieldsWrite = "core.registration_fields.write";
         public const string ModuleMenuRead = "core.module_menu.read";
         public const string ModuleMenuWrite = "core.module_menu.write";
+        public const string NotificationsRead = "core.notifications.read";
+        public const string NotificationsWrite = "core.notifications.write";
     }
 
     public static class Inventory

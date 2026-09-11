@@ -256,6 +256,26 @@ public sealed class PermissionResolverTests
     }
 
     [Fact]
+    public async Task Admin_wildcard_includes_core_notifications_when_only_rentals_is_active()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: true));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("admin-rentals-notif");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            admin.Id);
+
+        Assert.Contains(Permissions.Core.NotificationsRead, effective);
+        Assert.Contains(Permissions.Core.NotificationsWrite, effective);
+        Assert.Contains(Permissions.Rentals.ReservationsRead, effective);
+        Assert.DoesNotContain(Permissions.Catalog.OrdersRead, effective);
+    }
+
+    [Fact]
     public async Task Catalog_only_effective_set_has_no_inventory_permissions()
     {
         await using var harness = await RbacResolverHarness.CreateAsync();

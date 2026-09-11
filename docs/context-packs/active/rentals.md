@@ -136,7 +136,9 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 
 ## Known gaps / open constraints
 
-From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsApp. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
+From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS. Create-reservation can occupy an interval without `MarkBooked` if a persisted Slot already exists (portal prefers `slotId` when persisted). F-10b: rewrite of overlapping persisted Slot rows is out of scope.
+
+WhatsApp (2026-09-07, API): reservation lifecycle publishes durable outbox events (`rentals.reservation.pending_deposit|confirmed|canceled|completed|reminder`) using `rental_reservation_status_update` / `rental_reservation_reminder`. Tenant WhatsApp default off. Enable/disable via unified `PUT /api/notifications/channel-configs` (`core.notifications.write`); SQL is emergency only. Reminder scheduler: Hangfire `rentals-reservation-reminder`, **24h before `StartDateTime`**, one occurrence, skip Canceled/Completed/after start. Notifications must not drive Confirm/Complete/Cancel. Spec `docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`.
 
 **Non-blocking follow-ups** (not blockers; not authorized by Wave 1 closeout):
 
@@ -147,7 +149,7 @@ From `30-rentals.mdc`: deposit payment (`DepositPaid` always 0), real SMS/WhatsA
 - Concurrent Confirm × Confirm coverage
 - Tenant predicate on raw lock SQL
 
-**Next product work is not automatically authorized.** Remaining roadmap items (notifications, deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started. B2C self-cancel is **CLOSED_DEV** (not PROD).
+**Next product work is not automatically authorized.** Remaining roadmap items (deposit provider, Goods quantity B2C, multi-item booking, agenda booked-by overlay) stay backlog until explicitly started. B2C self-cancel is **CLOSED_DEV** (not PROD). WhatsApp PROD enablement is a separate Human Gate.
 
 ## Do not assume
 

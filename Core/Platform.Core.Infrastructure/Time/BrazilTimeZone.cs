@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Platform.Core.Infrastructure.Time;
 
 /// <summary>
@@ -65,4 +67,20 @@ public static class BrazilTimeZone
     /// </summary>
     public static DateTimeOffset ExclusiveEndOfCivilDay(DateOnly date) =>
         AtLocal(date.AddDays(1), TimeOnly.MinValue);
+
+    /// <summary>
+    /// Customer-readable civil date/time in America/Sao_Paulo (not a UTC dump).
+    /// </summary>
+    public static string FormatCivilDateTime(DateTimeOffset utcInstant)
+    {
+        var brazilTimeZone = Resolve();
+        var utc = utcInstant.UtcDateTime;
+        if (utc.Kind == DateTimeKind.Unspecified)
+        {
+            utc = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        }
+
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, brazilTimeZone);
+        return local.ToString("dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("pt-BR"));
+    }
 }

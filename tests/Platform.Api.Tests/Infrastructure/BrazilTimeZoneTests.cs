@@ -38,4 +38,16 @@ public sealed class BrazilTimeZoneTests
         Assert.Equal(BrazilTimeZone.AtLocal(Date.AddDays(1), TimeOnly.MinValue), end);
         Assert.Equal(BrazilTimeZone.AtLocal(Date, new TimeOnly(22, 0)), end.AddHours(-2));
     }
+
+    [Fact]
+    public void FormatCivilDateTime_uses_sao_paulo_clock_without_utc_offset_text()
+    {
+        var instant = BrazilTimeZone.AtLocal(Date, new TimeOnly(10, 0));
+        var formatted = BrazilTimeZone.FormatCivilDateTime(instant);
+
+        Assert.Equal("10/09/2026 10:00", formatted);
+        Assert.DoesNotContain("Z", formatted, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("-03", formatted, StringComparison.Ordinal);
+        Assert.DoesNotContain("+00", formatted, StringComparison.Ordinal);
+    }
 }

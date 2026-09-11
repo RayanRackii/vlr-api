@@ -8,14 +8,14 @@ public sealed class DevWhatsAppProvider(ILogger<DevWhatsAppProvider> logger) : I
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "DEV WHATSAPP → To: {Recipient} | Body: {Body}",
-            recipient,
-            body);
+            "DEV WHATSAPP → To phone ending {Last4} | Body length: {Length}",
+            PhoneLogMask.Last4(recipient),
+            body.Length);
 
         return Task.CompletedTask;
     }
 
-    public Task SendTemplateAsync(
+    public Task<string?> SendTemplateAsync(
         string recipient,
         string templateName,
         string languageCode,
@@ -23,12 +23,12 @@ public sealed class DevWhatsAppProvider(ILogger<DevWhatsAppProvider> logger) : I
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "DEV WHATSAPP TEMPLATE → To: {Recipient} | Template: {Template} ({Language}) | Params: {Params}",
-            recipient,
+            "DEV WHATSAPP TEMPLATE → To phone ending {Last4} | Template: {Template} ({Language}) | ParamCount: {ParamCount}",
+            PhoneLogMask.Last4(recipient),
             templateName,
             languageCode,
-            string.Join(", ", bodyParameters));
+            bodyParameters.Count);
 
-        return Task.CompletedTask;
+        return Task.FromResult<string?>("dev-whatsapp");
     }
 }
