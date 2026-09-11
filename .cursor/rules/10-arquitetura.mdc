@@ -29,7 +29,7 @@ Monólito modular .NET 10, três projetos: `Platform.Api` (host) → `Core/Platf
 ## Background e notificações
 
 - **Hangfire** (storage Postgres): jobs `data-retention-gc` (00:00) e `pmoc-engine` (06:00), dashboard em `/hangfire`.
-- **Notificações:** handlers enfileiram no `NotificationQueue` (`System.Threading.Channels`); `NotificationDispatcherService` consome em background. **Nunca envie e-mail/WhatsApp sincronamente dentro de uma request HTTP.**
+- **Notificações:** handlers enfileiram no `NotificationQueue` (`System.Threading.Channels`); `NotificationDispatcherService` consome em background. **Não envie e-mail/WhatsApp de Catalog, Rentals ou convite/recovery sincronamente dentro de uma request HTTP.** Exceção documentada (ADR 0005): OTP de cadastro B2C envia e-mail de forma síncrona via `IEmailProvider` em CustomerAuth register/resend — mesma classe de durabilidade do Twilio Verify anterior.
 - Providers em `Notifications/Providers/`: `Resend/` (e-mail), `Meta/` (WhatsApp Cloud API, texto + template), `Dev/` (fallback que loga no console quando as credenciais não estão configuradas). Seleção na DI em `NotificationsServiceCollectionExtensions`.
 - **WhatsApp iniciado pela empresa exige template aprovado no Meta** (`NotificationMessage.TemplateName`); texto livre só é entregue na janela de 24h aberta pelo cliente.
 - **Webhook Meta:** `GET/POST /api/webhooks/whatsapp` (`Modules/Webhooks/`) — handshake com `WhatsApp:VerifyToken` e assinatura `X-Hub-Signature-256` validada com `WhatsApp:AppSecret`.

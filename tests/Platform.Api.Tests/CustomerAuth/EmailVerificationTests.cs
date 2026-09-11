@@ -696,6 +696,33 @@ public sealed class EmailVerificationTests
     }
 
     [Fact]
+    public async Task Login_phone_verified_without_email_verified_is_rejected()
+    {
+        await using var harness = await CustomerAuthHarness.CreateAsync();
+        var at = DateTimeOffset.Parse("2026-08-01T12:00:00Z");
+        var customer = new Customer
+        {
+            TenantId = harness.Tenant.Id,
+            Name = "Sócio Pendente",
+            Email = "phone-only@club.test",
+            Phone = "+5511911110001",
+            PhoneVerifiedAt = at,
+            EmailVerifiedAt = null,
+        };
+        var hasher = new PasswordHasher<Customer>();
+        customer.PasswordHash = hasher.HashPassword(customer, "secret123");
+        harness.Db.Customers.Add(customer);
+        await harness.Db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => harness.Auth.LoginAsync(
+                new CustomerLoginRequestDto { Email = "phone-only@club.test", Password = "secret123" },
+                CancellationToken.None));
+
+        Assert.Equal("Email is not verified. Complete email verification first.", ex.Message);
+    }
+
+    [Fact]
     public void Email_verification_body_has_no_paragraph_tags()
     {
         var inner = RolvixEmailLayout.EmailVerificationBody("123456");
