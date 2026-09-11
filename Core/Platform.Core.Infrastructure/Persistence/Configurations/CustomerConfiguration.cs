@@ -68,6 +68,8 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
 
         builder.Property(c => c.PhoneVerifiedAt);
 
+        builder.Property(c => c.EmailVerifiedAt);
+
         builder.Property(c => c.LastLoginAt);
 
         builder.Property(c => c.CreatedAt)

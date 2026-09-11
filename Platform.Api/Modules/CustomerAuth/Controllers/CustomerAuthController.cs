@@ -88,15 +88,16 @@ public sealed class CustomerAuthController(
     }
 
     [HttpPost("verify-phone")]
-    public async Task<ActionResult<AuthResponseDto>> VerifyPhone(
-        [FromBody] VerifyPhoneRequestDto request,
+    [HttpPost("verify-email")]
+    public async Task<ActionResult<AuthResponseDto>> VerifyEmail(
+        [FromBody] VerifyEmailRequestDto request,
         [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
         CancellationToken cancellationToken)
     {
         try
         {
             await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
-            var response = await customerAuthService.VerifyPhoneAsync(request, cancellationToken);
+            var response = await customerAuthService.VerifyEmailAsync(request, cancellationToken);
             return Ok(response);
         }
         catch (PhoneVerificationProviderException ex)

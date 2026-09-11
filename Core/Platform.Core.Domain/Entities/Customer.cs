@@ -5,7 +5,8 @@ namespace Platform.Core.Domain.Entities;
 
 /// <summary>
 /// End-customer (B2C) of a Tenant. Schema: core.
-/// Authenticates with email + password. Phone is SMS-verified for WhatsApp later.
+/// Authenticates with email + password after email OTP verification.
+/// Phone is stored for future WhatsApp and is not the signup gate.
 /// </summary>
 public class Customer : Entity, ITenantScoped
 {
@@ -23,6 +24,9 @@ public class Customer : Entity, ITenantScoped
     public string? Phone { get; set; }
 
     public DateTimeOffset? PhoneVerifiedAt { get; set; }
+
+    /// <summary>Set when the signup email OTP succeeds. Login gate.</summary>
+    public DateTimeOffset? EmailVerifiedAt { get; set; }
 
     /// <summary>Last successful portal (B2C) login.</summary>
     public DateTimeOffset? LastLoginAt { get; set; }
@@ -61,9 +65,17 @@ public class Customer : Entity, ITenantScoped
 
     public bool IsPhoneVerified => PhoneVerifiedAt is not null;
 
+    public bool IsEmailVerified => EmailVerifiedAt is not null;
+
     public void MarkPhoneVerified(DateTimeOffset at)
     {
         PhoneVerifiedAt = at;
+        Touch();
+    }
+
+    public void MarkEmailVerified(DateTimeOffset at)
+    {
+        EmailVerifiedAt = at;
         Touch();
     }
 

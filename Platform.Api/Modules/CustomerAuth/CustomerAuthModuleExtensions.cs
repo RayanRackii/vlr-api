@@ -17,6 +17,7 @@ public static class CustomerAuthModuleExtensions
         });
         services.AddMemoryCache();
         services.AddSingleton<IPhoneVerificationSendGate, PhoneVerificationSendGate>();
+        services.AddScoped<ICustomerVerificationCodeService, CustomerVerificationCodeService>();
         services.AddScoped<ICustomerAuthService, CustomerAuthService>();
         services.AddHttpClient<IViaCepClient, ViaCepClient>(client =>
         {

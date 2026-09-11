@@ -7,6 +7,8 @@ namespace Platform.Api.Notifications;
 /// </summary>
 public static class RolvixEmailLayout
 {
+    public const string EmailVerificationSubject = "Código de verificação Rolvix";
+
     public static string Wrap(string recipientName, string innerHtmlBody)
     {
         var safeName = WebUtility.HtmlEncode(recipientName);
@@ -128,6 +130,28 @@ public static class RolvixEmailLayout
                   Se você não pediu isso, ignore este e-mail — sua senha permanece a mesma.<br /><br />
                   Ou copie e cole o link no navegador:<br />{safeUrl}
                 </td>
+              </tr>
+            </table>
+            """;
+    }
+
+    public static string EmailVerificationBody(string code)
+    {
+        var safeCode = WebUtility.HtmlEncode(code);
+        return
+            $"""
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+              <tr>
+                <td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#27272a;">Seu código de verificação da Rolvix é:</td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 16px;font-size:28px;line-height:1.2;font-family:Consolas,Monaco,monospace;font-weight:700;letter-spacing:0.12em;color:#18181b;">{safeCode}</td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#27272a;">Este código expira em 10 minutos.</td>
+              </tr>
+              <tr>
+                <td style="padding:0;font-size:15px;line-height:1.55;color:#27272a;">Se você não solicitou este código, ignore esta mensagem.</td>
               </tr>
             </table>
             """;
