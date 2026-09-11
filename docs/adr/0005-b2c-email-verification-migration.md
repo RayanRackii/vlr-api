@@ -1,6 +1,6 @@
 # B2C signup verification is email, not SMS
 
-B2C account activation is proof of email possession via a 6-digit OTP (Resend/`IEmailProvider`, hashed in `core.otp_codes`). Phone remains collected for future WhatsApp, but `PhoneVerifiedAt` is no longer the login gate. Twilio Verify stays in the codebase for legacy `request-otp`/`verify-otp` and a future explicit phone-verify feature; normal register/resend must not call it.
+B2C account activation is proof of email possession via a 6-digit OTP (Resend/`IEmailProvider`, hashed in `core.otp_codes`). Phone remains collected for future WhatsApp, but `PhoneVerifiedAt` is no longer the login gate. Twilio Verify stays in the codebase for legacy `request-otp`/`verify-otp` and a future explicit phone-verify feature; normal register/resend must not call it. Legacy `verify-otp` may record `PhoneVerifiedAt` after a Twilio Check, but must not mint a Customer JWT unless `EmailVerifiedAt` is set.
 
 **Status:** accepted (2026-09-11)
 

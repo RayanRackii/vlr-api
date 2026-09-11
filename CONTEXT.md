@@ -41,8 +41,8 @@ Detalhe de execução: este `ROADMAP.md` e o `ROADMAP.md` do repo `vlr-web`. Reg
 - Fluxo alvo: cadastro completo (inclui senha) → OTP no e-mail → login com e-mail + senha → JWT `Customer`.
 - Cadastro **pending** (`EmailVerifiedAt` nulo): no mesmo tenant, um novo register com o **mesmo e-mail + telefone + documento** **retoma** essa linha (atualiza nome e senha) em vez de criar outra ou bloquear. Falha ao enviar o e-mail **não apaga** o Customer e não deixa a conta órfã — a resposta inclui `verificationStarted` e o portal segue para verificação com reenvio.
 - Sobreposição parcial com pending (só e-mail, só telefone ou só documento) ou Customer já verificado (`EmailVerifiedAt` preenchido) → 409, sem hijack e sem delete.
-- **Twilio Verify** permanece no código para o OTP legado `request-otp`/`verify-otp` e para verificação explícita de telefone no futuro; register/resend/verify-email **não** o chamam.
-- O OTP-only legado por telefone é legado a aposentar quando o cadastro/login por senha estiver estável.
+- **Twilio Verify** permanece no código para o OTP legado `request-otp`/`verify-otp` e para verificação explícita de telefone no futuro; register/resend/verify-email **não** o chamam. `verify-otp` pode gravar `PhoneVerifiedAt`, mas **não** emite JWT sem `EmailVerifiedAt`.
+- Os endpoints `request-otp`/`verify-otp` existem (legado a aposentar quando o cadastro/login por senha estiver estável); **não autenticam** sem verificação de e-mail.
 
 **Branding do tenant — poucos campos, muita identidade (baixa manutenção):**
 Campos no cadastro/edição do Tenant (além de `Subdomain`):

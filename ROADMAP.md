@@ -115,6 +115,7 @@ Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-no
 - [x] `resend-verification` devolve 202 se o e-mail não existir, já estiver com e-mail verificado, ou em cooldown 45s (anti-enumeração).
 - [x] Rate limit de aplicação: cooldown 45s por tenant+e-mail após start OK; 10 tentativas / 10 min por IP (429 no resend; register não 429).
 - [x] **DEV (código):** ativação B2C por OTP de e-mail (`EmailVerifiedAt`, HMAC em `core.otp_codes`, `IEmailProvider` síncrono). `requiresEmailVerification` + alias `requiresPhoneVerification`. Twilio **não** é chamado em register/resend/verify-email. Migration `B2cEmailVerification` (backfill `email_verified_at = phone_verified_at`). ADR 0005. **Não PROD.**
+- [x] **Security follow-up (DEV):** legado `verify-otp` grava `PhoneVerifiedAt` mas **não** emite JWT sem `EmailVerifiedAt` (mesmo 401 do login). **Não PROD.**
 - Local sem envio de e-mail: register devolve 200 + `verificationStarted: false`; verify-email inválido → 401; register **não** devolve 503 por falha do provider de e-mail.
 
 ## 4. Enforcement de módulos por tenant
@@ -194,6 +195,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-11 | **Security follow-up (API, DEV):** `verify-otp` Twilio-approved deixa de emitir JWT Customer se `EmailVerifiedAt` for nulo; ainda grava `PhoneVerifiedAt`. Mesma mensagem 401 do login. Fail-closed em `BuildAuthResponse`. ADR 0005. Spec `docs/plans/active/2026-09-11-b2c-email-verification-auth-bypass.md`. **Não PROD.** |
 | 2026-09-11 | **Executado (API, DEV):** ativação B2C passa de SMS (Twilio Verify) para OTP de e-mail. `EmailVerifiedAt` + backfill a partir de `PhoneVerifiedAt`; HMAC em `otp_codes`; register/resend/verify-email não chamam Twilio. Infra Twilio mantida para `request-otp`/`verify-otp`. Migration `B2cEmailVerification`. ADR 0005. Spec `docs/plans/active/2026-09-11-b2c-email-verification.md`. **Não PROD.** |
 | 2026-09-11 | **Git:** release `develop` → `main` passa a **Create a merge commit** (não squash). Reconciliação única `chore/final-main-develop-ancestry-reconciliation` para restaurar ancestrais após squashes antigos. Sem delta de produto. PROD não deployado neste passo. |
 | 2026-09-07 | **Executado (API):** settings unificadas de canais — `GET/PUT /api/notifications/channel-configs` com `core.notifications.read` / `core.notifications.write`. Catalog wrappers permanecem. WhatsApp Rentals liga/desliga pela API (SQL só emergência). Migration `AddCoreNotificationPermissions`. Sem schema em `TenantNotificationChannelConfig`. Branch `feat/unified-notification-settings`. |

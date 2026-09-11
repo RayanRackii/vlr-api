@@ -29,6 +29,8 @@ public sealed class CustomerAuthService(
 {
     private static readonly PasswordHasher<Customer> PasswordHasher = new();
     private const int MinimumPasswordLength = 8;
+    private const string EmailNotVerifiedMessage =
+        "Email is not verified. Complete email verification first.";
 
     public async Task RequestOtpAsync(
         RequestOtpDto request,
@@ -102,6 +104,11 @@ public sealed class CustomerAuthService(
         {
             customer.MarkPhoneVerified(DateTimeOffset.UtcNow);
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        if (!customer.IsEmailVerified)
+        {
+            throw new UnauthorizedAccessException(EmailNotVerifiedMessage);
         }
 
         return BuildAuthResponse(customer);
@@ -288,8 +295,7 @@ public sealed class CustomerAuthService(
 
         if (!customer.IsEmailVerified)
         {
-            throw new UnauthorizedAccessException(
-                "Email is not verified. Complete email verification first.");
+            throw new UnauthorizedAccessException(EmailNotVerifiedMessage);
         }
 
         customer.LastLoginAt = DateTimeOffset.UtcNow;
@@ -386,6 +392,11 @@ public sealed class CustomerAuthService(
 
     private AuthResponseDto BuildAuthResponse(Customer customer)
     {
+        if (!customer.IsEmailVerified)
+        {
+            throw new UnauthorizedAccessException(EmailNotVerifiedMessage);
+        }
+
         var token = customerJwtIssuer.IssueToken(customer);
 
         return new AuthResponseDto(
