@@ -60,4 +60,15 @@ public sealed class RolvixEmailLayoutTests
 
         Assert.DoesNotContain("<p", html, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Email_verification_body_has_no_paragraph_tags()
+    {
+        var html = RolvixEmailLayout.Wrap(
+            "Ana",
+            RolvixEmailLayout.EmailVerificationBody("847291"));
+
+        Assert.DoesNotContain("<p", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("847291", html, StringComparison.Ordinal);
+    }
 }

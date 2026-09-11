@@ -6,6 +6,7 @@ using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.RegistrationFields.Services;
+using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -21,6 +22,8 @@ public sealed class CustomerAuthService(
     IRegistrationFieldService registrationFieldService,
     IPhoneVerificationClient phoneVerification,
     IPhoneVerificationSendGate sendGate,
+    ICustomerVerificationCodeService verificationCodes,
+    IEmailProvider emailProvider,
     ILogger<CustomerAuthService> logger,
     IHttpContextAccessor? httpContextAccessor = null) : ICustomerAuthService
 {
@@ -146,10 +149,10 @@ public sealed class CustomerAuthService(
             cpf,
             cancellationToken);
 
-        if (matches.Exists(c => c.PhoneVerifiedAt is not null))
+        if (matches.Exists(c => c.EmailVerifiedAt is not null))
         {
             throw DuplicateIdentityException(
-                matches.Where(c => c.PhoneVerifiedAt is not null).ToList(),
+                matches.Where(c => c.EmailVerifiedAt is not null).ToList(),
                 email,
                 phone,
                 document,
@@ -185,20 +188,20 @@ public sealed class CustomerAuthService(
             throw DuplicateIdentityException(matches, email, phone, document, cpf);
         }
 
-        var started = await TryStartVerificationForRegisterAsync(
+        var started = await TryStartEmailVerificationForRegisterAsync(
             tenantId,
+            customer,
             email,
-            RequirePhone(customer),
             cancellationToken);
 
         return new RegisterCustomerResponseDto(
             customer.Id,
-            RequiresPhoneVerification: true,
+            RequiresEmailVerification: true,
             VerificationStarted: started);
     }
 
-    public async Task<AuthResponseDto> VerifyPhoneAsync(
-        VerifyPhoneRequestDto request,
+    public async Task<AuthResponseDto> VerifyEmailAsync(
+        VerifyEmailRequestDto request,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
@@ -208,12 +211,12 @@ public sealed class CustomerAuthService(
 
         var customer = await dbContext.Customers
             .FirstOrDefaultAsync(c => c.Email == email, cancellationToken)
-            ?? throw new UnauthorizedAccessException("Invalid or expired verification code.");
+            ?? throw new PhoneVerificationInvalidException(
+                TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
 
-        var phone = RequirePhone(customer);
-        await phoneVerification.CheckVerificationAsync(phone, code, cancellationToken);
+        await verificationCodes.VerifyEmailCodeAsync(customer, code, cancellationToken);
 
-        customer.MarkPhoneVerified(DateTimeOffset.UtcNow);
+        customer.MarkEmailVerified(DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return BuildAuthResponse(customer);
@@ -238,9 +241,7 @@ public sealed class CustomerAuthService(
         var customer = await dbContext.Customers
             .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
 
-        if (customer is null
-            || customer.IsPhoneVerified
-            || string.IsNullOrWhiteSpace(customer.Phone))
+        if (customer is null || customer.IsEmailVerified)
         {
             return;
         }
@@ -252,16 +253,13 @@ public sealed class CustomerAuthService(
 
         try
         {
-            await phoneVerification.StartVerificationAsync(customer.Phone, cancellationToken);
+            var code = await verificationCodes.IssueEmailVerificationAsync(
+                customer,
+                cancellationToken);
+            await SendVerificationEmailAsync(customer, email, code, cancellationToken);
             sendGate.RecordSuccess(tenantId, email, clientIp);
         }
-        catch (PhoneVerificationProviderException)
-        {
-        }
-        catch (PhoneVerificationRateLimitedException)
-        {
-        }
-        catch (PhoneVerificationInvalidException)
+        catch (HttpRequestException)
         {
         }
     }
@@ -288,10 +286,10 @@ public sealed class CustomerAuthService(
             throw new UnauthorizedAccessException("Invalid email or password.");
         }
 
-        if (!customer.IsPhoneVerified)
+        if (!customer.IsEmailVerified)
         {
             throw new UnauthorizedAccessException(
-                "Phone number is not verified. Complete SMS verification first.");
+                "Email is not verified. Complete email verification first.");
         }
 
         customer.LastLoginAt = DateTimeOffset.UtcNow;
@@ -403,6 +401,7 @@ public sealed class CustomerAuthService(
                 customer.Cpf,
                 customer.CreatedAt,
                 customer.IsPhoneVerified,
+                customer.IsEmailVerified,
                 customer.PhotoUrl,
                 customer.ExtraAttributes));
     }
@@ -425,6 +424,7 @@ public sealed class CustomerAuthService(
             customer.PhotoUrl,
             customer.CreatedAt,
             customer.IsPhoneVerified,
+            customer.IsEmailVerified,
             customer.ExtraAttributes);
 
     private async Task<List<Customer>> LoadRegistrationMatchesAsync(
@@ -517,10 +517,10 @@ public sealed class CustomerAuthService(
         return customer;
     }
 
-    private async Task<bool> TryStartVerificationForRegisterAsync(
+    private async Task<bool> TryStartEmailVerificationForRegisterAsync(
         Guid tenantId,
+        Customer customer,
         string email,
-        string phone,
         CancellationToken cancellationToken)
     {
         var clientIp = GetClientIp();
@@ -537,22 +537,37 @@ public sealed class CustomerAuthService(
 
         try
         {
-            await phoneVerification.StartVerificationAsync(phone, cancellationToken);
+            var code = await verificationCodes.IssueEmailVerificationAsync(
+                customer,
+                cancellationToken);
+            await SendVerificationEmailAsync(customer, email, code, cancellationToken);
             sendGate.RecordSuccess(tenantId, email, clientIp);
+            logger.LogInformation(
+                "Email verification started for customer {CustomerId}.",
+                customer.Id);
             return true;
         }
-        catch (PhoneVerificationProviderException)
+        catch (HttpRequestException)
         {
             return false;
         }
-        catch (PhoneVerificationRateLimitedException)
-        {
-            return false;
-        }
-        catch (PhoneVerificationInvalidException)
-        {
-            return false;
-        }
+    }
+
+    private Task SendVerificationEmailAsync(
+        Customer customer,
+        string email,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        var html = RolvixEmailLayout.Wrap(
+            customer.Name,
+            RolvixEmailLayout.EmailVerificationBody(code));
+
+        return emailProvider.SendAsync(
+            email,
+            RolvixEmailLayout.EmailVerificationSubject,
+            html,
+            cancellationToken);
     }
 
     private string? GetClientIp()
@@ -583,7 +598,8 @@ public sealed class CustomerAuthService(
         string document) =>
         string.Equals(customer.Email, email, StringComparison.Ordinal)
         && string.Equals(customer.Phone, phone, StringComparison.Ordinal)
-        && string.Equals(customer.Document, document, StringComparison.Ordinal);
+        && string.Equals(customer.Document, document, StringComparison.Ordinal)
+        && customer.EmailVerifiedAt is null;
 
     private static InvalidOperationException DuplicateIdentityException(
         IReadOnlyList<Customer> matches,
