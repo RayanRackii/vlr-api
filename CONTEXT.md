@@ -10,7 +10,7 @@ A visão de Hub permanece. O primeiro cliente pagante é um **clube** que precis
 
 **Ordem de etapas (ciclo atual):**
 1. **Notificações (Resend + WhatsApp Meta)** — e-mail Resend saudável. WhatsApp Catalog/Rentals + lembrete 24h **CLOSED_DEV**; entrega externa **desligada em PROD**. SMS de branding = Twilio Console (`Rolvix`). Não bloquear o beachhead de slots por ops Meta.
-2. **Portal B2C do tenant (login + cadastro branded)** — shell e login e-mail+senha já em código; fechar deploy/DNS e SMS real quando a Fase 1.5 voltar. Ver seção **Portal B2C do Tenant**.
+2. **Portal B2C do tenant (login + cadastro branded)** — shell e login e-mail+senha já em código; ativação por OTP de e-mail. Ver seção **Portal B2C do Tenant**.
 3. **Agenda Rentals por Slot** (admin templates/kinds + B2C book por `slotId`) — próximo salto de produto após o portal estável. Ver `ROADMAP.md` §2.6 e `docs/adr/0001-rentals-slot-schedule.md`.
 4. Demais itens de Rentals / convite / gating — conforme `ROADMAP.md`.
 
@@ -33,15 +33,16 @@ Detalhe de execução: este `ROADMAP.md` e o `ROADMAP.md` do repo `vlr-web`. Reg
 | Senha | Definida no cadastro; login = e-mail + senha (todos os tenants) |
 | CPF | Validação algoritmo + consulta a serviço BR (front UX + back autoridade) |
 | CEP | Consulta ViaCEP/BrasilAPI (ou equivalente); preencher endereço derivado no back |
-| Celular | E.164 BR; **verificação por SMS** no cadastro (prova de posse). Não autentica. Pré-requisito para avisos futuros via WhatsApp |
+| Celular | E.164 BR; coletado e armazenado. **Não** é o gate de ativação. Pré-requisito futuro para avisos via WhatsApp; `PhoneVerifiedAt` permanece para verificação explícita de telefone (ainda não no cadastro). |
 
 **Autenticação B2C (decisão fechada):**
 - **Login = e-mail + senha** em todos os tenants/projetos (mesmo padrão do B2B na experiência do usuário: credenciais de conta).
-- **Celular** não autentica: serve para **verificação por SMS no cadastro** (prova de posse) e, depois, **avisos via WhatsApp**.
-- Fluxo alvo: cadastro completo (inclui senha) → SMS no celular → login com e-mail + senha → JWT `Customer`.
-- Cadastro **pending** (`PhoneVerifiedAt` nulo): no mesmo tenant, um novo register com o **mesmo e-mail + telefone + documento** **retoma** essa linha (atualiza nome e senha) em vez de criar outra ou bloquear. Falha ao enviar o SMS **não apaga** o Customer e não deixa a conta órfã — a resposta inclui `verificationStarted` e o portal segue para verificação com reenvio.
-- Sobreposição parcial com pending (só e-mail, só telefone ou só documento) ou Customer já verificado → 409, sem hijack e sem delete.
-- O OTP-only atual por telefone é legado a aposentar quando o cadastro/login por senha estiver estável.
+- **Ativação = OTP de 6 dígitos no e-mail** (prova de posse). Celular **não autentica** e **não** bloqueia o cadastro. ADR [`docs/adr/0005-b2c-email-verification-migration.md`](./docs/adr/0005-b2c-email-verification-migration.md).
+- Fluxo alvo: cadastro completo (inclui senha) → OTP no e-mail → login com e-mail + senha → JWT `Customer`.
+- Cadastro **pending** (`EmailVerifiedAt` nulo): no mesmo tenant, um novo register com o **mesmo e-mail + telefone + documento** **retoma** essa linha (atualiza nome e senha) em vez de criar outra ou bloquear. Falha ao enviar o e-mail **não apaga** o Customer e não deixa a conta órfã — a resposta inclui `verificationStarted` e o portal segue para verificação com reenvio.
+- Sobreposição parcial com pending (só e-mail, só telefone ou só documento) ou Customer já verificado (`EmailVerifiedAt` preenchido) → 409, sem hijack e sem delete.
+- **Twilio Verify** permanece no código para o OTP legado `request-otp`/`verify-otp` e para verificação explícita de telefone no futuro; register/resend/verify-email **não** o chamam. `verify-otp` pode gravar `PhoneVerifiedAt`, mas **não** emite JWT sem `EmailVerifiedAt`.
+- Os endpoints `request-otp`/`verify-otp` existem (legado a aposentar quando o cadastro/login por senha estiver estável); **não autenticam** sem verificação de e-mail.
 
 **Branding do tenant — poucos campos, muita identidade (baixa manutenção):**
 Campos no cadastro/edição do Tenant (além de `Subdomain`):
@@ -66,7 +67,7 @@ Campos no cadastro/edição do Tenant (além de `Subdomain`):
 **Validações BR (front + back):**
 - **CPF:** validar dígitos verificadores localmente; enriquecer/consultar via API pública/comercial BR no back (não confiar só no front). Tratar indisponibilidade da API com falha clara ou fila de retry — nunca aceitar CPF só “bem formatado” sem check de dígitos.
 - **CEP:** consultar ViaCEP ou BrasilAPI; back é a fonte da verdade; front usa para autocompletar UX.
-- **SMS:** verificação de celular no cadastro B2C usa **Twilio Verify** (desafio de autenticação síncrono; não passa pela fila). SMS de catálogo/notificação continua enfileirado via `ISmsProvider` (ainda Dev). Celular não autentica.
+- **SMS / e-mail de ativação:** cadastro B2C verifica o **e-mail** com OTP de 6 dígitos via `IEmailProvider` (síncrono na request; não passa pela fila). Twilio Verify permanece para `request-otp`/`verify-otp` legado e verificação futura de telefone. SMS de catálogo/notificação continua enfileirado via `ISmsProvider` (ainda Dev). Celular não autentica.
 
 ## Language
 
@@ -79,7 +80,7 @@ A person who accesses the platform on behalf of a Tenant (B2B). Authentication i
 _Avoid_: Employee, account holder
 
 **Customer**:
-An end consumer registered exclusively under one Tenant (B2C). Logs in with email + password. `CustomerType` is Individual (CPF) or Company (CNPJ). One account holds one document (`Document`, digits only). Profile also includes name, postal address (via CEP), SMS-verified mobile (for WhatsApp notifications, not login), and optional photo. Not a platform User (B2B). Not an Organization.
+An end consumer registered exclusively under one Tenant (B2C). Logs in with email + password after email OTP activation. `CustomerType` is Individual (CPF) or Company (CNPJ). One account holds one document (`Document`, digits only). Profile also includes name, postal address (via CEP), mobile number stored for future WhatsApp (phone is not the signup gate), and optional photo. Not a platform User (B2B). Not an Organization.
 _Avoid_: Client, member, sócio (in code); OrganizationMember; using Tenant.TaxId as the Customer document
 
 **Unit**:
@@ -237,7 +238,7 @@ Separação rigorosa entre fundação ("Core") e aplicativos ("Módulos"). Os m�
 Core (Fundação Multi-Tenant e Agnóstica)
 ├── Tenants (+ Subdomain, LogoSvg, brand colors, tagline)
 ├── Users (B2B)
-├── Customers (B2C — por Tenant; CPF, CEP, phone verified via SMS)
+├── Customers (B2C — por Tenant; CPF, CEP, email OTP on signup; phone stored)
 ├── Permissions / Roles
 ├── Units
 └── Asset Registry (capability interna; tabelas em assets.*; não é módulo comercial)
@@ -294,10 +295,10 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
   - Mantém-se no cardápio; não é o foco de feature do ciclo atual.
 
 - **Fase 2b: Beachhead Rentals (clube)** — foco atual de produto
-  - Portal B2C branded — login **e-mail + senha** + cadastro (foto, nome, e-mail, senha, CPF, CEP, celular com SMS) — em código; fechar ops.
+  - Portal B2C branded — login **e-mail + senha** + cadastro (foto, nome, e-mail, senha, CPF, CEP, celular) com **OTP de e-mail** na ativação — em código; fechar ops.
   - Branding no Tenant: **`LogoSvg` (único canal de marca)** + cores + tagline.
   - Em seguida: disponibilidade por **Slot**, reserva, estado das quadras, gestão admin.
-  - Avisos WhatsApp usam o celular **já verificado por SMS** (celular ≠ login).
+  - Avisos WhatsApp usarão o celular armazenado (celular ≠ login; posse de e-mail é o gate de cadastro).
   - Convite B2B real + `/invite` (regra de ouro de senha) permanece no Core, separado do cadastro B2C.
 
 - **Fase 3: Motor de Extensibilidade**
@@ -316,8 +317,8 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 - **Backend (`vlr-api`):** .NET 10, REST. Organização dominante: `Platform.Api/Modules/<Área>/` (Controller + Service + DTOs). Features Minimal API + MediatR só onde já existem (`CreateTenant`, `InviteUser`) — não expandir MediatR sem decisão explícita. Deploy: **Docker no Railway**.
 - **Frontend (`vlr-web`):** React + Vite, shadcn/ui, TailwindCSS. Deploy: **Vercel**. Consome a API com JWT Bearer (`VITE_API_URL`).
 - **Dados e Auth (PaaS):** **Supabase** = PostgreSQL + Supabase Auth (B2B). Proibido provisionar AWS “pura” (RDS/Cognito/EC2) neste momento. EF Core permanece agnóstico à connection string.
-- **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Celular verificado por **SMS (Twilio Verify)** no cadastro; celular **não autentica**. WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.
-- **Notificações:** dois pipelines. Convite/recovery: fila em memória (`NotificationQueue`). Catalog/Rentals operacionais: `Notification` + `NotificationDelivery` + Hangfire outbox. Configuração unificada de canais do tenant: `GET/PUT /api/notifications/channel-configs` (`core.notifications.read` / `core.notifications.write`; sem gate de módulo comercial). Lembrete de reserva: Hangfire `rentals-reservation-reminder`, **24h antes de `StartDateTime`**, uma ocorrência. Providers: **Resend** (e-mail, inalterado), **Meta WhatsApp** (templates `pt_BR`; sem fallback `type=text` nesses envios), **SMS de catálogo** via `ISmsProvider` (ainda Dev). Verificação de celular B2C usa **Twilio Verify** (síncrono; branding = Friendly Name do serviço, não setting da API). Gates: `AllowExternalEmail` / `AllowExternalWhatsApp` (override); fallback no global `AllowExternalDelivery`. Unset/null = false em **todo** ambiente; credencial sozinha não basta. Canal WhatsApp do tenant nasce **off**. Nunca enviar e-mail/WhatsApp de catálogo/reservas de forma síncrona dentro da request HTTP. PROD WhatsApp permanece desligado até preflight humano. Runbook: `docs/runbooks/whatsapp-notifications.md`.
+- **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Ativação por **OTP de e-mail** (`EmailVerifiedAt`; ADR 0005). Celular **não autentica** e não é exigido verificado no cadastro. WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.
+- **Notificações:** dois pipelines. Convite/recovery: fila em memória (`NotificationQueue`). Catalog/Rentals operacionais: `Notification` + `NotificationDelivery` + Hangfire outbox. **OTP de cadastro B2C** envia e-mail de forma síncrona via `IEmailProvider` (não usa a fila). Configuração unificada de canais do tenant: `GET/PUT /api/notifications/channel-configs` (`core.notifications.read` / `core.notifications.write`; sem gate de módulo comercial). Lembrete de reserva: Hangfire `rentals-reservation-reminder`, **24h antes de `StartDateTime`**, uma ocorrência. Providers: **Resend** (e-mail, inalterado), **Meta WhatsApp** (templates `pt_BR`; sem fallback `type=text` nesses envios), **SMS de catálogo** via `ISmsProvider` (ainda Dev). Twilio Verify permanece para `request-otp`/`verify-otp` legado (síncrono; branding = Friendly Name do serviço). Gates: `AllowExternalEmail` / `AllowExternalWhatsApp` (override); fallback no global `AllowExternalDelivery`. Unset/null = false em **todo** ambiente; credencial sozinha não basta. Canal WhatsApp do tenant nasce **off**. Nunca enviar e-mail/WhatsApp de catálogo/reservas de forma síncrona dentro da request HTTP. PROD WhatsApp permanece desligado até preflight humano. Runbook: `docs/runbooks/whatsapp-notifications.md`.
 - **TypeScript:** Zero `any`; validação Zod espelhando DTOs da API. Frontend **nunca** consulta o banco via SDK Supabase — só auth.
 - **Isolamento:** Dados de módulo com `TenantId` (e `UnitId` quando aplicável).
 

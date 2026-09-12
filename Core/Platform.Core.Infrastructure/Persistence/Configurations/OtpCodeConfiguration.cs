@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 
 namespace Platform.Core.Infrastructure.Persistence.Configurations;
@@ -23,8 +24,21 @@ public sealed class OtpCodeConfiguration : IEntityTypeConfiguration<OtpCode>
 
         builder.Property(o => o.Code)
             .HasMaxLength(6)
-            .IsFixedLength()
+            .IsFixedLength();
+
+        builder.Property(o => o.Purpose)
+            .HasMaxLength(64)
+            .IsRequired()
+            .HasDefaultValue(OtpPurposes.Legacy);
+
+        builder.Property(o => o.CodeHash)
+            .HasMaxLength(88);
+
+        builder.Property(o => o.Attempts)
+            .HasDefaultValue(0)
             .IsRequired();
+
+        builder.Property(o => o.ReplacedAt);
 
         builder.Property(o => o.ExpiresAt)
             .IsRequired();

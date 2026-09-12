@@ -14,8 +14,8 @@ public interface ICustomerAuthService
         RegisterCustomerRequestDto request,
         CancellationToken cancellationToken);
 
-    Task<AuthResponseDto> VerifyPhoneAsync(
-        VerifyPhoneRequestDto request,
+    Task<AuthResponseDto> VerifyEmailAsync(
+        VerifyEmailRequestDto request,
         CancellationToken cancellationToken);
 
     Task ResendVerificationAsync(

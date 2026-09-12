@@ -110,11 +110,13 @@ Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-no
 - [x] **Ops DEV:** live smoke 2026-09-11 **CLOSED_DEV** (not PROD). Human-owned E2E customer. Catalog `catalog.order.created`, Rentals `rentals.reservation.confirmed`, reminder `rentals.reservation.reminder` all Queued → **Sent**, Attempt=1, no error. Reminder start `2026-09-11T14:00:00+00:00` → civil `11/09/2026 11:00` America/Sao_Paulo; Hangfire published once and did not resend. Tenant WhatsApp restored **off**. 2026-09-09 attempt had failed **132001**. Não usar `AllowExternalDelivery=true`.
 - [ ] **Ops PROD:** WhatsApp permanece **desligado**. Antes de qualquer enablement: SELECT de `core.notification_deliveries` WhatsApp (Queued/Failed/Sent). `Queued` > 0 = blast vector.
 - [ ] **Ops (humano):** no Railway **production**, setar `Notifications__AllowExternalEmail=true` + Resend + `App__FrontendBaseUrl`. Storage reuses existing `Supabase__Url` / `Supabase__ServiceRoleKey` (do not duplicate `Storage__*` secrets). Código LogError se Dev permanecer; processo sobe.
-- [x] Provider SMS real quando sair do Dev — **somente verificação de celular B2C via Twilio Verify** (sync `IPhoneVerificationClient`). Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
-- [x] Cadastro pending (`PhoneVerifiedAt` null) com o mesmo e-mail + telefone + documento **retoma** a linha; falha Twilio **não apaga** o Customer; DTO `verificationStarted`.
-- [x] `resend-verification` devolve 202 se o e-mail não existir, já estiver verificado, sem telefone, ou em cooldown 45s (anti-enumeração).
+- [x] Provider SMS real quando sair do Dev — Twilio Verify **mantido** para legado `request-otp`/`verify-otp` e verificação futura de telefone (`IPhoneVerificationClient`). **Não** é mais o gate de cadastro. Catalog SMS (`ISmsProvider` / `DevSmsProvider`) continua Dev.
+- [x] Cadastro pending (`EmailVerifiedAt` null) com o mesmo e-mail + telefone + documento **retoma** a linha; falha de e-mail **não apaga** o Customer; DTO `verificationStarted`.
+- [x] `resend-verification` devolve 202 se o e-mail não existir, já estiver com e-mail verificado, ou em cooldown 45s (anti-enumeração).
 - [x] Rate limit de aplicação: cooldown 45s por tenant+e-mail após start OK; 10 tentativas / 10 min por IP (429 no resend; register não 429).
-- Local sem Twilio: register devolve 200 + `verificationStarted: false`; verify-phone continua 503 fail-closed.
+- [x] **DEV (código):** ativação B2C por OTP de e-mail (`EmailVerifiedAt`, HMAC em `core.otp_codes`, `IEmailProvider` síncrono). `requiresEmailVerification` + alias `requiresPhoneVerification`. Twilio **não** é chamado em register/resend/verify-email. Migration `B2cEmailVerification` (backfill `email_verified_at = phone_verified_at`). ADR 0005. **Não PROD.**
+- [x] **Security follow-up (DEV):** legado `verify-otp` grava `PhoneVerifiedAt` mas **não** emite JWT sem `EmailVerifiedAt` (mesmo 401 do login). **Não PROD.**
+- Local sem envio de e-mail: register devolve 200 + `verificationStarted: false`; verify-email inválido → 401; register **não** devolve 503 por falha do provider de e-mail.
 
 ## 4. Enforcement de módulos por tenant
 
@@ -193,6 +195,8 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 
 | Data | Mudança |
 |---|---|
+| 2026-09-11 | **Security follow-up (API, DEV):** `verify-otp` Twilio-approved deixa de emitir JWT Customer se `EmailVerifiedAt` for nulo; ainda grava `PhoneVerifiedAt`. Mesma mensagem 401 do login. Fail-closed em `BuildAuthResponse`. ADR 0005. Spec `docs/plans/active/2026-09-11-b2c-email-verification-auth-bypass.md`. **Não PROD.** |
+| 2026-09-11 | **Executado (API, DEV):** ativação B2C passa de SMS (Twilio Verify) para OTP de e-mail. `EmailVerifiedAt` + backfill a partir de `PhoneVerifiedAt`; HMAC em `otp_codes`; register/resend/verify-email não chamam Twilio. Infra Twilio mantida para `request-otp`/`verify-otp`. Migration `B2cEmailVerification`. ADR 0005. Spec `docs/plans/active/2026-09-11-b2c-email-verification.md`. **Não PROD.** |
 | 2026-09-11 | **Git:** release `develop` → `main` passa a **Create a merge commit** (não squash). Reconciliação única `chore/final-main-develop-ancestry-reconciliation` para restaurar ancestrais após squashes antigos. Sem delta de produto. PROD não deployado neste passo. |
 | 2026-09-07 | **Executado (API):** settings unificadas de canais — `GET/PUT /api/notifications/channel-configs` com `core.notifications.read` / `core.notifications.write`. Catalog wrappers permanecem. WhatsApp Rentals liga/desliga pela API (SQL só emergência). Migration `AddCoreNotificationPermissions`. Sem schema em `TenantNotificationChannelConfig`. Branch `feat/unified-notification-settings`. |
 | 2026-09-07 | **Review-fix (API):** `ReservationReminderJob` passa a abrir um `IServiceScope` por tenant. Reusar o mesmo `AppDbContext` no sweep misturava `TenantNotificationChannelConfig.Local` e podia duplicar WhatsApp no 2º tenant. Teste `Two_tenants_in_one_sweep_each_get_one_whatsapp_delivery`. Sem migration. PROD WhatsApp continua desligado. |

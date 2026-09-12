@@ -38,10 +38,13 @@ public sealed record RegisterCustomerRequestDto
 
 public sealed record RegisterCustomerResponseDto(
     Guid CustomerId,
-    bool RequiresPhoneVerification,
-    bool VerificationStarted);
+    bool RequiresEmailVerification,
+    bool VerificationStarted)
+{
+    public bool RequiresPhoneVerification => RequiresEmailVerification;
+}
 
-public sealed record VerifyPhoneRequestDto
+public sealed record VerifyEmailRequestDto
 {
     public required string Email { get; init; }
 
@@ -71,6 +74,7 @@ public sealed record CustomerAuthProfileDto(
     string? Cpf,
     DateTimeOffset CreatedAt,
     bool PhoneVerified,
+    bool EmailVerified,
     string? PhotoUrl,
     IReadOnlyDictionary<string, string?> ExtraAttributes);
 
@@ -103,6 +107,7 @@ public sealed record CustomerProfileDto(
     string? PhotoUrl,
     DateTimeOffset CreatedAt,
     bool PhoneVerified,
+    bool EmailVerified,
     IReadOnlyDictionary<string, string?> ExtraAttributes);
 
 public sealed record UpdateCustomerProfileRequestDto
