@@ -273,6 +273,36 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Pmoc_plans_read_only_user_cannot_authorize_plans_write()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Pmoc, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var reader = harness.SeedUserWithKeys("pmoc-reader", Permissions.Pmoc.PlansRead);
+        var writer = harness.SeedUserWithKeys("pmoc-writer", Permissions.Pmoc.PlansWrite);
+        var readerPrincipal = AuthenticatedPrincipal(
+            new Claim("sub", reader.SupabaseAuthId),
+            new Claim("email", reader.Email));
+        var writerPrincipal = AuthenticatedPrincipal(
+            new Claim("sub", writer.SupabaseAuthId),
+            new Claim("email", writer.Email));
+
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                readerPrincipal,
+                PermissionPolicies.Name(Permissions.Pmoc.PlansRead))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                readerPrincipal,
+                PermissionPolicies.Name(Permissions.Pmoc.PlansWrite))).Succeeded);
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                writerPrincipal,
+                PermissionPolicies.Name(Permissions.Pmoc.PlansWrite))).Succeeded);
+    }
+
+    [Fact]
     public async Task Inventory_categories_read_is_denied_when_inventory_module_is_off()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Core.Domain.Entities;
@@ -13,6 +14,9 @@ public sealed class MaintenancePlanService(
     ITenantProvider tenantProvider,
     IAssetRegistry assetRegistry) : IMaintenancePlanService
 {
+    internal const string WorkOrderPlanForeignKeyName =
+        "fk_work_orders_maintenance_plans_maintenance_plan_id";
+
     public async Task<IReadOnlyList<MaintenancePlanResponse>> ListAsync(
         CancellationToken cancellationToken)
     {
@@ -49,7 +53,7 @@ public sealed class MaintenancePlanService(
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
-        ValidateTasks(request.Tasks);
+        ValidateCreateTasks(request.Tasks);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -65,6 +69,7 @@ public sealed class MaintenancePlanService(
                 AssetCategoryId = request.AssetCategoryId,
                 IsActive = request.IsActive,
                 OriginKind = MaintenancePlanOriginKind.Custom,
+                AutoGenerateEnabled = request.AutoGenerateEnabled,
             };
 
             foreach (var taskDto in request.Tasks.OrderBy(t => t.Order))
@@ -119,6 +124,7 @@ public sealed class MaintenancePlanService(
         plan.Frequency = request.Frequency;
         plan.AssetCategoryId = request.AssetCategoryId;
         plan.IsActive = request.IsActive;
+        plan.AutoGenerateEnabled = request.AutoGenerateEnabled;
         plan.Touch();
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -126,11 +132,115 @@ public sealed class MaintenancePlanService(
         return ToResponse(plan);
     }
 
+    public async Task<MaintenancePlanResponse?> ReplaceTasksAsync(
+        Guid id,
+        ReplacePlanTasksRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+
+        var plan = await dbContext.MaintenancePlans
+            .Include(p => p.Tasks)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (plan is null)
+        {
+            return null;
+        }
+
+        ValidateReplaceTasks(request.Tasks);
+
+        var incomingIds = request.Tasks
+            .Where(task => task.Id is Guid)
+            .Select(task => task.Id!.Value)
+            .ToList();
+
+        if (incomingIds.Count != incomingIds.Distinct().Count())
+        {
+            throw new ArgumentException("Duplicate plan task ids are not allowed.");
+        }
+
+        var existingById = plan.Tasks.ToDictionary(task => task.Id);
+        foreach (var taskId in incomingIds)
+        {
+            if (!existingById.ContainsKey(taskId))
+            {
+                throw new KeyNotFoundException($"Plan task '{taskId}' was not found.");
+            }
+        }
+
+        var removed = plan.Tasks
+            .Where(task => !incomingIds.Contains(task.Id))
+            .ToList();
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            if (removed.Count > 0)
+            {
+                var removedIds = removed.Select(task => task.Id).ToList();
+                var linkedWorkOrderTasks = await dbContext.WorkOrderTasks
+                    .Where(task => task.PlanTaskId != null && removedIds.Contains(task.PlanTaskId.Value))
+                    .ToListAsync(cancellationToken);
+
+                foreach (var workOrderTask in linkedWorkOrderTasks)
+                {
+                    workOrderTask.PlanTaskId = null;
+                }
+
+                foreach (var task in removed)
+                {
+                    plan.RemoveTask(task);
+                    dbContext.PlanTasks.Remove(task);
+                }
+            }
+
+            foreach (var dto in request.Tasks.OrderBy(task => task.Order))
+            {
+                if (dto.Id is Guid taskId)
+                {
+                    var existing = existingById[taskId];
+                    existing.Title = dto.Title.Trim();
+                    existing.InputType = dto.InputType;
+                    existing.IsMandatory = dto.IsMandatory;
+                    existing.Order = dto.Order;
+                    existing.Configuration = NormalizeConfiguration(dto.Configuration);
+                    existing.Touch();
+                    continue;
+                }
+
+                plan.AddTask(new PlanTask
+                {
+                    TenantId = tenantId,
+                    MaintenancePlanId = plan.Id,
+                    Title = dto.Title.Trim(),
+                    InputType = dto.InputType,
+                    IsMandatory = dto.IsMandatory,
+                    Order = dto.Order,
+                    Configuration = NormalizeConfiguration(dto.Configuration),
+                });
+            }
+
+            plan.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return ToResponse(plan);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         EnsureTenantContext();
 
         var plan = await dbContext.MaintenancePlans
+            .Include(p => p.Tasks)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
 
         if (plan is null)
@@ -138,10 +248,50 @@ public sealed class MaintenancePlanService(
             return false;
         }
 
-        dbContext.MaintenancePlans.Remove(plan);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var inUse = await dbContext.WorkOrders
+            .AnyAsync(workOrder => workOrder.MaintenancePlanId == plan.Id, cancellationToken);
 
-        return true;
+        if (inUse)
+        {
+            throw new PlanInUseException();
+        }
+
+        try
+        {
+            dbContext.MaintenancePlans.Remove(plan);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException ex) when (IsWorkOrderPlanRestrictViolation(ex))
+        {
+            throw new PlanInUseException();
+        }
+    }
+
+    internal static bool IsWorkOrderPlanRestrictViolation(DbUpdateException exception)
+    {
+        for (var current = exception as Exception; current is not null; current = current.InnerException)
+        {
+            if (current is not PostgresException postgres
+                || postgres.SqlState != PostgresErrorCodes.ForeignKeyViolation)
+            {
+                continue;
+            }
+
+            var blob = string.Join(
+                ' ',
+                postgres.ConstraintName,
+                postgres.TableName,
+                postgres.Detail,
+                postgres.MessageText);
+
+            if (blob.Contains(WorkOrderPlanForeignKeyName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task EnsureUnitExistsAsync(Guid unitId, CancellationToken cancellationToken)
@@ -163,7 +313,7 @@ public sealed class MaintenancePlanService(
         await assetRegistry.RequireCategoryAsync(assetCategoryId, cancellationToken);
     }
 
-    private static void ValidateTasks(IReadOnlyList<CreatePlanTaskDto> tasks)
+    private static void ValidateCreateTasks(IReadOnlyList<CreatePlanTaskDto> tasks)
     {
         if (tasks.Count == 0)
         {
@@ -172,24 +322,44 @@ public sealed class MaintenancePlanService(
 
         foreach (var task in tasks)
         {
-            if (string.IsNullOrWhiteSpace(task.Title))
-            {
-                throw new ArgumentException("Plan task title is required.");
-            }
+            ValidateTaskFields(task.Title, task.Configuration);
+        }
+    }
 
-            if (!string.IsNullOrWhiteSpace(task.Configuration))
-            {
-                try
-                {
-                    using var _ = JsonDocument.Parse(task.Configuration);
-                }
-                catch (JsonException ex)
-                {
-                    throw new ArgumentException(
-                        $"Plan task '{task.Title}' has invalid Configuration JSON.",
-                        ex);
-                }
-            }
+    private static void ValidateReplaceTasks(IReadOnlyList<ReplacePlanTaskDto>? tasks)
+    {
+        if (tasks is null || tasks.Count == 0)
+        {
+            throw new ArgumentException("At least one plan task is required.");
+        }
+
+        foreach (var task in tasks)
+        {
+            ValidateTaskFields(task.Title, task.Configuration);
+        }
+    }
+
+    private static void ValidateTaskFields(string title, string? configuration)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new ArgumentException("Plan task title is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(configuration))
+        {
+            return;
+        }
+
+        try
+        {
+            using var _ = JsonDocument.Parse(configuration);
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException(
+                $"Plan task '{title}' has invalid Configuration JSON.",
+                ex);
         }
     }
 
@@ -229,6 +399,10 @@ public sealed class MaintenancePlanService(
             plan.Frequency,
             plan.AssetCategoryId,
             plan.IsActive,
+            plan.OriginKind,
+            plan.SourceTemplateId,
+            plan.SourceTemplateVersion,
+            plan.AutoGenerateEnabled,
             plan.Tasks
                 .OrderBy(t => t.Order)
                 .Select(ToTaskResponse)

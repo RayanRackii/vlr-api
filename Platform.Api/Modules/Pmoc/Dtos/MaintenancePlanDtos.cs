@@ -29,6 +29,8 @@ public sealed record CreateMaintenancePlanRequest
 
     public bool IsActive { get; init; } = true;
 
+    public bool AutoGenerateEnabled { get; init; }
+
     public required List<CreatePlanTaskDto> Tasks { get; init; }
 }
 
@@ -45,6 +47,28 @@ public sealed record UpdateMaintenancePlanRequest
     public required Guid AssetCategoryId { get; init; }
 
     public required bool IsActive { get; init; }
+
+    public required bool AutoGenerateEnabled { get; init; }
+}
+
+public sealed record ReplacePlanTaskDto
+{
+    public Guid? Id { get; init; }
+
+    public required string Title { get; init; }
+
+    public required TaskInputType InputType { get; init; }
+
+    public bool IsMandatory { get; init; } = true;
+
+    public required int Order { get; init; }
+
+    public string? Configuration { get; init; }
+}
+
+public sealed record ReplacePlanTasksRequest
+{
+    public required List<ReplacePlanTaskDto> Tasks { get; init; }
 }
 
 public sealed record PlanTaskResponse(
@@ -68,6 +92,10 @@ public sealed record MaintenancePlanResponse(
     MaintenanceFrequency Frequency,
     Guid AssetCategoryId,
     bool IsActive,
+    MaintenancePlanOriginKind OriginKind,
+    Guid? SourceTemplateId,
+    int? SourceTemplateVersion,
+    bool AutoGenerateEnabled,
     IReadOnlyList<PlanTaskResponse> Tasks,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
