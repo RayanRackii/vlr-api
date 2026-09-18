@@ -1148,6 +1148,11 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<MaintenancePlanResponse> CreateFromTemplateAsync(
+            CreateFromTemplateRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<MaintenancePlanResponse?> UpdateAsync(
             Guid id,
             UpdateMaintenancePlanRequest request,

@@ -74,6 +74,30 @@ public sealed class MaintenancePlansController(
         }
     }
 
+    [HttpPost("from-template")]
+    [RequirePermission(Permissions.Pmoc.PlansWrite)]
+    public async Task<ActionResult<MaintenancePlanResponse>> CreateFromTemplate(
+        [FromBody] CreateFromTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var plan = await maintenancePlanService.CreateFromTemplateAsync(
+                request,
+                cancellationToken);
+
+            return CreatedAtAction(nameof(GetById), new { id = plan.Id }, plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
     [HttpPut("{id:guid}")]
     [RequirePermission(Permissions.Pmoc.PlansWrite)]
     public async Task<ActionResult<MaintenancePlanResponse>> Update(

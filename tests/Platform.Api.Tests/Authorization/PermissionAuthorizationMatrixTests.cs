@@ -303,6 +303,28 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Pmoc_templates_read_only_user_cannot_authorize_plans_write()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Pmoc, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var reader = harness.SeedUserWithKeys("pmoc-templates-reader", Permissions.Pmoc.TemplatesRead);
+        var principal = AuthenticatedPrincipal(
+            new Claim("sub", reader.SupabaseAuthId),
+            new Claim("email", reader.Email));
+
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Pmoc.TemplatesRead))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                principal,
+                PermissionPolicies.Name(Permissions.Pmoc.PlansWrite))).Succeeded);
+    }
+
+    [Fact]
     public async Task Inventory_categories_read_is_denied_when_inventory_module_is_off()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();

@@ -5,9 +5,9 @@ Derived context — NOT canonical.
 - Scope: PMOC (maintenance plans, Rolvix template library) and OS (work orders, technician execution)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `docs/plans/active/2026-09-18-pmoc-os-phase1.md`
-- Last verified: 2026-09-18 (Slice 2 in progress on `feat/pmoc-os-phase1-plan-mutations`; Slice 1 merged to `develop`)
+- Last verified: 2026-09-18 (Slice 3 implemented on `feat/pmoc-os-phase1-template-library`; Slices 1–2 merged to `develop`)
 - Verified at commit(s):
-  - API `develop` (Slice 1): `d5a2a8802b46809457e5796dfff9ffc18ce4017d`
+  - API `develop` (Slice 2): `5270bc157cd935a07ceb5def59e1d9748df0b50b`
   - WEB `develop`: `85ce88f272e792d1c3016bb34c930ea6ce6994b6`
 
 ## Purpose
@@ -40,7 +40,8 @@ This pack describes **shipped develop + approved Phase 1 target**. Until Phase 1
 
 ```
 GlobalMaintenanceTemplate (LibraryKey/Version/Status/SourceReferences; 1 seed: ANVISA RE 09 + NR-10)
-        ↓ frontend form-fill still (server clone is Slice 3)
+        ↓ GET library Published-only; GET by id includes Deprecated
+        ↓ POST /api/maintenance-plans/from-template (server clone)
 MaintenancePlan + PlanTasks (header PUT including AutoGenerateEnabled; PUT /tasks replace-set)
         ↓ Hangfire PmocEngineJob (all IsActive, calendar due; auto filter is Slice 4)
 WorkOrder + WorkOrderTasks snapshot
@@ -51,6 +52,9 @@ WorkOrder + WorkOrderTasks snapshot
 - Duplicate protection: unique filtered index `ux_os_work_orders_pmoc_period` (canceled excluded).
 - DELETE unused plan: hard delete + cascade PlanTasks. Used (any WO with `MaintenancePlanId`, including Canceled): **409 `PLAN_IN_USE`**. FK Restrict is race backstop.
 - MaintenancePlanResponse always includes `originKind`, `sourceTemplateId`, `sourceTemplateVersion`, `autoGenerateEnabled`.
+- `GET /api/global-templates` is Published-only; response includes `libraryKey`, `version`, `status`, `sourceReferences`.
+- `GET /api/global-templates/{id}` returns the full template + tasks and **includes Deprecated**.
+- `POST /api/maintenance-plans/from-template` clones a Published row (`OriginKind=RolvixTemplate`, frozen `SourceTemplateVersion`, new PlanTask ids). Generic `POST /api/maintenance-plans` stays Custom.
 - WEB: `/pmoc`, `/pmoc/novo`, `/os`, `/os/:id`, `/os/nova`. CREA copy in i18n.
 - Offline: `vlr-web/src/lib/offlineSync.ts` queues WO task PATCH; **not** Phase 1 work.
 
@@ -102,8 +106,9 @@ Phase 1 additive endpoints (spec): `GET /api/global-templates/{id}`, `POST /api/
 ## Known gaps / open constraints
 
 - Slice 1 (domain + Migration A/B) is **merged to `develop`**
-- Slice 2 (PUT tasks, DELETE 409, lineage/auto DTOs) is **in progress** on `feat/pmoc-os-phase1-plan-mutations`
-- Slice 3+ (from-template, generation service, Hangfire auto filter, WEB) not implemented
+- Slice 2 (PUT tasks, DELETE 409, lineage/auto DTOs) is **merged to `develop`**
+- Slice 3 (GET template by id, Published library list, `from-template` clone) is **implemented** on `feat/pmoc-os-phase1-template-library` (not yet on `develop`)
+- Slice 4+ (generation service, Hangfire auto filter, WEB) not implemented
 - Unique-index collision precheck: DEV `jzptnjyzijklutinpxag` = 0, PROD `kbptdzfbngelzdhriyhf` = 0 (`MIGRATION_B = ALLOWED`)
 - No last/next/overdue asset state (Phase 2)
 - No template adoption/diff UX (model must allow later)
