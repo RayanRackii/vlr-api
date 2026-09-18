@@ -16,6 +16,12 @@ File: [`active/catalog.md`](./active/catalog.md)
 
 Use for: CatalogProduct, CatalogOrder, ProductRequest, catalog files/storage, catalog notifications, B2C catalog/cart. Tenant channel config for Catalog+Rentals is `GET/PUT /api/notifications/channel-configs` (`core.notifications.*`); catalog wrappers remain for delivery history.
 
+### `pmoc-os`
+
+File: [`active/pmoc-os.md`](./active/pmoc-os.md)
+
+Use for: GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS. Phase 1 spec: [`docs/plans/active/2026-09-18-pmoc-os-phase1.md`](../plans/active/2026-09-18-pmoc-os-phase1.md) (approved, not yet implemented).
+
 ## Planned / on-demand
 
 ### `platform-core`
