@@ -100,8 +100,8 @@ Phase 1 additive endpoints (spec): `GET /api/global-templates/{id}`, `POST /api/
 
 ## Known gaps / open constraints
 
-- Phase 1 not implemented (this pack will go stale when slices merge — update after code)
-- Unique-index collision precheck not yet run on DEV/PROD
+- Slice 1 (domain + Migration A/B) is on `feat/pmoc-os-phase1-foundation`; later slices not implemented
+- Unique-index collision precheck: DEV `jzptnjyzijklutinpxag` = 0, PROD `kbptdzfbngelzdhriyhf` = 0 (`MIGRATION_B = ALLOWED`)
 - No last/next/overdue asset state (Phase 2)
 - No template adoption/diff UX (model must allow later)
 - Hangfire ignores commercial module flags (preserve)

@@ -35,6 +35,9 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
         builder.Property(w => w.Notes)
             .HasMaxLength(4000);
 
+        builder.Property(w => w.SourcePlanName)
+            .HasMaxLength(200);
+
         builder.Property(w => w.CreatedAt)
             .IsRequired();
 
@@ -44,7 +47,10 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
 
         builder.HasIndex(w => new { w.TenantId, w.AssetId, w.ScheduledDate });
 
-        builder.HasIndex(w => new { w.TenantId, w.MaintenancePlanId, w.AssetId, w.ScheduledDate });
+        builder.HasIndex(w => new { w.TenantId, w.MaintenancePlanId, w.AssetId, w.ScheduledDate })
+            .IsUnique()
+            .HasFilter("maintenance_plan_id IS NOT NULL AND status <> 'Canceled'")
+            .HasDatabaseName("ux_os_work_orders_pmoc_period");
 
         builder.HasOne(w => w.Asset)
             .WithMany()
@@ -54,7 +60,7 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
         builder.HasOne(w => w.MaintenancePlan)
             .WithMany()
             .HasForeignKey(w => w.MaintenancePlanId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(w => w.AssignedUser)
             .WithMany()

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Pmoc.Services;
@@ -63,6 +64,7 @@ public sealed class MaintenancePlanService(
                 Frequency = request.Frequency,
                 AssetCategoryId = request.AssetCategoryId,
                 IsActive = request.IsActive,
+                OriginKind = MaintenancePlanOriginKind.Custom,
             };
 
             foreach (var taskDto in request.Tasks.OrderBy(t => t.Order))

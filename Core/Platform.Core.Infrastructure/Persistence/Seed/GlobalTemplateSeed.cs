@@ -39,4 +39,13 @@ public static class GlobalTemplateSeed
     public const string AnvisaJurisdiction = "BR";
 
     public const string AnvisaTargetEquipmentType = "Ar Condicionado";
+
+    public const string AnvisaLibraryKey = "pmoc-ar-condicionado-anvisa-nr10";
+
+    public const int AnvisaVersion = 1;
+
+    public const GlobalTemplateStatus AnvisaStatus = GlobalTemplateStatus.Published;
+
+    public const string AnvisaSourceReferences =
+        "Lei 13.589/2018; Resolução Anvisa RE 09; NR-10";
 }

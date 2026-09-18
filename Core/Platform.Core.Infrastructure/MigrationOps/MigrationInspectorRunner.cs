@@ -49,6 +49,8 @@ public static class MigrationInspectorRunner
             WriteDiagnostics(output, diagnostics);
             var catalogPreflight = await CatalogPreflightDiagnostics.CollectAsync(dbContext, cancellationToken);
             WriteCatalogPreflight(output, catalogPreflight);
+            var pmocCollisions = await PmocPeriodCollisionDiagnostics.CollectAsync(dbContext, cancellationToken);
+            WritePmocPeriodCollisions(output, pmocCollisions);
             return;
         }
 
@@ -152,6 +154,18 @@ public static class MigrationInspectorRunner
         foreach (var sample in diagnostics.DuplicateSamples)
         {
             output.WriteLine($"CPF_DUPLICATE_SAMPLE tenant={sample.TenantId:D} mask={sample.MaskedCpf}");
+        }
+    }
+
+    private static void WritePmocPeriodCollisions(
+        TextWriter output,
+        PmocPeriodCollisionCounts diagnostics)
+    {
+        output.WriteLine($"PMOC_WO_PERIOD_COLLISIONS={diagnostics.CollisionGroups}");
+        foreach (var sample in diagnostics.Samples)
+        {
+            output.WriteLine(
+                $"PMOC_WO_PERIOD_COLLISION tenant={sample.TenantId:D} plan={sample.MaintenancePlanId:D} asset={sample.AssetId:D} date={sample.ScheduledDate:yyyy-MM-dd} work_order_ids={string.Join(',', sample.WorkOrderIds)}");
         }
     }
 }
