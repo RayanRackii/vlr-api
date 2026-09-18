@@ -38,12 +38,30 @@ public sealed class GlobalMaintenanceTemplateConfiguration
             .HasMaxLength(200)
             .IsRequired();
 
+        builder.Property(t => t.LibraryKey)
+            .HasMaxLength(80)
+            .IsRequired();
+
+        builder.Property(t => t.Version)
+            .IsRequired();
+
+        builder.Property(t => t.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        builder.Property(t => t.SourceReferences)
+            .HasMaxLength(2000);
+
         builder.Property(t => t.CreatedAt)
             .IsRequired();
 
         builder.HasIndex(t => t.Jurisdiction);
 
         builder.HasIndex(t => t.Name);
+
+        builder.HasIndex(t => new { t.LibraryKey, t.Version })
+            .IsUnique();
 
         builder.HasMany(t => t.Tasks)
             .WithOne(task => task.GlobalMaintenanceTemplate)
@@ -62,6 +80,10 @@ public sealed class GlobalMaintenanceTemplateConfiguration
                 Frequency = GlobalTemplateSeed.AnvisaFrequency,
                 Jurisdiction = GlobalTemplateSeed.AnvisaJurisdiction,
                 TargetEquipmentType = GlobalTemplateSeed.AnvisaTargetEquipmentType,
+                LibraryKey = GlobalTemplateSeed.AnvisaLibraryKey,
+                Version = GlobalTemplateSeed.AnvisaVersion,
+                Status = GlobalTemplateSeed.AnvisaStatus,
+                SourceReferences = GlobalTemplateSeed.AnvisaSourceReferences,
                 CreatedAt = GlobalTemplateSeed.CreatedAt,
                 UpdatedAt = (DateTimeOffset?)null,
             });

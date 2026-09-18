@@ -41,6 +41,18 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(p => p.OriginKind)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        builder.Property(p => p.SourceTemplateId);
+
+        builder.Property(p => p.SourceTemplateVersion);
+
+        builder.Property(p => p.AutoGenerateEnabled)
+            .IsRequired();
+
         builder.Property(p => p.CreatedAt)
             .IsRequired();
 
@@ -59,6 +71,11 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
             .WithMany()
             .HasForeignKey(p => p.AssetCategoryId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<GlobalMaintenanceTemplate>()
+            .WithMany()
+            .HasForeignKey(p => p.SourceTemplateId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasMany(p => p.Tasks)
             .WithOne(t => t.MaintenancePlan)

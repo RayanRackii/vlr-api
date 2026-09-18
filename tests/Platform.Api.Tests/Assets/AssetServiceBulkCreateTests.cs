@@ -239,7 +239,7 @@ internal sealed class BulkCreateAssetsHarness : IAsyncDisposable
     public static async Task<BulkCreateAssetsHarness> CreateAsync()
     {
         var tenantProvider = new FakeTenantProvider();
-        var db = InMemoryAppDb.Create(tenantProvider);
+        var db = InMemoryAppDb.Create(tenantProvider, ignoreInMemoryTransactions: true);
 
         var tenant = new Tenant("Clube Bulk", "77777777000191", subdomain: "clube-bulk");
         var unit = new Unit(tenant.Id, "Matriz");
