@@ -113,13 +113,20 @@ public sealed class WorkOrderGenerationService(
         catch (DbUpdateException ex) when (IsPmocPeriodUniqueViolation(ex))
         {
             await transaction.RollbackAsync(cancellationToken);
+            DiscardFailedGeneration();
             throw new DuplicateWorkOrderException();
         }
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
+            DiscardFailedGeneration();
             throw;
         }
+    }
+
+    internal void DiscardFailedGeneration()
+    {
+        dbContext.ChangeTracker.Clear();
     }
 
     internal static bool IsPmocPeriodUniqueViolation(DbUpdateException exception)

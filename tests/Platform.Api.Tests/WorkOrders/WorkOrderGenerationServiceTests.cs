@@ -220,6 +220,53 @@ public sealed class WorkOrderGenerationServiceTests
                 new DbUpdateException("conflict", new InvalidOperationException("nope"))));
     }
 
+    [Fact]
+    public async Task Unique_violation_recovery_clears_tracker_so_next_asset_can_generate()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var plan = await CreatePlanAsync(harness, "Tracker");
+        var assetA = await CreateMatchingAssetAsync(harness, "A");
+        var assetB = await CreateMatchingAssetAsync(harness, "B");
+        var generator = CreateGenerator(harness);
+        var scheduled = new DateOnly(2026, 9, 18);
+
+        var zombie = new WorkOrder
+        {
+            TenantId = plan.TenantId,
+            AssetId = assetA.Id,
+            MaintenancePlanId = plan.Id,
+            Status = WorkOrderStatus.Pending,
+            ScheduledDate = scheduled,
+            SourcePlanName = "zombie",
+        };
+        harness.Db.WorkOrders.Add(zombie);
+        Assert.Contains(
+            harness.Db.ChangeTracker.Entries<WorkOrder>(),
+            entry => entry.State == EntityState.Added && entry.Entity.Id == zombie.Id);
+
+        var unique = new DbUpdateException(
+            "conflict",
+            new PostgresException(
+                "duplicate key value violates unique constraint \"ux_os_work_orders_pmoc_period\"",
+                "ERROR",
+                "ERROR",
+                PostgresErrorCodes.UniqueViolation));
+        Assert.True(WorkOrderGenerationService.IsPmocPeriodUniqueViolation(unique));
+        generator.DiscardFailedGeneration();
+
+        Assert.DoesNotContain(
+            harness.Db.ChangeTracker.Entries<WorkOrder>(),
+            entry => entry.State == EntityState.Added && entry.Entity.Id == zombie.Id);
+
+        var created = await generator.GenerateAsync(
+            new GenerateWorkOrderCommand(plan.Id, assetB.Id, scheduled, null),
+            CancellationToken.None);
+
+        Assert.Equal(assetB.Id, created.AssetId);
+        Assert.False(await harness.Db.WorkOrders.AnyAsync(item => item.Id == zombie.Id));
+        Assert.Equal(1, await harness.Db.WorkOrders.CountAsync());
+    }
+
     [Fact(Skip = "InMemory EF does not enforce ux_os_work_orders_pmoc_period; do not fake a concurrent unique test.")]
     public void Concurrent_duplicate_requires_postgres_unique_index()
     {
