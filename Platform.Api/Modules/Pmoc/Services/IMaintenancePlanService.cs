@@ -12,6 +12,10 @@ public interface IMaintenancePlanService
         CreateMaintenancePlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<MaintenancePlanResponse> CreateFromTemplateAsync(
+        CreateFromTemplateRequest request,
+        CancellationToken cancellationToken);
+
     Task<MaintenancePlanResponse?> UpdateAsync(
         Guid id,
         UpdateMaintenancePlanRequest request,

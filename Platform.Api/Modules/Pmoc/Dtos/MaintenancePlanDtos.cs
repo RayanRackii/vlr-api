@@ -34,6 +34,23 @@ public sealed record CreateMaintenancePlanRequest
     public required List<CreatePlanTaskDto> Tasks { get; init; }
 }
 
+public sealed record CreateFromTemplateRequest
+{
+    public required Guid TemplateId { get; init; }
+
+    public required Guid UnitId { get; init; }
+
+    public required Guid AssetCategoryId { get; init; }
+
+    public string? Name { get; init; }
+
+    public string? Description { get; init; }
+
+    public bool IsActive { get; init; } = true;
+
+    public bool AutoGenerateEnabled { get; init; }
+}
+
 public sealed record UpdateMaintenancePlanRequest
 {
     public required Guid UnitId { get; init; }

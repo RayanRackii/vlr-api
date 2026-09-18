@@ -7,4 +7,8 @@ public interface IGlobalTemplateService
     Task<IReadOnlyList<GlobalMaintenanceTemplateResponse>> ListAsync(
         string? jurisdiction,
         CancellationToken cancellationToken);
+
+    Task<GlobalMaintenanceTemplateResponse?> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken);
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Pmoc.Services;
@@ -15,6 +16,7 @@ public sealed class GlobalTemplateService(
         var query = dbContext.GlobalMaintenanceTemplates
             .AsNoTracking()
             .Include(template => template.Tasks)
+            .Where(template => template.Status == GlobalTemplateStatus.Published)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(jurisdiction))
@@ -34,6 +36,18 @@ public sealed class GlobalTemplateService(
         return templates.Select(ToResponse).ToList();
     }
 
+    public async Task<GlobalMaintenanceTemplateResponse?> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var template = await dbContext.GlobalMaintenanceTemplates
+            .AsNoTracking()
+            .Include(item => item.Tasks)
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        return template is null ? null : ToResponse(template);
+    }
+
     private static GlobalMaintenanceTemplateResponse ToResponse(
         GlobalMaintenanceTemplate template) =>
         new(
@@ -43,6 +57,10 @@ public sealed class GlobalTemplateService(
             template.Frequency,
             template.Jurisdiction,
             template.TargetEquipmentType,
+            template.LibraryKey,
+            template.Version,
+            template.Status,
+            template.SourceReferences,
             template.Tasks
                 .OrderBy(task => task.Order)
                 .Select(ToTaskResponse)

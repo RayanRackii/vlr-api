@@ -99,6 +99,96 @@ public sealed class MaintenancePlanService(
         }
     }
 
+    public async Task<MaintenancePlanResponse> CreateFromTemplateAsync(
+        CreateFromTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+
+        var template = await dbContext.GlobalMaintenanceTemplates
+            .Include(item => item.Tasks)
+            .FirstOrDefaultAsync(item => item.Id == request.TemplateId, cancellationToken);
+
+        if (template is null)
+        {
+            throw new KeyNotFoundException($"Template '{request.TemplateId}' was not found.");
+        }
+
+        if (template.Status != GlobalTemplateStatus.Published)
+        {
+            throw new ArgumentException("Only published templates can be cloned.");
+        }
+
+        await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
+        await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
+
+        var taskDtos = template.Tasks
+            .OrderBy(task => task.Order)
+            .Select(task => new CreatePlanTaskDto
+            {
+                Title = task.Title,
+                InputType = task.InputType,
+                IsMandatory = task.IsMandatory,
+                Order = task.Order,
+                Configuration = task.Configuration,
+            })
+            .ToList();
+
+        ValidateCreateTasks(taskDtos);
+
+        var name = string.IsNullOrWhiteSpace(request.Name)
+            ? template.Name
+            : request.Name.Trim();
+        var description = request.Description is null
+            ? template.Description
+            : NormalizeOptional(request.Description);
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var plan = new MaintenancePlan
+            {
+                TenantId = tenantId,
+                UnitId = request.UnitId,
+                Name = name,
+                Description = description,
+                Frequency = template.Frequency,
+                AssetCategoryId = request.AssetCategoryId,
+                IsActive = request.IsActive,
+                OriginKind = MaintenancePlanOriginKind.RolvixTemplate,
+                SourceTemplateId = template.Id,
+                SourceTemplateVersion = template.Version,
+                AutoGenerateEnabled = request.AutoGenerateEnabled,
+            };
+
+            foreach (var taskDto in taskDtos)
+            {
+                plan.AddTask(new PlanTask
+                {
+                    TenantId = tenantId,
+                    MaintenancePlanId = plan.Id,
+                    Title = taskDto.Title.Trim(),
+                    InputType = taskDto.InputType,
+                    IsMandatory = taskDto.IsMandatory,
+                    Order = taskDto.Order,
+                    Configuration = NormalizeConfiguration(taskDto.Configuration),
+                });
+            }
+
+            dbContext.MaintenancePlans.Add(plan);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return ToResponse(plan);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<MaintenancePlanResponse?> UpdateAsync(
         Guid id,
         UpdateMaintenancePlanRequest request,
