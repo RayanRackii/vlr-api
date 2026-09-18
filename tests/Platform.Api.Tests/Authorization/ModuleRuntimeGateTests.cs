@@ -1154,6 +1154,12 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<MaintenancePlanResponse?> ReplaceTasksAsync(
+            Guid id,
+            ReplacePlanTasksRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }

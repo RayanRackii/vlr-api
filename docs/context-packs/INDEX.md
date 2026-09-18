@@ -20,7 +20,7 @@ Use for: CatalogProduct, CatalogOrder, ProductRequest, catalog files/storage, ca
 
 File: [`active/pmoc-os.md`](./active/pmoc-os.md)
 
-Use for: GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS. Phase 1 spec: [`docs/plans/active/2026-09-18-pmoc-os-phase1.md`](../plans/active/2026-09-18-pmoc-os-phase1.md) (approved). Slice 1 is domain + migrations A/B only.
+Use for: GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS. Phase 1 spec: [`docs/plans/active/2026-09-18-pmoc-os-phase1.md`](../plans/active/2026-09-18-pmoc-os-phase1.md) (approved). Slice 1 is on `develop`; Slice 2 (plan mutations) is in progress.
 
 ## Planned / on-demand
 

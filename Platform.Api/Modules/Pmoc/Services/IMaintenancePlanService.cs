@@ -17,5 +17,10 @@ public interface IMaintenancePlanService
         UpdateMaintenancePlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<MaintenancePlanResponse?> ReplaceTasksAsync(
+        Guid id,
+        ReplacePlanTasksRequest request,
+        CancellationToken cancellationToken);
+
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
 }

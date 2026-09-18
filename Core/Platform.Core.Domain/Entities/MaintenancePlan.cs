@@ -39,4 +39,9 @@ public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
     {
         _tasks.Add(task);
     }
+
+    public void RemoveTask(PlanTask task)
+    {
+        _tasks.Remove(task);
+    }
 }
