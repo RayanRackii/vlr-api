@@ -213,11 +213,12 @@ public sealed class PmocPhase1FoundationTests
     }
 
     [Fact]
-    public void Generation_job_is_unchanged_in_slice_1()
+    public void Generation_job_filters_active_and_auto_generate_enabled()
     {
         var source = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "PmocEngineJob.cs")));
-        Assert.Contains("Where(plan => plan.IsActive)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("AutoGenerateEnabled", source, StringComparison.Ordinal);
+        Assert.Contains("plan.IsActive && plan.AutoGenerateEnabled", source, StringComparison.Ordinal);
+        Assert.Contains("IWorkOrderGenerationService", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("new WorkOrder", source, StringComparison.Ordinal);
     }
 
     private static AppDbContext CreateModelDb()

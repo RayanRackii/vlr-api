@@ -6,6 +6,7 @@ public interface IWorkOrderService
 {
     Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
         Guid? assetId,
+        Guid? maintenancePlanId,
         CancellationToken cancellationToken);
 
     Task<WorkOrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken);

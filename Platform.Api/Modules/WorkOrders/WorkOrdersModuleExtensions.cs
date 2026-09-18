@@ -7,6 +7,7 @@ public static class WorkOrdersModuleExtensions
     public static IServiceCollection AddWorkOrdersModule(this IServiceCollection services)
     {
         services.AddScoped<IWorkOrderService, WorkOrderService>();
+        services.AddScoped<IWorkOrderGenerationService, WorkOrderGenerationService>();
 
         return services;
     }

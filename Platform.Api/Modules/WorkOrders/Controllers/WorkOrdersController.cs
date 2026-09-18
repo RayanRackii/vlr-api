@@ -13,15 +13,20 @@ namespace Platform.Api.Modules.WorkOrders.Controllers;
 [Route("api/work-orders")]
 public sealed class WorkOrdersController(
     IWorkOrderService workOrderService,
+    IWorkOrderGenerationService workOrderGenerationService,
     IAssetRegistry assetRegistry) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Os.WorkOrdersRead)]
     public async Task<ActionResult<IReadOnlyList<WorkOrderResponse>>> List(
         [FromQuery] Guid? assetId,
+        [FromQuery] Guid? maintenancePlanId,
         CancellationToken cancellationToken)
     {
-        var workOrders = await workOrderService.ListAsync(assetId, cancellationToken);
+        var workOrders = await workOrderService.ListAsync(
+            assetId,
+            maintenancePlanId,
+            cancellationToken);
         return Ok(workOrders);
     }
 
@@ -60,6 +65,37 @@ public sealed class WorkOrdersController(
         {
             var workOrder = await workOrderService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = workOrder.Id }, workOrder);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("from-plan")]
+    [RequirePermission(Permissions.Os.WorkOrdersCreate)]
+    public async Task<ActionResult<WorkOrderResponse>> CreateFromPlan(
+        [FromBody] GenerateWorkOrderFromPlanRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var workOrder = await workOrderGenerationService.GenerateAsync(
+                new GenerateWorkOrderCommand(
+                    request.PlanId,
+                    request.AssetId,
+                    request.ScheduledDate,
+                    request.AssignedUserId),
+                cancellationToken);
+            return CreatedAtAction(nameof(GetById), new { id = workOrder.Id }, workOrder);
+        }
+        catch (DuplicateWorkOrderException ex)
+        {
+            return Conflict(new { error = ex.Message, code = DuplicateWorkOrderException.Code });
         }
         catch (ArgumentException ex)
         {

@@ -5,9 +5,9 @@ Derived context — NOT canonical.
 - Scope: PMOC (maintenance plans, Rolvix template library) and OS (work orders, technician execution)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `docs/plans/active/2026-09-18-pmoc-os-phase1.md`
-- Last verified: 2026-09-18 (Slice 3 implemented on `feat/pmoc-os-phase1-template-library`; Slices 1–2 merged to `develop`)
+- Last verified: 2026-09-18 (Slice 4 implemented on `feat/pmoc-os-phase1-generation`; Slices 1–3 on `develop`)
 - Verified at commit(s):
-  - API `develop` (Slice 2): `5270bc157cd935a07ceb5def59e1d9748df0b50b`
+  - API `develop` (Slice 3 squash, PR #82): `428459a88e247514038249b151b1a5811c79865e`
   - WEB `develop`: `85ce88f272e792d1c3016bb34c930ea6ce6994b6`
 
 ## Purpose
@@ -43,8 +43,9 @@ GlobalMaintenanceTemplate (LibraryKey/Version/Status/SourceReferences; 1 seed: A
         ↓ GET library Published-only; GET by id includes Deprecated
         ↓ POST /api/maintenance-plans/from-template (server clone)
 MaintenancePlan + PlanTasks (header PUT including AutoGenerateEnabled; PUT /tasks replace-set)
-        ↓ Hangfire PmocEngineJob (all IsActive, calendar due; auto filter is Slice 4)
-WorkOrder + WorkOrderTasks snapshot
+        ↓ Hangfire PmocEngineJob (`IsActive && AutoGenerateEnabled`, calendar due) OR POST `/api/work-orders/from-plan`
+        ↓ IWorkOrderGenerationService snapshot
+WorkOrder + WorkOrderTasks snapshot (`SourcePlanName`)
 ```
 
 - Seed id `6f1c2a0e-4b9d-4f3a-9c7e-1d2a3b4c5d6e` — preserve.
@@ -55,6 +56,9 @@ WorkOrder + WorkOrderTasks snapshot
 - `GET /api/global-templates` is Published-only; response includes `libraryKey`, `version`, `status`, `sourceReferences`.
 - `GET /api/global-templates/{id}` returns the full template + tasks and **includes Deprecated**.
 - `POST /api/maintenance-plans/from-template` clones a Published row (`OriginKind=RolvixTemplate`, frozen `SourceTemplateVersion`, new PlanTask ids). Generic `POST /api/maintenance-plans` stays Custom.
+- `POST /api/work-orders/from-plan` (`os.work_orders.create`) generates Pending OS from plan+asset; 409 `DUPLICATE_WORK_ORDER` on the PMOC period unique key. Manual `POST /api/work-orders` stays client-task (`/os/nova`).
+- `GET /api/work-orders?maintenancePlanId=` is additive (AND with `assetId`); related OS contract. `WorkOrderResponse.sourcePlanName` is nullable.
+- Hangfire `pmoc-engine` filters `IsActive && AutoGenerateEnabled`; calendar/cron/TZ/assets unchanged. Job calls the same generator (no second snapshot copy). Canceled WO for the same key does not block regeneration.
 - WEB: `/pmoc`, `/pmoc/novo`, `/os`, `/os/:id`, `/os/nova`. CREA copy in i18n.
 - Offline: `vlr-web/src/lib/offlineSync.ts` queues WO task PATCH; **not** Phase 1 work.
 
@@ -97,7 +101,8 @@ Phase 1 additive endpoints (spec): `GET /api/global-templates/{id}`, `POST /api/
 
 - `Platform.Api/Modules/Pmoc/`
 - `Platform.Api/Modules/WorkOrders/`
-- `Platform.Api/Jobs/PmocEngineJob.cs`, `HangfireExtensions.cs`
+- `Platform.Api/Jobs/PmocEngineJob.cs`, `PmocDueCalendar.cs`, `HangfireExtensions.cs`
+- `Platform.Api/Modules/WorkOrders/Services/WorkOrderGenerationService.cs`
 - `Core/Platform.Core.Domain/Entities/{GlobalMaintenanceTemplate,MaintenancePlan,PlanTask,WorkOrder,WorkOrderTask}.cs`
 - `Core/Platform.Core.Infrastructure/Persistence/Seed/GlobalTemplateSeed.cs`
 - `vlr-web/src/features/pmoc/`
@@ -107,8 +112,9 @@ Phase 1 additive endpoints (spec): `GET /api/global-templates/{id}`, `POST /api/
 
 - Slice 1 (domain + Migration A/B) is **merged to `develop`**
 - Slice 2 (PUT tasks, DELETE 409, lineage/auto DTOs) is **merged to `develop`**
-- Slice 3 (GET template by id, Published library list, `from-template` clone) is **implemented** on `feat/pmoc-os-phase1-template-library` (not yet on `develop`)
-- Slice 4+ (generation service, Hangfire auto filter, WEB) not implemented
+- Slice 3 (GET template by id, Published library list, `from-template` clone) is **merged to `develop`** (PR #82, `428459a`)
+- Slice 4 (shared `IWorkOrderGenerationService`, `POST /api/work-orders/from-plan`, list `?maintenancePlanId=`, Hangfire `IsActive && AutoGenerateEnabled`) is **implemented** on `feat/pmoc-os-phase1-generation` (not yet on `develop`)
+- Slice 5–6 WEB (library/detail, Gerar OS dialog, origin link) not implemented
 - Unique-index collision precheck: DEV `jzptnjyzijklutinpxag` = 0, PROD `kbptdzfbngelzdhriyhf` = 0 (`MIGRATION_B = ALLOWED`)
 - No last/next/overdue asset state (Phase 2)
 - No template adoption/diff UX (model must allow later)
