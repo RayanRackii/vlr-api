@@ -658,6 +658,7 @@ public sealed class ModuleRuntimeGateTests
                     services.AddSingleton<IReservationService, StubReservationService>();
                     services.AddSingleton<IMaintenancePlanService, StubMaintenancePlanService>();
                     services.AddSingleton<IWorkOrderService, StubWorkOrderService>();
+                    services.AddSingleton<IWorkOrderGenerationService, StubWorkOrderGenerationService>();
                     services.AddSingleton<ICatalogPortalService, StubCatalogPortalService>();
                     services.AddSingleton<ICatalogProductService, StubCatalogProductService>();
                     services.AddSingleton<IUserDirectoryService, StubUserDirectoryService>();
@@ -1148,9 +1149,20 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<MaintenancePlanResponse> CreateFromTemplateAsync(
+            CreateFromTemplateRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<MaintenancePlanResponse?> UpdateAsync(
             Guid id,
             UpdateMaintenancePlanRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<MaintenancePlanResponse?> ReplaceTasksAsync(
+            Guid id,
+            ReplacePlanTasksRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
@@ -1158,10 +1170,19 @@ public sealed class ModuleRuntimeGateTests
             throw new NotSupportedException();
     }
 
+    private sealed class StubWorkOrderGenerationService : IWorkOrderGenerationService
+    {
+        public Task<WorkOrderResponse> GenerateAsync(
+            GenerateWorkOrderCommand command,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class StubWorkOrderService : IWorkOrderService
     {
         public Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
             Guid? assetId,
+            Guid? maintenancePlanId,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<WorkOrderResponse>>([]);
 

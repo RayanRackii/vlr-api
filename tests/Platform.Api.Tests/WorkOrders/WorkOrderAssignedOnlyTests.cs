@@ -27,7 +27,7 @@ public sealed class WorkOrderAssignedOnlyTests
         await harness.Db.SaveChangesAsync();
         harness.SetUser(harness.Executor);
 
-        var listed = await harness.Service.ListAsync(assetId: null, CancellationToken.None);
+        var listed = await harness.Service.ListAsync(assetId: null, maintenancePlanId: null, CancellationToken.None);
 
         Assert.Single(listed);
         Assert.Equal(mine.Id, listed[0].Id);
@@ -42,7 +42,7 @@ public sealed class WorkOrderAssignedOnlyTests
         await harness.Db.SaveChangesAsync();
         harness.SetUser(harness.Creator);
 
-        var listed = await harness.Service.ListAsync(assetId: null, CancellationToken.None);
+        var listed = await harness.Service.ListAsync(assetId: null, maintenancePlanId: null, CancellationToken.None);
 
         Assert.Equal(2, listed.Count);
     }
@@ -56,7 +56,7 @@ public sealed class WorkOrderAssignedOnlyTests
         await harness.Db.SaveChangesAsync();
         harness.SetUser(harness.NamedTechnician);
 
-        var listed = await harness.Service.ListAsync(assetId: null, CancellationToken.None);
+        var listed = await harness.Service.ListAsync(assetId: null, maintenancePlanId: null, CancellationToken.None);
 
         Assert.Equal(2, listed.Count);
     }

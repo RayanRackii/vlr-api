@@ -24,4 +24,20 @@ public sealed class GlobalTemplatesController(
 
         return Ok(templates);
     }
+
+    [HttpGet("{id:guid}")]
+    [RequirePermission(Permissions.Pmoc.TemplatesRead)]
+    public async Task<ActionResult<GlobalMaintenanceTemplateResponse>> GetById(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var template = await globalTemplateService.GetByIdAsync(id, cancellationToken);
+
+        if (template is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(template);
+    }
 }

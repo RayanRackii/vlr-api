@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Api.Modules.Pmoc.Services;
 using Platform.Core.Domain.Constants;
@@ -73,6 +74,30 @@ public sealed class MaintenancePlansController(
         }
     }
 
+    [HttpPost("from-template")]
+    [RequirePermission(Permissions.Pmoc.PlansWrite)]
+    public async Task<ActionResult<MaintenancePlanResponse>> CreateFromTemplate(
+        [FromBody] CreateFromTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var plan = await maintenancePlanService.CreateFromTemplateAsync(
+                request,
+                cancellationToken);
+
+            return CreatedAtAction(nameof(GetById), new { id = plan.Id }, plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
     [HttpPut("{id:guid}")]
     [RequirePermission(Permissions.Pmoc.PlansWrite)]
     public async Task<ActionResult<MaintenancePlanResponse>> Update(
@@ -97,17 +122,55 @@ public sealed class MaintenancePlansController(
         }
     }
 
+    [HttpPut("{id:guid}/tasks")]
+    [RequirePermission(Permissions.Pmoc.PlansWrite)]
+    public async Task<ActionResult<MaintenancePlanResponse>> ReplaceTasks(
+        Guid id,
+        [FromBody] ReplacePlanTasksRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var plan = await maintenancePlanService.ReplaceTasksAsync(
+                id,
+                request,
+                cancellationToken);
+
+            if (plan is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
     [HttpDelete("{id:guid}")]
     [RequirePermission(Permissions.Pmoc.PlansWrite)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var deleted = await maintenancePlanService.DeleteAsync(id, cancellationToken);
-
-        if (!deleted)
+        try
         {
-            return NotFound();
-        }
+            var deleted = await maintenancePlanService.DeleteAsync(id, cancellationToken);
 
-        return NoContent();
+            if (!deleted)
+            {
+                return NotFound();
+            }
+
+            return NoContent();
+        }
+        catch (PlanInUseException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PlanInUseException.Code });
+        }
     }
 }

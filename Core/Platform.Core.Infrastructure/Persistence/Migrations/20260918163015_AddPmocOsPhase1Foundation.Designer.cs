@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Platform.Core.Infrastructure.Persistence;
@@ -12,9 +13,11 @@ using Platform.Core.Infrastructure.Persistence;
 namespace Platform.Core.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918163015_AddPmocOsPhase1Foundation")]
+    partial class AddPmocOsPhase1Foundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3146,9 +3149,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_work_orders_tenant_id_assigned_user_id_status");
 
                     b.HasIndex("TenantId", "MaintenancePlanId", "AssetId", "ScheduledDate")
-                        .IsUnique()
-                        .HasDatabaseName("ux_os_work_orders_pmoc_period")
-                        .HasFilter("maintenance_plan_id IS NOT NULL AND status <> 'Canceled'");
+                        .HasDatabaseName("ix_work_orders_tenant_id_maintenance_plan_id_asset_id_schedule");
 
                     b.ToTable("work_orders", "os");
                 });

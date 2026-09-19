@@ -21,6 +21,14 @@ public class GlobalMaintenanceTemplate : Entity
 
     public required string TargetEquipmentType { get; set; }
 
+    public required string LibraryKey { get; set; }
+
+    public int Version { get; set; } = 1;
+
+    public GlobalTemplateStatus Status { get; set; } = GlobalTemplateStatus.Published;
+
+    public string? SourceReferences { get; set; }
+
     private readonly List<GlobalTemplateTask> _tasks = [];
 
     public IReadOnlyCollection<GlobalTemplateTask> Tasks => _tasks.AsReadOnly();

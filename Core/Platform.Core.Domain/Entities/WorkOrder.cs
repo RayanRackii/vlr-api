@@ -21,6 +21,8 @@ public class WorkOrder : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public string? Notes { get; set; }
 
+    public string? SourcePlanName { get; set; }
+
     public Asset Asset { get; set; } = null!;
 
     public MaintenancePlan? MaintenancePlan { get; set; }

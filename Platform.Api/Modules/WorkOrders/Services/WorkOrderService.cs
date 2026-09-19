@@ -22,6 +22,7 @@ public sealed class WorkOrderService(
 {
     public async Task<IReadOnlyList<WorkOrderResponse>> ListAsync(
         Guid? assetId,
+        Guid? maintenancePlanId,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
@@ -44,12 +45,17 @@ public sealed class WorkOrderService(
             query = query.Where(w => w.AssetId == filteredAssetId);
         }
 
+        if (maintenancePlanId is Guid filteredPlanId)
+        {
+            query = query.Where(w => w.MaintenancePlanId == filteredPlanId);
+        }
+
         var workOrders = await query
             .OrderByDescending(w => w.ScheduledDate)
             .ThenByDescending(w => w.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        return workOrders.Select(ToResponse).ToList();
+        return workOrders.Select(WorkOrderResponseMapper.ToResponse).ToList();
     }
 
     public async Task<WorkOrderResponse?> GetByIdAsync(
@@ -74,7 +80,7 @@ public sealed class WorkOrderService(
         var workOrder = await query
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
 
-        return workOrder is null ? null : ToResponse(workOrder);
+        return workOrder is null ? null : WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
     public async Task<WorkOrderResponse> CreateAsync(
@@ -85,41 +91,22 @@ public sealed class WorkOrderService(
 
         var asset = await assetRegistry.RequireAssetAsync(request.AssetId, cancellationToken);
 
+        string? sourcePlanName = null;
         if (request.MaintenancePlanId is Guid planId)
         {
-            var planExists = await dbContext.MaintenancePlans
-                .AnyAsync(p => p.Id == planId, cancellationToken);
+            var plan = await dbContext.MaintenancePlans
+                .FirstOrDefaultAsync(p => p.Id == planId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Maintenance plan '{planId}' was not found.");
 
-            if (!planExists)
-            {
-                throw new KeyNotFoundException($"Maintenance plan '{planId}' was not found.");
-            }
+            sourcePlanName = plan.Name;
         }
 
-        User? assignedUser = null;
-        if (request.AssignedUserId is Guid assignedUserId)
-        {
-            assignedUser = await dbContext.Users
-                .Include(user => user.UserRoles)
-                    .ThenInclude(userRole => userRole.Role)
-                .FirstOrDefaultAsync(
-                    user => user.Id == assignedUserId && user.IsActive,
-                    cancellationToken)
-                ?? throw new KeyNotFoundException(
-                    $"Assigned user '{assignedUserId}' was not found.");
-
-            var canExecute = await permissionResolver.HasPermissionAsync(
-                tenantId,
-                assignedUserId,
-                Permissions.Os.WorkOrdersExecute,
-                cancellationToken);
-
-            if (!canExecute)
-            {
-                throw new ArgumentException(
-                    $"Assigned user '{assignedUserId}' cannot execute work orders.");
-            }
-        }
+        var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
+            dbContext,
+            permissionResolver,
+            tenantId,
+            request.AssignedUserId,
+            cancellationToken);
 
         ValidateTasks(request.Tasks);
 
@@ -136,6 +123,7 @@ public sealed class WorkOrderService(
                 Status = WorkOrderStatus.Pending,
                 ScheduledDate = request.ScheduledDate,
                 Notes = NormalizeOptional(request.Notes),
+                SourcePlanName = sourcePlanName,
             };
 
             foreach (var taskDto in request.Tasks.OrderBy(t => t.Order))
@@ -160,7 +148,7 @@ public sealed class WorkOrderService(
 
             workOrder.Asset = asset;
             workOrder.AssignedUser = assignedUser;
-            return ToResponse(workOrder);
+            return WorkOrderResponseMapper.ToResponse(workOrder);
         }
         catch
         {
@@ -216,7 +204,7 @@ public sealed class WorkOrderService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToResponse(workOrder);
+        return WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
     public async Task<WorkOrderResponse?> UpdateStatusAsync(
@@ -278,7 +266,7 @@ public sealed class WorkOrderService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToResponse(workOrder);
+        return WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
     private Guid EnsureTenantContext()
@@ -374,51 +362,4 @@ public sealed class WorkOrderService(
             throw new ArgumentException("Work order task has invalid Configuration JSON.");
         }
     }
-
-    private static WorkOrderResponse ToResponse(WorkOrder workOrder) =>
-        new(
-            workOrder.Id,
-            workOrder.TenantId,
-            workOrder.AssetId,
-            workOrder.MaintenancePlanId,
-            workOrder.AssignedUserId,
-            workOrder.Status,
-            workOrder.ScheduledDate,
-            workOrder.CompletedDate,
-            workOrder.Notes,
-            new WorkOrderAssetResponse(
-                workOrder.Asset.Id,
-                workOrder.Asset.UnitId,
-                workOrder.Asset.CategoryId,
-                workOrder.Asset.Name,
-                workOrder.Asset.Tag,
-                workOrder.Asset.Location,
-                workOrder.Asset.Status),
-            workOrder.AssignedUser is null
-                ? null
-                : new WorkOrderAssignedUserResponse(
-                    workOrder.AssignedUser.Id,
-                    workOrder.AssignedUser.FullName,
-                    workOrder.AssignedUser.Email),
-            workOrder.Tasks
-                .OrderBy(t => t.Order)
-                .Select(ToTaskResponse)
-                .ToList(),
-            workOrder.CreatedAt,
-            workOrder.UpdatedAt);
-
-    private static WorkOrderTaskResponse ToTaskResponse(WorkOrderTask task) =>
-        new(
-            task.Id,
-            task.TenantId,
-            task.WorkOrderId,
-            task.PlanTaskId,
-            task.Title,
-            task.InputType,
-            task.Configuration,
-            task.IsMandatory,
-            task.Order,
-            task.Value,
-            task.CreatedAt,
-            task.UpdatedAt);
 }

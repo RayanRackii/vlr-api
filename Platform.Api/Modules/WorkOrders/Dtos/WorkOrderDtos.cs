@@ -32,6 +32,17 @@ public sealed record CreateWorkOrderRequest
     public required List<CreateWorkOrderTaskDto> Tasks { get; init; }
 }
 
+public sealed record GenerateWorkOrderFromPlanRequest
+{
+    public required Guid PlanId { get; init; }
+
+    public required Guid AssetId { get; init; }
+
+    public Guid? AssignedUserId { get; init; }
+
+    public required DateOnly ScheduledDate { get; init; }
+}
+
 public sealed record UpdateWorkOrderTaskValueRequest
 {
     public string? Value { get; init; }
@@ -75,6 +86,7 @@ public sealed record WorkOrderResponse(
     Guid TenantId,
     Guid AssetId,
     Guid? MaintenancePlanId,
+    string? SourcePlanName,
     Guid? AssignedUserId,
     WorkOrderStatus Status,
     DateOnly ScheduledDate,

@@ -19,6 +19,14 @@ public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public required bool IsActive { get; set; }
 
+    public MaintenancePlanOriginKind OriginKind { get; set; } = MaintenancePlanOriginKind.Custom;
+
+    public Guid? SourceTemplateId { get; set; }
+
+    public int? SourceTemplateVersion { get; set; }
+
+    public bool AutoGenerateEnabled { get; set; }
+
     public Unit Unit { get; set; } = null!;
 
     public AssetCategory AssetCategory { get; set; } = null!;
@@ -30,5 +38,10 @@ public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
     public void AddTask(PlanTask task)
     {
         _tasks.Add(task);
+    }
+
+    public void RemoveTask(PlanTask task)
+    {
+        _tasks.Remove(task);
     }
 }

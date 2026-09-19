@@ -20,6 +20,10 @@ public sealed record GlobalMaintenanceTemplateResponse(
     MaintenanceFrequency Frequency,
     string Jurisdiction,
     string TargetEquipmentType,
+    string LibraryKey,
+    int Version,
+    GlobalTemplateStatus Status,
+    string? SourceReferences,
     IReadOnlyList<GlobalTemplateTaskResponse> Tasks,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
