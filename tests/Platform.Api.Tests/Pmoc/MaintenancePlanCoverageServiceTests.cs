@@ -27,6 +27,7 @@ public sealed class MaintenancePlanCoverageServiceTests
         Assert.Equal("AC-01", row.Tag);
         Assert.Equal(PmocOperationalStatus.NeverExecuted, row.OperationalStatus);
         Assert.Equal(1, coverage.Summary.EligibleAssets);
+        Assert.Equal(coverage.Summary.EligibleAssets, coverage.EligibleAssetCount);
         Assert.Equal(
             coverage.Summary.EligibleAssets,
             coverage.Summary.AssetsNeverExecuted

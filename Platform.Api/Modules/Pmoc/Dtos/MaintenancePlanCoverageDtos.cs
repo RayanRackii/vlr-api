@@ -13,7 +13,10 @@ public sealed record MaintenancePlanCoverageResponse(
     bool IsDueToday,
     bool WouldBeConsideredByGenerator,
     MaintenancePlanCoverageSummary Summary,
-    IReadOnlyList<MaintenancePlanCoverageAssetItem> Assets);
+    IReadOnlyList<MaintenancePlanCoverageAssetItem> Assets)
+{
+    public int EligibleAssetCount => Summary.EligibleAssets;
+}
 
 public sealed record MaintenancePlanCoverageSummary(
     int EligibleAssets,
