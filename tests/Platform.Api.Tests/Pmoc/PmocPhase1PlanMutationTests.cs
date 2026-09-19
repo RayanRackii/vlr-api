@@ -89,7 +89,10 @@ public sealed class PmocPhase1PlanMutationTests
         var service = CreateService(harness);
         var created = await CreateCustomPlanAsync(harness, service, "Http-used");
         await AddLinkedWorkOrderAsync(harness, created, WorkOrderStatus.Pending, snapshotValue: "x");
-        var controller = new MaintenancePlansController(service, harness.CreateRegistry());
+        var controller = new MaintenancePlansController(
+            service,
+            new MaintenancePlanCoverageService(harness.Db, harness.TenantProvider, TimeProvider.System),
+            harness.CreateRegistry());
 
         var result = await controller.Delete(created.Id, CancellationToken.None);
 
@@ -110,7 +113,10 @@ public sealed class PmocPhase1PlanMutationTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var service = CreateService(harness);
         var created = await CreateCustomPlanAsync(harness, service, "Http-unused");
-        var controller = new MaintenancePlansController(service, harness.CreateRegistry());
+        var controller = new MaintenancePlansController(
+            service,
+            new MaintenancePlanCoverageService(harness.Db, harness.TenantProvider, TimeProvider.System),
+            harness.CreateRegistry());
 
         var result = await controller.Delete(created.Id, CancellationToken.None);
 
@@ -232,7 +238,10 @@ public sealed class PmocPhase1PlanMutationTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var service = CreateService(harness);
         var created = await CreateCustomPlanAsync(harness, service, "Http-400");
-        var controller = new MaintenancePlansController(service, harness.CreateRegistry());
+        var controller = new MaintenancePlansController(
+            service,
+            new MaintenancePlanCoverageService(harness.Db, harness.TenantProvider, TimeProvider.System),
+            harness.CreateRegistry());
 
         var result = await controller.ReplaceTasks(
             created.Id,
