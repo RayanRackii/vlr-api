@@ -7,6 +7,7 @@ public static class PmocModuleExtensions
     public static IServiceCollection AddPmocModule(this IServiceCollection services)
     {
         services.AddScoped<IMaintenancePlanService, MaintenancePlanService>();
+        services.AddScoped<IMaintenancePlanCoverageService, MaintenancePlanCoverageService>();
         services.AddScoped<IGlobalTemplateService, GlobalTemplateService>();
 
         return services;
