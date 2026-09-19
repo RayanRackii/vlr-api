@@ -578,7 +578,10 @@ public sealed class PmocPhase1TemplateLibraryTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var plans = CreatePlanService(harness);
         var seed = await EnsureAnvisaSeedAsync(harness);
-        var controller = new MaintenancePlansController(plans, harness.CreateRegistry());
+        var controller = new MaintenancePlansController(
+            plans,
+            new MaintenancePlanCoverageService(harness.Db, harness.TenantProvider, TimeProvider.System),
+            harness.CreateRegistry());
 
         var result = await controller.CreateFromTemplate(
             FromTemplate(harness, seed.Id, name: "HTTP clone"),
@@ -607,7 +610,10 @@ public sealed class PmocPhase1TemplateLibraryTests
             status: GlobalTemplateStatus.Deprecated,
             jurisdiction: "BR",
             tasks: [TaskSpec("Old", TaskInputType.Checkbox, 1)]);
-        var controller = new MaintenancePlansController(plans, harness.CreateRegistry());
+        var controller = new MaintenancePlansController(
+            plans,
+            new MaintenancePlanCoverageService(harness.Db, harness.TenantProvider, TimeProvider.System),
+            harness.CreateRegistry());
 
         var result = await controller.CreateFromTemplate(
             FromTemplate(harness, deprecated.Id),
@@ -628,7 +634,10 @@ public sealed class PmocPhase1TemplateLibraryTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var plans = CreatePlanService(harness);
         var missingId = Guid.NewGuid();
-        var controller = new MaintenancePlansController(plans, harness.CreateRegistry());
+        var controller = new MaintenancePlansController(
+            plans,
+            new MaintenancePlanCoverageService(harness.Db, harness.TenantProvider, TimeProvider.System),
+            harness.CreateRegistry());
 
         var result = await controller.CreateFromTemplate(
             FromTemplate(harness, missingId),

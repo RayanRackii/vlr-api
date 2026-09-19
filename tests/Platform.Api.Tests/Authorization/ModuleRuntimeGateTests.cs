@@ -657,6 +657,7 @@ public sealed class ModuleRuntimeGateTests
                     services.AddSingleton<IReservationQueueService, StubReservationQueueService>();
                     services.AddSingleton<IReservationService, StubReservationService>();
                     services.AddSingleton<IMaintenancePlanService, StubMaintenancePlanService>();
+                    services.AddSingleton<IMaintenancePlanCoverageService, StubMaintenancePlanCoverageService>();
                     services.AddSingleton<IWorkOrderService, StubWorkOrderService>();
                     services.AddSingleton<IWorkOrderGenerationService, StubWorkOrderGenerationService>();
                     services.AddSingleton<ICatalogPortalService, StubCatalogPortalService>();
@@ -1167,6 +1168,15 @@ public sealed class ModuleRuntimeGateTests
             throw new NotSupportedException();
 
         public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class StubMaintenancePlanCoverageService : IMaintenancePlanCoverageService
+    {
+        public Task<MaintenancePlanCoverageResponse?> GetCoverageAsync(
+            Guid planId,
+            IReadOnlyCollection<PmocOperationalStatus>? statuses,
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 

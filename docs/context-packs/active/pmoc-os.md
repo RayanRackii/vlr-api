@@ -4,23 +4,24 @@ Derived context — NOT canonical.
 
 - Scope: PMOC (maintenance plans, Rolvix template library) and OS (work orders, technician execution)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
-- Canonical sources: `CONTEXT.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `docs/plans/active/2026-09-18-pmoc-os-phase1.md`
-- Last verified: 2026-09-18 (Slice 4 implemented on `feat/pmoc-os-phase1-generation`; Slices 1–3 on `develop`)
+- Canonical sources: `CONTEXT.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `docs/plans/active/2026-09-18-pmoc-os-phase1.md`; `docs/plans/active/2026-09-19-pmoc-os-phase2.md`
+- Last verified: 2026-09-19 (Phase 2 Slice 1 coverage API)
 - Verified at commit(s):
-  - API `develop` (Slice 3 squash, PR #82): `428459a88e247514038249b151b1a5811c79865e`
+  - API `origin/develop` (Phase 1 released): `a8bcbfb79ef7a85d94a7e1c56f3e415eb1b6e9d3`
   - WEB `develop`: `85ce88f272e792d1c3016bb34c930ea6ce6994b6`
 
 ## Purpose
 
 Load when the question is GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS, or PMOC/OS permissions.
 
-This pack describes **shipped develop + approved Phase 1 target**. Until Phase 1 slices merge, “Current model” is code; “Phase 1 target” is the spec.
+This pack describes **shipped Phase 1 on develop/PROD** plus **Phase 2 Slice 1 coverage read model** (API). WEB Slice 2 is not in this pack’s implementation state.
 
 ## Canonical sources
 
 - `CONTEXT.md` — modules `pmoc` / `os`; Asset Registry vs Inventory
 - `docs/adr/0004-module-dependencies-asset-registry.md` — PMOC needs a provisioning family; OS consumes assets
 - `docs/plans/active/2026-09-18-pmoc-os-phase1.md` — approved Phase 1 handoff (H1–H5)
+- `docs/plans/active/2026-09-19-pmoc-os-phase2.md` — approved Phase 2 coverage read model (D1–D4, H6=NO, H7=NO, C1–C3)
 - `.cursor/rules/10-arquitetura.mdc` — Hangfire `pmoc-engine` 06:00 Brazil; GQF off when job `TenantId` is null
 - `Core/Platform.Core.Domain/Constants/Permissions.cs` — `Pmoc.*` / `Os.*`
 - `Core/Platform.Core.Domain/Constants/PermissionCatalog.cs` — Technician has OS read/execute + inventory assets read only
@@ -59,6 +60,7 @@ WorkOrder + WorkOrderTasks snapshot (`SourcePlanName`)
 - `POST /api/work-orders/from-plan` (`os.work_orders.create`) generates Pending OS from plan+asset; 409 `DUPLICATE_WORK_ORDER` on the PMOC period unique key. Manual `POST /api/work-orders` stays client-task (`/os/nova`).
 - `GET /api/work-orders?maintenancePlanId=` is additive (AND with `assetId`); related OS contract. `WorkOrderResponse.sourcePlanName` is nullable.
 - Hangfire `pmoc-engine` filters `IsActive && AutoGenerateEnabled`; calendar/cron/TZ/assets unchanged. Job calls the same generator (no second snapshot copy). Canceled WO for the same key does not block regeneration.
+- `GET /api/maintenance-plans/{id}/coverage` (`pmoc.plans.read`) is a derived read model: currently eligible assets, last completed PMOC WO, plan-level `nextDueDate`, `NeverExecuted|OnTrack|Overdue`, C1 `openWorkOrder`, C2 `wouldBeConsideredByGenerator`. No persistence. No Hangfire call.
 - WEB: `/pmoc`, `/pmoc/novo`, `/os`, `/os/:id`, `/os/nova`. CREA copy in i18n.
 - Offline: `vlr-web/src/lib/offlineSync.ts` queues WO task PATCH; **not** Phase 1 work.
 
@@ -97,9 +99,12 @@ B2B: `/api/maintenance-plans*`, `/api/global-templates`, `/api/work-orders*`. Mo
 
 Phase 1 additive endpoints (spec): `GET /api/global-templates/{id}`, `POST /api/maintenance-plans/from-template`, `PUT /api/maintenance-plans/{id}/tasks`, `POST /api/work-orders/from-plan`, `GET /api/work-orders?maintenancePlanId=`.
 
+Phase 2 Slice 1: `GET /api/maintenance-plans/{id}/coverage` (`pmoc.plans.read`). Optional `?status=` filter. No pagination. No `coverage-summaries` (H6=NO).
+
 ## Important implementation seams
 
 - `Platform.Api/Modules/Pmoc/`
+- `Platform.Api/Modules/Pmoc/Services/MaintenancePlanCoverageService.cs`
 - `Platform.Api/Modules/WorkOrders/`
 - `Platform.Api/Jobs/PmocEngineJob.cs`, `PmocDueCalendar.cs`, `HangfireExtensions.cs`
 - `Platform.Api/Modules/WorkOrders/Services/WorkOrderGenerationService.cs`
@@ -110,13 +115,11 @@ Phase 1 additive endpoints (spec): `GET /api/global-templates/{id}`, `POST /api/
 
 ## Known gaps / open constraints
 
-- Slice 1 (domain + Migration A/B) is **merged to `develop`**
-- Slice 2 (PUT tasks, DELETE 409, lineage/auto DTOs) is **merged to `develop`**
-- Slice 3 (GET template by id, Published library list, `from-template` clone) is **merged to `develop`** (PR #82, `428459a`)
-- Slice 4 (shared `IWorkOrderGenerationService`, `POST /api/work-orders/from-plan`, list `?maintenancePlanId=`, Hangfire `IsActive && AutoGenerateEnabled`) is **implemented** on `feat/pmoc-os-phase1-generation` (not yet on `develop`)
-- Slice 5–6 WEB (library/detail, Gerar OS dialog, origin link) not implemented
+- Slice 1–4 Phase 1 API + WEB Slices 5–6 are **released to PROD**
+- Phase 2 Slice 1 (coverage API) is **this branch**
+- Phase 2 Slice 2 WEB Coverage section is **not implemented**
+- H6 plan-list aggregates = **NO**; H7 Inventory PMOC surface = **NO**
 - Unique-index collision precheck: DEV `jzptnjyzijklutinpxag` = 0, PROD `kbptdzfbngelzdhriyhf` = 0 (`MIGRATION_B = ALLOWED`)
-- No last/next/overdue asset state (Phase 2)
 - No template adoption/diff UX (model must allow later)
 - Hangfire ignores commercial module flags (preserve)
 - Already-nulled WO origins cannot be reconstructed
