@@ -15,182 +15,25 @@ namespace Platform.Api.Tests.WorkOrders;
 public sealed class PmocEngineJobTests
 {
     [Fact]
-    public async Task Job_skips_active_plan_when_auto_generate_is_off()
+    public async Task Job_generates_zero_work_orders_when_active_auto_generate_plan_has_eligible_asset()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        await SeedDailyPlanWithAssetAsync(harness, autoGenerateEnabled: false, isActive: true);
+        await SeedIntervalPlanWithAssetAsync(harness, autoGenerateEnabled: true, isActive: true);
         harness.TenantProvider.TenantId = null;
+        var recorder = new RecordingGenerationService();
 
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
+        await new PmocEngineJob(harness.Db, recorder, NullLogger<PmocEngineJob>.Instance)
+            .ExecuteAsync(CancellationToken.None);
 
+        Assert.Equal(0, recorder.Calls);
         Assert.Empty(await harness.Db.WorkOrders.ToListAsync());
     }
 
     [Fact]
-    public async Task Job_creates_pending_snapshot_when_active_and_auto_generate_on()
+    public async Task Job_generates_zero_across_tenants()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        var (plan, asset) = await SeedDailyPlanWithAssetAsync(
-            harness,
-            autoGenerateEnabled: true,
-            isActive: true,
-            planName: "Auto PMOC",
-            extraTask: true);
-        Assert.NotNull(asset);
-        var tenantId = harness.TenantProvider.TenantId!.Value;
-        harness.TenantProvider.TenantId = null;
-        var today = HangfireExtensions.GetBrazilToday();
-
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
-
-        var workOrder = Assert.Single(await harness.Db.WorkOrders.ToListAsync());
-        Assert.Equal(WorkOrderStatus.Pending, workOrder.Status);
-        Assert.Equal(plan.Id, workOrder.MaintenancePlanId);
-        Assert.Equal("Auto PMOC", workOrder.SourcePlanName);
-        Assert.Equal(tenantId, workOrder.TenantId);
-        Assert.Equal(asset.Id, workOrder.AssetId);
-        Assert.Null(workOrder.AssignedUserId);
-        Assert.Null(workOrder.Notes);
-        Assert.Equal(today, workOrder.ScheduledDate);
-        var tasks = await harness.Db.WorkOrderTasks
-            .Where(task => task.WorkOrderId == workOrder.Id)
-            .OrderBy(task => task.Order)
-            .ToListAsync();
-        Assert.Equal(["Filtro", "Evaporadora"], tasks.Select(task => task.Title).ToArray());
-        Assert.Equal(
-            plan.Tasks.Select(task => task.Id).ToArray(),
-            tasks.Select(task => task.PlanTaskId!.Value).ToArray());
-        Assert.All(tasks, task => Assert.Null(task.Value));
-    }
-
-    [Fact]
-    public async Task Job_skips_inactive_plan_even_when_auto_generate_on()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        await SeedDailyPlanWithAssetAsync(harness, autoGenerateEnabled: true, isActive: false);
-        harness.TenantProvider.TenantId = null;
-
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
-
-        Assert.Empty(await harness.Db.WorkOrders.ToListAsync());
-    }
-
-    [Fact]
-    public async Task Job_skips_empty_tasks_without_creating_work_orders()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        await CreateMatchingAssetAsync(harness);
-        var plan = new MaintenancePlan
-        {
-            TenantId = harness.TenantProvider.TenantId!.Value,
-            UnitId = harness.UnitId,
-            Name = "Empty auto",
-            Frequency = MaintenanceFrequency.Daily,
-            AssetCategoryId = harness.CategoryId,
-            IsActive = true,
-            AutoGenerateEnabled = true,
-        };
-        harness.Db.MaintenancePlans.Add(plan);
-        await harness.Db.SaveChangesAsync();
-        harness.TenantProvider.TenantId = null;
-
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
-
-        Assert.Empty(await harness.Db.WorkOrders.ToListAsync());
-    }
-
-    [Fact]
-    public async Task Job_duplicate_on_one_asset_does_not_block_the_other()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        var (plan, assetA) = await SeedDailyPlanWithAssetAsync(harness, autoGenerateEnabled: true, isActive: true);
-        Assert.NotNull(assetA);
-        var assetB = await CreateMatchingAssetAsync(harness, "AC-B");
-        var today = HangfireExtensions.GetBrazilToday();
-        harness.Db.WorkOrders.Add(new WorkOrder
-        {
-            TenantId = plan.TenantId,
-            AssetId = assetA.Id,
-            MaintenancePlanId = plan.Id,
-            Status = WorkOrderStatus.Pending,
-            ScheduledDate = today,
-            SourcePlanName = plan.Name,
-        });
-        await harness.Db.SaveChangesAsync();
-        harness.TenantProvider.TenantId = null;
-
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
-
-        var workOrders = await harness.Db.WorkOrders.ToListAsync();
-        Assert.Equal(2, workOrders.Count);
-        Assert.Contains(workOrders, item => item.AssetId == assetA.Id);
-        Assert.Contains(workOrders, item => item.AssetId == assetB.Id && item.Status == WorkOrderStatus.Pending);
-        Assert.Equal(1, workOrders.Count(item => item.AssetId == assetA.Id));
-    }
-
-    [Fact]
-    public async Task Job_canceled_work_order_allows_regeneration()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        var (plan, asset) = await SeedDailyPlanWithAssetAsync(harness, autoGenerateEnabled: true, isActive: true);
-        Assert.NotNull(asset);
-        var today = HangfireExtensions.GetBrazilToday();
-        harness.Db.WorkOrders.Add(new WorkOrder
-        {
-            TenantId = plan.TenantId,
-            AssetId = asset.Id,
-            MaintenancePlanId = plan.Id,
-            Status = WorkOrderStatus.Canceled,
-            ScheduledDate = today,
-            SourcePlanName = "Old",
-        });
-        await harness.Db.SaveChangesAsync();
-        harness.TenantProvider.TenantId = null;
-
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
-
-        var workOrders = await harness.Db.WorkOrders.ToListAsync();
-        Assert.Equal(2, workOrders.Count);
-        Assert.Contains(
-            workOrders,
-            item => item.Status == WorkOrderStatus.Pending && item.SourcePlanName == plan.Name);
-    }
-
-    [Fact]
-    public async Task Job_ignores_ineligible_assets()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        var (plan, _) = await SeedDailyPlanWithAssetAsync(
-            harness,
-            autoGenerateEnabled: true,
-            isActive: true,
-            createAsset: false);
-        await CreateMatchingAssetAsync(harness, "INACT", AssetStatus.Inactive);
-        var deleting = await CreateMatchingAssetAsync(harness, "DEL");
-        deleting.ScheduledDeletionAt = DateTimeOffset.UtcNow;
-        var otherCategory = new AssetCategory
-        {
-            TenantId = harness.TenantProvider.TenantId!.Value,
-            Name = "Other",
-        };
-        harness.Db.AssetCategories.Add(otherCategory);
-        await harness.Db.SaveChangesAsync();
-        var mismatched = await CreateMatchingAssetAsync(harness, "MIS");
-        mismatched.CategoryId = otherCategory.Id;
-        await harness.Db.SaveChangesAsync();
-        _ = plan;
-        harness.TenantProvider.TenantId = null;
-
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
-
-        Assert.Empty(await harness.Db.WorkOrders.ToListAsync());
-    }
-
-    [Fact]
-    public async Task Job_with_gqf_off_creates_for_every_tenant()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        var (planA, _) = await SeedDailyPlanWithAssetAsync(
+        await SeedIntervalPlanWithAssetAsync(
             harness,
             autoGenerateEnabled: true,
             isActive: true,
@@ -207,7 +50,8 @@ public sealed class PmocEngineJobTests
             TenantId = tenantB.Id,
             UnitId = unitB.Id,
             Name = "Tenant B",
-            Frequency = MaintenanceFrequency.Daily,
+            IntervalDays = 1,
+            FirstDueDate = HangfireExtensions.GetBrazilToday().AddDays(-1),
             AssetCategoryId = categoryB.Id,
             IsActive = true,
             AutoGenerateEnabled = true,
@@ -234,66 +78,39 @@ public sealed class PmocEngineJobTests
         });
         await harness.Db.SaveChangesAsync();
         harness.TenantProvider.TenantId = null;
+        var recorder = new RecordingGenerationService();
 
-        await CreateJob(harness).ExecuteAsync(CancellationToken.None);
+        await new PmocEngineJob(harness.Db, recorder, NullLogger<PmocEngineJob>.Instance)
+            .ExecuteAsync(CancellationToken.None);
 
-        var workOrders = await harness.Db.WorkOrders.ToListAsync();
-        Assert.Equal(2, workOrders.Count);
-        Assert.Contains(workOrders, item => item.TenantId == planA.TenantId && item.MaintenancePlanId == planA.Id);
-        Assert.Contains(workOrders, item => item.TenantId == tenantB.Id && item.MaintenancePlanId == planB.Id);
+        Assert.Equal(0, recorder.Calls);
+        Assert.Empty(await harness.Db.WorkOrders.ToListAsync());
     }
 
     [Fact]
-    public async Task Job_continues_when_one_plan_throws()
+    public async Task Job_second_run_still_generates_zero()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        var (failing, _) = await SeedDailyPlanWithAssetAsync(
-            harness,
-            autoGenerateEnabled: true,
-            isActive: true,
-            planName: "Failing");
-        var (ok, _) = await SeedDailyPlanWithAssetAsync(
-            harness,
-            autoGenerateEnabled: true,
-            isActive: true,
-            planName: "Healthy",
-            createAsset: false);
-        harness.TenantProvider.TenantId = null;
-        var inner = CreateGenerator(harness);
-        var job = new PmocEngineJob(
-            harness.Db,
-            new ThrowingOnPlanGenerationService(inner, failing.Id),
-            NullLogger<PmocEngineJob>.Instance);
-
-        await job.ExecuteAsync(CancellationToken.None);
-
-        var workOrders = await harness.Db.WorkOrders.ToListAsync();
-        Assert.Single(workOrders);
-        Assert.Equal(ok.Id, workOrders[0].MaintenancePlanId);
-    }
-
-    [Fact]
-    public async Task Job_second_run_same_day_is_duplicate_noop()
-    {
-        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
-        await SeedDailyPlanWithAssetAsync(harness, autoGenerateEnabled: true, isActive: true);
+        await SeedIntervalPlanWithAssetAsync(harness, autoGenerateEnabled: true, isActive: true);
         harness.TenantProvider.TenantId = null;
         var job = CreateJob(harness);
 
         await job.ExecuteAsync(CancellationToken.None);
         await job.ExecuteAsync(CancellationToken.None);
 
-        Assert.Single(await harness.Db.WorkOrders.ToListAsync());
+        Assert.Empty(await harness.Db.WorkOrders.ToListAsync());
     }
 
     [Fact]
-    public void Job_filter_and_hangfire_registration_match_slice_4()
+    public void Job_source_is_fail_closed_and_hangfire_registration_remains()
     {
         var jobSource = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "PmocEngineJob.cs")));
-        Assert.Contains("plan.IsActive && plan.AutoGenerateEnabled", jobSource, StringComparison.Ordinal);
-        Assert.Contains("IWorkOrderGenerationService", jobSource, StringComparison.Ordinal);
+        Assert.Contains("fail-closed until Phase 3 Slice 3", jobSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("GenerateAsync", jobSource, StringComparison.Ordinal);
         Assert.DoesNotContain("new WorkOrder", jobSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("AddTask", jobSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("PmocDueCalendar", jobSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsDueToday", jobSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("FirstDueDate as plan-level due", jobSource, StringComparison.Ordinal);
 
         var hangfire = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "HangfireExtensions.cs")));
         Assert.Contains("PmocEngineJobId = \"pmoc-engine\"", hangfire, StringComparison.Ordinal);
@@ -302,72 +119,15 @@ public sealed class PmocEngineJobTests
         Assert.Contains("ResolveBrazilTimeZone()", hangfire, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData(MaintenanceFrequency.Daily, 2026, 9, 18, true)]
-    [InlineData(MaintenanceFrequency.Weekly, 2026, 9, 14, true)]
-    [InlineData(MaintenanceFrequency.Weekly, 2026, 9, 15, false)]
-    [InlineData(MaintenanceFrequency.Weekly, 2026, 9, 18, false)]
-    [InlineData(MaintenanceFrequency.Monthly, 2026, 9, 1, true)]
-    [InlineData(MaintenanceFrequency.Monthly, 2026, 9, 2, false)]
-    [InlineData(MaintenanceFrequency.Quarterly, 2026, 1, 1, true)]
-    [InlineData(MaintenanceFrequency.Quarterly, 2026, 4, 1, true)]
-    [InlineData(MaintenanceFrequency.Quarterly, 2026, 7, 1, true)]
-    [InlineData(MaintenanceFrequency.Quarterly, 2026, 10, 1, true)]
-    [InlineData(MaintenanceFrequency.Quarterly, 2026, 2, 1, false)]
-    [InlineData(MaintenanceFrequency.Quarterly, 2026, 1, 2, false)]
-    [InlineData(MaintenanceFrequency.Semiannual, 2026, 1, 1, true)]
-    [InlineData(MaintenanceFrequency.Semiannual, 2026, 7, 1, true)]
-    [InlineData(MaintenanceFrequency.Semiannual, 2026, 4, 1, false)]
-    [InlineData(MaintenanceFrequency.Annual, 2026, 1, 1, true)]
-    [InlineData(MaintenanceFrequency.Annual, 2026, 1, 2, false)]
-    [InlineData(MaintenanceFrequency.Annual, 2026, 12, 1, false)]
-    public void IsDueToday_matches_legacy_calendar(
-        MaintenanceFrequency frequency,
-        int year,
-        int month,
-        int day,
-        bool expected)
-    {
-        Assert.Equal(expected, PmocDueCalendar.IsDueToday(frequency, new DateOnly(year, month, day)));
-    }
-
     private static PmocEngineJob CreateJob(BulkCreateAssetsHarness harness) =>
-        new(harness.Db, CreateGenerator(harness), NullLogger<PmocEngineJob>.Instance);
+        new(harness.Db, new RecordingGenerationService(), NullLogger<PmocEngineJob>.Instance);
 
-    private static WorkOrderGenerationService CreateGenerator(BulkCreateAssetsHarness harness) =>
-        new(
-            harness.Db,
-            harness.TenantProvider,
-            TestPermissionResolvers.Create(harness.Db, harness.TenantProvider));
-
-    private static async Task<(MaintenancePlanResponse Plan, Asset? Asset)> SeedDailyPlanWithAssetAsync(
+    private static async Task<(MaintenancePlanResponse Plan, Asset? Asset)> SeedIntervalPlanWithAssetAsync(
         BulkCreateAssetsHarness harness,
         bool autoGenerateEnabled,
         bool isActive,
-        string planName = "Daily PMOC",
-        bool extraTask = false,
-        bool createAsset = true)
+        string planName = "Interval PMOC")
     {
-        var tasks = new List<CreatePlanTaskDto>
-        {
-            new()
-            {
-                Title = "Filtro",
-                InputType = TaskInputType.Checkbox,
-                Order = 1,
-            },
-        };
-        if (extraTask)
-        {
-            tasks.Add(new CreatePlanTaskDto
-            {
-                Title = "Evaporadora",
-                InputType = TaskInputType.Number,
-                Order = 2,
-                Configuration = """{"min":1}""",
-            });
-        }
-
         var plan = await new MaintenancePlanService(
             harness.Db,
             harness.TenantProvider,
@@ -376,27 +136,28 @@ public sealed class PmocEngineJobTests
             {
                 UnitId = harness.UnitId,
                 Name = planName,
-                Frequency = MaintenanceFrequency.Daily,
+                IntervalDays = 1,
+                FirstDueDate = HangfireExtensions.GetBrazilToday().AddDays(-10),
                 AssetCategoryId = harness.CategoryId,
                 IsActive = isActive,
                 AutoGenerateEnabled = autoGenerateEnabled,
-                Tasks = tasks,
+                Tasks =
+                [
+                    new CreatePlanTaskDto
+                    {
+                        Title = "Filtro",
+                        InputType = TaskInputType.Checkbox,
+                        Order = 1,
+                    },
+                ],
             },
             CancellationToken.None);
 
-        Asset? asset = null;
-        if (createAsset)
-        {
-            asset = await CreateMatchingAssetAsync(harness);
-        }
-
+        var asset = await CreateMatchingAssetAsync(harness);
         return (plan, asset);
     }
 
-    private static async Task<Asset> CreateMatchingAssetAsync(
-        BulkCreateAssetsHarness harness,
-        string? tag = null,
-        AssetStatus status = AssetStatus.Active)
+    private static async Task<Asset> CreateMatchingAssetAsync(BulkCreateAssetsHarness harness)
     {
         var asset = new Asset
         {
@@ -405,8 +166,8 @@ public sealed class PmocEngineJobTests
             CategoryId = harness.CategoryId,
             FamilyId = harness.FamilyId,
             Name = "Split",
-            Tag = tag ?? $"AC-{Guid.NewGuid():N}"[..12],
-            Status = status,
+            Tag = $"AC-{Guid.NewGuid():N}"[..12],
+            Status = AssetStatus.Active,
         };
         harness.Db.Assets.Add(asset);
         await harness.Db.SaveChangesAsync();
@@ -430,20 +191,16 @@ public sealed class PmocEngineJobTests
         throw new InvalidOperationException("Could not locate vlr-api repository root.");
     }
 
-    private sealed class ThrowingOnPlanGenerationService(
-        IWorkOrderGenerationService inner,
-        Guid failingPlanId) : IWorkOrderGenerationService
+    private sealed class RecordingGenerationService : IWorkOrderGenerationService
     {
+        public int Calls { get; private set; }
+
         public Task<WorkOrderResponse> GenerateAsync(
             GenerateWorkOrderCommand command,
             CancellationToken cancellationToken)
         {
-            if (command.PlanId == failingPlanId)
-            {
-                throw new InvalidOperationException("simulated plan failure");
-            }
-
-            return inner.GenerateAsync(command, cancellationToken);
+            Calls++;
+            throw new InvalidOperationException("generation must not be called while fail-closed");
         }
     }
 }

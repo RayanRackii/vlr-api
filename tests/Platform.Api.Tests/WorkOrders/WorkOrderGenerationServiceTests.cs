@@ -393,7 +393,8 @@ public sealed class WorkOrderGenerationServiceTests
             TenantId = harness.TenantProvider.TenantId!.Value,
             UnitId = harness.UnitId,
             Name = "Empty",
-            Frequency = MaintenanceFrequency.Daily,
+            IntervalDays = 1,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = harness.CategoryId,
             IsActive = true,
         };
@@ -615,7 +616,8 @@ public sealed class WorkOrderGenerationServiceTests
         {
             UnitId = harness.UnitId,
             Name = name,
-            Frequency = MaintenanceFrequency.Daily,
+            IntervalDays = 1,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = harness.CategoryId,
             IsActive = isActive,
             AutoGenerateEnabled = autoGenerateEnabled,
@@ -664,7 +666,8 @@ public sealed class WorkOrderGenerationServiceTests
         {
             UnitId = harness.UnitId,
             Name = name,
-            Frequency = MaintenanceFrequency.Daily,
+            IntervalDays = 1,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = harness.CategoryId,
             IsActive = isActive,
             AutoGenerateEnabled = autoGenerateEnabled,
@@ -711,7 +714,8 @@ public sealed class WorkOrderGenerationServiceTests
             TenantId = harness.TenantProvider.TenantId!.Value,
             UnitId = asset.UnitId,
             Name = name,
-            Frequency = MaintenanceFrequency.Daily,
+            IntervalDays = 1,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = asset.CategoryId,
             IsActive = true,
         };

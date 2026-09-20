@@ -1175,7 +1175,6 @@ public sealed class ModuleRuntimeGateTests
     {
         public Task<MaintenancePlanCoverageResponse?> GetCoverageAsync(
             Guid planId,
-            IReadOnlyCollection<PmocOperationalStatus>? statuses,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }

@@ -14,7 +14,6 @@ public sealed class MaintenancePlanCoverageService(
 {
     public async Task<MaintenancePlanCoverageResponse?> GetCoverageAsync(
         Guid planId,
-        IReadOnlyCollection<PmocOperationalStatus>? statuses,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
@@ -29,11 +28,6 @@ public sealed class MaintenancePlanCoverageService(
         }
 
         var asOfDate = BrazilTimeZone.GetToday(timeProvider);
-        var lastDueDate = PmocDueCalendar.LastDueOnOrBefore(plan.Frequency, asOfDate);
-        var nextDueDate = PmocDueCalendar.NextDueOnOrAfter(plan.Frequency, asOfDate);
-        var isDueToday = PmocDueCalendar.IsDueToday(plan.Frequency, asOfDate);
-        var wouldBeConsideredByGenerator =
-            plan.IsActive && plan.AutoGenerateEnabled && isDueToday;
 
         var eligibleAssets = await dbContext.Assets
             .AsNoTracking()
@@ -59,39 +53,39 @@ public sealed class MaintenancePlanCoverageService(
             .ToListAsync(cancellationToken);
 
         var workOrdersByAsset = workOrders.ToLookup(workOrder => workOrder.AssetId);
-        var filter = statuses is { Count: > 0 }
-            ? statuses.ToHashSet()
-            : null;
 
         var rows = new List<MaintenancePlanCoverageAssetItem>(eligibleAssets.Count);
         var neverExecuted = 0;
+        var executed = 0;
+        var notDue = 0;
+        var dueToday = 0;
         var overdue = 0;
-        var onTrack = 0;
+        var needingAttention = 0;
         var withOpen = 0;
 
         foreach (var asset in eligibleAssets)
         {
-            var relevant = workOrdersByAsset[asset.Id];
-            var lastMaintenance = relevant
-                .Where(workOrder => workOrder.Status == WorkOrderStatus.Completed)
-                .OrderByDescending(workOrder => workOrder.CompletedDate ?? DateTimeOffset.MinValue)
-                .ThenByDescending(workOrder => workOrder.ScheduledDate)
-                .ThenByDescending(workOrder => workOrder.Id)
-                .Select(workOrder => new MaintenancePlanLastMaintenance(
+            var relevant = workOrdersByAsset[asset.Id].ToList();
+            var lastCompleted = PmocDueCalculator.PickLastCompleted(
+                relevant.Select(workOrder => (
                     workOrder.Id,
+                    workOrder.Status,
                     workOrder.ScheduledDate,
-                    workOrder.CompletedDate))
-                .FirstOrDefault();
+                    workOrder.CompletedDate)));
 
-            var coversCurrentPeriod = relevant.Any(workOrder =>
-                workOrder.Status == WorkOrderStatus.Completed
-                && workOrder.ScheduledDate >= lastDueDate);
+            var due = PmocDueCalculator.Compute(
+                new PmocDueInput(
+                    plan.IntervalDays,
+                    plan.FirstDueDate,
+                    asOfDate,
+                    lastCompleted));
 
-            var operationalStatus = lastMaintenance is null
-                ? PmocOperationalStatus.NeverExecuted
-                : coversCurrentPeriod
-                    ? PmocOperationalStatus.OnTrack
-                    : PmocOperationalStatus.Overdue;
+            var lastMaintenance = lastCompleted is null
+                ? null
+                : new MaintenancePlanLastMaintenance(
+                    lastCompleted.Id,
+                    lastCompleted.ScheduledDate,
+                    lastCompleted.CompletedDate);
 
             var openWorkOrder = relevant
                 .Where(workOrder =>
@@ -105,17 +99,32 @@ public sealed class MaintenancePlanCoverageService(
                     workOrder.ScheduledDate))
                 .FirstOrDefault();
 
-            switch (operationalStatus)
+            switch (due.HistoryStatus)
             {
-                case PmocOperationalStatus.NeverExecuted:
+                case PmocHistoryStatus.NeverExecuted:
                     neverExecuted++;
                     break;
-                case PmocOperationalStatus.Overdue:
+                case PmocHistoryStatus.Executed:
+                    executed++;
+                    break;
+            }
+
+            switch (due.DueStatus)
+            {
+                case PmocDueStatus.NotDue:
+                    notDue++;
+                    break;
+                case PmocDueStatus.DueToday:
+                    dueToday++;
+                    break;
+                case PmocDueStatus.Overdue:
                     overdue++;
                     break;
-                case PmocOperationalStatus.OnTrack:
-                    onTrack++;
-                    break;
+            }
+
+            if (due.NeedsAttention)
+            {
+                needingAttention++;
             }
 
             if (openWorkOrder is not null)
@@ -123,18 +132,15 @@ public sealed class MaintenancePlanCoverageService(
                 withOpen++;
             }
 
-            if (filter is not null && !filter.Contains(operationalStatus))
-            {
-                continue;
-            }
-
             rows.Add(new MaintenancePlanCoverageAssetItem(
                 asset.Id,
                 asset.Name,
                 asset.Tag,
                 lastMaintenance,
-                nextDueDate,
-                operationalStatus,
+                due.NextDueDate,
+                due.HistoryStatus,
+                due.DueStatus,
+                due.NeedsAttention,
                 openWorkOrder));
         }
 
@@ -142,22 +148,23 @@ public sealed class MaintenancePlanCoverageService(
 
         var summary = new MaintenancePlanCoverageSummary(
             eligibleAssets.Count,
-            overdue + onTrack,
+            executed,
             neverExecuted,
+            executed,
+            notDue,
+            dueToday,
             overdue,
-            onTrack,
+            needingAttention,
             withOpen);
 
         return new MaintenancePlanCoverageResponse(
             plan.Id,
             asOfDate,
-            plan.Frequency,
-            lastDueDate,
-            nextDueDate,
+            plan.IntervalDays,
+            plan.FirstDueDate,
             plan.IsActive,
             plan.AutoGenerateEnabled,
-            isDueToday,
-            wouldBeConsideredByGenerator,
+            WouldBeConsideredByGenerator: false,
             summary,
             rows);
     }
@@ -172,10 +179,10 @@ public sealed class MaintenancePlanCoverageService(
         MaintenancePlanCoverageAssetItem left,
         MaintenancePlanCoverageAssetItem right)
     {
-        var status = Rank(left.OperationalStatus).CompareTo(Rank(right.OperationalStatus));
-        if (status != 0)
+        var due = Rank(left.DueStatus).CompareTo(Rank(right.DueStatus));
+        if (due != 0)
         {
-            return status;
+            return due;
         }
 
         var tag = string.Compare(left.Tag, right.Tag, StringComparison.OrdinalIgnoreCase);
@@ -187,12 +194,12 @@ public sealed class MaintenancePlanCoverageService(
         return string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static int Rank(PmocOperationalStatus status) =>
+    private static int Rank(PmocDueStatus status) =>
         status switch
         {
-            PmocOperationalStatus.Overdue => 0,
-            PmocOperationalStatus.NeverExecuted => 1,
-            PmocOperationalStatus.OnTrack => 2,
+            PmocDueStatus.Overdue => 0,
+            PmocDueStatus.DueToday => 1,
+            PmocDueStatus.NotDue => 2,
             _ => 3,
         };
 

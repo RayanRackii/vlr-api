@@ -23,7 +23,8 @@ public sealed class PmocPhase1FoundationTests
             TenantId = Guid.NewGuid(),
             UnitId = Guid.NewGuid(),
             Name = "Test",
-            Frequency = MaintenanceFrequency.Monthly,
+            IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = Guid.NewGuid(),
             IsActive = true,
         };
@@ -156,7 +157,8 @@ public sealed class PmocPhase1FoundationTests
             {
                 UnitId = harness.UnitId,
                 Name = "Plano novo",
-                Frequency = MaintenanceFrequency.Monthly,
+                IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
                 AssetCategoryId = harness.CategoryId,
                 Tasks =
                 [
@@ -213,12 +215,15 @@ public sealed class PmocPhase1FoundationTests
     }
 
     [Fact]
-    public void Generation_job_filters_active_and_auto_generate_enabled()
+    public void Generation_job_is_fail_closed_until_slice_3()
     {
         var source = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "PmocEngineJob.cs")));
-        Assert.Contains("plan.IsActive && plan.AutoGenerateEnabled", source, StringComparison.Ordinal);
-        Assert.Contains("IWorkOrderGenerationService", source, StringComparison.Ordinal);
+        Assert.Contains("fail-closed until Phase 3 Slice 3", source, StringComparison.Ordinal);
+        Assert.Contains("Skipping all plans", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GenerateAsync", source, StringComparison.Ordinal);
         Assert.DoesNotContain("new WorkOrder", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("PmocDueCalendar", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsDueToday", source, StringComparison.Ordinal);
     }
 
     private static AppDbContext CreateModelDb()
