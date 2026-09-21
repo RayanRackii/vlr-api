@@ -13,7 +13,9 @@ public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public string? Description { get; set; }
 
-    public required MaintenanceFrequency Frequency { get; set; }
+    public required int IntervalDays { get; set; }
+
+    public required DateOnly FirstDueDate { get; set; }
 
     public required Guid AssetCategoryId { get; set; }
 

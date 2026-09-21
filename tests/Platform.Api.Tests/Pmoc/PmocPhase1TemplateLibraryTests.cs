@@ -113,7 +113,8 @@ public sealed class PmocPhase1TemplateLibraryTests
         Assert.True(created.IsActive);
         Assert.Equal(seed.Name, created.Name);
         Assert.Equal(seed.Description, created.Description);
-        Assert.Equal(seed.Frequency, created.Frequency);
+        Assert.Equal(30, created.IntervalDays);
+        Assert.Equal(new DateOnly(2026, 9, 1), created.FirstDueDate);
 
         var stored = await harness.Db.MaintenancePlans.SingleAsync(plan => plan.Id == created.Id);
         Assert.Equal(MaintenancePlanOriginKind.RolvixTemplate, stored.OriginKind);
@@ -221,7 +222,8 @@ public sealed class PmocPhase1TemplateLibraryTests
             {
                 UnitId = harness.UnitId,
                 Name = "Custom PMOC",
-                Frequency = MaintenanceFrequency.Monthly,
+                IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
                 AssetCategoryId = harness.CategoryId,
                 Tasks =
                 [
@@ -262,7 +264,8 @@ public sealed class PmocPhase1TemplateLibraryTests
                 UnitId = harness.UnitId,
                 Name = "Renamed clone",
                 Description = "Still cloned",
-                Frequency = MaintenanceFrequency.Weekly,
+                IntervalDays = 7,
+                FirstDueDate = new DateOnly(2026, 9, 1),
                 AssetCategoryId = harness.CategoryId,
                 IsActive = false,
                 AutoGenerateEnabled = true,
@@ -312,7 +315,8 @@ public sealed class PmocPhase1TemplateLibraryTests
                 {
                     UnitId = harness.UnitId,
                     Name = "Hacked",
-                    Frequency = MaintenanceFrequency.Monthly,
+                    IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
                     AssetCategoryId = harness.CategoryId,
                     IsActive = false,
                     AutoGenerateEnabled = true,
@@ -492,7 +496,8 @@ public sealed class PmocPhase1TemplateLibraryTests
             {
                 UnitId = harness.UnitId,
                 Name = "Personalizado",
-                Frequency = MaintenanceFrequency.Monthly,
+                IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
                 AssetCategoryId = harness.CategoryId,
                 Tasks =
                 [
@@ -656,6 +661,14 @@ public sealed class PmocPhase1TemplateLibraryTests
         Assert.Null(typeof(CreateFromTemplateRequest).GetProperty("SourceTemplateId"));
         Assert.Null(typeof(CreateFromTemplateRequest).GetProperty("SourceTemplateVersion"));
         Assert.Null(typeof(CreateFromTemplateRequest).GetProperty("Frequency"));
+        Assert.NotNull(typeof(CreateFromTemplateRequest).GetProperty("IntervalDays"));
+        Assert.NotNull(typeof(CreateFromTemplateRequest).GetProperty("FirstDueDate"));
+        Assert.Null(typeof(GlobalMaintenanceTemplateResponse).GetProperty("Frequency"));
+        Assert.Null(typeof(GlobalMaintenanceTemplateResponse).GetProperty("IntervalDays"));
+        Assert.Null(typeof(GlobalMaintenanceTemplateResponse).GetProperty("FirstDueDate"));
+        Assert.Null(typeof(GlobalMaintenanceTemplate).GetProperty("Frequency"));
+        Assert.Null(typeof(GlobalMaintenanceTemplate).GetProperty("IntervalDays"));
+        Assert.Null(typeof(GlobalMaintenanceTemplate).GetProperty("FirstDueDate"));
     }
 
     [Fact]
@@ -671,6 +684,8 @@ public sealed class PmocPhase1TemplateLibraryTests
                 TemplateId = seed.Id,
                 UnitId = harness.UnitId,
                 AssetCategoryId = harness.CategoryId,
+                IntervalDays = 30,
+                FirstDueDate = new DateOnly(2026, 9, 1),
                 Name = "  Override name  ",
                 Description = "  Override description  ",
                 IsActive = false,
@@ -705,6 +720,8 @@ public sealed class PmocPhase1TemplateLibraryTests
             TemplateId = templateId,
             UnitId = harness.UnitId,
             AssetCategoryId = harness.CategoryId,
+            IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             Name = name,
         };
 
@@ -734,7 +751,6 @@ public sealed class PmocPhase1TemplateLibraryTests
         {
             Name = GlobalTemplateSeed.AnvisaTemplateName,
             Description = GlobalTemplateSeed.AnvisaTemplateDescription,
-            Frequency = GlobalTemplateSeed.AnvisaFrequency,
             Jurisdiction = GlobalTemplateSeed.AnvisaJurisdiction,
             TargetEquipmentType = GlobalTemplateSeed.AnvisaTargetEquipmentType,
             LibraryKey = GlobalTemplateSeed.AnvisaLibraryKey,
@@ -830,7 +846,6 @@ public sealed class PmocPhase1TemplateLibraryTests
         {
             Name = name,
             Description = $"{name} description",
-            Frequency = MaintenanceFrequency.Monthly,
             Jurisdiction = jurisdiction,
             TargetEquipmentType = "Ar Condicionado",
             LibraryKey = libraryKey,

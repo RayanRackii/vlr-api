@@ -152,7 +152,6 @@ public sealed class MaintenancePlanCoverageHttpTests
     {
         public Task<MaintenancePlanCoverageResponse?> GetCoverageAsync(
             Guid planId,
-            IReadOnlyCollection<PmocOperationalStatus>? statuses,
             CancellationToken cancellationToken) =>
             Task.FromResult<MaintenancePlanCoverageResponse?>(null);
     }

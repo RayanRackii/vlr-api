@@ -25,11 +25,6 @@ public sealed class GlobalMaintenanceTemplateConfiguration
         builder.Property(t => t.Description)
             .HasMaxLength(2000);
 
-        builder.Property(t => t.Frequency)
-            .HasConversion<string>()
-            .HasMaxLength(32)
-            .IsRequired();
-
         builder.Property(t => t.Jurisdiction)
             .HasMaxLength(16)
             .IsRequired();
@@ -77,7 +72,6 @@ public sealed class GlobalMaintenanceTemplateConfiguration
                 Id = GlobalTemplateSeed.AnvisaNr10TemplateId,
                 Name = GlobalTemplateSeed.AnvisaTemplateName,
                 Description = GlobalTemplateSeed.AnvisaTemplateDescription,
-                Frequency = GlobalTemplateSeed.AnvisaFrequency,
                 Jurisdiction = GlobalTemplateSeed.AnvisaJurisdiction,
                 TargetEquipmentType = GlobalTemplateSeed.AnvisaTargetEquipmentType,
                 LibraryKey = GlobalTemplateSeed.AnvisaLibraryKey,

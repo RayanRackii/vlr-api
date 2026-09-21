@@ -56,12 +56,10 @@ public sealed class MaintenancePlansController(
     [RequirePermission(Permissions.Pmoc.PlansRead)]
     public async Task<ActionResult<MaintenancePlanCoverageResponse>> GetCoverage(
         Guid id,
-        [FromQuery] PmocOperationalStatus[]? status,
         CancellationToken cancellationToken)
     {
         var coverage = await coverageService.GetCoverageAsync(
             id,
-            status,
             cancellationToken);
 
         if (coverage is null)
@@ -137,6 +135,10 @@ public sealed class MaintenancePlansController(
             }
 
             return Ok(plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (KeyNotFoundException ex)
         {

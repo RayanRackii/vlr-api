@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 
@@ -9,7 +10,10 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
 {
     public void Configure(EntityTypeBuilder<MaintenancePlan> builder)
     {
-        builder.ToTable("maintenance_plans", "pmoc");
+        builder.ToTable("maintenance_plans", "pmoc", table =>
+            table.HasCheckConstraint(
+                "ck_maintenance_plans_interval_days",
+                $"interval_days >= {PmocScheduling.MinIntervalDays} AND interval_days <= {PmocScheduling.MaxIntervalDays}"));
 
         builder.HasKey(p => p.Id);
 
@@ -29,9 +33,10 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
         builder.Property(p => p.Description)
             .HasMaxLength(2000);
 
-        builder.Property(p => p.Frequency)
-            .HasConversion<string>()
-            .HasMaxLength(32)
+        builder.Property(p => p.IntervalDays)
+            .IsRequired();
+
+        builder.Property(p => p.FirstDueDate)
             .IsRequired();
 
         builder.Property(p => p.AssetCategoryId)

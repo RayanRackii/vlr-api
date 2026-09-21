@@ -34,8 +34,6 @@ public static class GlobalTemplateSeed
     public const string AnvisaTemplateDescription =
         "Modelo base alinhado à Lei 13.589/2018, Resolução Anvisa RE 09 e inspeções elétricas da NR-10 para equipamentos de climatização.";
 
-    public const MaintenanceFrequency AnvisaFrequency = MaintenanceFrequency.Monthly;
-
     public const string AnvisaJurisdiction = "BR";
 
     public const string AnvisaTargetEquipmentType = "Ar Condicionado";

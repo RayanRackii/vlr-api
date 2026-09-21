@@ -5,14 +5,13 @@ namespace Platform.Core.Domain.Entities;
 
 /// <summary>
 /// Catalog template shared across all tenants (no tenant isolation).
+/// Checklist and provenance only — tenant plans own IntervalDays / FirstDueDate.
 /// </summary>
 public class GlobalMaintenanceTemplate : Entity
 {
     public required string Name { get; set; }
 
     public string? Description { get; set; }
-
-    public required MaintenanceFrequency Frequency { get; set; }
 
     /// <summary>
     /// Jurisdiction code, e.g. "BR", "PR", "SP".
