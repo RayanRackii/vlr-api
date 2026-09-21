@@ -18,7 +18,6 @@ public sealed record MaintenancePlanCoverageResponse(
 
 public sealed record MaintenancePlanCoverageSummary(
     int EligibleAssets,
-    int AssetsWithPmocHistory,
     int AssetsNeverExecuted,
     int AssetsExecuted,
     int AssetsNotDue,
@@ -31,9 +30,9 @@ public sealed record MaintenancePlanCoverageAssetItem(
     Guid AssetId,
     string Name,
     string Tag,
-    MaintenancePlanLastMaintenance? LastMaintenance,
-    DateOnly NextDueDate,
     PmocHistoryStatus HistoryStatus,
+    MaintenancePlanLastMaintenance? LastMaintenance,
+    DateOnly EffectiveNextDueDate,
     PmocDueStatus DueStatus,
     bool NeedsAttention,
     MaintenancePlanOpenWorkOrder? OpenWorkOrder);
