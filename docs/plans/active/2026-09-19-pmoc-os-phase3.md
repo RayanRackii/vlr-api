@@ -1,6 +1,6 @@
 # 2026-09-19-pmoc-os-phase3
 
-Status: **APPROVED** (breaking clean domain). Slice 1 implementation in progress.
+Status: **APPROVED** (breaking clean domain). Slice 1 squash-merged to `develop`. Slice 2 Coverage V3 in progress.
 
 ```
 ROLVIX_PMOC_OS_PHASE1              = RELEASED_PROD
@@ -8,9 +8,10 @@ ROLVIX_PMOC_OS_PHASE2              = RELEASED_PROD
 PHASE3_DATA_COMPATIBILITY          = BREAKING_ALLOWED
 PHASE3_BREAKING_MODEL              = APPROVED
 PMOC_OS_PHASE3_SPEC                = APPROVED
-PHASE3_IMPLEMENTATION              = SLICE_1_PR
+PHASE3_IMPLEMENTATION              = SLICE_2_PR
 H6                                 = NO
 H7                                 = NO
+SHARED_DEV_FREEZE                  = PHASE2_UNTIL_SLICES_1_4
 ```
 
 Parent plans:
@@ -88,7 +89,7 @@ Checklist / provenance only. Remove `Frequency`. Do **not** add interval fields.
 
 `PmocDueCalculator.Compute(intervalDays, firstDueDate, asOfDate, lastCompleted?)`.
 
-Consumers: Coverage (compile path in Slice 1), Slice 3 Hangfire. Not duplicated in either.
+Consumers: Coverage V3, Slice 3 Hangfire. Not duplicated in either.
 
 ### Auto generation (final — Slice 3, not this slice)
 
@@ -111,9 +112,9 @@ Slice 1 job **does not** implement this. It returns without creating OS.
 
 Include: domain, remove Frequency + PmocDueCalendar, destructive forward migration (file only), plan CRUD + from-template contract, calculator, history/due enums, fail-closed job, tests, this spec.
 
-Exclude: Coverage V3 **final** contract (Slice 1 Coverage is compile-provisional via calculator; Slice 2 owns the public V3 shape), interval Hangfire generation, WEB, H6, H7, PROD/DEV apply of the destructive migration, Slice 2+.
+Exclude: Coverage V3 **final** contract (owned by Slice 2), interval Hangfire generation, WEB, H6, H7, PROD/DEV apply of the destructive migration, Slice 2+.
 
-Coverage compile stance (Slice 1): drop calendar fields (`frequency`, `lastDueDate`, `isDueToday`); rows use calculator `nextDueDate` + `historyStatus` + `dueStatus` + `needsAttention`; `wouldBeConsideredByGenerator = false` while the job is fail-closed. Slice 2 may rename/extend summary fields.
+Coverage compile stance (Slice 1, superseded by Slice 2): drop calendar fields (`frequency`, `lastDueDate`, `isDueToday`); rows use calculator + `historyStatus` + `dueStatus` + `needsAttention`; `wouldBeConsideredByGenerator = false` while the job is fail-closed.
 
 ---
 
@@ -146,7 +147,43 @@ FK (both envs, `confdeltype`): `os.work_order_tasks.work_order_id` → CASCADE; 
 
 ---
 
-## DEPLOYMENT (later gate — do not execute in Slice 1)
+## SLICE 2 SCOPE — Coverage V3
+
+Endpoint: `GET /api/maintenance-plans/{id}/coverage` (`pmoc` + `pmoc.plans.read`). Tenant 404 for missing/foreign plan. No new permission. Technician remains without `pmoc.*`.
+
+**Filter: NONE.** Phase 3 does not bind a server-side operational-status (or due/history) query filter. Expected cardinality is small; H6/H7 remain NO. Every currently eligible asset is returned.
+
+Root: `planId`, `asOfDate` (one Brazil today for the whole response), `intervalDays`, `firstDueDate`, `isActive`, `autoGenerateEnabled`, `eligibleAssetCount`, `wouldBeConsideredByGenerator`, `summary`, `assets`.
+
+Removed Phase 2 fields: `frequency`, `lastDueDate`, plan-level calendar `nextDueDate`, `isDueToday`, `operationalStatus`, `assetsWithPmocHistory`, coverage/compliance %, CREA, `DueSoon`.
+
+Per-asset: `assetId`, `name`, `tag`, `historyStatus` (`NeverExecuted` | `Executed`), `lastMaintenance` (null or latest Completed PMOC), `effectiveNextDueDate`, `dueStatus` (`NotDue` | `DueToday` | `Overdue`), `needsAttention`, `openWorkOrder`.
+
+`lastMaintenance` ordering: `CompletedDate DESC`, `ScheduledDate DESC`, `Id DESC`. Uses `CompletedDate` only. No `ScheduledDate` fallback.
+
+Due: exclusively `PmocDueCalculator`. Coverage maps `due.NextDueDate` → `effectiveNextDueDate`. Do not duplicate interval math.
+
+Summary: `eligibleAssets`, `assetsNeverExecuted`, `assetsExecuted`, `assetsNotDue`, `assetsDueToday`, `assetsOverdue`, `assetsNeedingAttention`, `assetsWithOpenWorkOrder`.
+
+Invariants: `eligibleAssets = never + executed = notDue + dueToday + overdue`; `assetsNeedingAttention = dueToday + overdue`. NeverExecuted is **not** attention by itself.
+
+`wouldBeConsideredByGenerator = plan.IsActive && plan.AutoGenerateEnabled && ANY eligible DueToday|Overdue`. Non-promissory (open OS / duplicate / other generator safety may still skip creation). Does **not** call `PmocEngineJob`.
+
+C1 `openWorkOrder`: InProgress before Pending, then `ScheduledDate ASC`, `Id ASC`. Independent of `dueStatus`.
+
+Eligibility unchanged. `IsActive` / `AutoGenerateEnabled` do **not** hide Coverage rows. `RequiresMaintenance` is **not** a gate.
+
+Sort: Overdue, DueToday, NotDue, then tag, name, AssetId.
+
+Query: plan + currently eligible assets + plan-linked non-Canceled WorkOrders (enough for last Completed + C1). Group/join in memory. No N+1. Do not persist due state. Manual `MaintenancePlanId=null` WOs never affect Coverage.
+
+No new migration. Shared DEV stays on Phase 2: do not apply `20260920002154_ApplyPmocOsPhase3FinalScheduling`; do not deploy Phase 3 API to Railway DEV.
+
+Slug: `feat/pmoc-os-phase3-coverage-v3`. Squash → `develop`. Do not merge until Fable ALLOW + Human. Do not start Slice 3.
+
+---
+
+## DEPLOYMENT (later gate — do not execute in Slices 1–2)
 
 Not rolling compatible. Later: stop relevant PROD traffic → apply destructive PMOC migration → deploy Phase 3 API → recreate fixtures → API smoke → deploy Phase 3 WEB → integrated smoke → reopen. Phase 3 is **not** released to PROD until Slice 3 restores automatic generation.
 
@@ -162,11 +199,11 @@ Not rolling compatible. Later: stop relevant PROD traffic → apply destructive 
 
 | Slice | What |
 |---|---|
-| **1** (this) | Schema + plan/template API + calculator + fail-closed job |
-| **2** | Coverage V3 public contract |
+| **1** | Schema + plan/template API + calculator + fail-closed job (merged) |
+| **2** (this) | Coverage V3 public contract |
 | **3** | Hangfire interval generation + concurrency |
 | **4** | WEB |
 
 Then DEV QA, API/migration PROD gate, WEB PROD gate, closeout — each Human-authorized.
 
-Slug: `feat/pmoc-os-phase3-final-scheduling-foundation`. Squash → `develop`. Do not merge until Fable ALLOW + Human.
+Slug Slice 1: `feat/pmoc-os-phase3-final-scheduling-foundation` (squash-merged). Slice 2: `feat/pmoc-os-phase3-coverage-v3`. Squash → `develop`. Do not merge until Fable ALLOW + Human.

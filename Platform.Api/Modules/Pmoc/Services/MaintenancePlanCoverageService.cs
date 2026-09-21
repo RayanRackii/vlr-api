@@ -136,9 +136,9 @@ public sealed class MaintenancePlanCoverageService(
                 asset.Id,
                 asset.Name,
                 asset.Tag,
+                due.HistoryStatus,
                 lastMaintenance,
                 due.NextDueDate,
-                due.HistoryStatus,
                 due.DueStatus,
                 due.NeedsAttention,
                 openWorkOrder));
@@ -148,7 +148,6 @@ public sealed class MaintenancePlanCoverageService(
 
         var summary = new MaintenancePlanCoverageSummary(
             eligibleAssets.Count,
-            executed,
             neverExecuted,
             executed,
             notDue,
@@ -157,6 +156,11 @@ public sealed class MaintenancePlanCoverageService(
             needingAttention,
             withOpen);
 
+        var wouldBeConsideredByGenerator =
+            plan.IsActive
+            && plan.AutoGenerateEnabled
+            && needingAttention > 0;
+
         return new MaintenancePlanCoverageResponse(
             plan.Id,
             asOfDate,
@@ -164,7 +168,7 @@ public sealed class MaintenancePlanCoverageService(
             plan.FirstDueDate,
             plan.IsActive,
             plan.AutoGenerateEnabled,
-            WouldBeConsideredByGenerator: false,
+            wouldBeConsideredByGenerator,
             summary,
             rows);
     }
@@ -191,7 +195,13 @@ public sealed class MaintenancePlanCoverageService(
             return tag;
         }
 
-        return string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+        var name = string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+        if (name != 0)
+        {
+            return name;
+        }
+
+        return left.AssetId.CompareTo(right.AssetId);
     }
 
     private static int Rank(PmocDueStatus status) =>
