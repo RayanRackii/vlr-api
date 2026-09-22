@@ -1,6 +1,6 @@
 # 2026-09-19-pmoc-os-phase3
 
-Status: **APPROVED** (breaking clean domain). Slice 1 squash-merged to `develop`. Slice 2 Coverage V3 in progress.
+Status: **APPROVED** (breaking clean domain). Slices 1–2 squash-merged to `develop`. Slice 3 interval generator in progress.
 
 ```
 ROLVIX_PMOC_OS_PHASE1              = RELEASED_PROD
@@ -8,7 +8,7 @@ ROLVIX_PMOC_OS_PHASE2              = RELEASED_PROD
 PHASE3_DATA_COMPATIBILITY          = BREAKING_ALLOWED
 PHASE3_BREAKING_MODEL              = APPROVED
 PMOC_OS_PHASE3_SPEC                = APPROVED
-PHASE3_IMPLEMENTATION              = SLICE_2_PR
+PHASE3_IMPLEMENTATION              = SLICE_3_PR
 H6                                 = NO
 H7                                 = NO
 SHARED_DEV_FREEZE                  = PHASE2_UNTIL_SLICES_1_4
@@ -91,16 +91,28 @@ Checklist / provenance only. Remove `Frequency`. Do **not** add interval fields.
 
 Consumers: Coverage V3, Slice 3 Hangfire. Not duplicated in either.
 
-### Auto generation (final — Slice 3, not this slice)
+### Auto generation (final — Slice 3)
 
 ```
 plan.IsActive && plan.AutoGenerateEnabled
-→ each eligible asset with effectiveNextDueDate <= BrazilToday
+→ each eligible asset with DueToday or Overdue
 → skip if relevant Pending/InProgress PMOC WO exists
-→ GenerateAsync(ScheduledDate = effectiveNextDueDate)
+→ ScheduledDate = effectiveNextDueDate
+→ canonical WorkOrderGenerationService snapshot insert
 ```
 
-Slice 1 job **does not** implement this. It returns without creating OS.
+Job schedule stays `0 6 * * *` in `BrazilTimeZone` (one evaluation per Brazil civil day). Do not change the cron without a human schedule decision. Overdue catch-up keeps the calculated due date, including when it is already in the past.
+
+Synchronization, one transaction per plan/asset, lock order never reversed:
+
+1. `pg_advisory_xact_lock(hashtextextended(planId:assetId))` — automatic generation, manual `GenerateAsync`, and `UpdateStatusAsync` for a PMOC-linked work order
+2. `SELECT pmoc.maintenance_plans.id FOR UPDATE` — automatic revalidation and plan header `UpdateAsync`
+3. `SELECT assets.assets.id FOR UPDATE` — automatic revalidation
+4. work order insert or status update
+
+Manual `POST /api/work-orders/from-plan` does **not** skip when another PMOC OS is open. Completion of a PMOC work order takes the same advisory lock before it writes `CompletedDate`, and automatic generation re-reads due state after that lock. The unique index `ux_os_work_orders_pmoc_period` remains the same-date backstop. No new migration.
+
+Prefilter (active+auto plans, eligible assets, plan work orders) is an optimization. `TryGenerateAutomaticAsync` revalidates plan flags, eligibility, calculator due, and open OS before insert.
 
 ### Manual generation
 
@@ -200,10 +212,10 @@ Not rolling compatible. Later: stop relevant PROD traffic → apply destructive 
 | Slice | What |
 |---|---|
 | **1** | Schema + plan/template API + calculator + fail-closed job (merged) |
-| **2** (this) | Coverage V3 public contract |
-| **3** | Hangfire interval generation + concurrency |
+| **2** | Coverage V3 public contract (merged) |
+| **3** (this) | Hangfire interval generation + concurrency |
 | **4** | WEB |
 
 Then DEV QA, API/migration PROD gate, WEB PROD gate, closeout — each Human-authorized.
 
-Slug Slice 1: `feat/pmoc-os-phase3-final-scheduling-foundation` (squash-merged). Slice 2: `feat/pmoc-os-phase3-coverage-v3`. Squash → `develop`. Do not merge until Fable ALLOW + Human.
+Slug Slice 1: `feat/pmoc-os-phase3-final-scheduling-foundation` (squash-merged). Slice 2: `feat/pmoc-os-phase3-coverage-v3` (squash-merged). Slice 3: `feat/pmoc-os-phase3-interval-generator`. Squash → `develop`. Do not merge until Fable ALLOW + Human. Do not start Slice 4. Shared DEV stays on Phase 2.

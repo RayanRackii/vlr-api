@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
+using Platform.Api.Jobs;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.Assets.Services;
@@ -234,6 +235,38 @@ public sealed class WorkOrderService(
             return null;
         }
 
+        if (workOrder.MaintenancePlanId is Guid planId)
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await PmocPlanAssetLock.AcquireAsync(
+                    dbContext,
+                    planId,
+                    workOrder.AssetId,
+                    cancellationToken);
+                await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
+                ApplyStatusChange(workOrder, request);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+        else
+        {
+            ApplyStatusChange(workOrder, request);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return WorkOrderResponseMapper.ToResponse(workOrder);
+    }
+
+    private static void ApplyStatusChange(WorkOrder workOrder, UpdateWorkOrderStatusRequest request)
+    {
         if (workOrder.Status == WorkOrderStatus.Canceled)
         {
             throw new InvalidOperationException("Cannot change status of a canceled work order.");
@@ -242,9 +275,9 @@ public sealed class WorkOrderService(
         if (request.Status == WorkOrderStatus.Completed)
         {
             var missingMandatory = workOrder.Tasks
-                .Where(t => t.IsMandatory && string.IsNullOrWhiteSpace(t.Value))
-                .OrderBy(t => t.Order)
-                .Select(t => t.Title)
+                .Where(task => task.IsMandatory && string.IsNullOrWhiteSpace(task.Value))
+                .OrderBy(task => task.Order)
+                .Select(task => task.Title)
                 .ToList();
 
             if (missingMandatory.Count > 0)
@@ -263,10 +296,6 @@ public sealed class WorkOrderService(
 
         workOrder.Status = request.Status;
         workOrder.Touch();
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
     private Guid EnsureTenantContext()

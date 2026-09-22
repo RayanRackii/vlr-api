@@ -29,13 +29,11 @@ public sealed class MaintenancePlanCoverageService(
 
         var asOfDate = BrazilTimeZone.GetToday(timeProvider);
 
-        var eligibleAssets = await dbContext.Assets
-            .AsNoTracking()
-            .Where(asset =>
-                asset.UnitId == plan.UnitId
-                && asset.CategoryId == plan.AssetCategoryId
-                && asset.Status == AssetStatus.Active
-                && asset.ScheduledDeletionAt == null)
+        var eligibleAssets = await PmocAssetEligibility.WhereEligible(
+                dbContext.Assets.AsNoTracking(),
+                plan.TenantId,
+                plan.UnitId,
+                plan.AssetCategoryId)
             .Select(asset => new EligibleAssetRow(asset.Id, asset.Name, asset.Tag))
             .ToListAsync(cancellationToken);
 
