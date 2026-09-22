@@ -5,15 +5,15 @@ Derived context — NOT canonical.
 - Scope: PMOC (maintenance plans, Rolvix template library) and OS (work orders, technician execution)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `docs/plans/active/2026-09-18-pmoc-os-phase1.md`; `docs/plans/active/2026-09-19-pmoc-os-phase2.md` (calendar due **superseded**); `docs/plans/active/2026-09-19-pmoc-os-phase3.md`
-- Last verified: 2026-09-21 (Phase 3 Slice 2 Coverage V3)
+- Last verified: 2026-09-21 (Phase 3 Slice 3 interval generator)
 - Verified at commit(s):
-  - API `origin/develop` (Phase 3 Slice 1): `0ab4a4a10fed637eef12f4355b20c784ee53fe06`
+  - API `origin/develop` (Phase 3 Slice 2): `eea9e410f9ca872b2d5e0f687c22b107d86c3cc4`
 
 ## Purpose
 
 Load when the question is GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS, or PMOC/OS permissions.
 
-This pack describes **shipped Phase 1 + Phase 2 on PROD** plus **Phase 3 Slice 1 on develop** and **Slice 2 Coverage V3 on this branch**. Interval Hangfire generation is Slice 3. WEB is unchanged. Shared Railway DEV stays frozen on Phase 2 until Slices 1–4 complete.
+This pack describes **shipped Phase 1 + Phase 2 on PROD**, **Phase 3 Slices 1–2 on develop**, and **Slice 3 interval generation on this branch**. WEB is unchanged. Shared Railway DEV stays frozen on Phase 2 until Slices 1–4 complete. Railway DEV autodeploy stays OFF.
 
 ## Canonical sources
 
@@ -44,7 +44,7 @@ GlobalMaintenanceTemplate (checklist/provenance only; 1 seed: ANVISA RE 09 + NR-
         ↓ POST /api/maintenance-plans/from-template (server clone + tenant IntervalDays/FirstDueDate)
 MaintenancePlan + PlanTasks (IntervalDays 1..3650, FirstDueDate; header PUT including AutoGenerateEnabled)
         ↓ derived due: PmocDueCalculator (never executed → FirstDueDate; executed → Brazil civil CompletedDate + IntervalDays)
-        ↓ Hangfire PmocEngineJob **fail-closed until Slice 3** (generates zero) OR POST `/api/work-orders/from-plan`
+        ↓ Hangfire PmocEngineJob once per Brazil civil day (`0 6 * * *`) OR POST `/api/work-orders/from-plan`
         ↓ IWorkOrderGenerationService snapshot
 WorkOrder + WorkOrderTasks snapshot (`SourcePlanName`)
 ```
@@ -60,8 +60,8 @@ WorkOrder + WorkOrderTasks snapshot (`SourcePlanName`)
 - `POST /api/maintenance-plans/from-template` clones a Published row (`OriginKind=RolvixTemplate`, frozen `SourceTemplateVersion`, new PlanTask ids) and **requires tenant** `intervalDays` + `firstDueDate`. Generic `POST /api/maintenance-plans` stays Custom and also requires those fields.
 - `POST /api/work-orders/from-plan` (`os.work_orders.create`) generates Pending OS from plan+asset; 409 `DUPLICATE_WORK_ORDER` on the PMOC period unique key. Manual `POST /api/work-orders` stays client-task (`/os/nova`). Completing a PMOC-linked WO resets the interval clock.
 - `GET /api/work-orders?maintenancePlanId=` is additive (AND with `assetId`); related OS contract. `WorkOrderResponse.sourcePlanName` is nullable.
-- Hangfire `pmoc-engine` remains registered at 06:00 Brazil. Slices 1–2 **do not generate**. Slice 3 restores asset-aware interval generation.
-- `GET /api/maintenance-plans/{id}/coverage` (`pmoc.plans.read`) is Coverage V3: one Brazil `asOfDate`; per-asset `historyStatus` / `lastMaintenance` / `effectiveNextDueDate` / `dueStatus` / `needsAttention` / `openWorkOrder`; summary history+due partitions; `wouldBeConsideredByGenerator = IsActive && AutoGenerateEnabled && ANY DueToday|Overdue` (non-promissory). No server-side status filter. No persistence. No Hangfire call. Due math exclusively `PmocDueCalculator`.
+- Hangfire `pmoc-engine` remains `0 6 * * *` Brazil. Slice 3 generates for each eligible DueToday/Overdue asset with no open PMOC OS. `ScheduledDate` is `effectiveNextDueDate`. Manual from-plan still allows an open OS. Completion and generation share `pg_advisory_xact_lock` on `(plan, asset)`.
+- `GET /api/maintenance-plans/{id}/coverage` (`pmoc.plans.read`) is Coverage V3: one Brazil `asOfDate`; per-asset `historyStatus` / `lastMaintenance` / `effectiveNextDueDate` / `dueStatus` / `needsAttention` / `openWorkOrder`; summary history+due partitions; `wouldBeConsideredByGenerator = IsActive && AutoGenerateEnabled && ANY DueToday|Overdue` (non-promissory). No server-side status filter. No persistence. No Hangfire call. Due math exclusively `PmocDueCalculator`. Eligibility predicate is shared with the generator.
 - WEB: `/pmoc`, `/pmoc/novo`, `/os`, `/os/:id`, `/os/nova`. CREA copy in i18n.
 - Offline: `vlr-web/src/lib/offlineSync.ts` queues WO task PATCH; **not** Phase 1 work.
 
@@ -117,9 +117,10 @@ Phase 2 calendar coverage contract is **superseded**. Coverage V3 is the public 
 ## Known gaps / open constraints
 
 - Slice 1–4 Phase 1 API + WEB Slices 5–6 and Phase 2 coverage are **released to PROD**
-- Phase 3 Slice 1 is on `develop`: final interval domain + fail-closed job + destructive migration **file only** (not applied to shared DEV/PROD)
-- Phase 3 Slice 2 (this branch): Coverage V3 public contract
-- Phase 3 Slice 3 interval generation is **not implemented**
+- Phase 3 Slice 1 is on `develop`: final interval domain + fail-closed job replaced in Slice 3 + destructive migration **file only** (not applied to shared DEV/PROD)
+- Phase 3 Slice 2 is on `develop`: Coverage V3 public contract
+- Phase 3 Slice 3 (this branch): asset-aware automatic generation
+- Phase 3 Slice 4 WEB is **not implemented**
 - H6 plan-list aggregates = **NO**; H7 Inventory PMOC surface = **NO**
 - Unique-index collision precheck: DEV `jzptnjyzijklutinpxag` = 0, PROD `kbptdzfbngelzdhriyhf` = 0 (`MIGRATION_B = ALLOWED`)
 - No template adoption/diff UX (model must allow later)

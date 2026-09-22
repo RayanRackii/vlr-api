@@ -1185,6 +1185,13 @@ public sealed class ModuleRuntimeGateTests
             GenerateWorkOrderCommand command,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<PmocAutomaticGenerationResult> TryGenerateAutomaticAsync(
+            Guid planId,
+            Guid assetId,
+            DateOnly asOfDate,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubWorkOrderService : IWorkOrderService

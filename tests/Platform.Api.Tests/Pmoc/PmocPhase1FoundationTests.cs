@@ -215,15 +215,18 @@ public sealed class PmocPhase1FoundationTests
     }
 
     [Fact]
-    public void Generation_job_is_fail_closed_until_slice_3()
+    public void Generation_job_delegates_interval_creation_and_keeps_daily_brazil_schedule()
     {
         var source = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "PmocEngineJob.cs")));
-        Assert.Contains("fail-closed until Phase 3 Slice 3", source, StringComparison.Ordinal);
-        Assert.Contains("Skipping all plans", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("GenerateAsync", source, StringComparison.Ordinal);
+        Assert.Contains("PmocDueCalculator.Compute", source, StringComparison.Ordinal);
+        Assert.Contains("TryGenerateAutomaticAsync", source, StringComparison.Ordinal);
         Assert.DoesNotContain("new WorkOrder", source, StringComparison.Ordinal);
         Assert.DoesNotContain("PmocDueCalendar", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsDueToday", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("fail-closed until Phase 3 Slice 3", source, StringComparison.Ordinal);
+
+        var hangfire = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "HangfireExtensions.cs")));
+        Assert.Contains("\"0 6 * * *\"", hangfire, StringComparison.Ordinal);
+        Assert.Contains("ResolveBrazilTimeZone()", hangfire, StringComparison.Ordinal);
     }
 
     private static AppDbContext CreateModelDb()

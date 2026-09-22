@@ -214,17 +214,30 @@ public sealed class MaintenancePlanService(
         await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
         PmocDueCalculator.EnsureIntervalDays(request.IntervalDays);
 
-        plan.UnitId = request.UnitId;
-        plan.Name = request.Name.Trim();
-        plan.Description = NormalizeOptional(request.Description);
-        plan.IntervalDays = request.IntervalDays;
-        plan.FirstDueDate = request.FirstDueDate;
-        plan.AssetCategoryId = request.AssetCategoryId;
-        plan.IsActive = request.IsActive;
-        plan.AutoGenerateEnabled = request.AutoGenerateEnabled;
-        plan.Touch();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await PmocPlanAssetLock.LockPlanRowAsync(dbContext, plan.Id, cancellationToken);
+            await dbContext.Entry(plan).ReloadAsync(cancellationToken);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+            plan.UnitId = request.UnitId;
+            plan.Name = request.Name.Trim();
+            plan.Description = NormalizeOptional(request.Description);
+            plan.IntervalDays = request.IntervalDays;
+            plan.FirstDueDate = request.FirstDueDate;
+            plan.AssetCategoryId = request.AssetCategoryId;
+            plan.IsActive = request.IsActive;
+            plan.AutoGenerateEnabled = request.AutoGenerateEnabled;
+            plan.Touch();
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         return ToResponse(plan);
     }
