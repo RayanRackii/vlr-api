@@ -191,10 +191,19 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
 - `REVIEW_DEV_HOSTING_ENVIRONMENT`: Railway `development` + `ASPNETCORE_ENVIRONMENT=Production` (RBAC Client diagnostic hosted service does not run; notification gate treats the host as non-Development).
 
+## 2.9. PMOC / OS — FEITO (PROD)
+
+Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There is no active PMOC implementation.
+
+- [x] Phase 1 — library, tenant plans, checklist, `AutoGenerateEnabled`, manual Gerar OS, snapshots, Related OS, duplicate protection, `PLAN_IN_USE`. Spec [`docs/plans/active/2026-09-18-pmoc-os-phase1.md`](./docs/plans/active/2026-09-18-pmoc-os-phase1.md).
+- [x] Phase 2 — first Coverage read model. Calendar scheduling in that spec is historical and was superseded by Phase 3. Spec [`docs/plans/active/2026-09-19-pmoc-os-phase2.md`](./docs/plans/active/2026-09-19-pmoc-os-phase2.md).
+- [x] Phase 3 — `IntervalDays` + `FirstDueDate`, Coverage V3, per-asset generator. Migration `20260920002154_ApplyPmocOsPhase3FinalScheduling` applied on PROD (`PENDING_COUNT=0`). API `main` `c837988abfb55255c1c867ca62d9618ec3c6dd18` (PR #90). WEB `main` `254bd333ef2b2c3b4f798ef6327091f85890fd36` (PR #85). Spec [`docs/plans/active/2026-09-19-pmoc-os-phase3.md`](./docs/plans/active/2026-09-19-pmoc-os-phase3.md). Closeout [`docs/sessions/2026-09-24-pmoc-os-closeout.md`](./docs/sessions/2026-09-24-pmoc-os-closeout.md).
+
 ## Histórico
 
 | Data | Mudança |
 |---|---|
+| 2026-09-24 | **Fechado (PMOC/OS):** Phases 1–3 COMPLETE / RELEASED PROD. Phase 4 NOT PLANNED. No active implementation. Current model is IntervalDays + FirstDueDate and Coverage V3. Earlier “Em curso” Slice 3 row is historical. |
 | 2026-09-21 | **Em curso (API, Phase 3 Slice 3):** asset-aware `PmocEngineJob` — per-asset interval due, open-OS skip, `ScheduledDate = effectiveNextDueDate`, advisory lock shared with PMOC completion. Cron stays `0 6 * * *` Brazil. No new migration. Shared DEV freeze remains. H6/H7 = NO. Branch `feat/pmoc-os-phase3-interval-generator`. |
 | 2026-09-21 | **Executado (API, Phase 3 Slice 2):** Coverage V3 `GET /api/maintenance-plans/{id}/coverage`. Squash-merged to `develop` (`eea9e41`, PR #88). |
 | 2026-09-19 | **Executado (API, Phase 3 Slice 1):** final PMOC scheduling foundation — `IntervalDays` + `FirstDueDate`, `PmocDueCalculator`, fail-closed `PmocEngineJob`, destructive forward migration file **not applied**. Dual Calendar/Interval VOID. H6/H7 = NO. Spec `docs/plans/active/2026-09-19-pmoc-os-phase3.md`. Squash-merged to `develop` (`0ab4a4a`, PR #87). |
