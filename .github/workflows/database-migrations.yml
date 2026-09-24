@@ -106,3 +106,9 @@ jobs:
           dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj \
             --filter "FullyQualifiedName~PmocEngineConcurrencyTests" \
             --logger "console;verbosity=normal"
+
+      - name: Full API suite and Release build
+        if: ${{ inputs.target == 'development' && inputs.mode == 'list' && inputs.confirm_production == 'RUN_FULL_SUITE' }}
+        run: |
+          dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj --logger "console;verbosity=minimal"
+          dotnet build Platform.Api/Platform.Api.csproj --configuration Release
