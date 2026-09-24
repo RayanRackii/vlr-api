@@ -1175,7 +1175,6 @@ public sealed class ModuleRuntimeGateTests
     {
         public Task<MaintenancePlanCoverageResponse?> GetCoverageAsync(
             Guid planId,
-            IReadOnlyCollection<PmocOperationalStatus>? statuses,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
@@ -1184,6 +1183,13 @@ public sealed class ModuleRuntimeGateTests
     {
         public Task<WorkOrderResponse> GenerateAsync(
             GenerateWorkOrderCommand command,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PmocAutomaticGenerationResult> TryGenerateAutomaticAsync(
+            Guid planId,
+            Guid assetId,
+            DateOnly asOfDate,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }

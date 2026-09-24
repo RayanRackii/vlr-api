@@ -1,135 +1,214 @@
 using Microsoft.EntityFrameworkCore;
-using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Jobs;
+
+public sealed record PmocEnginePlanReport(
+    Guid PlanId,
+    int EligibleAssets,
+    int DueAssets,
+    int Created,
+    int SkippedNotDue,
+    int SkippedOpenWorkOrder,
+    int SkippedRevalidation,
+    int SkippedDuplicate);
+
+public sealed record PmocEngineRunReport(
+    DateOnly AsOfDate,
+    IReadOnlyList<PmocEnginePlanReport> Plans);
 
 public sealed class PmocEngineJob(
     AppDbContext dbContext,
     IWorkOrderGenerationService workOrderGenerationService,
+    TimeProvider timeProvider,
     ILogger<PmocEngineJob> logger)
 {
-    public async Task ExecuteAsync(CancellationToken cancellationToken)
+    public Task ExecuteAsync(CancellationToken cancellationToken) =>
+        RunAsync(cancellationToken);
+
+    public async Task<PmocEngineRunReport> RunAsync(CancellationToken cancellationToken)
     {
-        var today = HangfireExtensions.GetBrazilToday();
+        cancellationToken.ThrowIfCancellationRequested();
+        var asOfDate = BrazilTimeZone.GetToday(timeProvider);
+
+        var plans = await dbContext.MaintenancePlans
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(plan => plan.IsActive && plan.AutoGenerateEnabled)
+            .Select(plan => new CandidatePlan(
+                plan.Id,
+                plan.TenantId,
+                plan.UnitId,
+                plan.AssetCategoryId,
+                plan.IntervalDays,
+                plan.FirstDueDate))
+            .ToListAsync(cancellationToken);
+
+        var reports = new List<PmocEnginePlanReport>(plans.Count);
+        foreach (var plan in plans)
+        {
+            reports.Add(await ProcessPlanAsync(plan, asOfDate, cancellationToken));
+        }
 
         logger.LogInformation(
-            "Iniciando geração de OS para o dia {ScheduledDate} (fuso Brasil).",
-            today);
+            "PmocEngineJob finished for {AsOfDate}. PlansProcessed={PlansProcessed} Created={Created}.",
+            asOfDate,
+            reports.Count,
+            reports.Sum(report => report.Created));
 
-        try
+        return new PmocEngineRunReport(asOfDate, reports);
+    }
+
+    private async Task<PmocEnginePlanReport> ProcessPlanAsync(
+        CandidatePlan plan,
+        DateOnly asOfDate,
+        CancellationToken cancellationToken)
+    {
+        var assets = await PmocAssetEligibility.WhereEligible(
+                dbContext.Assets.IgnoreQueryFilters().AsNoTracking(),
+                plan.TenantId,
+                plan.UnitId,
+                plan.CategoryId)
+            .Select(asset => asset.Id)
+            .ToListAsync(cancellationToken);
+
+        var workOrders = await dbContext.WorkOrders
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(workOrder =>
+                workOrder.TenantId == plan.TenantId
+                && workOrder.MaintenancePlanId == plan.Id
+                && workOrder.Status != WorkOrderStatus.Canceled)
+            .Select(workOrder => new CandidateWorkOrder(
+                workOrder.Id,
+                workOrder.AssetId,
+                workOrder.Status,
+                workOrder.ScheduledDate,
+                workOrder.CompletedDate))
+            .ToListAsync(cancellationToken);
+
+        var workOrdersByAsset = workOrders.ToLookup(workOrder => workOrder.AssetId);
+        var skippedNotDue = 0;
+        var skippedOpen = 0;
+        var dueAssets = 0;
+        var candidates = new List<Guid>();
+
+        foreach (var assetId in assets)
         {
-            var activePlans = await dbContext.MaintenancePlans
-                .Include(plan => plan.Tasks)
-                .Where(plan => plan.IsActive && plan.AutoGenerateEnabled)
-                .OrderBy(plan => plan.Name)
-                .ToListAsync(cancellationToken);
+            var relevant = workOrdersByAsset[assetId].ToList();
+            var due = PmocDueCalculator.Compute(
+                new PmocDueInput(
+                    plan.IntervalDays,
+                    plan.FirstDueDate,
+                    asOfDate,
+                    PmocDueCalculator.PickLastCompleted(
+                        relevant.Select(workOrder => (
+                            workOrder.Id,
+                            workOrder.Status,
+                            workOrder.ScheduledDate,
+                            workOrder.CompletedDate)))));
 
-            logger.LogInformation(
-                "PmocEngineJob found {Count} active maintenance plan(s).",
-                activePlans.Count);
-
-            var createdCount = 0;
-
-            foreach (var plan in activePlans)
+            if (due.DueStatus == PmocDueStatus.NotDue)
             {
-                try
-                {
-                    if (!PmocDueCalendar.IsDueToday(plan.Frequency, today))
-                    {
-                        logger.LogInformation(
-                            "Skipping PMOC {PlanName}: frequency {Frequency} is not due on {ScheduledDate}.",
-                            plan.Name,
-                            plan.Frequency,
-                            today);
-                        continue;
-                    }
-
-                    if (plan.Tasks.Count == 0)
-                    {
-                        logger.LogWarning(
-                            "Skipping PMOC {PlanName}: plan has no tasks.",
-                            plan.Name);
-                        continue;
-                    }
-
-                    logger.LogInformation("Verificando PMOC: {PlanName}", plan.Name);
-
-                    var assets = await dbContext.Assets
-                        .Where(asset =>
-                            asset.CategoryId == plan.AssetCategoryId
-                            && asset.UnitId == plan.UnitId
-                            && asset.Status == AssetStatus.Active
-                            && asset.ScheduledDeletionAt == null)
-                        .ToListAsync(cancellationToken);
-
-                    if (assets.Count == 0)
-                    {
-                        logger.LogInformation(
-                            "PMOC {PlanName}: no eligible assets found for unit/category.",
-                            plan.Name);
-                        continue;
-                    }
-
-                    var planCreated = 0;
-
-                    foreach (var asset in assets)
-                    {
-                        try
-                        {
-                            await workOrderGenerationService.GenerateAsync(
-                                new GenerateWorkOrderCommand(
-                                    plan.Id,
-                                    asset.Id,
-                                    today,
-                                    AssignedUserId: null),
-                                cancellationToken);
-                            planCreated++;
-                        }
-                        catch (DuplicateWorkOrderException)
-                        {
-                        }
-                        catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException)
-                        {
-                            logger.LogWarning(
-                                ex,
-                                "PMOC {PlanName}: skipped asset {AssetId} while generating work orders.",
-                                plan.Name,
-                                asset.Id);
-                        }
-                    }
-
-                    createdCount += planCreated;
-
-                    logger.LogInformation(
-                        "PMOC {PlanName}: created {CreatedCount} work order(s) for {AssetCount} asset(s).",
-                        plan.Name,
-                        planCreated,
-                        assets.Count);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(
-                        ex,
-                        "PMOC {PlanName}: failed while generating work orders.",
-                        plan.Name);
-                }
+                skippedNotDue++;
+                continue;
             }
 
-            logger.LogInformation(
-                "PmocEngineJob completed. Created {CreatedCount} work order(s) for {ScheduledDate}.",
-                createdCount,
-                today);
+            dueAssets++;
+            if (relevant.Any(workOrder =>
+                    workOrder.Status is WorkOrderStatus.Pending or WorkOrderStatus.InProgress))
+            {
+                skippedOpen++;
+                continue;
+            }
+
+            candidates.Add(assetId);
         }
-        catch (Exception ex)
+
+        var created = 0;
+        var skippedRevalidation = 0;
+        var skippedDuplicate = 0;
+
+        foreach (var assetId in candidates)
         {
-            logger.LogError(
-                ex,
-                "PmocEngineJob failed while generating work orders for {ScheduledDate}.",
-                today);
-            throw;
+            PmocAutomaticGenerationResult result;
+            try
+            {
+                result = await workOrderGenerationService.TryGenerateAutomaticAsync(
+                    plan.Id,
+                    assetId,
+                    asOfDate,
+                    cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception,
+                    "PmocEngineJob failed while generating plan {PlanId} asset {AssetId}.",
+                    plan.Id,
+                    assetId);
+                throw;
+            }
+
+            switch (result.Outcome)
+            {
+                case PmocAutomaticGenerationOutcome.Created:
+                    created++;
+                    break;
+                case PmocAutomaticGenerationOutcome.SkippedNotDue:
+                    skippedNotDue++;
+                    break;
+                case PmocAutomaticGenerationOutcome.SkippedOpenWorkOrder:
+                    skippedOpen++;
+                    break;
+                case PmocAutomaticGenerationOutcome.SkippedRevalidation:
+                    skippedRevalidation++;
+                    break;
+                case PmocAutomaticGenerationOutcome.SkippedDuplicate:
+                    skippedDuplicate++;
+                    break;
+            }
         }
+
+        var report = new PmocEnginePlanReport(
+            plan.Id,
+            assets.Count,
+            dueAssets,
+            created,
+            skippedNotDue,
+            skippedOpen,
+            skippedRevalidation,
+            skippedDuplicate);
+
+        logger.LogInformation(
+            "PmocEngineJob plan {PlanId} schedule=interval eligible={EligibleAssets} due={DueAssets} created={Created} skippedNotDue={SkippedNotDue} skippedOpen={SkippedOpenWorkOrder} skippedRevalidation={SkippedRevalidation} skippedDuplicate={SkippedDuplicate}.",
+            report.PlanId,
+            report.EligibleAssets,
+            report.DueAssets,
+            report.Created,
+            report.SkippedNotDue,
+            report.SkippedOpenWorkOrder,
+            report.SkippedRevalidation,
+            report.SkippedDuplicate);
+
+        return report;
     }
+
+    private sealed record CandidatePlan(
+        Guid Id,
+        Guid TenantId,
+        Guid UnitId,
+        Guid CategoryId,
+        int IntervalDays,
+        DateOnly FirstDueDate);
+
+    private sealed record CandidateWorkOrder(
+        Guid Id,
+        Guid AssetId,
+        WorkOrderStatus Status,
+        DateOnly ScheduledDate,
+        DateTimeOffset? CompletedDate);
 }

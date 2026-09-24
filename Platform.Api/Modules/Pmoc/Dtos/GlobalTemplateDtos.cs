@@ -17,7 +17,6 @@ public sealed record GlobalMaintenanceTemplateResponse(
     Guid Id,
     string Name,
     string? Description,
-    MaintenanceFrequency Frequency,
     string Jurisdiction,
     string TargetEquipmentType,
     string LibraryKey,

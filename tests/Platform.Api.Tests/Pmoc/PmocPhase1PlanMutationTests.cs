@@ -425,7 +425,8 @@ public sealed class PmocPhase1PlanMutationTests
             UnitId = harness.UnitId,
             Name = "Cloned",
             Description = "From library",
-            Frequency = MaintenanceFrequency.Monthly,
+            IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = harness.CategoryId,
             IsActive = true,
             OriginKind = MaintenancePlanOriginKind.RolvixTemplate,
@@ -453,7 +454,8 @@ public sealed class PmocPhase1PlanMutationTests
                 UnitId = harness.UnitId,
                 Name = "Cloned renamed",
                 Description = "Still cloned",
-                Frequency = MaintenanceFrequency.Weekly,
+                IntervalDays = 7,
+                FirstDueDate = new DateOnly(2026, 9, 1),
                 AssetCategoryId = harness.CategoryId,
                 IsActive = false,
                 AutoGenerateEnabled = true,
@@ -464,7 +466,7 @@ public sealed class PmocPhase1PlanMutationTests
         Assert.Equal("Cloned renamed", updated!.Name);
         Assert.False(updated.IsActive);
         Assert.True(updated.AutoGenerateEnabled);
-        Assert.Equal(MaintenanceFrequency.Weekly, updated.Frequency);
+        Assert.Equal(7, updated.IntervalDays);
         AssertLineage(updated, MaintenancePlanOriginKind.RolvixTemplate, sourceId, 1, autoGenerateEnabled: true);
         var stored = await harness.Db.MaintenancePlans
             .Include(item => item.Tasks)
@@ -596,7 +598,8 @@ public sealed class PmocPhase1PlanMutationTests
         {
             UnitId = harness.UnitId,
             Name = name,
-            Frequency = MaintenanceFrequency.Monthly,
+            IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = harness.CategoryId,
             Tasks = tasks.Length == 0 ? [PlanTaskDto("Filtro", 1)] : [.. tasks],
         };
@@ -622,7 +625,8 @@ public sealed class PmocPhase1PlanMutationTests
         {
             UnitId = harness.UnitId,
             Name = name,
-            Frequency = MaintenanceFrequency.Monthly,
+            IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
             AssetCategoryId = harness.CategoryId,
             IsActive = isActive,
             AutoGenerateEnabled = autoGenerateEnabled,

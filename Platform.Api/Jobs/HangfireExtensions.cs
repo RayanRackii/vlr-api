@@ -87,6 +87,7 @@ public static class HangfireExtensions
         RecurringJob.AddOrUpdate<PmocEngineJob>(
             PmocEngineJobId,
             job => job.ExecuteAsync(CancellationToken.None),
+            // One evaluation per Brazil civil day. Phase 3 overdue catch-up uses the calculated due date.
             "0 6 * * *",
             recurringJobOptions);
 

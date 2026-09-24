@@ -54,7 +54,6 @@ public sealed class GlobalTemplateService(
             template.Id,
             template.Name,
             template.Description,
-            template.Frequency,
             template.Jurisdiction,
             template.TargetEquipmentType,
             template.LibraryKey,

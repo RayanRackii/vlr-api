@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Pmoc.Dtos;
+using Platform.Api.Jobs;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -54,6 +55,7 @@ public sealed class MaintenancePlanService(
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
         ValidateCreateTasks(request.Tasks);
+        PmocDueCalculator.EnsureIntervalDays(request.IntervalDays);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -65,7 +67,8 @@ public sealed class MaintenancePlanService(
                 UnitId = request.UnitId,
                 Name = request.Name.Trim(),
                 Description = NormalizeOptional(request.Description),
-                Frequency = request.Frequency,
+                IntervalDays = request.IntervalDays,
+                FirstDueDate = request.FirstDueDate,
                 AssetCategoryId = request.AssetCategoryId,
                 IsActive = request.IsActive,
                 OriginKind = MaintenancePlanOriginKind.Custom,
@@ -135,6 +138,7 @@ public sealed class MaintenancePlanService(
             .ToList();
 
         ValidateCreateTasks(taskDtos);
+        PmocDueCalculator.EnsureIntervalDays(request.IntervalDays);
 
         var name = string.IsNullOrWhiteSpace(request.Name)
             ? template.Name
@@ -153,7 +157,8 @@ public sealed class MaintenancePlanService(
                 UnitId = request.UnitId,
                 Name = name,
                 Description = description,
-                Frequency = template.Frequency,
+                IntervalDays = request.IntervalDays,
+                FirstDueDate = request.FirstDueDate,
                 AssetCategoryId = request.AssetCategoryId,
                 IsActive = request.IsActive,
                 OriginKind = MaintenancePlanOriginKind.RolvixTemplate,
@@ -207,17 +212,32 @@ public sealed class MaintenancePlanService(
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
+        PmocDueCalculator.EnsureIntervalDays(request.IntervalDays);
 
-        plan.UnitId = request.UnitId;
-        plan.Name = request.Name.Trim();
-        plan.Description = NormalizeOptional(request.Description);
-        plan.Frequency = request.Frequency;
-        plan.AssetCategoryId = request.AssetCategoryId;
-        plan.IsActive = request.IsActive;
-        plan.AutoGenerateEnabled = request.AutoGenerateEnabled;
-        plan.Touch();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await PmocPlanAssetLock.LockPlanRowAsync(dbContext, plan.Id, cancellationToken);
+            await dbContext.Entry(plan).ReloadAsync(cancellationToken);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+            plan.UnitId = request.UnitId;
+            plan.Name = request.Name.Trim();
+            plan.Description = NormalizeOptional(request.Description);
+            plan.IntervalDays = request.IntervalDays;
+            plan.FirstDueDate = request.FirstDueDate;
+            plan.AssetCategoryId = request.AssetCategoryId;
+            plan.IsActive = request.IsActive;
+            plan.AutoGenerateEnabled = request.AutoGenerateEnabled;
+            plan.Touch();
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         return ToResponse(plan);
     }
@@ -486,7 +506,8 @@ public sealed class MaintenancePlanService(
             plan.UnitId,
             plan.Name,
             plan.Description,
-            plan.Frequency,
+            plan.IntervalDays,
+            plan.FirstDueDate,
             plan.AssetCategoryId,
             plan.IsActive,
             plan.OriginKind,

@@ -34,7 +34,8 @@ public sealed class MaintenancePlanAssetRegistryTests
                 {
                     UnitId = harness.UnitId,
                     Name = "Plano",
-                    Frequency = MaintenanceFrequency.Monthly,
+                    IntervalDays = 30,
+            FirstDueDate = new DateOnly(2026, 9, 1),
                     AssetCategoryId = foreignCategory.Id,
                     Tasks =
                     [

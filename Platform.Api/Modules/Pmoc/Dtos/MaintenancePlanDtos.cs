@@ -23,7 +23,9 @@ public sealed record CreateMaintenancePlanRequest
 
     public string? Description { get; init; }
 
-    public required MaintenanceFrequency Frequency { get; init; }
+    public required int IntervalDays { get; init; }
+
+    public required DateOnly FirstDueDate { get; init; }
 
     public required Guid AssetCategoryId { get; init; }
 
@@ -42,6 +44,10 @@ public sealed record CreateFromTemplateRequest
 
     public required Guid AssetCategoryId { get; init; }
 
+    public required int IntervalDays { get; init; }
+
+    public required DateOnly FirstDueDate { get; init; }
+
     public string? Name { get; init; }
 
     public string? Description { get; init; }
@@ -59,7 +65,9 @@ public sealed record UpdateMaintenancePlanRequest
 
     public string? Description { get; init; }
 
-    public required MaintenanceFrequency Frequency { get; init; }
+    public required int IntervalDays { get; init; }
+
+    public required DateOnly FirstDueDate { get; init; }
 
     public required Guid AssetCategoryId { get; init; }
 
@@ -106,7 +114,8 @@ public sealed record MaintenancePlanResponse(
     Guid UnitId,
     string Name,
     string? Description,
-    MaintenanceFrequency Frequency,
+    int IntervalDays,
+    DateOnly FirstDueDate,
     Guid AssetCategoryId,
     bool IsActive,
     MaintenancePlanOriginKind OriginKind,

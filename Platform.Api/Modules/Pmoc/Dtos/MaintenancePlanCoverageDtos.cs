@@ -5,12 +5,10 @@ namespace Platform.Api.Modules.Pmoc.Dtos;
 public sealed record MaintenancePlanCoverageResponse(
     Guid PlanId,
     DateOnly AsOfDate,
-    MaintenanceFrequency Frequency,
-    DateOnly LastDueDate,
-    DateOnly NextDueDate,
+    int IntervalDays,
+    DateOnly FirstDueDate,
     bool IsActive,
     bool AutoGenerateEnabled,
-    bool IsDueToday,
     bool WouldBeConsideredByGenerator,
     MaintenancePlanCoverageSummary Summary,
     IReadOnlyList<MaintenancePlanCoverageAssetItem> Assets)
@@ -20,19 +18,23 @@ public sealed record MaintenancePlanCoverageResponse(
 
 public sealed record MaintenancePlanCoverageSummary(
     int EligibleAssets,
-    int AssetsWithPmocHistory,
     int AssetsNeverExecuted,
+    int AssetsExecuted,
+    int AssetsNotDue,
+    int AssetsDueToday,
     int AssetsOverdue,
-    int AssetsOnTrack,
+    int AssetsNeedingAttention,
     int AssetsWithOpenWorkOrder);
 
 public sealed record MaintenancePlanCoverageAssetItem(
     Guid AssetId,
     string Name,
     string Tag,
+    PmocHistoryStatus HistoryStatus,
     MaintenancePlanLastMaintenance? LastMaintenance,
-    DateOnly NextDueDate,
-    PmocOperationalStatus OperationalStatus,
+    DateOnly EffectiveNextDueDate,
+    PmocDueStatus DueStatus,
+    bool NeedsAttention,
     MaintenancePlanOpenWorkOrder? OpenWorkOrder);
 
 public sealed record MaintenancePlanLastMaintenance(
