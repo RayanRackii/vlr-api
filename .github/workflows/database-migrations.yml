@@ -76,3 +76,33 @@ jobs:
             --project tools/Platform.MigrationInspector/Platform.MigrationInspector.csproj \
             --configuration Release \
             --no-launch-profile
+
+      - name: PostgreSQL concurrency on isolated DEV database
+        if: ${{ inputs.target == 'development' && inputs.mode == 'list' && inputs.confirm_production == 'RUN_PMOC_CONCURRENCY' }}
+        env:
+          SOURCE_CONNECTION: ${{ secrets.ConnectionStrings__DefaultConnection }}
+        run: |
+          set +x
+          python3 - <<'PY'
+          import os
+          src = os.environ["SOURCE_CONNECTION"]
+          if "jzptnjyzijklutinpxag" not in src:
+              raise SystemExit("REF_MISMATCH")
+          if "kbptdzfbngelzdhriyhf" in src:
+              raise SystemExit("PROD_REF")
+          rewritten = src.replace("Database=postgres", "Database=pmoc_phase3_concurrency", 1)
+          if rewritten == src:
+              rewritten = src.replace("/postgres?", "/pmoc_phase3_concurrency?", 1)
+          if "pmoc_phase3_concurrency" not in rewritten:
+              raise SystemExit("DATABASE_REWRITE_FAILED")
+          path = os.environ["GITHUB_ENV"]
+          with open(path, "a", encoding="utf-8") as handle:
+              handle.write("ROLVIX_TEST_POSTGRES<<EOF\n")
+              handle.write(rewritten + "\n")
+              handle.write("EOF\n")
+          print("REF_OK")
+          print("DATABASE=pmoc_phase3_concurrency")
+          PY
+          dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj \
+            --filter "FullyQualifiedName~PmocEngineConcurrencyTests" \
+            --logger "console;verbosity=normal"
