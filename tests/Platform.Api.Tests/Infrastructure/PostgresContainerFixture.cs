@@ -12,6 +12,15 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        var external = Environment.GetEnvironmentVariable("ROLVIX_TEST_POSTGRES");
+        if (!string.IsNullOrWhiteSpace(external))
+        {
+            Factory = new PostgresAppDbFactory(external);
+            await using var externalDb = Factory.Create(new FakeTenantProvider());
+            await externalDb.Database.MigrateAsync();
+            return;
+        }
+
         if (!DockerEnvironment.IsAvailable)
         {
             return;

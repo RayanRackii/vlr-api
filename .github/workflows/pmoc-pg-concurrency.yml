@@ -1,0 +1,48 @@
+name: pmoc-pg-concurrency
+
+on:
+  workflow_dispatch:
+
+jobs:
+  concurrency:
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Point tests at the isolated DEV database
+        env:
+          SOURCE_CONNECTION: ${{ secrets.ConnectionStrings__DefaultConnection }}
+        run: |
+          python3 - <<'PY'
+          import os
+          src = os.environ["SOURCE_CONNECTION"]
+          if "jzptnjyzijklutinpxag" not in src:
+              raise SystemExit("REF_MISMATCH")
+          if "kbptdzfbngelzdhriyhf" in src:
+              raise SystemExit("PROD_REF")
+          rewritten = src.replace("Database=postgres", "Database=pmoc_phase3_concurrency", 1)
+          if rewritten == src:
+              rewritten = src.replace("/postgres?", "/pmoc_phase3_concurrency?", 1)
+          if rewritten == src:
+              raise SystemExit("DATABASE_REWRITE_FAILED")
+          if "pmoc_phase3_concurrency" not in rewritten:
+              raise SystemExit("DATABASE_REWRITE_FAILED")
+          path = os.environ["GITHUB_ENV"]
+          with open(path, "a", encoding="utf-8") as handle:
+              handle.write("ROLVIX_TEST_POSTGRES<<EOF\n")
+              handle.write(rewritten + "\n")
+              handle.write("EOF\n")
+          print("REF_OK")
+          print("DATABASE=pmoc_phase3_concurrency")
+          PY
+
+      - name: Run P and AH
+        run: |
+          dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj \
+            --filter "FullyQualifiedName~PmocEngineConcurrencyTests" \
+            --logger "console;verbosity=normal"

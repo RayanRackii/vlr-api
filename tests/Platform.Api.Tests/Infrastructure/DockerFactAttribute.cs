@@ -8,7 +8,8 @@ public sealed class DockerFactAttribute : FactAttribute
 {
     public DockerFactAttribute()
     {
-        if (!DockerEnvironment.IsAvailable)
+        if (!DockerEnvironment.IsAvailable
+            && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ROLVIX_TEST_POSTGRES")))
         {
             Skip = "Docker is not available; concurrency tests were skipped.";
         }
