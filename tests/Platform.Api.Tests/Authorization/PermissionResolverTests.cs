@@ -272,6 +272,7 @@ public sealed class PermissionResolverTests
         Assert.Contains(Permissions.Core.NotificationsRead, effective);
         Assert.Contains(Permissions.Core.NotificationsWrite, effective);
         Assert.Contains(Permissions.Rentals.ReservationsRead, effective);
+        Assert.Contains(Permissions.Rentals.ScheduleLessonsWrite, effective);
         Assert.DoesNotContain(Permissions.Catalog.OrdersRead, effective);
     }
 

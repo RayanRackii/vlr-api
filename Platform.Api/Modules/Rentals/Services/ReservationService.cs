@@ -29,7 +29,7 @@ public sealed class ReservationService(
         CheckAvailabilityRequestDto request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
         ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
 
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
@@ -53,6 +53,7 @@ public sealed class ReservationService(
         }
 
         var reservedQuantity = await GetReservedQuantityAsync(
+            tenantId,
             rental.Id,
             start,
             end,
@@ -165,18 +166,15 @@ public sealed class ReservationService(
                 .ToList();
 
             var rentalAssetsToLock = await dbContext.RentalAssets
-                .Where(r => assetIds.Contains(r.AssetId) && r.IsActive)
-                .OrderBy(r => r.Id)
-                .Select(r => new { r.Id, r.AssetId })
+                .Where(r => r.TenantId == tenantId && assetIds.Contains(r.AssetId) && r.IsActive)
+                .Select(r => r.Id)
                 .ToListAsync(cancellationToken);
 
-            foreach (var rentalAsset in rentalAssetsToLock)
-            {
-                await RentalAssetLocks.LockByRentalAssetIdAsync(
-                    dbContext,
-                    rentalAsset.Id,
-                    cancellationToken);
-            }
+            await RentalAssetLocks.LockByRentalAssetIdsAsync(
+                dbContext,
+                tenantId,
+                rentalAssetsToLock,
+                cancellationToken);
 
             var reservation = new Reservation
             {
@@ -238,6 +236,7 @@ public sealed class ReservationService(
                 }
 
                 var reservedQuantity = await GetReservedQuantityAsync(
+                    tenantId,
                     rental.Id,
                     start,
                     end,
@@ -643,16 +642,13 @@ public sealed class ReservationService(
         var rentalAssetIds = reservation.Items
             .Select(item => item.RentalAssetId)
             .Distinct()
-            .OrderBy(id => id)
             .ToList();
 
-        foreach (var rentalAssetId in rentalAssetIds)
-        {
-            await RentalAssetLocks.LockByRentalAssetIdAsync(
-                dbContext,
-                rentalAssetId,
-                cancellationToken);
-        }
+        await RentalAssetLocks.LockByRentalAssetIdsAsync(
+            dbContext,
+            reservation.TenantId,
+            rentalAssetIds,
+            cancellationToken);
 
         reservation.Status = ReservationStatus.Canceled;
         reservation.Touch();
@@ -737,11 +733,13 @@ public sealed class ReservationService(
         TimeOnly endTime,
         CancellationToken cancellationToken)
     {
+        var tenantId = EnsureTenantContext();
         var persisted = await dbContext.Slots
             .AsNoTracking()
             .Include(s => s.OccupancyKind)
             .FirstOrDefaultAsync(
-                s => s.RentalAssetId == rentalAssetId
+                s => s.TenantId == tenantId
+                     && s.RentalAssetId == rentalAssetId
                      && s.Date == date
                      && s.StartTime == startTime,
                 cancellationToken);
@@ -750,24 +748,30 @@ public sealed class ReservationService(
         {
             return persisted.Status == SlotStatus.Available
                    && persisted.EndTime == endTime
+                   && persisted.OccupancyKind.IsActive
                    && persisted.OccupancyKind.IsBookableByCustomer;
         }
 
-        var template = await dbContext.ScheduleTemplates
+        var templates = await dbContext.ScheduleTemplates
             .AsNoTracking()
             .Include(t => t.OccupancyKind)
-            .FirstOrDefaultAsync(
-                t => t.RentalAssetId == rentalAssetId
-                     && t.IsActive
-                     && t.DayOfWeek == date.DayOfWeek
-                     && t.StartTime == startTime
-                     && t.EndTime == endTime,
-                cancellationToken);
+            .Where(t => t.TenantId == tenantId
+                        && t.RentalAssetId == rentalAssetId
+                        && t.IsActive
+                        && t.DayOfWeek == date.DayOfWeek)
+            .ToListAsync(cancellationToken);
 
-        return template is not null && template.OccupancyKind.IsBookableByCustomer;
+        var exactWinners = OccupancyPrecedence.SplitWinningWindows(templates)
+            .Where(window => window.Start == startTime && window.End == endTime)
+            .ToList();
+
+        return exactWinners.Count == 1
+               && exactWinners[0].Template.OccupancyKind.IsActive
+               && exactWinners[0].Template.OccupancyKind.IsBookableByCustomer;
     }
 
     internal async Task<int> GetReservedQuantityAsync(
+        Guid tenantId,
         Guid rentalAssetId,
         DateTimeOffset start,
         DateTimeOffset end,
@@ -778,7 +782,9 @@ public sealed class ReservationService(
             from item in dbContext.ReservationItems.AsNoTracking()
             join reservation in dbContext.Reservations.AsNoTracking()
                 on item.ReservationId equals reservation.Id
-            where item.RentalAssetId == rentalAssetId
+            where item.TenantId == tenantId
+                  && reservation.TenantId == tenantId
+                  && item.RentalAssetId == rentalAssetId
                   && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
                   && reservation.EndDateTime > start

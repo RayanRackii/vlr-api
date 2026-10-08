@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
@@ -66,33 +67,46 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         ValidateTimeRange(request.StartTime, request.EndTime);
-        await EnsureRentableAsync(request.RentalAssetId, cancellationToken);
-        await EnsureOccupancyKindAsync(request.OccupancyKindId, cancellationToken);
-        await EnsureNoTemplateCollisionAsync(
-            request.RentalAssetId,
-            request.DayOfWeek,
-            request.StartTime,
-            request.EndTime,
-            request.OccupancyKindId,
-            excludeId: null,
-            cancellationToken);
+        await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
+        await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
 
-        var entity = new ScheduleTemplate
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, [request.RentalAssetId], cancellationToken);
+        try
         {
-            TenantId = tenantId,
-            RentalAssetId = request.RentalAssetId,
-            DayOfWeek = request.DayOfWeek,
-            StartTime = request.StartTime,
-            EndTime = request.EndTime,
-            OccupancyKindId = request.OccupancyKindId,
-            Label = TrimLabel(request.Label),
-            IsActive = request.IsActive,
-        };
+            await EnsureNoTemplateCollisionAsync(
+                tenantId,
+                request.RentalAssetId,
+                request.DayOfWeek,
+                request.StartTime,
+                request.EndTime,
+                request.OccupancyKindId,
+                excludeId: null,
+                cancellationToken);
 
-        dbContext.ScheduleTemplates.Add(entity);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            var entity = new ScheduleTemplate
+            {
+                TenantId = tenantId,
+                RentalAssetId = request.RentalAssetId,
+                DayOfWeek = request.DayOfWeek,
+                StartTime = request.StartTime,
+                EndTime = request.EndTime,
+                OccupancyKindId = request.OccupancyKindId,
+                Label = TrimLabel(request.Label),
+                IsActive = request.IsActive,
+            };
 
-        return await GetTemplateDtoAsync(entity.Id, cancellationToken);
+            dbContext.ScheduleTemplates.Add(entity);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+
+            return await GetTemplateDtoAsync(entity.Id, cancellationToken);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<ScheduleTemplateResponseDto> UpdateTemplateAsync(
@@ -100,46 +114,80 @@ public sealed class ScheduleService(
         UpsertScheduleTemplateRequestDto request,
         CancellationToken cancellationToken)
     {
-        EnsureTenant();
+        var tenantId = EnsureTenant();
         ValidateTimeRange(request.StartTime, request.EndTime);
 
-        var entity = await dbContext.ScheduleTemplates
-            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
+        var existing = await dbContext.ScheduleTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Schedule template was not found.");
 
-        await EnsureRentableAsync(request.RentalAssetId, cancellationToken);
-        await EnsureOccupancyKindAsync(request.OccupancyKindId, cancellationToken);
-        await EnsureNoTemplateCollisionAsync(
-            request.RentalAssetId,
-            request.DayOfWeek,
-            request.StartTime,
-            request.EndTime,
-            request.OccupancyKindId,
-            excludeId: id,
-            cancellationToken);
+        await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
+        await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
 
-        entity.RentalAssetId = request.RentalAssetId;
-        entity.DayOfWeek = request.DayOfWeek;
-        entity.StartTime = request.StartTime;
-        entity.EndTime = request.EndTime;
-        entity.OccupancyKindId = request.OccupancyKindId;
-        entity.Label = TrimLabel(request.Label);
-        entity.IsActive = request.IsActive;
-        entity.Touch();
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, [existing.RentalAssetId, request.RentalAssetId], cancellationToken);
+        try
+        {
+            var entity = await dbContext.ScheduleTemplates
+                .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
+                ?? throw new KeyNotFoundException("Schedule template was not found.");
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return await GetTemplateDtoAsync(entity.Id, cancellationToken);
+            await EnsureNoTemplateCollisionAsync(
+                tenantId,
+                request.RentalAssetId,
+                request.DayOfWeek,
+                request.StartTime,
+                request.EndTime,
+                request.OccupancyKindId,
+                excludeId: id,
+                cancellationToken);
+
+            entity.RentalAssetId = request.RentalAssetId;
+            entity.DayOfWeek = request.DayOfWeek;
+            entity.StartTime = request.StartTime;
+            entity.EndTime = request.EndTime;
+            entity.OccupancyKindId = request.OccupancyKindId;
+            entity.Label = TrimLabel(request.Label);
+            entity.IsActive = request.IsActive;
+            entity.Touch();
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+            return await GetTemplateDtoAsync(entity.Id, cancellationToken);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task DeleteTemplateAsync(Guid id, CancellationToken cancellationToken)
     {
-        EnsureTenant();
-        var entity = await dbContext.ScheduleTemplates
-            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
+        var tenantId = EnsureTenant();
+        var existing = await dbContext.ScheduleTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Schedule template was not found.");
 
-        dbContext.ScheduleTemplates.Remove(entity);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, [existing.RentalAssetId], cancellationToken);
+        try
+        {
+            var entity = await dbContext.ScheduleTemplates
+                .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
+                ?? throw new KeyNotFoundException("Schedule template was not found.");
+
+            dbContext.ScheduleTemplates.Remove(entity);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<SeedDefaultTemplatesResponseDto> SeedDefaultTemplatesAsync(
@@ -150,7 +198,7 @@ public sealed class ScheduleService(
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
         var rentableIds = ResolveRentableIds(request.RentalAssetId, request.RentalAssetIds);
-        await EnsureRentablesAsync(rentableIds, cancellationToken);
+        await EnsureRentablesAsync(tenantId, rentableIds, cancellationToken);
 
         var open = request.OpenTime ?? new TimeOnly(8, 0);
         var close = request.CloseTime ?? new TimeOnly(22, 0);
@@ -166,29 +214,38 @@ public sealed class ScheduleService(
             throw new ArgumentException("SlotMinutes must fit within the open interval.");
         }
 
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, rentableIds, cancellationToken);
+        try
+        {
         OccupancyKind openKind;
         if (request.OccupancyKindId is { } kindId)
         {
             openKind = await dbContext.OccupancyKinds
-                .FirstOrDefaultAsync(k => k.Id == kindId && k.IsActive, cancellationToken)
+                .FirstOrDefaultAsync(
+                    k => k.Id == kindId && k.TenantId == tenantId && k.IsActive,
+                    cancellationToken)
                 ?? throw new KeyNotFoundException("Occupancy kind was not found.");
         }
         else
         {
             openKind = await dbContext.OccupancyKinds
                 .FirstOrDefaultAsync(
-                    k => k.Key == "open" && k.IsActive && k.IsBookableByCustomer,
+                    k => k.TenantId == tenantId
+                         && k.Key == "open"
+                         && k.IsActive
+                         && k.IsBookableByCustomer,
                     cancellationToken)
                 ?? await dbContext.OccupancyKinds
                     .FirstOrDefaultAsync(
-                        k => k.IsActive && k.IsBookableByCustomer,
+                        k => k.TenantId == tenantId && k.IsActive && k.IsBookableByCustomer,
                         cancellationToken)
                 ?? throw new InvalidOperationException(
                     "No bookable occupancy kind is available for the default grid.");
         }
 
         var existingTemplates = await dbContext.ScheduleTemplates
-            .Where(t => rentableIds.Contains(t.RentalAssetId))
+            .Where(t => t.TenantId == tenantId && rentableIds.Contains(t.RentalAssetId))
             .ToListAsync(cancellationToken);
 
         var existingKeys = existingTemplates
@@ -250,14 +307,21 @@ public sealed class ScheduleService(
             }
         }
 
-        var policyChanged = await EnsureSlotGridPolicyAsync(rentableIds, cancellationToken);
+        var policyChanged = await EnsureSlotGridPolicyAsync(tenantId, rentableIds, cancellationToken);
 
         if (created > 0 || policyChanged)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
+        await CommitIfPresentAsync(transaction, cancellationToken);
         return new SeedDefaultTemplatesResponseDto(created, skipped);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<ApplyWeeklyRuleResponseDto> ApplyWeeklyRuleAsync(
@@ -285,12 +349,17 @@ public sealed class ScheduleService(
         }
 
         var rentableIds = request.RentalAssetIds.Where(id => id != Guid.Empty).Distinct().ToList();
-        await EnsureRentablesAsync(rentableIds, cancellationToken);
-        await EnsureOccupancyKindAsync(request.OccupancyKindId, cancellationToken);
+        await EnsureRentablesAsync(tenantId, rentableIds, cancellationToken);
+        await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
         var label = TrimLabel(request.Label);
 
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, rentableIds, cancellationToken);
+        try
+        {
         var existing = await dbContext.ScheduleTemplates
-            .Where(t => rentableIds.Contains(t.RentalAssetId)
+            .Where(t => t.TenantId == tenantId
+                        && rentableIds.Contains(t.RentalAssetId)
                         && request.DaysOfWeek.Contains(t.DayOfWeek))
             .ToListAsync(cancellationToken);
 
@@ -357,14 +426,21 @@ public sealed class ScheduleService(
             }
         }
 
-        var policyChanged = await EnsureSlotGridPolicyAsync(rentableIds, cancellationToken);
+        var policyChanged = await EnsureSlotGridPolicyAsync(tenantId, rentableIds, cancellationToken);
 
         if (created > 0 || updated > 0 || policyChanged)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
+        await CommitIfPresentAsync(transaction, cancellationToken);
         return new ApplyWeeklyRuleResponseDto(created, updated, skipped);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<DayScheduleResponseDto> GetDayAsync(
@@ -426,67 +502,88 @@ public sealed class ScheduleService(
 
         var dayOfWeek = request.Date.DayOfWeek;
         var ids = ResolveRentableIds(request.RentalAssetId, request.RentalAssetIds);
-
-        var templatesQuery = dbContext.ScheduleTemplates
-            .Include(t => t.RentalAsset)
-            .Where(t => t.IsActive && t.DayOfWeek == dayOfWeek);
-
-        if (ids.Count > 0)
+        if (ids.Count == 0)
         {
-            templatesQuery = templatesQuery.Where(t => ids.Contains(t.RentalAssetId));
-        }
-        else
-        {
-            templatesQuery = templatesQuery.Where(t =>
-                t.RentalAsset.IsActive
-                && t.RentalAsset.SchedulePolicy == SchedulePolicy.SlotGrid);
+            ids = await dbContext.RentalAssets
+                .Where(r => r.TenantId == tenantId
+                            && r.IsActive
+                            && r.SchedulePolicy == SchedulePolicy.SlotGrid)
+                .Select(r => r.Id)
+                .ToListAsync(cancellationToken);
         }
 
-        var templates = await templatesQuery.ToListAsync(cancellationToken);
-        var created = 0;
-
-        var templateRentableIds = templates
-            .Select(t => t.RentalAssetId)
-            .Distinct()
-            .ToList();
-
-        var existingStarts = (await dbContext.Slots
-                .AsNoTracking()
-                .Where(s => s.Date == request.Date
-                            && templateRentableIds.Contains(s.RentalAssetId))
-                .Select(s => new { s.RentalAssetId, s.StartTime })
-                .ToListAsync(cancellationToken))
-            .Select(row => (row.RentalAssetId, row.StartTime))
-            .ToHashSet();
-
-        foreach (var template in templates)
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, ids, cancellationToken);
+        try
         {
-            if (!existingStarts.Add((template.RentalAssetId, template.StartTime)))
+            var templatesQuery = dbContext.ScheduleTemplates
+                .Include(t => t.RentalAsset)
+                .Where(t => t.TenantId == tenantId && t.IsActive && t.DayOfWeek == dayOfWeek);
+
+            if (ids.Count > 0)
             {
-                continue;
+                templatesQuery = templatesQuery.Where(t => ids.Contains(t.RentalAssetId));
+            }
+            else
+            {
+                templatesQuery = templatesQuery.Where(t =>
+                    t.RentalAsset.IsActive
+                    && t.RentalAsset.SchedulePolicy == SchedulePolicy.SlotGrid);
             }
 
-            dbContext.Slots.Add(new Slot
+            var templates = await templatesQuery.ToListAsync(cancellationToken);
+            var created = 0;
+
+            var templateRentableIds = templates
+                .Select(t => t.RentalAssetId)
+                .Distinct()
+                .ToList();
+
+            var existingStarts = (await dbContext.Slots
+                    .AsNoTracking()
+                    .Where(s => s.TenantId == tenantId
+                                && s.Date == request.Date
+                                && templateRentableIds.Contains(s.RentalAssetId))
+                    .Select(s => new { s.RentalAssetId, s.StartTime })
+                    .ToListAsync(cancellationToken))
+                .Select(row => (row.RentalAssetId, row.StartTime))
+                .ToHashSet();
+
+            foreach (var template in templates)
             {
-                TenantId = tenantId,
-                RentalAssetId = template.RentalAssetId,
-                Date = request.Date,
-                StartTime = template.StartTime,
-                EndTime = template.EndTime,
-                OccupancyKindId = template.OccupancyKindId,
-                Label = template.Label,
-                Status = SlotStatus.Available,
-                SourceTemplateId = template.Id,
-            });
-            created++;
-        }
+                if (!existingStarts.Add((template.RentalAssetId, template.StartTime)))
+                {
+                    continue;
+                }
 
-        if (created > 0)
+                dbContext.Slots.Add(new Slot
+                {
+                    TenantId = tenantId,
+                    RentalAssetId = template.RentalAssetId,
+                    Date = request.Date,
+                    StartTime = template.StartTime,
+                    EndTime = template.EndTime,
+                    OccupancyKindId = template.OccupancyKindId,
+                    Label = template.Label,
+                    Status = SlotStatus.Available,
+                    SourceTemplateId = template.Id,
+                });
+                created++;
+            }
+
+            if (created > 0)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            await CommitIfPresentAsync(transaction, cancellationToken);
+            return created;
+        }
+        catch
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
         }
-
-        return created;
     }
 
     public async Task<SlotResponseDto> UpsertSlotAsync(
@@ -495,72 +592,101 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         ValidateTimeRange(request.StartTime, request.EndTime);
-        await EnsureRentableAsync(request.RentalAssetId, cancellationToken);
-        await EnsureOccupancyKindAsync(request.OccupancyKindId, cancellationToken);
+        await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
+        await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
 
-        var existing = await dbContext.Slots
-            .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
-            .Include(s => s.OccupancyKind)
-            .FirstOrDefaultAsync(
-                s => s.RentalAssetId == request.RentalAssetId
-                     && s.Date == request.Date
-                     && s.StartTime == request.StartTime,
-                cancellationToken);
-
-        if (existing is not null)
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, [request.RentalAssetId], cancellationToken);
+        try
         {
-            if (existing.Status == SlotStatus.Booked)
+            var existing = await dbContext.Slots
+                .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
+                .Include(s => s.OccupancyKind)
+                .FirstOrDefaultAsync(
+                    s => s.TenantId == tenantId
+                         && s.RentalAssetId == request.RentalAssetId
+                         && s.Date == request.Date
+                         && s.StartTime == request.StartTime,
+                    cancellationToken);
+
+            if (existing is not null)
             {
-                throw new InvalidOperationException("Cannot edit a booked slot.");
+                if (existing.Status == SlotStatus.Booked)
+                {
+                    throw new InvalidOperationException("Cannot edit a booked slot.");
+                }
+
+                existing.EndTime = request.EndTime;
+                existing.OccupancyKindId = request.OccupancyKindId;
+                existing.Label = TrimLabel(request.Label);
+                existing.Status = SlotStatus.Available;
+                existing.Touch();
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await CommitIfPresentAsync(transaction, cancellationToken);
+
+                await dbContext.Entry(existing).Reference(s => s.OccupancyKind).LoadAsync(cancellationToken);
+                var template = existing.SourceTemplateId is { } tid
+                    ? await dbContext.ScheduleTemplates.AsNoTracking()
+                        .FirstOrDefaultAsync(t => t.Id == tid && t.TenantId == tenantId, cancellationToken)
+                    : null;
+                return ToSlotDto(existing, isDerived: false, ResolvePersistedSource(existing, template));
             }
 
-            existing.EndTime = request.EndTime;
-            existing.OccupancyKindId = request.OccupancyKindId;
-            existing.Label = TrimLabel(request.Label);
-            existing.Status = SlotStatus.Available;
-            existing.Touch();
+            var slot = new Slot
+            {
+                TenantId = tenantId,
+                RentalAssetId = request.RentalAssetId,
+                Date = request.Date,
+                StartTime = request.StartTime,
+                EndTime = request.EndTime,
+                OccupancyKindId = request.OccupancyKindId,
+                Label = TrimLabel(request.Label),
+                Status = SlotStatus.Available,
+            };
+
+            dbContext.Slots.Add(slot);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
 
-            await dbContext.Entry(existing).Reference(s => s.OccupancyKind).LoadAsync(cancellationToken);
-            var template = existing.SourceTemplateId is { } tid
-                ? await dbContext.ScheduleTemplates.AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.Id == tid, cancellationToken)
-                : null;
-            return ToSlotDto(existing, isDerived: false, ResolvePersistedSource(existing, template));
+            return await GetSlotDtoAsync(slot.Id, cancellationToken);
         }
-
-        var slot = new Slot
+        catch
         {
-            TenantId = tenantId,
-            RentalAssetId = request.RentalAssetId,
-            Date = request.Date,
-            StartTime = request.StartTime,
-            EndTime = request.EndTime,
-            OccupancyKindId = request.OccupancyKindId,
-            Label = TrimLabel(request.Label),
-            Status = SlotStatus.Available,
-        };
-
-        dbContext.Slots.Add(slot);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return await GetSlotDtoAsync(slot.Id, cancellationToken);
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task CancelSlotAsync(Guid slotId, CancellationToken cancellationToken)
     {
-        EnsureTenant();
-        var slot = await dbContext.Slots
-            .FirstOrDefaultAsync(s => s.Id == slotId, cancellationToken)
+        var tenantId = EnsureTenant();
+        var existing = await dbContext.Slots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == slotId && s.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Slot was not found.");
 
-        if (slot.Status == SlotStatus.Booked)
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, [existing.RentalAssetId], cancellationToken);
+        try
         {
-            throw new InvalidOperationException("Cannot cancel a booked slot; cancel the reservation instead.");
-        }
+            var slot = await dbContext.Slots
+                .FirstOrDefaultAsync(s => s.Id == slotId && s.TenantId == tenantId, cancellationToken)
+                ?? throw new KeyNotFoundException("Slot was not found.");
 
-        slot.MarkCancelled();
-        await dbContext.SaveChangesAsync(cancellationToken);
+            if (slot.Status == SlotStatus.Booked)
+            {
+                throw new InvalidOperationException("Cannot cancel a booked slot; cancel the reservation instead.");
+            }
+
+            slot.MarkCancelled();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await CommitIfPresentAsync(transaction, cancellationToken);
+        }
+        catch
+        {
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
+        }
     }
 
     public async Task<SlotResponseDto> ApplyDailyOccurrenceAsync(
@@ -569,31 +695,47 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         ValidateTimeRange(request.StartTime, request.EndTime);
-        await EnsureRentableAsync(request.RentalAssetId, cancellationToken);
+        await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
 
-        var slot = await ResolveOccurrenceSlotAsync(request, cancellationToken);
-
-        if (slot is not null && slot.Status == SlotStatus.Booked)
+        await using var transaction = await BeginAssetLockedTransactionAsync(
+            tenantId, [request.RentalAssetId], cancellationToken);
+        try
         {
-            throw new InvalidOperationException(
-                "Cannot edit a booked slot; cancel the reservation instead.");
+            var slot = await ResolveOccurrenceSlotAsync(tenantId, request, cancellationToken);
+
+            if (slot is not null && slot.Status == SlotStatus.Booked)
+            {
+                throw new InvalidOperationException(
+                    "Cannot edit a booked slot; cancel the reservation instead.");
+            }
+
+            SlotResponseDto result;
+            if (request.Scope == OccurrenceEditScope.EntireRecurrence)
+            {
+                result = await ApplyEntireRecurrenceAsync(tenantId, slot, request, cancellationToken);
+            }
+            else
+            {
+                result = request.Action switch
+                {
+                    DailyOccurrenceAction.Update =>
+                        await UpdateDailyOccurrenceAsync(tenantId, slot, request, cancellationToken),
+                    DailyOccurrenceAction.MakeUnavailable =>
+                        await MakeDailyOccurrenceUnavailableAsync(tenantId, slot, request, cancellationToken),
+                    DailyOccurrenceAction.RestoreWeeklyDefault =>
+                        await RestoreWeeklyDefaultAsync(slot, request, cancellationToken),
+                    _ => throw new ArgumentException("Unknown daily occurrence action."),
+                };
+            }
+
+            await CommitIfPresentAsync(transaction, cancellationToken);
+            return result;
         }
-
-        if (request.Scope == OccurrenceEditScope.EntireRecurrence)
+        catch
         {
-            return await ApplyEntireRecurrenceAsync(tenantId, slot, request, cancellationToken);
+            await RollbackIfPresentAsync(transaction, cancellationToken);
+            throw;
         }
-
-        return request.Action switch
-        {
-            DailyOccurrenceAction.Update =>
-                await UpdateDailyOccurrenceAsync(tenantId, slot, request, cancellationToken),
-            DailyOccurrenceAction.MakeUnavailable =>
-                await MakeDailyOccurrenceUnavailableAsync(tenantId, slot, request, cancellationToken),
-            DailyOccurrenceAction.RestoreWeeklyDefault =>
-                await RestoreWeeklyDefaultAsync(slot, request, cancellationToken),
-            _ => throw new ArgumentException("Unknown daily occurrence action."),
-        };
     }
 
     private async Task<SlotResponseDto> ApplyEntireRecurrenceAsync(
@@ -644,12 +786,13 @@ public sealed class ScheduleService(
                 throw new ArgumentException("OccupancyKindId is required to update a recurrence.");
             }
 
-            await EnsureOccupancyKindAsync(kindId, cancellationToken);
+            await EnsureOccupancyKindAsync(tenantId, kindId, cancellationToken);
             var label = TrimLabel(request.Label);
 
             if (template is null)
             {
                 await EnsureNoTemplateCollisionAsync(
+                    tenantId,
                     request.RentalAssetId,
                     dayOfWeek,
                     request.StartTime,
@@ -674,6 +817,7 @@ public sealed class ScheduleService(
             else
             {
                 await EnsureNoTemplateCollisionAsync(
+                    tenantId,
                     template.RentalAssetId,
                     template.DayOfWeek,
                     request.StartTime,
@@ -879,7 +1023,7 @@ public sealed class ScheduleService(
         try
         {
             var rentalAssetId = await dbContext.Slots
-                .Where(s => s.Id == request.SlotId)
+                .Where(s => s.Id == request.SlotId && s.TenantId == tenantId)
                 .Select(s => s.RentalAssetId)
                 .FirstOrDefaultAsync(cancellationToken);
 
@@ -890,13 +1034,16 @@ public sealed class ScheduleService(
 
             await RentalAssetLocks.LockByRentalAssetIdAsync(
                 dbContext,
+                tenantId,
                 rentalAssetId,
                 cancellationToken);
 
             var slot = await dbContext.Slots
                 .Include(s => s.OccupancyKind)
                 .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
-                .FirstOrDefaultAsync(s => s.Id == request.SlotId, cancellationToken)
+                .FirstOrDefaultAsync(
+                    s => s.Id == request.SlotId && s.TenantId == tenantId,
+                    cancellationToken)
                 ?? throw new KeyNotFoundException("Slot was not found.");
 
             await reservationQueueService.EnsureActiveTurnForBookingAsync(
@@ -921,7 +1068,7 @@ public sealed class ScheduleService(
             var hours = (decimal)(end - start).TotalHours;
 
             var reservedQuantity = await GetReservedQuantityAsync(
-                slot.RentalAssetId, start, end, cancellationToken);
+                tenantId, slot.RentalAssetId, start, end, cancellationToken);
 
             if (slot.RentalAsset.Type == RentalAssetType.Location && reservedQuantity > 0)
             {
@@ -1034,6 +1181,7 @@ public sealed class ScheduleService(
     }
 
     private async Task<Slot?> ResolveOccurrenceSlotAsync(
+        Guid tenantId,
         ApplyDailyOccurrenceRequestDto request,
         CancellationToken cancellationToken)
     {
@@ -1042,7 +1190,13 @@ public sealed class ScheduleService(
             return await dbContext.Slots
                 .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
                 .Include(s => s.OccupancyKind)
-                .FirstOrDefaultAsync(s => s.Id == slotId, cancellationToken)
+                .FirstOrDefaultAsync(
+                    s => s.Id == slotId
+                         && s.TenantId == tenantId
+                         && s.RentalAssetId == request.RentalAssetId
+                         && s.Date == request.Date
+                         && s.StartTime == request.StartTime,
+                    cancellationToken)
                 ?? throw new KeyNotFoundException("Slot was not found.");
         }
 
@@ -1050,7 +1204,8 @@ public sealed class ScheduleService(
             .Include(s => s.RentalAsset).ThenInclude(r => r.Asset)
             .Include(s => s.OccupancyKind)
             .FirstOrDefaultAsync(
-                s => s.RentalAssetId == request.RentalAssetId
+                s => s.TenantId == tenantId
+                     && s.RentalAssetId == request.RentalAssetId
                      && s.Date == request.Date
                      && s.StartTime == request.StartTime,
                 cancellationToken);
@@ -1067,7 +1222,7 @@ public sealed class ScheduleService(
             throw new ArgumentException("OccupancyKindId is required to update a daily occurrence.");
         }
 
-        await EnsureOccupancyKindAsync(kindId, cancellationToken);
+        await EnsureOccupancyKindAsync(tenantId, kindId, cancellationToken);
         var label = TrimLabel(request.Label);
 
         if (existing is not null)
@@ -1389,7 +1544,7 @@ public sealed class ScheduleService(
         }
 
         var reservedWindows = await LoadReservedWindowsAsync(
-            date, rentables.Select(r => r.Id).ToList(), cancellationToken);
+            EnsureTenant(), date, rentables.Select(r => r.Id).ToList(), cancellationToken);
 
         var derived = new List<SlotResponseDto>();
 
@@ -1496,6 +1651,7 @@ public sealed class ScheduleService(
         }
 
         var reservedWindows = await LoadReservedWindowsAsync(
+            EnsureTenant(),
             date,
             templates.Select(t => t.RentalAssetId).Distinct().ToList(),
             cancellationToken);
@@ -1503,7 +1659,7 @@ public sealed class ScheduleService(
         var derived = new List<SlotResponseDto>();
         foreach (var group in templates.GroupBy(t => t.RentalAssetId))
         {
-            foreach (var window in SplitWinningWindows(group.ToList()))
+            foreach (var window in OccupancyPrecedence.SplitWinningWindows(group.ToList()))
             {
                 if (persistedStarts.Contains((window.Template.RentalAssetId, window.Start)))
                 {
@@ -1551,76 +1707,13 @@ public sealed class ScheduleService(
         return derived;
     }
 
-    private static List<(ScheduleTemplate Template, TimeOnly Start, TimeOnly End)> SplitWinningWindows(
-        IReadOnlyList<ScheduleTemplate> rentableTemplates)
-    {
-        var breakpoints = rentableTemplates
-            .SelectMany(t => new[] { t.StartTime, t.EndTime })
-            .Distinct()
-            .OrderBy(t => t)
-            .ToList();
-
-        var segments = new List<(ScheduleTemplate Template, TimeOnly Start, TimeOnly End)>();
-        ScheduleTemplate? mergeWinner = null;
-        TimeOnly mergeStart = default;
-        TimeOnly mergeEnd = default;
-
-        for (var i = 0; i < breakpoints.Count - 1; i++)
-        {
-            var segStart = breakpoints[i];
-            var segEnd = breakpoints[i + 1];
-            if (segStart >= segEnd)
-            {
-                continue;
-            }
-
-            var covering = rentableTemplates
-                .Where(t => t.StartTime <= segStart && t.EndTime >= segEnd)
-                .ToList();
-            if (covering.Count == 0)
-            {
-                Flush();
-                mergeWinner = null;
-                continue;
-            }
-
-            var winner = covering
-                .OrderByDescending(t => OccupancyPrecedence.Rank(
-                    t.OccupancyKind.Key, t.OccupancyKind.BlocksCapacity))
-                .ThenByDescending(t => t.OccupancyKind.Key, StringComparer.Ordinal)
-                .ThenBy(t => t.Id)
-                .First();
-
-            if (mergeWinner is not null && mergeWinner.Id == winner.Id && mergeEnd == segStart)
-            {
-                mergeEnd = segEnd;
-                continue;
-            }
-
-            Flush();
-            mergeWinner = winner;
-            mergeStart = segStart;
-            mergeEnd = segEnd;
-        }
-
-        Flush();
-        return segments;
-
-        void Flush()
-        {
-            if (mergeWinner is not null)
-            {
-                segments.Add((mergeWinner, mergeStart, mergeEnd));
-            }
-        }
-    }
-
     private async Task<bool> EnsureSlotGridPolicyAsync(
+        Guid tenantId,
         IReadOnlyList<Guid> rentableIds,
         CancellationToken cancellationToken)
     {
         var rentables = await dbContext.RentalAssets
-            .Where(r => rentableIds.Contains(r.Id))
+            .Where(r => r.TenantId == tenantId && rentableIds.Contains(r.Id))
             .ToListAsync(cancellationToken);
 
         var changed = false;
@@ -1644,6 +1737,7 @@ public sealed class ScheduleService(
     /// query, so slot derivation can be computed in memory instead of one round trip per slot.
     /// </summary>
     private async Task<Dictionary<Guid, List<ReservedWindow>>> LoadReservedWindowsAsync(
+        Guid tenantId,
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
         CancellationToken cancellationToken)
@@ -1660,7 +1754,9 @@ public sealed class ScheduleService(
             from item in dbContext.ReservationItems.AsNoTracking()
             join reservation in dbContext.Reservations.AsNoTracking()
                 on item.ReservationId equals reservation.Id
-            where rentalAssetIds.Contains(item.RentalAssetId)
+            where item.TenantId == tenantId
+                  && reservation.TenantId == tenantId
+                  && rentalAssetIds.Contains(item.RentalAssetId)
                   && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < dayEnd
                   && reservation.EndDateTime > dayStart
@@ -1722,6 +1818,7 @@ public sealed class ScheduleService(
     }
 
     internal async Task<int> GetReservedQuantityAsync(
+        Guid tenantId,
         Guid rentalAssetId,
         DateTimeOffset start,
         DateTimeOffset end,
@@ -1731,7 +1828,9 @@ public sealed class ScheduleService(
             from item in dbContext.ReservationItems.AsNoTracking()
             join reservation in dbContext.Reservations.AsNoTracking()
                 on item.ReservationId equals reservation.Id
-            where item.RentalAssetId == rentalAssetId
+            where item.TenantId == tenantId
+                  && reservation.TenantId == tenantId
+                  && item.RentalAssetId == rentalAssetId
                   && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
                   && reservation.EndDateTime > start
@@ -1762,10 +1861,15 @@ public sealed class ScheduleService(
         return pricing.PricePerHour;
     }
 
-    private async Task EnsureRentableAsync(Guid rentalAssetId, CancellationToken cancellationToken)
+    private async Task EnsureRentableAsync(
+        Guid tenantId,
+        Guid rentalAssetId,
+        CancellationToken cancellationToken)
     {
         var exists = await dbContext.RentalAssets
-            .AnyAsync(r => r.Id == rentalAssetId && r.IsActive, cancellationToken);
+            .AnyAsync(
+                r => r.Id == rentalAssetId && r.TenantId == tenantId && r.IsActive,
+                cancellationToken);
         if (!exists)
         {
             throw new KeyNotFoundException("Rentable was not found.");
@@ -1773,6 +1877,7 @@ public sealed class ScheduleService(
     }
 
     private async Task EnsureRentablesAsync(
+        Guid tenantId,
         IReadOnlyList<Guid> rentalAssetIds,
         CancellationToken cancellationToken)
     {
@@ -1782,7 +1887,7 @@ public sealed class ScheduleService(
         }
 
         var found = await dbContext.RentalAssets
-            .Where(r => rentalAssetIds.Contains(r.Id) && r.IsActive)
+            .Where(r => rentalAssetIds.Contains(r.Id) && r.TenantId == tenantId && r.IsActive)
             .Select(r => r.Id)
             .ToListAsync(cancellationToken);
 
@@ -1810,10 +1915,15 @@ public sealed class ScheduleService(
         return ids.Distinct().ToList();
     }
 
-    private async Task EnsureOccupancyKindAsync(Guid occupancyKindId, CancellationToken cancellationToken)
+    private async Task EnsureOccupancyKindAsync(
+        Guid tenantId,
+        Guid occupancyKindId,
+        CancellationToken cancellationToken)
     {
         var exists = await dbContext.OccupancyKinds
-            .AnyAsync(k => k.Id == occupancyKindId && k.IsActive, cancellationToken);
+            .AnyAsync(
+                k => k.Id == occupancyKindId && k.TenantId == tenantId && k.IsActive,
+                cancellationToken);
         if (!exists)
         {
             throw new KeyNotFoundException("Occupancy kind was not found.");
@@ -1865,6 +1975,7 @@ public sealed class ScheduleService(
     }
 
     private async Task EnsureNoTemplateCollisionAsync(
+        Guid tenantId,
         Guid rentalAssetId,
         DayOfWeek dayOfWeek,
         TimeOnly start,
@@ -1874,7 +1985,9 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken)
     {
         var existing = await dbContext.ScheduleTemplates
-            .Where(t => t.RentalAssetId == rentalAssetId && t.DayOfWeek == dayOfWeek)
+            .Where(t => t.TenantId == tenantId
+                        && t.RentalAssetId == rentalAssetId
+                        && t.DayOfWeek == dayOfWeek)
             .ToListAsync(cancellationToken);
 
         EnsureNoTemplateCollision(
@@ -1968,6 +2081,55 @@ public sealed class ScheduleService(
         }
 
         return ToSlotDto(entity, isDerived: false, ResolvePersistedSource(entity, template));
+    }
+
+    private async Task<IDbContextTransaction?> BeginAssetLockedTransactionAsync(
+        Guid tenantId,
+        IEnumerable<Guid> rentalAssetIds,
+        CancellationToken cancellationToken)
+    {
+        var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        try
+        {
+            await RentalAssetLocks.LockByRentalAssetIdsAsync(
+                dbContext,
+                tenantId,
+                rentalAssetIds,
+                cancellationToken);
+            return transaction;
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task CommitIfPresentAsync(
+        IDbContextTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+    }
+
+    private static async Task RollbackIfPresentAsync(
+        IDbContextTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        if (transaction is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+        }
     }
 
     private Guid EnsureTenant() =>

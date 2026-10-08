@@ -40,8 +40,9 @@ public sealed class ReservationQueueService(
             return;
         }
 
-        EnsureTenant();
-        await RentalAssetLocks.LockByRentalAssetIdAsync(dbContext, rentalAsset.Id, cancellationToken);
+        var tenantId = EnsureTenant();
+        await RentalAssetLocks.LockByRentalAssetIdAsync(
+            dbContext, tenantId, rentalAsset.Id, cancellationToken);
 
         var now = timeProvider.GetUtcNow();
         var session = await EnsureSessionAsync(rentalAsset, now, cancellationToken);
@@ -61,8 +62,9 @@ public sealed class ReservationQueueService(
             return;
         }
 
-        EnsureTenant();
-        await RentalAssetLocks.LockByRentalAssetIdAsync(dbContext, rentalAsset.Id, cancellationToken);
+        var tenantId = EnsureTenant();
+        await RentalAssetLocks.LockByRentalAssetIdAsync(
+            dbContext, tenantId, rentalAsset.Id, cancellationToken);
 
         var now = timeProvider.GetUtcNow();
         var session = await EnsureSessionAsync(rentalAsset, now, cancellationToken);
@@ -91,7 +93,7 @@ public sealed class ReservationQueueService(
         JoinMode mode,
         CancellationToken cancellationToken)
     {
-        EnsureTenant();
+        var tenantId = EnsureTenant();
         var rental = await LoadQueuedLocationAsync(rentalAssetId, cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -100,7 +102,8 @@ public sealed class ReservationQueueService(
 
         try
         {
-            await RentalAssetLocks.LockByRentalAssetIdAsync(dbContext, rental.Id, cancellationToken);
+            await RentalAssetLocks.LockByRentalAssetIdAsync(
+                dbContext, tenantId, rental.Id, cancellationToken);
 
             var now = timeProvider.GetUtcNow();
             var session = await EnsureSessionAsync(rental, now, cancellationToken);

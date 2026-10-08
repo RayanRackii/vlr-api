@@ -35,6 +35,52 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Schedule_write_does_not_authorize_teacher_lessons_write()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var adminWriter = harness.SeedUserWithKeys("schedule-writer", Permissions.Rentals.ScheduleWrite);
+        var teacher = harness.SeedUserWithKeys("teacher-writer", Permissions.Rentals.ScheduleLessonsWrite);
+        var adminPrincipal = AuthenticatedPrincipal(
+            new Claim("sub", adminWriter.SupabaseAuthId),
+            new Claim("email", adminWriter.Email));
+        var teacherPrincipal = AuthenticatedPrincipal(
+            new Claim("sub", teacher.SupabaseAuthId),
+            new Claim("email", teacher.Email));
+        var customer = AuthenticatedPrincipal(
+            new Claim(ClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()));
+
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                adminPrincipal,
+                PermissionPolicies.Name(Permissions.Rentals.ScheduleLessonsWrite))).Succeeded);
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                adminPrincipal,
+                PermissionPolicies.AnyName(
+                    Permissions.Rentals.ScheduleLessonsWrite,
+                    Permissions.Rentals.ScheduleWrite))).Succeeded);
+        Assert.True(
+            (await harness.Authorization.AuthorizeAsync(
+                teacherPrincipal,
+                PermissionPolicies.AnyName(
+                    Permissions.Rentals.ScheduleLessonsWrite,
+                    Permissions.Rentals.ScheduleWrite))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                teacherPrincipal,
+                PermissionPolicies.Name(Permissions.Rentals.ScheduleWrite))).Succeeded);
+        Assert.False(
+            (await harness.Authorization.AuthorizeAsync(
+                customer,
+                PermissionPolicies.Name(Permissions.Rentals.ScheduleLessonsWrite))).Succeeded);
+    }
+
+    [Fact]
     public async Task Customer_cannot_authorize_reservations_complete()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();
