@@ -8,10 +8,36 @@ public sealed class DockerFactAttribute : FactAttribute
 {
     public DockerFactAttribute()
     {
-        if (!DockerEnvironment.IsAvailable)
+        if (!DockerEnvironment.IsAvailable && !LocalPostgresEnvironment.IsConfigured)
         {
-            Skip = "Docker is not available; concurrency tests were skipped.";
+            Skip = "Docker and an isolated local PostgreSQL test connection are not available; concurrency tests were skipped.";
         }
+    }
+}
+
+internal static class LocalPostgresEnvironment
+{
+    public const string ConnectionStringVariable = "ROLVIX_TEST_POSTGRES_CONNECTION";
+
+    public static bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(ConnectionStringVariable));
+
+    public static Npgsql.NpgsqlConnectionStringBuilder CreateLoopbackBuilder()
+    {
+        var value = Environment.GetEnvironmentVariable(ConnectionStringVariable);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException("Local PostgreSQL test connection is not configured.");
+        }
+
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(value);
+        if (builder.Host is not ("127.0.0.1" or "localhost" or "::1"))
+        {
+            throw new InvalidOperationException(
+                "Local PostgreSQL test connection must use a loopback host.");
+        }
+
+        return builder;
     }
 }
 

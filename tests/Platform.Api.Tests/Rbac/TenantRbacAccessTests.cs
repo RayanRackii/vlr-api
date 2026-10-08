@@ -63,6 +63,23 @@ public sealed class TenantRbacAccessTests
     }
 
     [Fact]
+    public async Task EnsureAsync_does_not_grant_teacher_lessons_write_to_system_admin()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        var adminRole = new Role(harness.Tenant.Id, SystemRoles.Admin, "Admin (system)", isSystemRole: true);
+        harness.Db.Roles.Add(adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        await new TenantAccessBootstrapper(harness.Db).EnsureAsync(harness.Tenant.Id);
+
+        var lessonPermission = await harness.Db.Permissions.SingleAsync(
+            item => item.Key == Permissions.Rentals.ScheduleLessonsWrite);
+        Assert.False(
+            await harness.Db.RolePermissions.AnyAsync(item =>
+                item.RoleId == adminRole.Id && item.PermissionId == lessonPermission.Id));
+    }
+
+    [Fact]
     public async Task Non_admin_cannot_persist_inactive_module_keys_on_a_custom_role()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
