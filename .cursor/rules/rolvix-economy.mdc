@@ -2,8 +2,9 @@
 description: Economia de uso em revisões e releases Rolvix
 alwaysApply: true
 ---
-- Agrupe mudanças; não peça revisão por ajuste pequeno. Ajuste não bloqueante em docs/config/chore: aplique sem nova revisão.
+- Os gates do AGENTS.md prevalecem; esta regra só corta rodadas opcionais ou repetidas.
+- Agrupe mudanças; não peça revisão extra por ajuste pequeno. Ajuste não bloqueante já apontado por um reviewer pode ser aplicado sem nova rodada desse reviewer.
 - Identifique arquivos por `git hash-object` e commits por SHA completo; exporte diffs só com `git diff --output`.
-- rolvix-architect e rolvix-deep-architect: uma única execução sobre o pacote final de release, nunca por revisão intermediária.
-- api-reviewer/web-reviewer: só para código de produção; pule em chore/docs.
+- rolvix-architect e rolvix-deep-architect: rode só quando o AGENTS.md exigir, sobre o pacote completo daquela etapa; sem rodadas intermediárias extras.
+- api-reviewer/web-reviewer continuam obrigatórios conforme o AGENTS.md; pule apenas a re-revisão após ajuste não bloqueante.
 - Respostas curtas; não repita regras permanentes do AGENTS.md.
