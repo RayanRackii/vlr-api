@@ -282,8 +282,8 @@ O parent/orchestrator é **Grok 4.6**. Dono do [Autonomous Delivery Workflow](#a
 
 Architects canônicos deste produto (este repo):
 
-1. **rolvix-architect** (`glm-5.2`, readonly) — arquitetura do Rolvix (API + web). Investigação focada. Prepara o Merge Review Dossier. Não chama Fable; se arquitetura profunda for excepcional, devolve `FABLE_ESCALATION_RECOMMENDED`.
-2. **rolvix-deep-architect** (`claude-fable-5`, readonly) — (a) arquitetura profunda só após autorização **explícita** do usuário **nesta** conversa + dossier GLM; (b) **Merge Risk Gate** quando esta política o torna obrigatório, com o dossier de merge (sem crawl). Silêncio não autoriza o caminho (a).
+1. **rolvix-architect** (`glm-5.2-high`, readonly) — arquitetura do Rolvix (API + web). Investigação focada. Prepara o Merge Review Dossier. Não chama Fable; se arquitetura profunda for excepcional, devolve `FABLE_ESCALATION_RECOMMENDED`.
+2. **rolvix-deep-architect** (`claude-fable-5-thinking-high`, readonly) — (a) arquitetura profunda só após autorização **explícita** do usuário **nesta** conversa + dossier GLM; (b) **Merge Risk Gate** quando esta política o torna obrigatório, com o dossier de merge (sem crawl). Silêncio não autoriza o caminho (a).
 
 Ownership de implementação **neste** repo:
 

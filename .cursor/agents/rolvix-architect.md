@@ -6,7 +6,7 @@ description: >-
   prepare compact Merge Review Dossiers. Do not use for trivial localized
   edits. Do not invoke Fable; recommend FABLE_ESCALATION_RECOMMENDED or a
   merge dossier instead.
-model: glm-5.2
+model: glm-5.2-high
 readonly: true
 ---
 
