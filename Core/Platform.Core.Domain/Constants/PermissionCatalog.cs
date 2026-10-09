@@ -8,7 +8,7 @@ public sealed record PermissionDefinition(
     string Resource);
 
 /// <summary>
-/// System-defined permission catalog (46 keys). Tenants cannot create keys.
+/// System-defined permission catalog (47 keys). Tenants cannot create keys.
 /// </summary>
 public static class PermissionCatalog
 {
@@ -45,6 +45,7 @@ public static class PermissionCatalog
         Define(Permissions.Rentals.ReservationsCancel, "Cancel reservations", "Cancel reservations."),
         Define(Permissions.Rentals.ScheduleRead, "Read schedule", "View schedule templates and days."),
         Define(Permissions.Rentals.ScheduleWrite, "Write schedule", "Create and update schedule templates and slots."),
+        Define(Permissions.Rentals.ScheduleLessonsWrite, "Write teacher lessons", "Create and remove date-only teacher lesson overrides."),
         Define(Permissions.Rentals.AssetsRead, "Read rental assets", "List rentable assets."),
         Define(Permissions.Rentals.AssetsWrite, "Write rental assets", "Create and update rentable assets and their schedule policy."),
         Define(Permissions.Rentals.PricingRead, "Read rental pricing", "List rental pricing windows."),
@@ -89,6 +90,16 @@ public static class PermissionCatalog
         Permissions.Os.WorkOrdersRead,
         Permissions.Os.WorkOrdersExecute,
         Permissions.Inventory.AssetsRead,
+    };
+
+    /// <summary>
+    /// Catalog keys that exist for explicit role configuration only.
+    /// System-role bootstrap must not persist them onto Admin/User/Technician.
+    /// Admin wildcard still includes them at runtime when the module is enabled.
+    /// </summary>
+    public static readonly IReadOnlySet<string> ExplicitGrantOnlyKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Permissions.Rentals.ScheduleLessonsWrite,
     };
 
     public static bool IsCoreModule(string? moduleKey) =>
