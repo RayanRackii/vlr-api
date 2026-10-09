@@ -1,0 +1,9 @@
+---
+description: Economia de uso em revisões e releases Rolvix
+alwaysApply: true
+---
+- Agrupe mudanças; não peça revisão por ajuste pequeno. Ajuste não bloqueante em docs/config/chore: aplique sem nova revisão.
+- Identifique arquivos por `git hash-object` e commits por SHA completo; exporte diffs só com `git diff --output`.
+- rolvix-architect e rolvix-deep-architect: uma única execução sobre o pacote final de release, nunca por revisão intermediária.
+- api-reviewer/web-reviewer: só para código de produção; pule em chore/docs.
+- Respostas curtas; não repita regras permanentes do AGENTS.md.
