@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Trial;
@@ -753,6 +754,95 @@ public sealed class TeacherLessonServiceTests
         var persisted = await harness.Db.Slots.SingleAsync(s => s.Id == openSlot.Id);
         Assert.Equal(kinds.Open.Id, persisted.OccupancyKindId);
     }
+
+    [Fact]
+    public async Task Remove_inactive_lesson_source_rejects_without_opening()
+    {
+        await using var harness = await TeacherLessonHarness.CreateAsync();
+        var lesson = await harness.Lessons.CreateAsync(harness.CreateRequest(), CancellationToken.None);
+        var kinds = await harness.EnsureKindsAsync();
+        var inactiveLesson = new ScheduleTemplate
+        {
+            TenantId = harness.TenantId,
+            RentalAssetId = harness.RentalAssetId,
+            DayOfWeek = DayOfWeek.Tuesday,
+            StartTime = Ten,
+            EndTime = Eleven,
+            OccupancyKindId = kinds.Lesson.Id,
+            IsActive = false,
+        };
+        harness.Db.ScheduleTemplates.Add(inactiveLesson);
+        var slot = await harness.Db.Slots.SingleAsync(slot => slot.Id == lesson.Id);
+        slot.SourceTemplateId = inactiveLesson.Id;
+        await harness.Db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Lessons.RemoveAsync(RemoveRequest(harness), CancellationToken.None));
+
+        Assert.Equal("The lesson source template is unverifiable.", exception.Message);
+        var persisted = await harness.Db.Slots.AsNoTracking().SingleAsync(slot => slot.Id == lesson.Id);
+        var kind = await harness.Db.OccupancyKinds.AsNoTracking().SingleAsync(item => item.Id == persisted.OccupancyKindId);
+        Assert.Equal("lesson", kind.Key);
+        Assert.Equal(SlotStatus.Available, persisted.Status);
+        Assert.Null(persisted.ReservationId);
+    }
+
+    [Fact]
+    public async Task Remove_rejects_when_source_open_template_is_not_the_winner()
+    {
+        await using var harness = await TeacherLessonHarness.CreateAsync();
+        var lesson = await harness.Lessons.CreateAsync(harness.CreateRequest(), CancellationToken.None);
+        var kinds = await harness.EnsureKindsAsync();
+        var coveringLoser = new ScheduleTemplate
+        {
+            TenantId = harness.TenantId,
+            RentalAssetId = harness.RentalAssetId,
+            DayOfWeek = DayOfWeek.Tuesday,
+            StartTime = Ten,
+            EndTime = new TimeOnly(12, 0),
+            OccupancyKindId = kinds.Open.Id,
+            IsActive = true,
+        };
+        harness.Db.ScheduleTemplates.Add(coveringLoser);
+        harness.Db.Entry(coveringLoser).Property(template => template.Id).CurrentValue =
+            GreaterThan(harness.OpenTemplateId);
+        await harness.Db.SaveChangesAsync();
+        var slot = await harness.Db.Slots.SingleAsync(item => item.Id == lesson.Id);
+        slot.SourceTemplateId = coveringLoser.Id;
+        await harness.Db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Lessons.RemoveAsync(RemoveRequest(harness), CancellationToken.None));
+
+        Assert.Equal("The lesson source template is unverifiable.", exception.Message);
+        var persisted = await harness.Db.Slots.AsNoTracking().SingleAsync(item => item.Id == lesson.Id);
+        var kind = await harness.Db.OccupancyKinds.AsNoTracking().SingleAsync(item => item.Id == persisted.OccupancyKindId);
+        Assert.Equal("lesson", kind.Key);
+        Assert.Equal(coveringLoser.Id, persisted.SourceTemplateId);
+    }
+
+    private static Guid GreaterThan(Guid value)
+    {
+        for (var attempt = 0; attempt < 10000; attempt++)
+        {
+            var candidate = Guid.NewGuid();
+            if (candidate.CompareTo(value) > 0)
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("Could not draw a GUID above the winning template.");
+    }
+
+    private static RemoveTeacherLessonRequestDto RemoveRequest(TeacherLessonHarness harness) =>
+        new()
+        {
+            RentalAssetId = harness.RentalAssetId,
+            Date = Tuesday,
+            StartTime = Ten,
+            EndTime = Eleven,
+        };
 }
 
 internal sealed class BlockingTrialGuard : ITrialGuard
@@ -834,11 +924,16 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
     public static async Task<TeacherLessonHarness> CreateAsync(
         bool seedHourlyOpen = true,
         string? databaseName = null,
-        ITrialGuard? trialGuard = null)
+        ITrialGuard? trialGuard = null,
+        IEnumerable<IInterceptor>? interceptors = null)
     {
         var name = databaseName ?? $"teacher-{Guid.NewGuid():N}";
         var tenantProvider = new FakeTenantProvider();
-        var db = InMemoryAppDb.Create(tenantProvider, name, ignoreInMemoryTransactions: true);
+        var db = InMemoryAppDb.Create(
+            tenantProvider,
+            name,
+            ignoreInMemoryTransactions: true,
+            interceptors);
 
         var tenant = new Tenant("Clube Aula", UniqueTaxId(), subdomain: $"aula-{Guid.NewGuid():N}"[..16]);
         var unit = new Unit(tenant.Id, "Matriz");

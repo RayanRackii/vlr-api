@@ -229,16 +229,42 @@ public sealed class TeacherLessonService(
                      && target.ReservationId is null
                      && target.SourceTemplateId is not null)
             {
-                var sourceExists = await dbContext.ScheduleTemplates
+                var origin = await dbContext.ScheduleTemplates
                     .AsNoTracking()
-                    .AnyAsync(t => t.Id == target.SourceTemplateId
-                                   && t.TenantId == tenantId
-                                   && t.RentalAssetId == request.RentalAssetId
-                                   && t.DayOfWeek == request.Date.DayOfWeek
-                                   && t.StartTime <= target.StartTime
-                                   && t.EndTime >= target.EndTime,
+                    .Include(t => t.OccupancyKind)
+                    .FirstOrDefaultAsync(t => t.Id == target.SourceTemplateId
+                                              && t.TenantId == tenantId,
                         cancellationToken);
-                if (!sourceExists)
+                var winningIsCanonicalOpen = source.OccupancyKindId == openKind.Id
+                                              && source.OccupancyKind.IsActive
+                                              && string.Equals(
+                                                  source.OccupancyKind.Key,
+                                                  "open",
+                                                  StringComparison.Ordinal);
+                var sourceIsCanonicalLesson = origin is not null
+                                               && origin.OccupancyKindId == lessonKind.Id
+                                               && origin.OccupancyKind.IsActive
+                                               && string.Equals(
+                                                   origin.OccupancyKind.Key,
+                                                   "lesson",
+                                                   StringComparison.Ordinal);
+                var sourceIsWinningOpen = origin is not null
+                                           && winningIsCanonicalOpen
+                                           && origin.Id == source.Id
+                                           && origin.OccupancyKindId == openKind.Id
+                                           && origin.OccupancyKind.IsActive
+                                           && string.Equals(
+                                               origin.OccupancyKind.Key,
+                                               "open",
+                                               StringComparison.Ordinal);
+                if (origin is null
+                    || origin.RentalAssetId != request.RentalAssetId
+                    || origin.DayOfWeek != request.Date.DayOfWeek
+                    || origin.StartTime > target.StartTime
+                    || origin.EndTime < target.EndTime
+                    || !origin.IsActive
+                    || !origin.OccupancyKind.IsActive
+                    || (!sourceIsCanonicalLesson && !sourceIsWinningOpen))
                 {
                     throw new InvalidOperationException("The lesson source template is unverifiable.");
                 }
