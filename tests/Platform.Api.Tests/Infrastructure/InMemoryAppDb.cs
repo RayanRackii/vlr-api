@@ -9,7 +9,8 @@ internal static class InMemoryAppDb
     public static AppDbContext Create(
         ITenantProvider tenantProvider,
         string? databaseName = null,
-        bool ignoreInMemoryTransactions = false)
+        bool ignoreInMemoryTransactions = false,
+        IEnumerable<IInterceptor>? interceptors = null)
     {
         var builder = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName ?? $"trial-{Guid.NewGuid():N}");
@@ -18,6 +19,11 @@ internal static class InMemoryAppDb
         {
             builder.ConfigureWarnings(warnings =>
                 warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+        }
+
+        if (interceptors is not null)
+        {
+            builder.AddInterceptors(interceptors);
         }
 
         return new TestAppDbContext(builder.Options, tenantProvider);
