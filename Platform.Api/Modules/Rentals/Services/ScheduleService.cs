@@ -125,13 +125,15 @@ public sealed class ScheduleService(
         await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
         await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
 
+        var lockedAssetIds = new[] { existing.RentalAssetId, request.RentalAssetId };
         await using var transaction = await BeginAssetLockedTransactionAsync(
-            tenantId, [existing.RentalAssetId, request.RentalAssetId], cancellationToken);
+            tenantId, lockedAssetIds, cancellationToken);
         try
         {
             var entity = await dbContext.ScheduleTemplates
                 .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
                 ?? throw new KeyNotFoundException("Schedule template was not found.");
+            EnsureCourtStillLocked(entity.RentalAssetId, lockedAssetIds);
 
             await EnsureNoTemplateCollisionAsync(
                 tenantId,
@@ -171,13 +173,15 @@ public sealed class ScheduleService(
             .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Schedule template was not found.");
 
+        var lockedAssetIds = new[] { existing.RentalAssetId };
         await using var transaction = await BeginAssetLockedTransactionAsync(
-            tenantId, [existing.RentalAssetId], cancellationToken);
+            tenantId, lockedAssetIds, cancellationToken);
         try
         {
             var entity = await dbContext.ScheduleTemplates
                 .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
                 ?? throw new KeyNotFoundException("Schedule template was not found.");
+            EnsureCourtStillLocked(entity.RentalAssetId, lockedAssetIds);
 
             dbContext.ScheduleTemplates.Remove(entity);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -2141,6 +2145,17 @@ public sealed class ScheduleService(
         if (end <= start)
         {
             throw new ArgumentException("End time must be after start time.");
+        }
+    }
+
+    private static void EnsureCourtStillLocked(
+        Guid currentRentalAssetId,
+        IReadOnlyCollection<Guid> lockedAssetIds)
+    {
+        if (!lockedAssetIds.Contains(currentRentalAssetId))
+        {
+            throw new InvalidOperationException(
+                "The template court changed before its row was locked.");
         }
     }
 
