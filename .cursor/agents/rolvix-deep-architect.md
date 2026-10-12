@@ -6,7 +6,7 @@ description: >-
   (2) Merge Risk Gate on high-risk PRs, using a compact merge dossier — no
   repo-wide grep. Canonical definition lives in vlr-api. Never the default
   architect. Never implement.
-model: claude-fable-5
+model: claude-fable-5-thinking-high
 readonly: true
 ---
 
