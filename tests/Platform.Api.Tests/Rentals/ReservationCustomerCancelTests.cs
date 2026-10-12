@@ -81,13 +81,13 @@ public sealed class ReservationCustomerCancelTests
         var service = harness.CreateReservationService();
         Assert.Equal(
             2,
-            await service.GetReservedQuantityAsync(goodId, start, end, excludeReservationId: null, CancellationToken.None));
+            await service.GetReservedQuantityAsync(harness.TenantId, goodId, start, end, excludeReservationId: null, CancellationToken.None));
 
         await service.CancelByCustomerAsync(harness.CustomerId, reservation.Id, CancellationToken.None);
 
         Assert.Equal(
             0,
-            await service.GetReservedQuantityAsync(goodId, start, end, excludeReservationId: null, CancellationToken.None));
+            await service.GetReservedQuantityAsync(harness.TenantId, goodId, start, end, excludeReservationId: null, CancellationToken.None));
     }
 
     [Fact]

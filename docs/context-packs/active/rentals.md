@@ -5,19 +5,25 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
-- Last verified: 2026-09-07
-- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD)
+- Last verified: 2026-10-08
+- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD); teacher lessons are local-only, unmerged and undeployed
   - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
   - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
   - B2C self-cancel DEV: API `89b3e6d` / PR #64; WEB `3478355` / PR #59
 - Historical spec (delivered, do not re-implement): `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
-- Current spec: `docs/plans/active/2026-09-07-rentals-b2c-self-cancel.md`
+- Current specs: `docs/plans/active/2026-09-07-rentals-b2c-self-cancel.md`; local feature `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`
 
 ## Purpose
 
 Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout picker, the optional Location waiting queue, or reservation Complete/Cancel.
 
-This pack describes **shipped PROD**. It does **not** authorize Wave 2, Layout work, timezone follow-ups, or new product implementation.
+The historical sections below describe **shipped PROD**. A separate local feature is under review and has not changed DEV or PROD.
+
+## Local feature under review — Teacher date-only lessons
+
+Local worktrees add a dedicated `rentals.schedule.lessons.write` capability and date-only create/remove endpoints for SlotGrid. Endpoints require only that permission and the server allowlists the FICC tenant plus its six reviewed rental asset IDs. They share tenant-scoped `RentalAssetLocks` with bookings and schedule writers. The migration is not applied; no role has been configured; the feature is not merged or deployed.
+
+RLS is disabled in source migrations for the 11 Rentals tables listed in `ROADMAP.md`. Current API tenant isolation relies on EF `TenantId` query filters and explicit scoped checks; this source finding alone does not prove public exposure or the database connection role. No RLS changes are part of this feature.
 
 ## Canonical sources
 
@@ -99,7 +105,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Product UI never shows `OpenHours` / `SlotGrid` as copy
 - Same OccupancyKind cannot overlap itself on a Rentable+weekday; different kinds may
 - `PublishDay` gap-fills by rentable + start; does not wipe existing slots
-- Create/book serialize occupancy with `RentalAssetLocks` `FOR UPDATE` on `rentals.rental_assets` ordered by `RentalAssetId` (reservation rows are not locked on create/book)
+- Create/book/teacher-lesson/schedule-write/policy-write serialize occupancy with `RentalAssetLocks` `FOR UPDATE` on `rentals.rental_assets` (`id` + `tenant_id`) ordered by `RentalAssetId` ascending (reservation rows are not locked on create/book)
 - Confirm/Complete/Cancel serialize on `ReservationLocks` `FOR UPDATE` **first** (load only after lock). Cancel then locks distinct `RentalAssetId`s ascending via `RentalAssetLocks` before `MarkAvailable`. Confirm and Complete lock the reservation only and do not free slots
 - Confirm is not terminal: `PendingDeposit → Confirmed` (idempotent 200 on Confirmed); `Canceled`/`Completed` → 409. Sequential Confirm then Cancel both succeed
 - Complete is staff-only: `Confirmed → Completed`; `Completed` is idempotent 200; `PendingDeposit`/`Canceled` → 409. Does not free slots.
@@ -126,12 +132,14 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 ## Important implementation seams
 
 - `Platform.Api/Modules/Rentals/Services/ReservationService.cs` (`ToDateTimeRange`, Confirm/Complete/Cancel lock-then-load)
-- `Platform.Api/Modules/Rentals/Services/ReservationLocks.cs` / `RentalAssetLocks.cs` (`FOR UPDATE`; no-op when `!IsRelational()`)
+- `Platform.Api/Modules/Rentals/Services/ReservationLocks.cs` / `RentalAssetLocks.cs` (`FOR UPDATE` + tenant predicate; no-op when `!IsRelational()`)
+- `Platform.Api/Modules/Rentals/Services/TeacherLessonService.cs` — date-only lesson create/remove (`rentals.schedule.lessons.write`)
 - `Platform.Api/Modules/Rentals/Services/ScheduleService.cs` (`ToDateTime` → `BrazilTimeZone.AtLocal`; `LoadReservedWindowsAsync` civil-day bounds)
 - `Platform.Api/Modules/Rentals/Services/ReservationQueueService.cs` / `ReservationQueueClock.cs` (`BrazilTimeZone`)
 - `Platform.Api/Modules/Rentals/Services/OccupancyPrecedence.cs`
 - `Core/Platform.Core.Domain/Entities/Reservation.cs`, `Slot.cs`, `ScheduleTemplate.cs`, `ReservationQueueSession.cs`, `ReservationQueueTicket.cs`
-- `Core/Platform.Core.Domain/Constants/Permissions.cs` — `rentals.reservations.complete`
+- `Core/Platform.Core.Domain/Constants/Permissions.cs` — `rentals.reservations.complete`, `rentals.schedule.lessons.write` (explicit-grant-only; not auto-granted to system roles)
+- Teacher lessons: `POST /api/schedule/lessons`, `POST /api/schedule/lessons/remove`
 - WEB: `src/lib/brazilTimeZone.ts`, `src/features/rentals/pages/ReservationsPage.tsx`, `src/features/rentals/services/reservationsService.ts`, `src/features/tenantPortal/pages/TenantPortalAgendaPage.tsx`
 
 ## Known gaps / open constraints

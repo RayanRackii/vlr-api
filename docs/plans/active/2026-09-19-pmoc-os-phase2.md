@@ -1,21 +1,21 @@
 # 2026-09-19-pmoc-os-phase2
 
-Status: **APPROVED** (product/domain). Slice 1 API implementation in progress.
+Status: **RELEASED_PROD** (closed 2026-09-24). Historical handoff. Not an active implementation.
 
 ```
-PMOC_OS_PHASE1            = CLOSED
-ROLVIX_PMOC_OS_PHASE1     = RELEASED_PROD
-PMOC_OS_PHASE2_SPEC       = APPROVED
-PMOC_OS_PHASE2            = SLICES_1_2_ONLY
-H6                        = NO
-H7                        = NO
+ROLVIX_PMOC_OS_PHASE2 = RELEASED_PROD
+PMOC_OS_ACTIVE_IMPLEMENTATION = NO
+H6 = NO
+H7 = NO
 ```
 
-This file is the canonical Phase 2 product/domain handoff.
+Phase 2 shipped the first Coverage read model. Its calendar-frequency scheduling (`PmocDueCalendar`, Monthly = day 1, Weekly = Monday) was intentionally superseded by Phase 3. Decisions D1–D4, H6, H7, and C1–C3 below are history. D1 is not current product behavior. Current due math is `PmocDueCalculator` in the Phase 3 spec. Do not implement from this file.
+
+This file remains the historical Phase 2 product/domain handoff.
 
 Locked Human Decisions: **D1–D4**, **H6 = NO**, **H7 = NO**, plus contract clarifications **C1–C3**. Do not reopen them.
 
-Implementation scope: Slices 1–2 only. No plan-list aggregates. No Inventory/Asset PMOC surface.
+Shipped scope was Slices 1–2 only. No plan-list aggregates. No Inventory/Asset PMOC surface.
 
 Parent of this plan: `docs/plans/active/2026-09-18-pmoc-os-phase1.md` (released).
 

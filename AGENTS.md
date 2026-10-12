@@ -278,17 +278,17 @@ Toda implementação pergunta: *como esta regressão seria detectada automaticam
 
 Arquivos em [`.cursor/agents/`](./.cursor/agents/). São roteadores — não copiam produto, arquitetura, convenções nem o corpo dos skills.
 
-O parent/orchestrator é **Grok 4.6**. Dono do [Autonomous Delivery Workflow](#autonomous-delivery-workflow): Git, gates, PR, Merge Risk Gate, merge em `develop`. Subagentes não repetem `git fetch` na mesma tarefa. Não substitua modelos em silêncio. Se o subagent configurado não puder rodar, emita `SUBAGENT_UNAVAILABLE` (agent, modelo esperado, **root esperado**, motivo, ação do usuário) e **pare**. Não simule o papel e não use outro agent/modelo no lugar.
+O parent/orchestrator é **Grok 4.7 xhigh**. Dono do [Autonomous Delivery Workflow](#autonomous-delivery-workflow): Git, gates, PR, Merge Risk Gate, merge em `develop`. Subagentes não repetem `git fetch` na mesma tarefa. Não substitua modelos em silêncio. Se o subagent configurado não puder rodar, emita `SUBAGENT_UNAVAILABLE` (agent, modelo esperado, **root esperado**, motivo, ação do usuário) e **pare**. Não simule o papel e não use outro agent/modelo no lugar.
 
 Architects canônicos deste produto (este repo):
 
-1. **rolvix-architect** (`glm-5.2`, readonly) — arquitetura do Rolvix (API + web). Investigação focada. Prepara o Merge Review Dossier. Não chama Fable; se arquitetura profunda for excepcional, devolve `FABLE_ESCALATION_RECOMMENDED`.
-2. **rolvix-deep-architect** (`claude-fable-5`, readonly) — (a) arquitetura profunda só após autorização **explícita** do usuário **nesta** conversa + dossier GLM; (b) **Merge Risk Gate** quando esta política o torna obrigatório, com o dossier de merge (sem crawl). Silêncio não autoriza o caminho (a).
+1. **rolvix-architect** (`glm-5.2-high`, readonly) — arquitetura do Rolvix (API + web). Investigação focada. Prepara o Merge Review Dossier. Não chama Fable; se arquitetura profunda for excepcional, devolve `FABLE_ESCALATION_RECOMMENDED`.
+2. **rolvix-deep-architect** (`claude-fable-5-thinking-high`, readonly) — (a) arquitetura profunda só após autorização **explícita** do usuário **nesta** conversa + dossier GLM; (b) **Merge Risk Gate** quando esta política o torna obrigatório, com o dossier de merge (sem crawl). Silêncio não autoriza o caminho (a).
 
 Ownership de implementação **neste** repo:
 
-3. **api-implementer** (`grok-4.6`, write) — implementação em `vlr-api`. Segue esta Git Work Policy. Não assume o frontend.
-4. **api-reviewer** (`grok-4.6`, readonly) — Standards × Spec no diff `origin/develop...HEAD` de `vlr-api`. O parent faz `git fetch --prune origin` **antes**; o reviewer não faz fetch.
+3. **api-implementer** (`grok-4.7-xhigh`, write) — implementação em `vlr-api`. Segue esta Git Work Policy. Não assume o frontend.
+4. **api-reviewer** (`grok-4.7-xhigh`, readonly) — Standards × Spec no diff `origin/develop...HEAD` de `vlr-api`. O parent faz `git fetch --prune origin` **antes**; o reviewer não faz fetch.
 
 Cross-repo: `rolvix-architect` → uma spec → `api-implementer` **e** `web-implementer` / `ui-implementer` (ownership separado por repo) → `api-reviewer` **e** `web-reviewer`. Um architect; dois ownerships de implementação. Um writer ativo por working tree.
 

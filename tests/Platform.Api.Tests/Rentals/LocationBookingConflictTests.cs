@@ -54,6 +54,7 @@ public sealed class LocationBookingConflictTests
         await harness.Db.SaveChangesAsync();
 
         return await harness.CreateReservationService().GetReservedQuantityAsync(
+            harness.TenantId,
             harness.RentalAssetId,
             LocationBookingHarness.RangeStart,
             LocationBookingHarness.RangeEnd,
@@ -68,6 +69,7 @@ public sealed class LocationBookingConflictTests
         await harness.Db.SaveChangesAsync();
 
         return await harness.CreateScheduleService().GetReservedQuantityAsync(
+            harness.TenantId,
             harness.RentalAssetId,
             LocationBookingHarness.RangeStart,
             LocationBookingHarness.RangeEnd,

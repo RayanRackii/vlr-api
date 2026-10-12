@@ -36,6 +36,16 @@ public sealed class PermissionAuthorizationPolicyProvider : IAuthorizationPolicy
             return Task.FromResult<AuthorizationPolicy?>(policy);
         }
 
+        if (PermissionPolicies.TryParseAny(policyName, out var permissionKeys))
+        {
+            var policy = new AuthorizationPolicyBuilder()
+                .Combine(_options.DefaultPolicy)
+                .AddRequirements(new PermissionRequirement(permissionKeys))
+                .Build();
+
+            return Task.FromResult<AuthorizationPolicy?>(policy);
+        }
+
         return _fallback.GetPolicyAsync(policyName);
     }
 }

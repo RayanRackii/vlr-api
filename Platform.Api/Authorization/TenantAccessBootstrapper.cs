@@ -59,12 +59,12 @@ public sealed class TenantAccessBootstrapper(AppDbContext dbContext) : ITenantAc
         var superAdmin = FindRole(roles, SystemRoles.SuperAdmin);
         var technician = FindRole(roles, SystemRoles.Technician);
 
-        GrantKeys(admin, permissionsByKey, PermissionCatalog.AllKeys);
+        GrantKeys(admin, permissionsByKey, AutoGrantedCatalogKeys());
         GrantKeys(user, permissionsByKey, PermissionCatalog.DefaultUserKeys);
 
         if (superAdmin is not null)
         {
-            GrantKeys(superAdmin, permissionsByKey, PermissionCatalog.AllKeys);
+            GrantKeys(superAdmin, permissionsByKey, AutoGrantedCatalogKeys());
         }
 
         if (technician is not null)
@@ -94,6 +94,11 @@ public sealed class TenantAccessBootstrapper(AppDbContext dbContext) : ITenantAc
     private static Role? FindRole(IEnumerable<Role> roles, string name) =>
         roles.FirstOrDefault(role =>
             role.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlySet<string> AutoGrantedCatalogKeys() =>
+        PermissionCatalog.AllKeys
+            .Where(key => !PermissionCatalog.ExplicitGrantOnlyKeys.Contains(key))
+            .ToHashSet(StringComparer.Ordinal);
 
     private void GrantKeys(
         Role role,

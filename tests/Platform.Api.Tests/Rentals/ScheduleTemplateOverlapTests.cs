@@ -291,6 +291,79 @@ public sealed class ScheduleTemplateOverlapTests
         Assert.Contains(templates, t => t.OccupancyKindId == kinds.Closed.Id);
     }
 
+    [Fact]
+    public async Task Daily_occurrence_rejects_slot_id_from_another_asset_without_mutation()
+    {
+        await using var harness = await ScheduleOverlapHarness.CreateAsync();
+        var service = harness.CreateScheduleService();
+        var kinds = await harness.EnsureKindsAsync();
+        var otherRental = await harness.CreateAdditionalLocationAsync("Quadra 2");
+        var otherSlot = await service.UpsertSlotAsync(
+            new UpsertSlotRequestDto
+            {
+                RentalAssetId = otherRental.Id,
+                Date = Tuesday,
+                StartTime = Eight,
+                EndTime = Eighteen,
+                OccupancyKindId = kinds.Open.Id,
+            },
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.ApplyDailyOccurrenceAsync(
+            new ApplyDailyOccurrenceRequestDto
+            {
+                SlotId = otherSlot.Id,
+                RentalAssetId = harness.RentalAssetId,
+                Date = Tuesday,
+                StartTime = Eight,
+                EndTime = Eighteen,
+                Action = DailyOccurrenceAction.Update,
+                Scope = OccurrenceEditScope.OnlyThisDay,
+                OccupancyKindId = kinds.Closed.Id,
+            }, CancellationToken.None));
+
+        var unchanged = await harness.Db.Slots.SingleAsync(slot => slot.Id == otherSlot.Id);
+        Assert.Equal(otherRental.Id, unchanged.RentalAssetId);
+        Assert.Equal(kinds.Open.Id, unchanged.OccupancyKindId);
+        Assert.Equal(SlotStatus.Available, unchanged.Status);
+    }
+
+    [Fact]
+    public async Task Daily_occurrence_rejects_slot_id_from_another_date_without_mutation()
+    {
+        await using var harness = await ScheduleOverlapHarness.CreateAsync();
+        var service = harness.CreateScheduleService();
+        var kinds = await harness.EnsureKindsAsync();
+        var slot = await service.UpsertSlotAsync(
+            new UpsertSlotRequestDto
+            {
+                RentalAssetId = harness.RentalAssetId,
+                Date = Tuesday.AddDays(1),
+                StartTime = Eight,
+                EndTime = Eighteen,
+                OccupancyKindId = kinds.Open.Id,
+            },
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.ApplyDailyOccurrenceAsync(
+            new ApplyDailyOccurrenceRequestDto
+            {
+                SlotId = slot.Id,
+                RentalAssetId = harness.RentalAssetId,
+                Date = Tuesday,
+                StartTime = Eight,
+                EndTime = Eighteen,
+                Action = DailyOccurrenceAction.Update,
+                Scope = OccurrenceEditScope.OnlyThisDay,
+                OccupancyKindId = kinds.Closed.Id,
+            }, CancellationToken.None));
+
+        var unchanged = await harness.Db.Slots.SingleAsync(item => item.Id == slot.Id);
+        Assert.Equal(Tuesday.AddDays(1), unchanged.Date);
+        Assert.Equal(kinds.Open.Id, unchanged.OccupancyKindId);
+        Assert.Equal(SlotStatus.Available, unchanged.Status);
+    }
+
     private static void AssertLessonWinsEvening(DayScheduleResponseDto day)
     {
         Assert.Equal(3, day.Slots.Count);
@@ -415,6 +488,41 @@ internal sealed class ScheduleOverlapHarness : IAsyncDisposable
             kinds.Single(k => k.Key == "open"),
             kinds.Single(k => k.Key == "lesson"),
             kinds.Single(k => k.Key == "closed"));
+    }
+
+    public async Task<RentalAsset> CreateAdditionalLocationAsync(string name)
+    {
+        var original = await Db.RentalAssets
+            .Include(rental => rental.Asset)
+            .SingleAsync(rental => rental.Id == RentalAssetId);
+        var asset = new Asset
+        {
+            TenantId = TenantId,
+            UnitId = original.Asset.UnitId,
+            CategoryId = original.Asset.CategoryId,
+            FamilyId = original.Asset.FamilyId,
+            Name = name,
+            Tag = "Q2",
+            Status = AssetStatus.Active,
+            IsRentable = true,
+        };
+        var rental = new RentalAsset
+        {
+            TenantId = TenantId,
+            AssetId = asset.Id,
+            Type = RentalAssetType.Location,
+            TotalQuantity = 1,
+            IsActive = true,
+            RequiresDeposit = true,
+            SchedulePolicy = SchedulePolicy.SlotGrid,
+            OpenTime = new TimeOnly(8, 0),
+            CloseTime = new TimeOnly(22, 0),
+            QueueEnabled = false,
+        };
+        Db.Assets.Add(asset);
+        Db.RentalAssets.Add(rental);
+        await Db.SaveChangesAsync();
+        return rental;
     }
 
     public ScheduleService CreateScheduleService() =>

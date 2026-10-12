@@ -20,7 +20,7 @@ Use for: CatalogProduct, CatalogOrder, ProductRequest, catalog files/storage, ca
 
 File: [`active/pmoc-os.md`](./active/pmoc-os.md)
 
-Use for: GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS. Phase 1 spec: [`docs/plans/active/2026-09-18-pmoc-os-phase1.md`](../plans/active/2026-09-18-pmoc-os-phase1.md) (approved). Slices 1–2 are on `develop`; Slice 3 (template library clone) is on `feat/pmoc-os-phase1-template-library`.
+Use for: GlobalMaintenanceTemplate, MaintenancePlan, PlanTask, PmocEngineJob, WorkOrder, WorkOrderTask, Biblioteca Rolvix, Gerar OS, Coverage. Current PROD model (Phases 1–3 released). Phase 4 is not planned. Spec: [`docs/plans/active/2026-09-19-pmoc-os-phase3.md`](../plans/active/2026-09-19-pmoc-os-phase3.md).
 
 ## Planned / on-demand
 

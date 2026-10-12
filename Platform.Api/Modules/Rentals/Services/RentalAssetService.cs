@@ -48,36 +48,61 @@ public sealed class RentalAssetService(
         UpdateRentalSchedulePolicyRequestDto request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-
-        var rental = await dbContext.RentalAssets
-            .Include(r => r.Asset)
-                .ThenInclude(a => a.Category)
-            .FirstOrDefaultAsync(r => r.Id == rentalAssetId && r.IsActive, cancellationToken)
-            ?? throw new KeyNotFoundException("Rentable was not found.");
+        var tenantId = EnsureTenantContext();
 
         if (request.SchedulePolicy == SchedulePolicy.OpenHours)
         {
             ValidatePolicy(request.SchedulePolicy, request.OpenTime, request.CloseTime);
         }
 
-        rental.SchedulePolicy = request.SchedulePolicy;
-        rental.OpenTime = request.OpenTime;
-        rental.CloseTime = request.CloseTime;
-        rental.AllowedDurationMinutes = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
-            ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-            : request.AllowedDurationMinutes.Trim();
-        rental.Touch();
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            await RentalAssetLocks.LockByRentalAssetIdAsync(
+                dbContext, tenantId, rentalAssetId, cancellationToken);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return ToResponse(rental);
+            var rental = await dbContext.RentalAssets
+                .Include(r => r.Asset)
+                    .ThenInclude(a => a.Category)
+                .FirstOrDefaultAsync(
+                    r => r.Id == rentalAssetId && r.TenantId == tenantId && r.IsActive,
+                    cancellationToken)
+                ?? throw new KeyNotFoundException("Rentable was not found.");
+
+            rental.SchedulePolicy = request.SchedulePolicy;
+            rental.OpenTime = request.OpenTime;
+            rental.CloseTime = request.CloseTime;
+            rental.AllowedDurationMinutes = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
+                ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
+                : request.AllowedDurationMinutes.Trim();
+            rental.Touch();
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            return ToResponse(rental);
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
+            throw;
+        }
     }
 
     public async Task<BulkUpdateRentalSchedulePolicyResponseDto> UpdateSchedulePolicyBulkAsync(
         BulkUpdateRentalSchedulePolicyRequestDto request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var ids = request.RentalAssetIds
             .Where(id => id != Guid.Empty)
@@ -91,38 +116,60 @@ public sealed class RentalAssetService(
 
         ValidatePolicy(request.SchedulePolicy, request.OpenTime, request.CloseTime);
 
-        var rentals = await dbContext.RentalAssets
-            .Include(r => r.Asset)
-                .ThenInclude(a => a.Category)
-            .Where(r => ids.Contains(r.Id) && r.IsActive)
-            .ToListAsync(cancellationToken);
-
-        if (rentals.Count != ids.Count)
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
         {
-            throw new KeyNotFoundException("One or more rentables were not found.");
+            await RentalAssetLocks.LockByRentalAssetIdsAsync(
+                dbContext, tenantId, ids, cancellationToken);
+
+            var rentals = await dbContext.RentalAssets
+                .Include(r => r.Asset)
+                    .ThenInclude(a => a.Category)
+                .Where(r => r.TenantId == tenantId && ids.Contains(r.Id) && r.IsActive)
+                .ToListAsync(cancellationToken);
+
+            if (rentals.Count != ids.Count)
+            {
+                throw new KeyNotFoundException("One or more rentables were not found.");
+            }
+
+            var allowed = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
+                ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
+                : request.AllowedDurationMinutes.Trim();
+
+            foreach (var rental in rentals)
+            {
+                rental.SchedulePolicy = request.SchedulePolicy;
+                rental.OpenTime = request.OpenTime;
+                rental.CloseTime = request.CloseTime;
+                rental.AllowedDurationMinutes = allowed;
+                rental.Touch();
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            var items = rentals
+                .OrderBy(r => r.Asset.Name)
+                .Select(ToResponse)
+                .ToList();
+
+            return new BulkUpdateRentalSchedulePolicyResponseDto(items.Count, items);
         }
-
-        var allowed = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
-            ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-            : request.AllowedDurationMinutes.Trim();
-
-        foreach (var rental in rentals)
+        catch
         {
-            rental.SchedulePolicy = request.SchedulePolicy;
-            rental.OpenTime = request.OpenTime;
-            rental.CloseTime = request.CloseTime;
-            rental.AllowedDurationMinutes = allowed;
-            rental.Touch();
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
+            throw;
         }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        var items = rentals
-            .OrderBy(r => r.Asset.Name)
-            .Select(ToResponse)
-            .ToList();
-
-        return new BulkUpdateRentalSchedulePolicyResponseDto(items.Count, items);
     }
 
     private static void ValidatePolicy(

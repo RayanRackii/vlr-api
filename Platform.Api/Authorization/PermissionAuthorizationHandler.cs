@@ -52,12 +52,13 @@ public sealed class PermissionAuthorizationHandler(
                 return;
             }
 
-            if (await permissionResolver.HasPermissionAsync(
-                    tenantId,
-                    user.Id,
-                    requirement.PermissionKey))
+            foreach (var permissionKey in requirement.PermissionKeys)
             {
-                context.Succeed(requirement);
+                if (await permissionResolver.HasPermissionAsync(tenantId, user.Id, permissionKey))
+                {
+                    context.Succeed(requirement);
+                    return;
+                }
             }
         }
         catch (Exception ex)

@@ -59,6 +59,7 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Canvas de Layout no admin (`vlr-web` Operação) + picker B2C data+horário
 - [x] Trial expirado: `BookSlot` / `CreateReservation` passam por `TrialGuard` (mesmo guard de Confirm/Cancel)
 - [x] F-01: `SELECT … FOR UPDATE` em `RentalAsset` serializa `CreateReservation` / `BookSlot` (prova em Testcontainers; 2026-08-22: `ReservationConcurrencyTests` 2 passed / 0 skipped com Docker 29.5.3)
+- [ ] Teacher date-only lessons (FICC pilot, implementação local pronta para revisão): `rentals.schedule.lessons.write` dedicada; endpoints limitados no servidor ao tenant e seis `rental_asset` IDs FICC aprovados. Create/remove mudam somente a data; reservas e conflitos rejeitam sem escrita; writers de agenda e booking compartilham lock transacional. API: 806 aprovados, 1 skip; web: 454 aprovados; build concluído. Revisão final do Grok pendente. Migration **não aplicada**; nenhum role criado/atribuído.
 - [x] F-10: overlap de `ScheduleTemplate` entre OccupancyKinds; UNIQUE exact duplicate; derive SlotGrid não publicado por precedência; `PublishDay` continua gap-fill (migration `AddScheduleTemplateExactDuplicateUnique`)
 - [x] Fila de espera opcional por Location (`QueueEnabled` + `QueueOpeningTime`, T diário em America/Sao_Paulo; sessão `(Tenant, Location, OpeningDate)`; ticket FIFO 90s). Default off. Migration `AddReservationWaitingQueue`. ADR [`docs/adr/0003-reservation-waiting-queue.md`](./docs/adr/0003-reservation-waiting-queue.md)
 - [ ] Aplicar migration `AddReservationWaitingQueue` no Supabase/Railway (não aplicar da máquina de implementação)
@@ -67,7 +68,9 @@ Decisões: ADR [`docs/adr/0001-rentals-slot-schedule.md`](./docs/adr/0001-rental
 - [x] Phase A lifecycle: staff-only Complete (`rentals.reservations.complete`); `Confirmed → Completed`; Complete × Cancel exclusive-winner; Confirm × Cancel serialized; reservation-row lock first; Cancel then `RentalAsset` locks ascending.
 - [x] Phase B T1 live: business TZ `America/Sao_Paulo`; Slot/Schedule remain civil; Reservation start/end are true instants; API returns UTC instants; WEB formats Rentals clocks in `America/Sao_Paulo`; Brazil civil-day query bounds; pricing remains civil-day/time; no schema migration for Phase B.
 - [x] B2C self-cancel **CLOSED_DEV** (not PROD): `POST /api/reservations/mine/{id}/cancel`. Owner + `PendingDeposit`/`Confirmed` + `UtcNow < StartDateTime`. Occupancy release compartilhada com staff Cancel. Staff `POST /{id}/cancel` sem cutoff. Sem permission nova. Sem migration. WEB `3478355` / PR #59. API `89b3e6d` / PR #64. Wave 1 remains **PROD_COMPLETE**.
-- Follow-ups (non-blocking, **not** authorized as current work): ListAdmin D+1 absence test; dedicated OpenHours wrap-guard regression; WEB today-boundary; latent `AtLocal` DST midnight; concurrent Confirm × Confirm coverage; tenant predicate on raw lock SQL.
+- Follow-ups (non-blocking, **not** authorized as current work): ListAdmin D+1 absence test; dedicated OpenHours wrap-guard regression; WEB today-boundary; latent `AtLocal` DST midnight; concurrent Confirm × Confirm coverage.
+- [ ] Aplicar migration `AddRentalsScheduleLessonsWritePermission` no DEV (Human Action — **não** nesta implementação). Não grantar `rentals.schedule.lessons.write` a role persistida até o gate explícito de configuração de role.
+- [ ] RLS finding (docs only, 2026-10-08): inspeção estática de source/config — nenhum `ENABLE ROW LEVEL SECURITY` / `EnableRowLevelSecurity` no repo. As 11 tabelas `rentals` mapeadas no EF nascem sem RLS nas migrations. Filtros globais de tenant e verificações explícitas são controles do backend, mas o filtro também deixa passar quando `TenantId` do contexto é nulo; isso requer atenção em jobs e chamadas fora de HTTP. Grants/roles reais não foram inspecionados. O achado completo está em `docs/security/rentals-rls-static-finding.md`. Este fato **não** prova exposição pública. **Não habilitar RLS** neste slice.
 
 ## 2.7. Catálogo de famílias de Asset — FEITO (código)
 
@@ -191,10 +194,21 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - Ver [`docs/code-hygiene-findings.md`](./docs/code-hygiene-findings.md) (sweep 2026-08-04).
 - `REVIEW_DEV_HOSTING_ENVIRONMENT`: Railway `development` + `ASPNETCORE_ENVIRONMENT=Production` (RBAC Client diagnostic hosted service does not run; notification gate treats the host as non-Development).
 
+## 2.9. PMOC / OS — FEITO (PROD)
+
+Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There is no active PMOC implementation.
+
+- [x] Phase 1 — library, tenant plans, checklist, `AutoGenerateEnabled`, manual Gerar OS, snapshots, Related OS, duplicate protection, `PLAN_IN_USE`. Spec [`docs/plans/active/2026-09-18-pmoc-os-phase1.md`](./docs/plans/active/2026-09-18-pmoc-os-phase1.md).
+- [x] Phase 2 — first Coverage read model. Calendar scheduling in that spec is historical and was superseded by Phase 3. Spec [`docs/plans/active/2026-09-19-pmoc-os-phase2.md`](./docs/plans/active/2026-09-19-pmoc-os-phase2.md).
+- [x] Phase 3 — `IntervalDays` + `FirstDueDate`, Coverage V3, per-asset generator. Migration `20260920002154_ApplyPmocOsPhase3FinalScheduling` applied on PROD (`PENDING_COUNT=0`). API `main` `c837988abfb55255c1c867ca62d9618ec3c6dd18` (PR #90). WEB `main` `254bd333ef2b2c3b4f798ef6327091f85890fd36` (PR #85). Spec [`docs/plans/active/2026-09-19-pmoc-os-phase3.md`](./docs/plans/active/2026-09-19-pmoc-os-phase3.md). Closeout [`docs/sessions/2026-09-24-pmoc-os-closeout.md`](./docs/sessions/2026-09-24-pmoc-os-closeout.md).
+
 ## Histórico
 
 | Data | Mudança |
 |---|---|
+| 2026-10-08 | **Pronto para revisão local (API + WEB):** teacher date-only lessons FICC — permissão dedicada sem fallback, allowlist server-side de seis quadras, conflitos/reservas verificados sob lock transacional, migration apenas de catálogo, UI RHF/Zod. API 806 pass/1 skip; WEB 454 pass/build OK. Revisão final do Grok pendente; sem migration aplicada, role criada/atribuída, deploy ou commit. Spec `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`. |
+| 2026-10-08 | **Em andamento (local):** teacher date-only lessons — API em revisão na branch `feat/teacher-lesson-date-only`; Grok apontou correções de autorização, migration Designer e testes de concorrência. WEB pendente. Nenhuma migration aplicada ou role atribuída. RLS finding documentado sem enablement. Spec `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`. |
+| 2026-09-24 | **Fechado (PMOC/OS):** Phases 1–3 COMPLETE / RELEASED PROD. Phase 4 NOT PLANNED. No active implementation. Current model is IntervalDays + FirstDueDate and Coverage V3. Earlier “Em curso” Slice 3 row is historical. |
 | 2026-09-21 | **Em curso (API, Phase 3 Slice 3):** asset-aware `PmocEngineJob` — per-asset interval due, open-OS skip, `ScheduledDate = effectiveNextDueDate`, advisory lock shared with PMOC completion. Cron stays `0 6 * * *` Brazil. No new migration. Shared DEV freeze remains. H6/H7 = NO. Branch `feat/pmoc-os-phase3-interval-generator`. |
 | 2026-09-21 | **Executado (API, Phase 3 Slice 2):** Coverage V3 `GET /api/maintenance-plans/{id}/coverage`. Squash-merged to `develop` (`eea9e41`, PR #88). |
 | 2026-09-19 | **Executado (API, Phase 3 Slice 1):** final PMOC scheduling foundation — `IntervalDays` + `FirstDueDate`, `PmocDueCalculator`, fail-closed `PmocEngineJob`, destructive forward migration file **not applied**. Dual Calendar/Interval VOID. H6/H7 = NO. Spec `docs/plans/active/2026-09-19-pmoc-os-phase3.md`. Squash-merged to `develop` (`0ab4a4a`, PR #87). |

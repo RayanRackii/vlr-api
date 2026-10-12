@@ -1,8 +1,15 @@
 # 2026-09-18-pmoc-os-phase1
 
-Status: **approved** (product Human Gates H1–H5 locked)
+Status: **RELEASED_PROD** (closed 2026-09-24). Historical handoff. Not an active implementation.
 
-Implementation must not start until the parent receives an explicit implementation gate. This file is the canonical Phase 1 handoff for implementers.
+```
+ROLVIX_PMOC_OS_PHASE1 = RELEASED_PROD
+PMOC_OS_ACTIVE_IMPLEMENTATION = NO
+```
+
+Delivered scope: global PMOC library, tenant plan creation and cloning, editable checklist, `AutoGenerateEnabled`, manual Gerar OS, plan-linked WorkOrders, `SourcePlanName` and task snapshots, Related OS, duplicate protection, and `PLAN_IN_USE` protection.
+
+Frequency and calendar wording below is historical Phase 1 behavior. Current scheduling is Phase 3 (`IntervalDays` + `FirstDueDate`). Do not implement from this file.
 
 Baseline (planning SHA, `develop`):
 
