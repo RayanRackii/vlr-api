@@ -213,6 +213,16 @@ internal sealed class StubCustomerAuthService : ICustomerAuthService
         CancellationToken cancellationToken) =>
         Fail<AuthResponseDto>();
 
+    public Task RequestPasswordResetAsync(
+        PasswordResetRequestDto request,
+        CancellationToken cancellationToken) =>
+        ToThrow is null ? Task.CompletedTask : Fail();
+
+    public Task ConfirmPasswordResetAsync(
+        PasswordResetConfirmRequestDto request,
+        CancellationToken cancellationToken) =>
+        ToThrow is null ? Task.CompletedTask : Fail();
+
     public Task<TenantBrandingResponseDto> GetBrandingAsync(
         string subdomain,
         CancellationToken cancellationToken) =>

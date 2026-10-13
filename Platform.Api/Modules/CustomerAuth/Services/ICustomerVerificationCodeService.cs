@@ -15,4 +15,16 @@ public interface ICustomerVerificationCodeService
         Customer customer,
         string code,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Invalidates prior unused password-reset codes and returns the plaintext digits once.
+    /// </summary>
+    Task<string> IssuePasswordResetAsync(
+        Customer customer,
+        CancellationToken cancellationToken);
+
+    Task VerifyPasswordResetCodeAsync(
+        Customer customer,
+        string code,
+        CancellationToken cancellationToken);
 }

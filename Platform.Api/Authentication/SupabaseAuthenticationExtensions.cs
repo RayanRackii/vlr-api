@@ -64,12 +64,22 @@ public static class SupabaseAuthenticationExtensions
                 options.MapInboundClaims = false;
                 options.Audience = CustomerJwtIssuer.Audience;
                 options.TokenValidationParameters = CreateCustomerJwtTokenValidationParameters(jwtSecret);
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = context =>
+                    {
+                        var validator = context.HttpContext.RequestServices
+                            .GetRequiredService<CustomerJwtSessionValidator>();
+                        return validator.ValidateAsync(context);
+                    },
+                };
             });
 
         services.AddAuthorization(options => options.AddRolvixPolicies());
 
         services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
         services.AddSingleton<ICustomerJwtIssuer, CustomerJwtIssuer>();
+        services.AddScoped<CustomerJwtSessionValidator>();
 
         return services;
     }

@@ -9,7 +9,19 @@ public enum PhoneVerificationSendDecision
 
 public interface IPhoneVerificationSendGate
 {
-    PhoneVerificationSendDecision Decide(Guid tenantId, string normalizedEmail, string? clientIp);
+    public const string VerificationScope = "phone-verify";
 
-    void RecordSuccess(Guid tenantId, string normalizedEmail, string? clientIp);
+    public const string PasswordResetScope = "password-reset";
+
+    PhoneVerificationSendDecision Decide(
+        Guid tenantId,
+        string normalizedEmail,
+        string? clientIp,
+        string scope = VerificationScope);
+
+    void RecordSuccess(
+        Guid tenantId,
+        string normalizedEmail,
+        string? clientIp,
+        string scope = VerificationScope);
 }

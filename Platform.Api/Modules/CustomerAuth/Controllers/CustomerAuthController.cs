@@ -233,4 +233,52 @@ public sealed class CustomerAuthController(
             return BadRequest(new { error = ex.Message });
         }
     }
+
+    [HttpPost("password-reset/request")]
+    public async Task<ActionResult<PasswordResetRequestResponseDto>> RequestPasswordReset(
+        [FromBody] PasswordResetRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            await customerAuthService.RequestPasswordResetAsync(request, cancellationToken);
+            return Ok(new PasswordResetRequestResponseDto(CustomerAuthService.PasswordResetGenericMessage));
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("password-reset/confirm")]
+    public async Task<ActionResult<PasswordResetConfirmResponseDto>> ConfirmPasswordReset(
+        [FromBody] PasswordResetConfirmRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            await customerAuthService.ConfirmPasswordResetAsync(request, cancellationToken);
+            return Ok(new PasswordResetConfirmResponseDto(CustomerAuthService.PasswordResetConfirmedMessage));
+        }
+        catch (PhoneVerificationInvalidException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
 }

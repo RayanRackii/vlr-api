@@ -59,6 +59,13 @@ public sealed class CustomerJwtIssuer(IConfiguration configuration) : ICustomerJ
             claims.Add(new Claim("phone", customer.Phone));
         }
 
+        if (customer.PasswordChangedAt is DateTimeOffset passwordChangedAt)
+        {
+            claims.Add(new Claim(
+                CustomerPasswordStamp.ClaimType,
+                CustomerPasswordStamp.Format(passwordChangedAt)));
+        }
+
         var token = new JwtSecurityToken(
             issuer: Issuer,
             audience: Audience,

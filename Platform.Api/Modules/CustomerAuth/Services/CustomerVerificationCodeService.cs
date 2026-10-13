@@ -17,8 +17,42 @@ public sealed class CustomerVerificationCodeService(
 
     public static readonly TimeSpan TimeToLive = TimeSpan.FromMinutes(10);
 
-    public async Task<string> IssueEmailVerificationAsync(
+    public static readonly TimeSpan PasswordResetTimeToLive = TimeSpan.FromMinutes(15);
+
+    public Task<string> IssueEmailVerificationAsync(
         Customer customer,
+        CancellationToken cancellationToken) =>
+        IssueAsync(
+            customer,
+            OtpPurposes.EmailVerification,
+            TimeToLive,
+            cancellationToken);
+
+    public Task VerifyEmailCodeAsync(
+        Customer customer,
+        string code,
+        CancellationToken cancellationToken) =>
+        VerifyAsync(customer, OtpPurposes.EmailVerification, code, cancellationToken);
+
+    public Task<string> IssuePasswordResetAsync(
+        Customer customer,
+        CancellationToken cancellationToken) =>
+        IssueAsync(
+            customer,
+            OtpPurposes.PasswordReset,
+            PasswordResetTimeToLive,
+            cancellationToken);
+
+    public Task VerifyPasswordResetCodeAsync(
+        Customer customer,
+        string code,
+        CancellationToken cancellationToken) =>
+        VerifyAsync(customer, OtpPurposes.PasswordReset, code, cancellationToken);
+
+    private async Task<string> IssueAsync(
+        Customer customer,
+        string purpose,
+        TimeSpan timeToLive,
         CancellationToken cancellationToken)
     {
         var secret = RequireJwtSecret();
@@ -27,7 +61,7 @@ public sealed class CustomerVerificationCodeService(
         var prior = await dbContext.OtpCodes
             .Where(o =>
                 o.CustomerId == customer.Id
-                && o.Purpose == OtpPurposes.EmailVerification
+                && o.Purpose == purpose
                 && !o.IsUsed
                 && o.ReplacedAt == null)
             .ToListAsync(cancellationToken);
@@ -44,11 +78,10 @@ public sealed class CustomerVerificationCodeService(
             TenantId = customer.TenantId,
             CustomerId = customer.Id,
             Code = null,
-            Purpose = OtpPurposes.EmailVerification,
-            CodeHash = Convert.ToBase64String(
-                ComputeHash(secret, customer.Id, OtpPurposes.EmailVerification, code)),
+            Purpose = purpose,
+            CodeHash = Convert.ToBase64String(ComputeHash(secret, customer.Id, purpose, code)),
             Attempts = 0,
-            ExpiresAt = now.Add(TimeToLive),
+            ExpiresAt = now.Add(timeToLive),
             IsUsed = false,
         };
 
@@ -57,8 +90,9 @@ public sealed class CustomerVerificationCodeService(
         return code;
     }
 
-    public async Task VerifyEmailCodeAsync(
+    private async Task VerifyAsync(
         Customer customer,
+        string purpose,
         string code,
         CancellationToken cancellationToken)
     {
@@ -68,7 +102,7 @@ public sealed class CustomerVerificationCodeService(
         var otp = await dbContext.OtpCodes
             .Where(o =>
                 o.CustomerId == customer.Id
-                && o.Purpose == OtpPurposes.EmailVerification
+                && o.Purpose == purpose
                 && !o.IsUsed
                 && o.ReplacedAt == null)
             .OrderByDescending(o => o.CreatedAt)
@@ -90,7 +124,7 @@ public sealed class CustomerVerificationCodeService(
             throw InvalidCode();
         }
 
-        var actual = ComputeHash(secret, customer.Id, OtpPurposes.EmailVerification, code);
+        var actual = ComputeHash(secret, customer.Id, purpose, code);
         if (expected.Length != actual.Length
             || !CryptographicOperations.FixedTimeEquals(expected, actual))
         {

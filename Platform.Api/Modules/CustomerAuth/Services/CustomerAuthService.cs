@@ -31,6 +31,9 @@ public sealed class CustomerAuthService(
     private const int MinimumPasswordLength = 8;
     private const string EmailNotVerifiedMessage =
         "Email is not verified. Complete email verification first.";
+    public const string PasswordResetGenericMessage =
+        "Se existir uma conta com este e-mail, enviamos um código para redefinir a senha.";
+    public const string PasswordResetConfirmedMessage = "Senha redefinida.";
 
     public async Task RequestOtpAsync(
         RequestOtpDto request,
@@ -305,6 +308,94 @@ public sealed class CustomerAuthService(
         return BuildAuthResponse(customer);
     }
 
+    public async Task RequestPasswordResetAsync(
+        PasswordResetRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+        var email = NormalizeEmail(request.Email);
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(
+            tenantId,
+            email,
+            clientIp,
+            IPhoneVerificationSendGate.PasswordResetScope);
+
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            throw new PhoneVerificationRateLimitedException(
+                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
+        }
+
+        if (decision == PhoneVerificationSendDecision.Cooldown)
+        {
+            return;
+        }
+
+        try
+        {
+            var customer = await dbContext.Customers
+                .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
+            if (customer is null)
+            {
+                logger.LogInformation("Password reset requested for an unknown customer email.");
+                return;
+            }
+
+            var code = await verificationCodes.IssuePasswordResetAsync(customer, cancellationToken);
+            await SendPasswordResetEmailAsync(customer, email, code, cancellationToken);
+            sendGate.RecordSuccess(
+                tenantId,
+                email,
+                clientIp,
+                IPhoneVerificationSendGate.PasswordResetScope);
+            logger.LogInformation(
+                "Password reset code issued for customer {CustomerId}.",
+                customer.Id);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Password reset request failed.");
+        }
+    }
+
+    public async Task ConfirmPasswordResetAsync(
+        PasswordResetConfirmRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var email = NormalizeEmail(request.Email);
+        var password = request.NewPassword ?? string.Empty;
+        if (password.Length < MinimumPasswordLength)
+        {
+            throw new ArgumentException(
+                $"Password must be at least {MinimumPasswordLength} characters.");
+        }
+
+        var code = RequireSixDigitCode(request.Code);
+        var customer = await dbContext.Customers
+            .FirstOrDefaultAsync(c => c.Email == email, cancellationToken)
+            ?? throw new PhoneVerificationInvalidException(
+                TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
+
+        await verificationCodes.VerifyPasswordResetCodeAsync(customer, code, cancellationToken);
+
+        customer.ChangePassword(
+            PasswordHasher.HashPassword(customer, password),
+            DateTimeOffset.UtcNow);
+        if (customer.EmailVerifiedAt is null)
+        {
+            customer.MarkEmailVerified(DateTimeOffset.UtcNow);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<TenantBrandingResponseDto> GetBrandingAsync(
         string subdomain,
         CancellationToken cancellationToken)
@@ -577,6 +668,23 @@ public sealed class CustomerAuthService(
         return emailProvider.SendAsync(
             email,
             RolvixEmailLayout.EmailVerificationSubject,
+            html,
+            cancellationToken);
+    }
+
+    private Task SendPasswordResetEmailAsync(
+        Customer customer,
+        string email,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        var html = RolvixEmailLayout.Wrap(
+            customer.Name,
+            RolvixEmailLayout.PasswordResetBody(code));
+
+        return emailProvider.SendAsync(
+            email,
+            RolvixEmailLayout.PasswordResetSubject,
             html,
             cancellationToken);
     }

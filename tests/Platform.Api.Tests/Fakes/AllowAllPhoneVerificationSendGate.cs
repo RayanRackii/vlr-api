@@ -7,10 +7,15 @@ public sealed class AllowAllPhoneVerificationSendGate : IPhoneVerificationSendGa
     public PhoneVerificationSendDecision Decide(
         Guid tenantId,
         string normalizedEmail,
-        string? clientIp) =>
+        string? clientIp,
+        string scope = IPhoneVerificationSendGate.VerificationScope) =>
         PhoneVerificationSendDecision.Send;
 
-    public void RecordSuccess(Guid tenantId, string normalizedEmail, string? clientIp)
+    public void RecordSuccess(
+        Guid tenantId,
+        string normalizedEmail,
+        string? clientIp,
+        string scope = IPhoneVerificationSendGate.VerificationScope)
     {
     }
 }
