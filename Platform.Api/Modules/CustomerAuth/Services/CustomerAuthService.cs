@@ -24,6 +24,7 @@ public sealed class CustomerAuthService(
     IPhoneVerificationSendGate sendGate,
     ICustomerVerificationCodeService verificationCodes,
     IEmailProvider emailProvider,
+    IPasswordResetEmailQueue passwordResetEmails,
     ILogger<CustomerAuthService> logger,
     IHttpContextAccessor? httpContextAccessor = null) : ICustomerAuthService
 {
@@ -31,6 +32,9 @@ public sealed class CustomerAuthService(
     private const int MinimumPasswordLength = 8;
     private const string EmailNotVerifiedMessage =
         "Email is not verified. Complete email verification first.";
+    public const string PasswordResetGenericMessage =
+        "Se existir uma conta com este e-mail, enviamos um código para redefinir a senha.";
+    public const string PasswordResetConfirmedMessage = "Senha redefinida.";
 
     public async Task RequestOtpAsync(
         RequestOtpDto request,
@@ -221,10 +225,11 @@ public sealed class CustomerAuthService(
             ?? throw new PhoneVerificationInvalidException(
                 TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
 
-        await verificationCodes.VerifyEmailCodeAsync(customer, code, cancellationToken);
-
-        customer.MarkEmailVerified(DateTimeOffset.UtcNow);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await verificationCodes.VerifyEmailCodeAsync(
+            customer,
+            code,
+            verifiedAt => customer.MarkEmailVerified(verifiedAt),
+            cancellationToken);
 
         return BuildAuthResponse(customer);
     }
@@ -303,6 +308,107 @@ public sealed class CustomerAuthService(
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return BuildAuthResponse(customer);
+    }
+
+    public async Task RequestPasswordResetAsync(
+        PasswordResetRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+        var email = NormalizeEmail(request.Email);
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(
+            tenantId,
+            email,
+            clientIp,
+            IPhoneVerificationSendGate.PasswordResetScope);
+
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            throw new PhoneVerificationRateLimitedException(
+                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
+        }
+
+        if (decision == PhoneVerificationSendDecision.Cooldown)
+        {
+            return;
+        }
+
+        try
+        {
+            var customer = await dbContext.Customers
+                .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
+            if (customer is null)
+            {
+                logger.LogInformation("Password reset requested for an unknown customer email.");
+                return;
+            }
+
+            var code = await verificationCodes.IssuePasswordResetAsync(customer, cancellationToken);
+            passwordResetEmails.Enqueue(new PasswordResetEmailWork(email, customer.Name, code));
+            sendGate.RecordSuccess(
+                tenantId,
+                email,
+                clientIp,
+                IPhoneVerificationSendGate.PasswordResetScope);
+            logger.LogInformation(
+                "Password reset code issued for customer {CustomerId}.",
+                customer.Id);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            PasswordResetEmailDispatcher.LogFailure(logger, ex);
+        }
+    }
+
+    public async Task ConfirmPasswordResetAsync(
+        PasswordResetConfirmRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+        var email = NormalizeEmail(request.Email);
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(
+            tenantId,
+            email,
+            clientIp,
+            IPhoneVerificationSendGate.PasswordResetConfirmScope);
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            throw new PhoneVerificationRateLimitedException(
+                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
+        }
+
+        var password = request.NewPassword ?? string.Empty;
+        if (password.Length < MinimumPasswordLength)
+        {
+            throw new ArgumentException(
+                $"Password must be at least {MinimumPasswordLength} characters.");
+        }
+
+        var code = RequireSixDigitCode(request.Code);
+        var customer = await dbContext.Customers
+            .FirstOrDefaultAsync(c => c.Email == email, cancellationToken)
+            ?? throw new PhoneVerificationInvalidException(
+                TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
+
+        var passwordHash = PasswordHasher.HashPassword(customer, password);
+        await verificationCodes.VerifyPasswordResetCodeAsync(
+            customer,
+            code,
+            changedAt =>
+            {
+                customer.ChangePassword(passwordHash, changedAt);
+                if (customer.EmailVerifiedAt is null)
+                {
+                    customer.MarkEmailVerified(changedAt);
+                }
+            },
+            cancellationToken);
     }
 
     public async Task<TenantBrandingResponseDto> GetBrandingAsync(

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Controllers;
+using Platform.Api.Notifications;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.CustomerAuth.Services;
@@ -87,9 +88,15 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
         FakeEmailProvider email,
         IPhoneVerificationSendGate sendGate,
         TimeProvider timeProvider,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        OtpHmacEvaluationCounter? hmacEvaluations = null,
+        IPasswordResetEmailQueue? passwordResetEmails = null)
     {
-        var codes = new CustomerVerificationCodeService(db, CreateConfig(), timeProvider);
+        var codes = new CustomerVerificationCodeService(
+            db,
+            CreateConfig(),
+            timeProvider,
+            hmacEvaluations);
         return new CustomerAuthService(
             db,
             tenantProvider,
@@ -100,6 +107,7 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
             sendGate,
             codes,
             email,
+            passwordResetEmails ?? new InlinePasswordResetEmailQueue(email),
             NullLogger<CustomerAuthService>.Instance,
             httpContextAccessor);
     }
@@ -133,6 +141,20 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
         };
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
+}
+
+internal sealed class InlinePasswordResetEmailQueue(IEmailProvider email) : IPasswordResetEmailQueue
+{
+    public void Enqueue(PasswordResetEmailWork work)
+    {
+        var html = RolvixEmailLayout.Wrap(
+            work.RecipientName,
+            RolvixEmailLayout.PasswordResetBody(work.Code));
+        email.SendAsync(
+            work.Recipient,
+            RolvixEmailLayout.PasswordResetSubject,
+            html).GetAwaiter().GetResult();
+    }
 }
 
 internal sealed class FakeCustomerJwtIssuer : ICustomerJwtIssuer
@@ -212,6 +234,16 @@ internal sealed class StubCustomerAuthService : ICustomerAuthService
         CustomerLoginRequestDto request,
         CancellationToken cancellationToken) =>
         Fail<AuthResponseDto>();
+
+    public Task RequestPasswordResetAsync(
+        PasswordResetRequestDto request,
+        CancellationToken cancellationToken) =>
+        ToThrow is null ? Task.CompletedTask : Fail();
+
+    public Task ConfirmPasswordResetAsync(
+        PasswordResetConfirmRequestDto request,
+        CancellationToken cancellationToken) =>
+        ToThrow is null ? Task.CompletedTask : Fail();
 
     public Task<TenantBrandingResponseDto> GetBrandingAsync(
         string subdomain,

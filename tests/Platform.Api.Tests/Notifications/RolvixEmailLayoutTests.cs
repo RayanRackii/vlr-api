@@ -71,4 +71,18 @@ public sealed class RolvixEmailLayoutTests
         Assert.DoesNotContain("<p", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("847291", html, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Password_reset_body_has_no_paragraph_tags_and_states_15_minutes()
+    {
+        var html = RolvixEmailLayout.Wrap(
+            "Ana",
+            RolvixEmailLayout.PasswordResetBody("847291"));
+
+        Assert.Equal("Redefinição de senha Rolvix", RolvixEmailLayout.PasswordResetSubject);
+        Assert.DoesNotContain("<p", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("847291", html, StringComparison.Ordinal);
+        Assert.Contains("Este código expira em 15 minutos.", html, StringComparison.Ordinal);
+        Assert.Contains("Sua senha permanece a mesma.", html, StringComparison.Ordinal);
+    }
 }
