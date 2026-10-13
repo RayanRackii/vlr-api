@@ -268,6 +268,10 @@ public sealed class CustomerAuthController(
             await customerAuthService.ConfirmPasswordResetAsync(request, cancellationToken);
             return Ok(new PasswordResetConfirmResponseDto(CustomerAuthService.PasswordResetConfirmedMessage));
         }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
         catch (PhoneVerificationInvalidException ex)
         {
             return Unauthorized(new { error = ex.Message });

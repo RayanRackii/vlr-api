@@ -13,6 +13,8 @@ public interface IPhoneVerificationSendGate
 
     public const string PasswordResetScope = "password-reset";
 
+    public const string PasswordResetConfirmScope = "password-reset-confirm";
+
     PhoneVerificationSendDecision Decide(
         Guid tenantId,
         string normalizedEmail,

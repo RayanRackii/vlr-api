@@ -248,6 +248,7 @@ public sealed class PasswordResetTests
         var customer = await harness.Db.Customers.SingleAsync(c => c.Email == "pending@club.test");
         Assert.NotNull(customer.EmailVerifiedAt);
         Assert.NotNull(customer.PasswordChangedAt);
+        Assert.Equal(customer.PasswordChangedAt, customer.EmailVerifiedAt);
         Assert.Equal(0, customer.PasswordChangedAt!.Value.Ticks % TimeSpan.TicksPerMillisecond);
 
         var auth = await harness.Auth.LoginAsync(
@@ -372,6 +373,45 @@ public sealed class PasswordResetTests
         var status = Assert.IsType<ObjectResult>(result.Result);
         Assert.Equal(StatusCodes.Status429TooManyRequests, status.StatusCode);
         Assert.Equal(0, limited.Email.SendCount);
+    }
+
+    [Fact]
+    public async Task Reset_email_is_queued_and_the_provider_is_not_called_inline()
+    {
+        var databaseName = $"reset-queue-{Guid.NewGuid():N}";
+        var tenant = new Tenant("Auth Club", "66666666000191", subdomain: "authclub");
+        var tenantProvider = new FakeTenantProvider { TenantId = tenant.Id };
+        await using var db = InMemoryAppDb.Create(tenantProvider, databaseName);
+        db.Tenants.Add(tenant);
+        await db.SaveChangesAsync();
+
+        var email = new FakeEmailProvider();
+        var queue = new RecordingPasswordResetEmailQueue();
+        var auth = CustomerAuthHarness.CreateService(
+            db,
+            tenantProvider,
+            new FakePhoneVerificationClient(),
+            email,
+            new AllowAllPhoneVerificationSendGate(),
+            TimeProvider.System,
+            passwordResetEmails: queue);
+        await auth.RegisterAsync(
+            CustomerAuthHarness.NewRegister(email: "queued@club.test"),
+            CancellationToken.None);
+        email.Sent.Clear();
+        email.ThrowHttpRequestException = true;
+
+        await auth.RequestPasswordResetAsync(
+            new PasswordResetRequestDto { Email = "queued@club.test" },
+            CancellationToken.None);
+        await auth.RequestPasswordResetAsync(
+            new PasswordResetRequestDto { Email = "missing@club.test" },
+            CancellationToken.None);
+
+        Assert.Equal(0, email.SendCount);
+        var queued = Assert.Single(queue.Work);
+        Assert.Equal("queued@club.test", queued.Recipient);
+        Assert.Contains("Este código expira em 15 minutos.", RolvixEmailLayout.PasswordResetBody(queued.Code), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -601,6 +641,13 @@ public sealed class PasswordResetTests
         var response = await client.GetAsync("/api/test/customer-session");
         return response.StatusCode;
     }
+}
+
+internal sealed class RecordingPasswordResetEmailQueue : IPasswordResetEmailQueue
+{
+    public List<PasswordResetEmailWork> Work { get; } = [];
+
+    public void Enqueue(PasswordResetEmailWork work) => Work.Add(work);
 }
 
 public sealed class SessionQueryCounter

@@ -11,9 +11,13 @@ public interface ICustomerVerificationCodeService
         Customer customer,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Checks the email code and, on success, runs <paramref name="onAccepted"/> in the same transaction.
+    /// </summary>
     Task VerifyEmailCodeAsync(
         Customer customer,
         string code,
+        Action<DateTimeOffset> onAccepted,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -23,8 +27,12 @@ public interface ICustomerVerificationCodeService
         Customer customer,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Checks the reset code and, on success, runs <paramref name="onAccepted"/> in the same transaction.
+    /// </summary>
     Task VerifyPasswordResetCodeAsync(
         Customer customer,
         string code,
+        Action<DateTimeOffset> onAccepted,
         CancellationToken cancellationToken);
 }

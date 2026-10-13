@@ -1,6 +1,7 @@
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.CustomerAuth.Services;
 using Platform.Api.Services.Brazil;
+using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.CustomerAuth;
 
@@ -17,7 +18,15 @@ public static class CustomerAuthModuleExtensions
         });
         services.AddMemoryCache();
         services.AddSingleton<IPhoneVerificationSendGate, PhoneVerificationSendGate>();
-        services.AddScoped<ICustomerVerificationCodeService, CustomerVerificationCodeService>();
+        services.AddScoped<ICustomerVerificationCodeService>(sp =>
+            new CustomerVerificationCodeService(
+                sp.GetRequiredService<AppDbContext>(),
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<PasswordResetEmailQueue>();
+        services.AddSingleton<IPasswordResetEmailQueue>(sp =>
+            sp.GetRequiredService<PasswordResetEmailQueue>());
+        services.AddHostedService<PasswordResetEmailDispatcher>();
         services.AddScoped<ICustomerAuthService, CustomerAuthService>();
         services.AddHttpClient<IViaCepClient, ViaCepClient>(client =>
         {

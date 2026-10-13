@@ -24,6 +24,7 @@ public sealed class CustomerAuthService(
     IPhoneVerificationSendGate sendGate,
     ICustomerVerificationCodeService verificationCodes,
     IEmailProvider emailProvider,
+    IPasswordResetEmailQueue passwordResetEmails,
     ILogger<CustomerAuthService> logger,
     IHttpContextAccessor? httpContextAccessor = null) : ICustomerAuthService
 {
@@ -224,10 +225,11 @@ public sealed class CustomerAuthService(
             ?? throw new PhoneVerificationInvalidException(
                 TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
 
-        await verificationCodes.VerifyEmailCodeAsync(customer, code, cancellationToken);
-
-        customer.MarkEmailVerified(DateTimeOffset.UtcNow);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await verificationCodes.VerifyEmailCodeAsync(
+            customer,
+            code,
+            verifiedAt => customer.MarkEmailVerified(verifiedAt),
+            cancellationToken);
 
         return BuildAuthResponse(customer);
     }
@@ -343,7 +345,7 @@ public sealed class CustomerAuthService(
             }
 
             var code = await verificationCodes.IssuePasswordResetAsync(customer, cancellationToken);
-            await SendPasswordResetEmailAsync(customer, email, code, cancellationToken);
+            passwordResetEmails.Enqueue(new PasswordResetEmailWork(email, customer.Name, code));
             sendGate.RecordSuccess(
                 tenantId,
                 email,
@@ -359,7 +361,7 @@ public sealed class CustomerAuthService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Password reset request failed.");
+            PasswordResetEmailDispatcher.LogFailure(logger, ex);
         }
     }
 
@@ -367,9 +369,20 @@ public sealed class CustomerAuthService(
         PasswordResetConfirmRequestDto request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-
+        var tenantId = EnsureTenantContext();
         var email = NormalizeEmail(request.Email);
+        var clientIp = GetClientIp();
+        var decision = sendGate.Decide(
+            tenantId,
+            email,
+            clientIp,
+            IPhoneVerificationSendGate.PasswordResetConfirmScope);
+        if (decision == PhoneVerificationSendDecision.Limited)
+        {
+            throw new PhoneVerificationRateLimitedException(
+                TwilioVerifyPhoneVerificationClient.RateLimitedMessage);
+        }
+
         var password = request.NewPassword ?? string.Empty;
         if (password.Length < MinimumPasswordLength)
         {
@@ -383,17 +396,19 @@ public sealed class CustomerAuthService(
             ?? throw new PhoneVerificationInvalidException(
                 TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
 
-        await verificationCodes.VerifyPasswordResetCodeAsync(customer, code, cancellationToken);
-
-        customer.ChangePassword(
-            PasswordHasher.HashPassword(customer, password),
-            DateTimeOffset.UtcNow);
-        if (customer.EmailVerifiedAt is null)
-        {
-            customer.MarkEmailVerified(DateTimeOffset.UtcNow);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var passwordHash = PasswordHasher.HashPassword(customer, password);
+        await verificationCodes.VerifyPasswordResetCodeAsync(
+            customer,
+            code,
+            changedAt =>
+            {
+                customer.ChangePassword(passwordHash, changedAt);
+                if (customer.EmailVerifiedAt is null)
+                {
+                    customer.MarkEmailVerified(changedAt);
+                }
+            },
+            cancellationToken);
     }
 
     public async Task<TenantBrandingResponseDto> GetBrandingAsync(
@@ -668,23 +683,6 @@ public sealed class CustomerAuthService(
         return emailProvider.SendAsync(
             email,
             RolvixEmailLayout.EmailVerificationSubject,
-            html,
-            cancellationToken);
-    }
-
-    private Task SendPasswordResetEmailAsync(
-        Customer customer,
-        string email,
-        string code,
-        CancellationToken cancellationToken)
-    {
-        var html = RolvixEmailLayout.Wrap(
-            customer.Name,
-            RolvixEmailLayout.PasswordResetBody(code));
-
-        return emailProvider.SendAsync(
-            email,
-            RolvixEmailLayout.PasswordResetSubject,
             html,
             cancellationToken);
     }

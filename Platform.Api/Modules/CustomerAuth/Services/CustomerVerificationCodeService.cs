@@ -11,7 +11,8 @@ namespace Platform.Api.Modules.CustomerAuth.Services;
 public sealed class CustomerVerificationCodeService(
     AppDbContext dbContext,
     IConfiguration configuration,
-    TimeProvider timeProvider) : ICustomerVerificationCodeService
+    TimeProvider timeProvider,
+    OtpHmacEvaluationCounter? hmacEvaluations = null) : ICustomerVerificationCodeService
 {
     public const int MaxAttempts = 5;
 
@@ -31,8 +32,14 @@ public sealed class CustomerVerificationCodeService(
     public Task VerifyEmailCodeAsync(
         Customer customer,
         string code,
+        Action<DateTimeOffset> onAccepted,
         CancellationToken cancellationToken) =>
-        VerifyAsync(customer, OtpPurposes.EmailVerification, code, cancellationToken);
+        VerifyAsync(
+            customer,
+            OtpPurposes.EmailVerification,
+            code,
+            onAccepted,
+            cancellationToken);
 
     public Task<string> IssuePasswordResetAsync(
         Customer customer,
@@ -46,8 +53,14 @@ public sealed class CustomerVerificationCodeService(
     public Task VerifyPasswordResetCodeAsync(
         Customer customer,
         string code,
+        Action<DateTimeOffset> onAccepted,
         CancellationToken cancellationToken) =>
-        VerifyAsync(customer, OtpPurposes.PasswordReset, code, cancellationToken);
+        VerifyAsync(
+            customer,
+            OtpPurposes.PasswordReset,
+            code,
+            onAccepted,
+            cancellationToken);
 
     private async Task<string> IssueAsync(
         Customer customer,
@@ -94,11 +107,120 @@ public sealed class CustomerVerificationCodeService(
         Customer customer,
         string purpose,
         string code,
+        Action<DateTimeOffset> onAccepted,
         CancellationToken cancellationToken)
     {
         var secret = RequireJwtSecret();
         var now = timeProvider.GetUtcNow();
+        var stamp = DateTimeOffset.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds());
 
+        if (dbContext.Database.IsRelational())
+        {
+            await VerifyRelationalAsync(
+                customer,
+                purpose,
+                code,
+                secret,
+                now,
+                stamp,
+                onAccepted,
+                cancellationToken);
+            return;
+        }
+
+        await VerifyTrackedAsync(
+            customer,
+            purpose,
+            code,
+            secret,
+            now,
+            stamp,
+            onAccepted,
+            cancellationToken);
+    }
+
+    private async Task VerifyRelationalAsync(
+        Customer customer,
+        string purpose,
+        string code,
+        string secret,
+        DateTimeOffset now,
+        DateTimeOffset stamp,
+        Action<DateTimeOffset> onAccepted,
+        CancellationToken cancellationToken)
+    {
+        var otp = await dbContext.OtpCodes
+            .AsNoTracking()
+            .Where(o =>
+                o.CustomerId == customer.Id
+                && o.Purpose == purpose
+                && !o.IsUsed
+                && o.ReplacedAt == null)
+            .OrderByDescending(o => o.CreatedAt)
+            .ThenByDescending(o => o.Id)
+            .Select(o => new { o.Id, o.CodeHash })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (otp is null)
+        {
+            throw InvalidCode();
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var incremented = await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE core.otp_codes
+            SET attempts = attempts + 1
+            WHERE id = {otp.Id}
+              AND attempts < {MaxAttempts}
+              AND NOT is_used
+              AND replaced_at IS NULL
+              AND expires_at > {now}
+            """,
+            cancellationToken);
+
+        if (incremented == 0)
+        {
+            throw InvalidCode();
+        }
+
+        hmacEvaluations?.Increment();
+        if (!HashMatches(secret, customer.Id, purpose, code, otp.CodeHash))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            throw InvalidCode();
+        }
+
+        var consumed = await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE core.otp_codes
+            SET is_used = true
+            WHERE id = {otp.Id}
+              AND NOT is_used
+            """,
+            cancellationToken);
+
+        if (consumed != 1)
+        {
+            throw InvalidCode();
+        }
+
+        DetachOtpCodes();
+        onAccepted(stamp);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task VerifyTrackedAsync(
+        Customer customer,
+        string purpose,
+        string code,
+        string secret,
+        DateTimeOffset now,
+        DateTimeOffset stamp,
+        Action<DateTimeOffset> onAccepted,
+        CancellationToken cancellationToken)
+    {
         var otp = await dbContext.OtpCodes
             .Where(o =>
                 o.CustomerId == customer.Id
@@ -114,33 +236,53 @@ public sealed class CustomerVerificationCodeService(
             throw InvalidCode();
         }
 
-        byte[] expected;
-        try
+        otp.Attempts++;
+        otp.Touch();
+        hmacEvaluations?.Increment();
+        if (!HashMatches(secret, customer.Id, purpose, code, otp.CodeHash))
         {
-            expected = Convert.FromBase64String(otp.CodeHash ?? string.Empty);
-        }
-        catch (FormatException)
-        {
-            throw InvalidCode();
-        }
-
-        var actual = ComputeHash(secret, customer.Id, purpose, code);
-        if (expected.Length != actual.Length
-            || !CryptographicOperations.FixedTimeEquals(expected, actual))
-        {
-            otp.Attempts++;
-            otp.Touch();
             await dbContext.SaveChangesAsync(cancellationToken);
             throw InvalidCode();
         }
 
         otp.MarkAsUsed();
+        onAccepted(stamp);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private void DetachOtpCodes()
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries<OtpCode>().ToList())
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     private string RequireJwtSecret() =>
         configuration["Supabase:JwtSecret"]
         ?? throw new InvalidOperationException("Supabase:JwtSecret is not configured.");
+
+    private static bool HashMatches(
+        string secret,
+        Guid customerId,
+        string purpose,
+        string code,
+        string? codeHash)
+    {
+        byte[] expected;
+        try
+        {
+            expected = Convert.FromBase64String(codeHash ?? string.Empty);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var actual = ComputeHash(secret, customerId, purpose, code);
+        return expected.Length == actual.Length
+            && CryptographicOperations.FixedTimeEquals(expected, actual);
+    }
 
     private static byte[] ComputeHash(
         string secret,
@@ -155,4 +297,13 @@ public sealed class CustomerVerificationCodeService(
 
     private static PhoneVerificationInvalidException InvalidCode() =>
         new(TwilioVerifyPhoneVerificationClient.InvalidOrExpiredMessage);
+}
+
+public sealed class OtpHmacEvaluationCounter
+{
+    private int _count;
+
+    public int Count => Volatile.Read(ref _count);
+
+    public void Increment() => Interlocked.Increment(ref _count);
 }
