@@ -160,6 +160,7 @@ Spec: [`docs/plans/active/2026-08-27-tenant-rbac-v1.md`](./docs/plans/active/202
 - [x] Last-admin 409, privilege escalation 403, fail-closed; PlatformAdmin com tenant = wildcard
 - [x] OS assigned-only por `os.work_orders.execute` (não pelo nome Technician)
 - [ ] Aplicar migration `AddTenantRbacV1` via workflow `database-migrations` (`target=development`, `mode=list` then `apply`). Não aplicar da máquina de implementação.
+- [ ] Aplicar migration `AddCoreCustomersReadPermission` (`core.customers.read`, módulo core, `module_key` nulo) via workflow. Não aplicar da máquina. Não grantar a role até gate explícito. `GET /api/users` paginado segue com API #99 e Web #94 no mesmo release.
 - [x] UI Pessoas e acesso no `vlr-web` (merged `develop`)
 
 ## 5.2. Remote EF migrations — FEITO (código)
@@ -206,6 +207,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-13 | **Review-fix (API, sem merge):** `GET /api/users` mantém `[RequirePermission(core.users.read)]` e o 401 imperativo só quando não há tenant. Migration `AddCoreCustomersReadPermission` insere `core.customers.read` (`ON CONFLICT (key) DO NOTHING`; Down apaga `role_permissions` e depois a permissão). Não aplicada e sem grant. `GET /api/users` paginado: API #99 e Web #94 no mesmo release. |
 | 2026-10-12 | **Correção local (sem merge):** três blockers de aulas por data na branch `fix/teacher-lessons-release-blockers`. Update/delete de template recusa escrita quando a quadra mudou depois da escolha do lock. Remove de aula persistida exige origem ativa canônica (aula, ou o open vencedor). Web não oferece slot `Available` com `reservationId` e só confirma sucesso se o corpo da resposta for o slot esperado. Rota/nav da agenda permanece em `rentals.schedule.read` (plano 2026-10-08 L30/L36). `TeacherLessonConcurrencyTests` 18 skipped sem Docker — não é PASS. Spec `docs/plans/active/2026-10-12-teacher-lessons-release-blockers.md`. Sem migration, grant, deploy ou merge em `main`. |
 | 2026-10-08 | **Pronto para revisão local (API + WEB):** teacher date-only lessons FICC — permissão dedicada sem fallback, allowlist server-side de seis quadras, conflitos/reservas verificados sob lock transacional, migration apenas de catálogo, UI RHF/Zod. API 806 pass/1 skip; WEB 454 pass/build OK. Revisão final do Grok pendente; sem migration aplicada, role criada/atribuída, deploy ou commit. Spec `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`. |
 | 2026-10-08 | **Em andamento (local):** teacher date-only lessons — API em revisão na branch `feat/teacher-lesson-date-only`; Grok apontou correções de autorização, migration Designer e testes de concorrência. WEB pendente. Nenhuma migration aplicada ou role atribuída. RLS finding documentado sem enablement. Spec `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`. |

@@ -9,12 +9,9 @@ namespace Platform.Api.Common;
 
 internal static class DirectoryAuthorization
 {
-    public static async Task<ActionResult?> GateAsync(
+    public static ActionResult? RequireTenant(
         ControllerBase controller,
-        ITenantProvider tenantProvider,
-        IAuthorizationService authorization,
-        System.Security.Claims.ClaimsPrincipal user,
-        string permissionKey)
+        ITenantProvider tenantProvider)
     {
         try
         {
@@ -26,6 +23,22 @@ internal static class DirectoryAuthorization
         catch (TenantResolutionException ex)
         {
             return controller.Unauthorized(new { error = ex.Message });
+        }
+
+        return null;
+    }
+
+    public static async Task<ActionResult?> GateAsync(
+        ControllerBase controller,
+        ITenantProvider tenantProvider,
+        IAuthorizationService authorization,
+        System.Security.Claims.ClaimsPrincipal user,
+        string permissionKey)
+    {
+        var missingTenant = RequireTenant(controller, tenantProvider);
+        if (missingTenant is not null)
+        {
+            return missingTenant;
         }
 
         var allowed = await authorization.AuthorizeAsync(

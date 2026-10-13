@@ -15,8 +15,7 @@ namespace Platform.Api.Modules.Users.Controllers;
 public sealed class UsersController(
     IUserDirectoryService userDirectoryService,
     IRbacActorAccessor rbacActorAccessor,
-    ITenantProvider tenantProvider,
-    IAuthorizationService authorizationService) : ControllerBase
+    ITenantProvider tenantProvider) : ControllerBase
 {
     [HttpGet("me")]
     public async Task<ActionResult<CurrentUserResponse>> GetCurrent(
@@ -34,18 +33,14 @@ public sealed class UsersController(
     }
 
     [HttpGet]
+    [RequirePermission(Permissions.Core.UsersRead)]
     public async Task<IActionResult> List(
         [FromQuery] string? q,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = DirectoryPage.DefaultPageSize,
         CancellationToken cancellationToken = default)
     {
-        var denied = await DirectoryAuthorization.GateAsync(
-            this,
-            tenantProvider,
-            authorizationService,
-            User,
-            Permissions.Core.UsersRead);
+        var denied = DirectoryAuthorization.RequireTenant(this, tenantProvider);
         if (denied is not null)
         {
             return denied;

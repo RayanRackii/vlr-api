@@ -38,6 +38,15 @@ public sealed class PermissionCatalogCatalogTests
     }
 
     [Fact]
+    public void Admin_wildcard_excluded_keys_are_explicit_grant_only()
+    {
+        Assert.NotEmpty(PermissionCatalog.AdminWildcardExcludedKeys);
+        Assert.All(
+            PermissionCatalog.AdminWildcardExcludedKeys,
+            key => Assert.Contains(key, PermissionCatalog.ExplicitGrantOnlyKeys));
+    }
+
+    [Fact]
     public void PlatformModules_normalizes_catalog_aliases()
     {
         Assert.True(PlatformModules.TryNormalize("Catálogo", out var a) && a == PlatformModules.Catalog);
