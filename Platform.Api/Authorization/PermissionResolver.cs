@@ -134,6 +134,11 @@ public sealed class PermissionResolver(
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in PermissionCatalog.All)
         {
+            if (PermissionCatalog.AdminWildcardExcludedKeys.Contains(entry.Key))
+            {
+                continue;
+            }
+
             if (IsModuleEnabled(entry.ModuleKey, activeModules))
             {
                 keys.Add(entry.Key);
