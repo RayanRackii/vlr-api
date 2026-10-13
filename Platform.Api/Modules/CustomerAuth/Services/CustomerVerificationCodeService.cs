@@ -172,6 +172,9 @@ public sealed class CustomerVerificationCodeService(
             UPDATE core.otp_codes
             SET attempts = attempts + 1
             WHERE id = {otp.Id}
+              AND tenant_id = {customer.TenantId}
+              AND customer_id = {customer.Id}
+              AND purpose = {purpose}
               AND attempts < {MaxAttempts}
               AND NOT is_used
               AND replaced_at IS NULL
@@ -196,6 +199,9 @@ public sealed class CustomerVerificationCodeService(
             UPDATE core.otp_codes
             SET is_used = true
             WHERE id = {otp.Id}
+              AND tenant_id = {customer.TenantId}
+              AND customer_id = {customer.Id}
+              AND purpose = {purpose}
               AND NOT is_used
             """,
             cancellationToken);
@@ -211,6 +217,7 @@ public sealed class CustomerVerificationCodeService(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    // Non-relational path is only for InMemory tests. The attempt update is not atomic.
     private async Task VerifyTrackedAsync(
         Customer customer,
         string purpose,

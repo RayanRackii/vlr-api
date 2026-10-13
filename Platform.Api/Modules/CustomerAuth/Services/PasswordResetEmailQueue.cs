@@ -10,18 +10,26 @@ public interface IPasswordResetEmailQueue
     void Enqueue(PasswordResetEmailWork work);
 }
 
-public sealed class PasswordResetEmailQueue : IPasswordResetEmailQueue
+public sealed class PasswordResetEmailQueue(ILogger<PasswordResetEmailQueue> logger) : IPasswordResetEmailQueue
 {
+    public const int Capacity = 1000;
+
     private readonly Channel<PasswordResetEmailWork> _channel =
-        Channel.CreateUnbounded<PasswordResetEmailWork>(
-            new UnboundedChannelOptions { SingleReader = true });
+        Channel.CreateBounded<PasswordResetEmailWork>(
+            new BoundedChannelOptions(Capacity)
+            {
+                SingleReader = true,
+                FullMode = BoundedChannelFullMode.DropWrite,
+            });
 
     public void Enqueue(PasswordResetEmailWork work)
     {
-        if (!_channel.Writer.TryWrite(work))
+        if (_channel.Writer.TryWrite(work))
         {
-            throw new InvalidOperationException("Password reset email queue is closed.");
+            return;
         }
+
+        logger.LogWarning("Password reset email was dropped because the queue is full.");
     }
 
     public IAsyncEnumerable<PasswordResetEmailWork> ReadAllAsync(CancellationToken cancellationToken) =>
