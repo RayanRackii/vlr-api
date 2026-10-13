@@ -63,6 +63,24 @@ public sealed record CustomerLoginRequestDto
     public required string Password { get; init; }
 }
 
+public sealed record PasswordResetRequestDto
+{
+    public required string Email { get; init; }
+}
+
+public sealed record PasswordResetRequestResponseDto(string Message);
+
+public sealed record PasswordResetConfirmRequestDto
+{
+    public required string Email { get; init; }
+
+    public required string Code { get; init; }
+
+    public required string NewPassword { get; init; }
+}
+
+public sealed record PasswordResetConfirmResponseDto(string Message);
+
 public sealed record CustomerAuthProfileDto(
     Guid Id,
     Guid TenantId,

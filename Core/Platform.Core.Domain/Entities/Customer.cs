@@ -20,6 +20,12 @@ public class Customer : Entity, ITenantScoped
     /// <summary>ASP.NET Identity password hash. Null for legacy OTP-only rows.</summary>
     public string? PasswordHash { get; set; }
 
+    /// <summary>
+    /// Instant the portal password last changed, truncated to milliseconds.
+    /// Null keeps customer sessions issued before any change valid.
+    /// </summary>
+    public DateTimeOffset? PasswordChangedAt { get; set; }
+
     /// <summary>Primary mobile (E.164-ish digits). Unique per tenant when set.</summary>
     public string? Phone { get; set; }
 
@@ -76,6 +82,21 @@ public class Customer : Entity, ITenantScoped
     public void MarkEmailVerified(DateTimeOffset at)
     {
         EmailVerifiedAt = at;
+        Touch();
+    }
+
+    /// <summary>
+    /// Replaces the portal password and bumps <see cref="PasswordChangedAt"/> so older customer JWTs fail.
+    /// </summary>
+    public void ChangePassword(string passwordHash, DateTimeOffset changedAt)
+    {
+        if (string.IsNullOrWhiteSpace(passwordHash))
+        {
+            throw new ArgumentException("Password hash is required.", nameof(passwordHash));
+        }
+
+        PasswordHash = passwordHash;
+        PasswordChangedAt = DateTimeOffset.FromUnixTimeMilliseconds(changedAt.ToUnixTimeMilliseconds());
         Touch();
     }
 

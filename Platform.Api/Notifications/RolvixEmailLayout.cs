@@ -9,6 +9,8 @@ public static class RolvixEmailLayout
 {
     public const string EmailVerificationSubject = "Código de verificação Rolvix";
 
+    public const string PasswordResetSubject = "Redefinição de senha Rolvix";
+
     public static string Wrap(string recipientName, string innerHtmlBody)
     {
         var safeName = WebUtility.HtmlEncode(recipientName);
@@ -152,6 +154,31 @@ public static class RolvixEmailLayout
               </tr>
               <tr>
                 <td style="padding:0;font-size:15px;line-height:1.55;color:#27272a;">Se você não solicitou este código, ignore esta mensagem.</td>
+              </tr>
+            </table>
+            """;
+    }
+
+    public static string PasswordResetBody(string code)
+    {
+        var safeCode = WebUtility.HtmlEncode(code);
+        return
+            $"""
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+              <tr>
+                <td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#27272a;">Recebemos um pedido para redefinir a senha da sua conta no portal Rolvix.</td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#27272a;">Seu código de redefinição é:</td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 16px;font-size:28px;line-height:1.2;font-family:Consolas,Monaco,monospace;font-weight:700;letter-spacing:0.12em;color:#18181b;">{safeCode}</td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#27272a;">Este código expira em 15 minutos.</td>
+              </tr>
+              <tr>
+                <td style="padding:0;font-size:15px;line-height:1.55;color:#27272a;">Se você não solicitou este código, ignore esta mensagem. Sua senha permanece a mesma.</td>
               </tr>
             </table>
             """;

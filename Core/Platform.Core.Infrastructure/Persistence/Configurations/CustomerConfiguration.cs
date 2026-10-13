@@ -32,6 +32,8 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.PasswordHash)
             .HasMaxLength(500);
 
+        builder.Property(c => c.PasswordChangedAt);
+
         builder.Property(c => c.CustomerType)
             .HasConversion<int>()
             .HasDefaultValue(CustomerType.Individual)

@@ -26,6 +26,14 @@ public interface ICustomerAuthService
         CustomerLoginRequestDto request,
         CancellationToken cancellationToken);
 
+    Task RequestPasswordResetAsync(
+        PasswordResetRequestDto request,
+        CancellationToken cancellationToken);
+
+    Task ConfirmPasswordResetAsync(
+        PasswordResetConfirmRequestDto request,
+        CancellationToken cancellationToken);
+
     Task<TenantBrandingResponseDto> GetBrandingAsync(
         string subdomain,
         CancellationToken cancellationToken);
