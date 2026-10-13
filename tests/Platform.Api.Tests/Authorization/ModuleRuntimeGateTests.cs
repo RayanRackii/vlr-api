@@ -20,6 +20,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Admin.Controllers;
 using Platform.Api.Modules.Assets.Controllers;
 using Platform.Api.Modules.Assets.Dtos;
@@ -1355,7 +1356,9 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<TenantMemberResponse>> ListAsync(CancellationToken cancellationToken) =>
+        public Task<PagedResult<TenantMemberResponse>> ListAsync(
+            DirectoryPage page,
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task AssignRolesAsync(

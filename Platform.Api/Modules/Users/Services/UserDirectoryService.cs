@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
@@ -70,7 +71,7 @@ public sealed class UserDirectoryService(
                             families,
                             trial,
                             ToRoleDtos(membership.UserRoles),
-                            permissions.OrderBy(key => key).ToList());
+                            WithPortalCustomersRead(permissions));
                     }
                 }
 
@@ -88,7 +89,7 @@ public sealed class UserDirectoryService(
                     families,
                     trial,
                     [],
-                    wildcard.OrderBy(key => key).ToList());
+                    WithPortalCustomersRead(wildcard));
             }
 
             return CreateCurrentUser(
@@ -173,24 +174,40 @@ public sealed class UserDirectoryService(
         return result;
     }
 
-    public async Task<IReadOnlyList<TenantMemberResponse>> ListAsync(
+    public async Task<PagedResult<TenantMemberResponse>> ListAsync(
+        DirectoryPage page,
         CancellationToken cancellationToken)
     {
-        _ = tenantProvider.TenantId
+        var tenantId = tenantProvider.TenantId
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
         var platformEmails = platformAdminChecker.GetNormalizedEmails();
 
-        var users = await dbContext.Users
+        var query = dbContext.Users
             .AsNoTracking()
+            .Where(user => user.TenantId == tenantId)
+            .Where(user => platformEmails.Count == 0
+                || !platformEmails.Contains(user.Email.ToLower()));
+
+        if (page.Term is not null)
+        {
+            var pattern = DirectoryPage.ToContainsPattern(page.Term);
+            query = query.Where(user =>
+                EF.Functions.ILike(user.FullName, pattern, DirectoryPage.LikeEscape)
+                || EF.Functions.ILike(user.Email, pattern, DirectoryPage.LikeEscape));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var users = await query
+            .OrderBy(user => user.FullName)
+            .ThenBy(user => user.Id)
+            .Skip((page.Page - 1) * page.PageSize)
+            .Take(page.PageSize)
             .Include(user => user.UserRoles)
                 .ThenInclude(userRole => userRole.Role)
-            .Where(user => platformEmails.Count == 0
-                || !platformEmails.Contains(user.Email.ToLower()))
-            .OrderBy(user => user.FullName)
             .ToListAsync(cancellationToken);
 
-        return users
+        var items = users
             .Select(user => new TenantMemberResponse(
                 user.Id,
                 user.FullName,
@@ -198,6 +215,8 @@ public sealed class UserDirectoryService(
                 user.IsActive,
                 ToRoleDtos(user.UserRoles)))
             .ToList();
+
+        return new PagedResult<TenantMemberResponse>(items, page.Page, page.PageSize, total);
     }
 
     public async Task AssignRolesAsync(
@@ -464,6 +483,18 @@ public sealed class UserDirectoryService(
             trial.NotificationsEmailOnly,
             roles,
             permissions);
+
+    private static IReadOnlyList<string> WithPortalCustomersRead(IEnumerable<string> permissions)
+    {
+        var keys = permissions.ToList();
+        if (!keys.Contains(Permissions.Core.CustomersRead, StringComparer.Ordinal))
+        {
+            keys.Add(Permissions.Core.CustomersRead);
+        }
+
+        keys.Sort(StringComparer.Ordinal);
+        return keys;
+    }
 
     private static IReadOnlyList<CurrentUserRoleDto> ToRoleDtos(IEnumerable<UserRole> userRoles) =>
         userRoles

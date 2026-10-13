@@ -7,8 +7,13 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(47, PermissionCatalog.All.Length);
-        Assert.Equal(47, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(48, PermissionCatalog.All.Length);
+        Assert.Equal(48, PermissionCatalog.AllKeys.Count);
+        Assert.Contains(Permissions.Core.CustomersRead, PermissionCatalog.AllKeys);
+        Assert.Contains(Permissions.Core.CustomersRead, PermissionCatalog.ExplicitGrantOnlyKeys);
+        Assert.Contains(Permissions.Core.CustomersRead, PermissionCatalog.AdminWildcardExcludedKeys);
+        Assert.DoesNotContain(Permissions.Core.CustomersRead, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Core.CustomersRead, PermissionCatalog.TechnicianLegacyKeys);
         Assert.Contains(Permissions.Catalog.ProductsRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Catalog.ProductsManage, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Catalog.OrdersRead, PermissionCatalog.AllKeys);

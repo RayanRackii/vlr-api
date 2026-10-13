@@ -30,6 +30,22 @@ public sealed class PermissionResolverTests
     }
 
     [Fact]
+    public async Task Custom_role_can_receive_portal_customer_read_explicitly()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        var role = harness.AddCustomRole("PortalReaders", Permissions.Core.CustomersRead);
+        var user = harness.AddUser("portal-reader");
+        harness.Assign(user, role);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(
+            harness.Tenant.Id,
+            user.Id);
+
+        Assert.Contains(Permissions.Core.CustomersRead, effective);
+    }
+
+    [Fact]
     public async Task Admin_wildcard_includes_enabled_catalog_and_excludes_disabled_module()
     {
         await using var harness = await RbacResolverHarness.CreateAsync();
@@ -46,6 +62,7 @@ public sealed class PermissionResolverTests
 
         Assert.Contains(Permissions.Core.DashboardRead, effective);
         Assert.Contains(Permissions.Os.WorkOrdersRead, effective);
+        Assert.DoesNotContain(Permissions.Core.CustomersRead, effective);
         Assert.DoesNotContain(Permissions.Rentals.ReservationsRead, effective);
         Assert.DoesNotContain(Permissions.Catalog.OrdersRead, effective);
     }
