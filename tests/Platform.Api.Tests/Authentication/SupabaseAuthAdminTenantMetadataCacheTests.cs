@@ -324,11 +324,7 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
             handler,
             new SupabaseUserTenantMetadataCache(),
             TimeSpan.FromMilliseconds(200));
-        var methods = typeof(SupabaseAuthAdminClient)
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
-            .Where(method => typeof(Task).IsAssignableFrom(method.ReturnType))
-            .OrderBy(method => method.Name, StringComparer.Ordinal)
-            .ToArray();
+        var methods = AuthAdminMethods();
 
         Assert.Equal(9, methods.Length);
 
@@ -340,26 +336,18 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
                 .ToArray();
 
             var started = DateTimeOffset.UtcNow;
-            Task task;
-            try
-            {
-                task = (Task)method.Invoke(client, args)!;
-            }
-            catch (TargetInvocationException ex)
-            {
-                task = Task.FromException(ex.InnerException ?? ex);
-            }
-
-            var exception = await Record.ExceptionAsync(() => task);
+            var exception = await InvokeAsync(client, method, args);
             var elapsed = DateTimeOffset.UtcNow - started;
 
             Assert.True(handler.Calls > 0, method.Name);
             Assert.NotNull(exception);
             var failure = exception!;
-            Assert.True(
-                failure is OperationCanceledException
-                    || (failure is SupabaseAuthAdminException admin && admin.StatusCode == 504),
-                $"{method.Name} threw {failure.GetType().Name}: {failure.Message}");
+            var admin = Assert.IsType<SupabaseAuthAdminException>(failure);
+            Assert.Equal(504, admin.StatusCode);
+            Assert.Contains("Timed out", admin.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("person@example.test", admin.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(ServiceRoleKey, admin.Message, StringComparison.Ordinal);
+            Assert.IsAssignableFrom<OperationCanceledException>(admin.InnerException);
             Assert.True(elapsed < TimeSpan.FromSeconds(2), $"{method.Name} waited {elapsed}");
         }
     }
@@ -374,6 +362,135 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.GetUserTenantAppMetadataAsync(Guid.NewGuid().ToString("D"), cancellation.Token));
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_on_every_auth_admin_call_is_not_a_504()
+    {
+        var handler = new TenantMetadataHandler { Delay = TimeSpan.FromSeconds(5) };
+        var client = CreateClient(handler, new SupabaseUserTenantMetadataCache());
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        foreach (var method in AuthAdminMethods())
+        {
+            handler.ResetCounts();
+            var args = method.GetParameters()
+                .Select(parameter => parameter.ParameterType == typeof(CancellationToken)
+                    ? (object)cancellation.Token
+                    : SampleArgument(parameter.ParameterType))
+                .ToArray();
+
+            var exception = await InvokeAsync(client, method, args);
+
+            Assert.IsAssignableFrom<OperationCanceledException>(exception);
+            Assert.IsNotType<SupabaseAuthAdminException>(exception);
+        }
+    }
+
+    [Fact]
+    public void Store_does_not_evict_a_replacement_written_before_compare_and_remove()
+    {
+        var cache = new SupabaseUserTenantMetadataCache();
+        var authId = Guid.NewGuid().ToString("D");
+        var staleTenant = Guid.NewGuid();
+        var freshTenant = Guid.NewGuid();
+        var staleEpoch = cache.CaptureEpoch(authId);
+        var freshEpoch = staleEpoch + 1;
+
+        cache.BeforeStoreEpochRecheck = () =>
+        {
+            cache.BeforeStoreEpochRecheck = null;
+            cache.SetEpoch(authId, freshEpoch);
+        };
+        cache.BeforeStoreEntryRemoval = () =>
+        {
+            cache.BeforeStoreEntryRemoval = null;
+            cache.SetEpoch(authId, freshEpoch);
+            cache.SetEntry(authId, freshTenant, freshEpoch);
+        };
+
+        cache.Store(authId, staleTenant, staleEpoch);
+
+        Assert.True(cache.TryGet(authId, out var served));
+        Assert.Equal(freshTenant, served);
+    }
+
+    [Fact]
+    public void TryGet_does_not_evict_a_replacement_for_a_stale_snapshot()
+    {
+        var cache = new SupabaseUserTenantMetadataCache();
+        var authId = Guid.NewGuid().ToString("D");
+        var epoch = cache.CaptureEpoch(authId);
+        var freshTenant = Guid.NewGuid();
+        var freshEpoch = epoch + 1;
+        cache.Store(authId, Guid.NewGuid(), epoch);
+        cache.SetEpoch(authId, freshEpoch);
+        cache.BeforeTryGetSnapshotRemoval = () =>
+        {
+            cache.BeforeTryGetSnapshotRemoval = null;
+            cache.SetEpoch(authId, freshEpoch);
+            cache.SetEntry(authId, freshTenant, freshEpoch);
+        };
+
+        cache.TryGet(authId, out _);
+
+        Assert.True(cache.TryGet(authId, out var served));
+        Assert.Equal(freshTenant, served);
+    }
+
+    [Fact]
+    public void CaptureEpoch_retries_until_the_touch_is_published()
+    {
+        var cache = new SupabaseUserTenantMetadataCache();
+        var authId = Guid.NewGuid().ToString("D");
+        var original = cache.CaptureEpoch(authId);
+        Assert.Equal(0, original);
+
+        cache.BeforeEpochTouch = () =>
+        {
+            cache.BeforeEpochTouch = null;
+            cache.EvictExpired(DateTimeOffset.UtcNow.Add(SupabaseUserTenantMetadataCache.Duration).AddSeconds(1));
+            var reseeded = cache.CaptureEpoch(authId);
+            Assert.Equal(0, reseeded);
+            cache.Invalidate(authId);
+        };
+
+        var observed = cache.CaptureEpoch(authId);
+        var tenant = Guid.NewGuid();
+        cache.Store(authId, tenant, observed);
+
+        Assert.NotEqual(original, observed);
+        Assert.True(cache.TryGet(authId, out var served));
+        Assert.Equal(tenant, served);
+        Assert.Equal(observed, cache.CaptureEpoch(authId));
+    }
+
+    private static MethodInfo[] AuthAdminMethods() =>
+        typeof(SupabaseAuthAdminClient)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+            .Where(method => typeof(Task).IsAssignableFrom(method.ReturnType))
+            .OrderBy(method => method.Name, StringComparer.Ordinal)
+            .ToArray();
+
+    private static async Task<Exception> InvokeAsync(
+        SupabaseAuthAdminClient client,
+        MethodInfo method,
+        object[] args)
+    {
+        Task task;
+        try
+        {
+            task = (Task)method.Invoke(client, args)!;
+        }
+        catch (TargetInvocationException ex)
+        {
+            task = Task.FromException(ex.InnerException ?? ex);
+        }
+
+        var exception = await Record.ExceptionAsync(() => task);
+        Assert.NotNull(exception);
+        return exception!;
     }
 
     private static object SampleArgument(Type type)
