@@ -98,7 +98,7 @@ public sealed class TeacherLessonService(
                 if (overlappingSlots.Count != 1)
                 {
                     throw new InvalidOperationException(
-                        "The interval overlaps an existing slot.");
+                        TeacherLessonMessages.OverlapsExistingSlot);
                 }
 
                 await CommitIfPresentAsync(transaction, cancellationToken);
@@ -117,7 +117,7 @@ public sealed class TeacherLessonService(
                     || existing.SourceTemplateId != winning.Template.Id)
                 {
                     throw new InvalidOperationException(
-                        "The interval overlaps a non-open or unverifiable slot.");
+                        TeacherLessonMessages.OverlapsNonOpenSlot);
                 }
 
                 existing.OccupancyKindId = lessonKind.Id;
@@ -132,7 +132,7 @@ public sealed class TeacherLessonService(
 
             if (overlappingSlots.Count > 1)
             {
-                throw new InvalidOperationException("The interval overlaps existing slots.");
+                throw new InvalidOperationException(TeacherLessonMessages.OverlapsExistingSlots);
             }
 
             var created = new Slot
@@ -158,7 +158,7 @@ public sealed class TeacherLessonService(
         catch (DbUpdateException exception) when (IsSlotStartUniqueViolation(exception))
         {
             await RollbackIfPresentAsync(transaction, cancellationToken);
-            throw new InvalidOperationException("A slot already exists at this start time.", exception);
+            throw new InvalidOperationException(TeacherLessonMessages.SlotStartTaken, exception);
         }
         catch
         {
@@ -208,7 +208,7 @@ public sealed class TeacherLessonService(
                     slot.StartTime != request.StartTime || slot.EndTime != request.EndTime))
             {
                 throw new InvalidOperationException(
-                    "The interval overlaps an existing slot.");
+                    TeacherLessonMessages.OverlapsExistingSlot);
             }
 
             var source = winning.Template;
@@ -219,7 +219,7 @@ public sealed class TeacherLessonService(
                     || !source.OccupancyKind.IsActive
                     || !string.Equals(source.OccupancyKind.Key, "lesson", StringComparison.Ordinal))
                 {
-                    throw new KeyNotFoundException("A weekly lesson was not found for this interval.");
+                    throw new KeyNotFoundException(TeacherLessonMessages.WeeklyLessonNotFound);
                 }
             }
             else if (target.OccupancyKindId == lessonKind.Id
@@ -266,14 +266,14 @@ public sealed class TeacherLessonService(
                     || !origin.OccupancyKind.IsActive
                     || (!sourceIsCanonicalLesson && !sourceIsWinningOpen))
                 {
-                    throw new InvalidOperationException("The lesson source template is unverifiable.");
+                    throw new InvalidOperationException(TeacherLessonMessages.LessonSourceUnverifiable);
                 }
 
                 if (source.OccupancyKindId == lessonKind.Id
                     && target.SourceTemplateId != source.Id)
                 {
                     throw new InvalidOperationException(
-                        "A different weekly lesson now wins this interval.");
+                        TeacherLessonMessages.DifferentWeeklyLessonWins);
                 }
             }
             else if (target.OccupancyKindId == openKind.Id
@@ -305,7 +305,7 @@ public sealed class TeacherLessonService(
             }
             else
             {
-                throw new InvalidOperationException("Only an exact canonical lesson can be removed.");
+                throw new InvalidOperationException(TeacherLessonMessages.OnlyExactLesson);
             }
 
             await EnsureNoActiveNonOpenTemplateOverlapAsync(
@@ -365,7 +365,7 @@ public sealed class TeacherLessonService(
         catch (DbUpdateException exception) when (IsSlotStartUniqueViolation(exception))
         {
             await RollbackIfPresentAsync(transaction, cancellationToken);
-            throw new InvalidOperationException("A slot already exists at this start time.", exception);
+            throw new InvalidOperationException(TeacherLessonMessages.SlotStartTaken, exception);
         }
         catch
         {
@@ -392,7 +392,7 @@ public sealed class TeacherLessonService(
             || !winning.Template.OccupancyKind.IsActive)
         {
             throw new InvalidOperationException(
-                "Requested interval is not an available open SlotGrid window.");
+                TeacherLessonMessages.NotOpenWindow);
         }
 
         return winning;
@@ -424,7 +424,7 @@ public sealed class TeacherLessonService(
         if (exact.Count != 1)
         {
             throw new InvalidOperationException(
-                "Requested interval does not match a unique SlotGrid window.");
+                TeacherLessonMessages.NotUniqueWindow);
         }
 
         return exact[0];
@@ -456,7 +456,7 @@ public sealed class TeacherLessonService(
         if (overlapping.Count > 0)
         {
             throw new InvalidOperationException(
-                "The interval overlaps an active non-open template.");
+                TeacherLessonMessages.OverlapsNonOpenTemplate);
         }
     }
 
@@ -486,7 +486,7 @@ public sealed class TeacherLessonService(
         if (blocking)
         {
             throw new InvalidOperationException(
-                "The interval overlaps a blocking reservation.");
+                TeacherLessonMessages.OverlapsReservation);
         }
     }
 
@@ -531,11 +531,11 @@ public sealed class TeacherLessonService(
                      && r.Asset.IsRentable
                      && r.Asset.Status != AssetStatus.Inactive,
                 cancellationToken)
-            ?? throw new KeyNotFoundException("Rentable was not found.");
+            ?? throw new KeyNotFoundException(TeacherLessonMessages.RentableNotFound);
 
         if (rental.SchedulePolicy != SchedulePolicy.SlotGrid)
         {
-            throw new InvalidOperationException("Schedule policy must be SlotGrid.");
+            throw new InvalidOperationException(TeacherLessonMessages.SchedulePolicyMustBeSlotGrid);
         }
 
         return rental;
@@ -550,14 +550,14 @@ public sealed class TeacherLessonService(
             .ToListAsync(cancellationToken);
 
         var open = kinds.SingleOrDefault(k => k.Key == "open")
-            ?? throw new InvalidOperationException("Canonical open occupancy kind is not available.");
+            ?? throw new InvalidOperationException(TeacherLessonMessages.OpenKindMissing);
         var lesson = kinds.SingleOrDefault(k => k.Key == "lesson")
-            ?? throw new InvalidOperationException("Canonical lesson occupancy kind is not available.");
+            ?? throw new InvalidOperationException(TeacherLessonMessages.LessonKindMissing);
 
         if (!open.IsBookableByCustomer || open.BlocksCapacity
             || lesson.IsBookableByCustomer || !lesson.BlocksCapacity)
         {
-            throw new InvalidOperationException("Canonical open and lesson occupancy kinds have unsafe flags.");
+            throw new InvalidOperationException(TeacherLessonMessages.UnsafeKindFlags);
         }
 
         return (open, lesson);
@@ -569,7 +569,7 @@ public sealed class TeacherLessonService(
         var today = BrazilTimeZone.GetCivilDate(now);
         if (date < today)
         {
-            throw new ArgumentException("Teacher lessons can only change future intervals.");
+            throw new ArgumentException(TeacherLessonMessages.FutureIntervalsOnly);
         }
 
         if (date == today)
@@ -577,7 +577,7 @@ public sealed class TeacherLessonService(
             var localNow = TimeZoneInfo.ConvertTime(now, BrazilTimeZone.Resolve());
             if (startTime <= TimeOnly.FromDateTime(localNow.DateTime))
             {
-                throw new ArgumentException("Teacher lessons can only change future intervals.");
+                throw new ArgumentException(TeacherLessonMessages.FutureIntervalsOnly);
             }
         }
     }
@@ -597,19 +597,19 @@ public sealed class TeacherLessonService(
 
         if (!active)
         {
-            throw new InvalidOperationException("Tenant is not active.");
+            throw new InvalidOperationException(TeacherLessonMessages.TenantInactive);
         }
     }
 
     private Guid EnsureTenant() =>
         tenantProvider.TenantId
-        ?? throw new UnauthorizedAccessException("Tenant context is required.");
+        ?? throw new UnauthorizedAccessException(TeacherLessonMessages.TenantRequired);
 
     private void EnsurePilotScope(Guid tenantId, Guid rentalAssetId)
     {
         if (!teacherLessonScope.Allows(tenantId, rentalAssetId))
         {
-            throw new KeyNotFoundException("Rentable was not found.");
+            throw new KeyNotFoundException(TeacherLessonMessages.RentableNotFound);
         }
     }
 
@@ -617,7 +617,7 @@ public sealed class TeacherLessonService(
     {
         if (end <= start)
         {
-            throw new ArgumentException("End time must be after start time.");
+            throw new ArgumentException(TeacherLessonMessages.EndAfterStart);
         }
     }
 
