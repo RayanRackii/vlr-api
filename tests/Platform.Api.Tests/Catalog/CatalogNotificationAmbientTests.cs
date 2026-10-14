@@ -130,6 +130,160 @@ public sealed class CatalogNotificationAmbientTests
     }
 
     [Fact]
+    public async Task Order_event_with_mismatched_tenant_does_not_publish()
+    {
+        var dbTenant = new FakeTenantProvider();
+        var ambient = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(dbTenant);
+        var tenantA = new Tenant("Guard A", "12121212000191");
+        var tenantB = new Tenant("Guard B", "13131313000191");
+        db.Tenants.AddRange(tenantA, tenantB);
+        db.TenantNotificationChannelConfigs.AddRange(
+            new TenantNotificationChannelConfig
+            {
+                TenantId = tenantA.Id,
+                EventType = CatalogEventTypes.OrderCreated,
+                Channel = NotificationChannel.InApp,
+                IsActive = true,
+            },
+            new TenantNotificationChannelConfig
+            {
+                TenantId = tenantB.Id,
+                EventType = CatalogEventTypes.OrderCreated,
+                Channel = NotificationChannel.Email,
+                IsActive = true,
+            });
+        await db.SaveChangesAsync();
+
+        dbTenant.TenantId = null;
+        ambient.TenantId = tenantA.Id;
+        var permissions = new GrantingPermissionResolver();
+        var logs = new CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logs));
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            ambient,
+            permissions,
+            loggerFactory.CreateLogger<CatalogNotificationPublisher>());
+        var customerId = Guid.NewGuid();
+        var order = new CatalogOrder
+        {
+            TenantId = tenantB.Id,
+            CustomerId = customerId,
+            OrderNumber = 4,
+            CustomerNameSnapshot = "Ana",
+            CustomerEmailSnapshot = "ana@club.test",
+        };
+
+        var queued = await publisher.PublishOrderEventAsync(order, CatalogEventTypes.OrderCreated);
+        await db.SaveChangesAsync();
+
+        Assert.Empty(queued);
+        Assert.Equal(0, permissions.Calls);
+        Assert.Empty(db.Notifications.ToList());
+        Assert.Empty(db.NotificationDeliveries.ToList());
+        var warning = Assert.Single(logs.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains("does not match the ambient tenant", warning.Message, StringComparison.Ordinal);
+        Assert.Contains(CatalogEventTypes.OrderCreated, warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ana", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ana@club.test", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(customerId.ToString(), warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(order.Id.ToString(), warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(tenantA.Id.ToString(), warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(tenantB.Id.ToString(), warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Channel_defaults_seed_only_the_ambient_tenant_when_the_query_filter_is_off()
+    {
+        var dbTenant = new FakeTenantProvider();
+        var ambient = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(dbTenant);
+        var tenantA = new Tenant("Seed A", "14141414000191");
+        var tenantB = new Tenant("Seed B", "15151515000191");
+        db.Tenants.AddRange(tenantA, tenantB);
+
+        foreach (var eventType in CatalogEventTypes.Notifying)
+        {
+            foreach (var channel in DefaultChannels)
+            {
+                if (eventType == CatalogEventTypes.OrderCreated
+                    && channel == NotificationChannel.Email)
+                {
+                    continue;
+                }
+
+                db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+                {
+                    TenantId = tenantA.Id,
+                    EventType = eventType,
+                    Channel = channel,
+                    IsActive = false,
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        var foreignBefore = db.TenantNotificationChannelConfigs
+            .Where(config => config.TenantId == tenantA.Id)
+            .Select(config => new { config.Id, config.EventType, config.Channel, config.IsActive })
+            .ToList();
+
+        db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+        {
+            TenantId = tenantA.Id,
+            EventType = CatalogEventTypes.OrderCreated,
+            Channel = NotificationChannel.Email,
+            IsActive = true,
+        });
+
+        dbTenant.TenantId = null;
+        ambient.TenantId = tenantB.Id;
+        using var loggerFactory = LoggerFactory.Create(_ => { });
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            ambient,
+            new GrantingPermissionResolver(),
+            loggerFactory.CreateLogger<CatalogNotificationPublisher>());
+
+        await publisher.EnsureReadyAsync();
+
+        var configs = db.TenantNotificationChannelConfigs.ToList();
+        var foreign = configs.Where(config => config.TenantId == tenantA.Id).ToList();
+        var seeded = configs.Where(config => config.TenantId == tenantB.Id).ToList();
+
+        Assert.Equal(foreignBefore.Count + 1, foreign.Count);
+        Assert.All(foreignBefore, before =>
+        {
+            var after = Assert.Single(
+                foreign,
+                config => config.Id == before.Id);
+            Assert.Equal(before.EventType, after.EventType);
+            Assert.Equal(before.Channel, after.Channel);
+            Assert.Equal(before.IsActive, after.IsActive);
+        });
+        var foreignEmail = Assert.Single(
+            foreign,
+            config => config.EventType == CatalogEventTypes.OrderCreated
+                && config.Channel == NotificationChannel.Email);
+        Assert.True(foreignEmail.IsActive);
+        Assert.Equal(CatalogEventTypes.Notifying.Length * DefaultChannels.Length, seeded.Count);
+        Assert.All(
+            seeded.Where(config => config.Channel == NotificationChannel.InApp),
+            config => Assert.True(config.IsActive));
+        Assert.All(
+            seeded.Where(config => config.Channel != NotificationChannel.InApp),
+            config => Assert.False(config.IsActive));
+        Assert.Contains(
+            seeded,
+            config => config.EventType == CatalogEventTypes.OrderCreated
+                && config.Channel == NotificationChannel.Email
+                && !config.IsActive);
+        Assert.DoesNotContain(configs, config => config.TenantId != tenantA.Id && config.TenantId != tenantB.Id);
+    }
+
+    [Fact]
     public async Task Order_created_notifies_ambient_staff_with_orders_manage()
     {
         await using var harness = await CatalogHarness.CreateAsync();
@@ -156,6 +310,14 @@ public sealed class CatalogNotificationAmbientTests
             staffDeliveries,
             delivery => Assert.Equal(harness.Tenant.Id, delivery.TenantId));
     }
+
+    private static readonly NotificationChannel[] DefaultChannels =
+    [
+        NotificationChannel.InApp,
+        NotificationChannel.Email,
+        NotificationChannel.WhatsApp,
+        NotificationChannel.Sms,
+    ];
 
     private sealed class GrantingPermissionResolver : IPermissionResolver
     {

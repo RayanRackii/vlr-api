@@ -29,6 +29,8 @@ public sealed class PermissionAuthorizationHandler(
                 return;
             }
 
+            // No tenant: fail the permission requirement. Authenticated protected
+            // routes respond 403 FORBIDDEN (WorkOrderFromPlanAuthorizationTests).
             if (tenantProvider.TenantId is not Guid tenantId)
             {
                 return;

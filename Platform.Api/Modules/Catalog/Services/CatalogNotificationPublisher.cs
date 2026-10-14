@@ -85,6 +85,14 @@ public sealed class CatalogNotificationPublisher(
             return [];
         }
 
+        if (order.TenantId != tenantId)
+        {
+            logger.LogWarning(
+                "Catalog order notification skipped because the order tenant does not match the ambient tenant. EventType={EventType}",
+                eventType);
+            return [];
+        }
+
         if (eventType == CatalogEventTypes.OrderPreparing)
         {
             return [];
@@ -92,7 +100,7 @@ public sealed class CatalogNotificationPublisher(
 
         var tenant = await dbContext.Tenants
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == order.TenantId, cancellationToken);
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
 
         var payload = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -130,7 +138,7 @@ public sealed class CatalogNotificationPublisher(
 
         var notification = new NotificationEntity
         {
-            TenantId = order.TenantId,
+            TenantId = tenantId,
             EventType = eventType,
             AggregateType = "CatalogOrder",
             AggregateId = order.Id,
@@ -145,7 +153,7 @@ public sealed class CatalogNotificationPublisher(
             {
                 var delivery = new NotificationDelivery
                 {
-                    TenantId = order.TenantId,
+                    TenantId = tenantId,
                     NotificationId = notification.Id,
                     Channel = config.Channel,
                     RecipientKind = recipient.Kind,
@@ -240,6 +248,7 @@ public sealed class CatalogNotificationPublisher(
     {
         var existing = await dbContext.TenantNotificationChannelConfigs
             .AsNoTracking()
+            .Where(c => c.TenantId == tenantId)
             .Select(c => new { c.EventType, c.Channel })
             .ToListAsync(cancellationToken);
 
@@ -247,7 +256,7 @@ public sealed class CatalogNotificationPublisher(
             .Select(c => $"{c.EventType}|{c.Channel}")
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var local in dbContext.TenantNotificationChannelConfigs.Local)
+        foreach (var local in dbContext.TenantNotificationChannelConfigs.Local.Where(c => c.TenantId == tenantId))
         {
             existingSet.Add($"{local.EventType}|{local.Channel}");
         }
