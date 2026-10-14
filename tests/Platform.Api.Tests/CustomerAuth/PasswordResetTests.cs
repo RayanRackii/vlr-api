@@ -376,6 +376,61 @@ public sealed class PasswordResetTests
     }
 
     [Fact]
+    public async Task Eleven_fast_requests_match_for_known_and_unknown_email()
+    {
+        var known = await CustomerBurstAsync(registerKnownCustomer: true);
+        var unknown = await CustomerBurstAsync(registerKnownCustomer: false);
+
+        Assert.Equal(known.Statuses, unknown.Statuses);
+        Assert.Equal(PhoneVerificationSendGate.IpMaxAttempts + 1, known.Statuses.Count);
+        Assert.All(
+            known.Statuses.Take(PhoneVerificationSendGate.IpMaxAttempts),
+            status => Assert.Equal(StatusCodes.Status200OK, status));
+        Assert.Equal(StatusCodes.Status429TooManyRequests, known.Statuses[^1]);
+        Assert.Equal(1, known.ResetEmails);
+        Assert.Equal(0, unknown.ResetEmails);
+    }
+
+    private static async Task<CustomerBurst> CustomerBurstAsync(bool registerKnownCustomer)
+    {
+        var gate = new PhoneVerificationSendGate(
+            new Microsoft.Extensions.Caching.Memory.MemoryCache(
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            TimeProvider.System);
+        await using var harness = await CustomerAuthHarness.CreateAsync(sendGate: gate);
+        var email = registerKnownCustomer ? "ana@club.test" : "missing@club.test";
+        if (registerKnownCustomer)
+        {
+            await RegisterVerifiedAsync(harness, email);
+            harness.Email.Sent.Clear();
+        }
+
+        var controller = CustomerAuthHarness.CreateController(harness.Auth);
+        var statuses = new List<int>(PhoneVerificationSendGate.IpMaxAttempts + 1);
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts + 1; i++)
+        {
+            var result = await controller.RequestPasswordReset(
+                new PasswordResetRequestDto { Email = email },
+                "authclub",
+                CancellationToken.None);
+            statuses.Add(StatusCodeOf(result));
+        }
+
+        return new CustomerBurst(statuses, harness.Email.SendCount);
+    }
+
+    private static int StatusCodeOf(ActionResult<PasswordResetRequestResponseDto> result) =>
+        result.Result switch
+        {
+            OkObjectResult ok => ok.StatusCode ?? StatusCodes.Status200OK,
+            ObjectResult obj => obj.StatusCode ?? StatusCodes.Status500InternalServerError,
+            _ => throw new InvalidOperationException(
+                $"Unexpected password-reset result {result.Result?.GetType().Name}."),
+        };
+
+    private sealed record CustomerBurst(IReadOnlyList<int> Statuses, int ResetEmails);
+
+    [Fact]
     public async Task Reset_email_is_queued_and_the_provider_is_not_called_inline()
     {
         var databaseName = $"reset-queue-{Guid.NewGuid():N}";
