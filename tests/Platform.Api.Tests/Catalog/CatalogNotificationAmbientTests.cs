@@ -23,13 +23,21 @@ public sealed class CatalogNotificationAmbientTests
         var staffA = new User(tenantA.Id, "staff-a", "Staff A", "staff-a@test.com");
         var staffB = new User(tenantB.Id, "staff-b", "Staff B", "staff-b@test.com");
         db.Users.AddRange(staffA, staffB);
-        db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
-        {
-            TenantId = tenantB.Id,
-            EventType = CatalogEventTypes.OrderCreated,
-            Channel = NotificationChannel.InApp,
-            IsActive = true,
-        });
+        db.TenantNotificationChannelConfigs.AddRange(
+            new TenantNotificationChannelConfig
+            {
+                TenantId = tenantA.Id,
+                EventType = CatalogEventTypes.OrderCreated,
+                Channel = NotificationChannel.Email,
+                IsActive = true,
+            },
+            new TenantNotificationChannelConfig
+            {
+                TenantId = tenantB.Id,
+                EventType = CatalogEventTypes.OrderCreated,
+                Channel = NotificationChannel.InApp,
+                IsActive = true,
+            });
         await db.SaveChangesAsync();
 
         var permissions = new GrantingPermissionResolver();
@@ -49,15 +57,9 @@ public sealed class CatalogNotificationAmbientTests
         await publisher.PublishOrderEventAsync(order, CatalogEventTypes.OrderCreated);
         await db.SaveChangesAsync();
 
-        var deliveries = db.NotificationDeliveries.ToList();
         Assert.Equal(0, permissions.Calls);
-        Assert.DoesNotContain(deliveries, delivery => delivery.RecipientKind == NotificationRecipientKind.B2BUser);
-        Assert.DoesNotContain(deliveries, delivery => delivery.RecipientId == staffA.Id);
-        Assert.DoesNotContain(deliveries, delivery => delivery.RecipientId == staffB.Id);
-        Assert.Contains(
-            deliveries,
-            delivery => delivery.RecipientKind == NotificationRecipientKind.Customer
-                && delivery.RecipientId == order.CustomerId);
+        Assert.Empty(db.Notifications.ToList());
+        Assert.Empty(db.NotificationDeliveries.ToList());
     }
 
     [Fact]

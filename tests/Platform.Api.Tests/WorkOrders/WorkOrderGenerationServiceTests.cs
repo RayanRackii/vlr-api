@@ -488,6 +488,31 @@ public sealed class WorkOrderGenerationServiceTests
     }
 
     [Fact]
+    public async Task Manual_generation_without_ambient_tenant_is_unauthorized()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await SeedWorkOrdersModuleAsync(harness);
+        var executor = await AddUserWithKeysAsync(
+            harness,
+            "executor",
+            Permissions.Os.WorkOrdersExecute);
+        var plan = await CreatePlanAsync(harness, "Null ambient");
+        var asset = await CreateMatchingAssetAsync(harness);
+        var generator = CreateGenerator(harness);
+        var before = await harness.Db.WorkOrders.CountAsync();
+        harness.TenantProvider.TenantId = null;
+
+        var missing = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            generator.GenerateAsync(
+                new GenerateWorkOrderCommand(plan.Id, asset.Id, new DateOnly(2026, 9, 18), executor.Id),
+                CancellationToken.None));
+
+        Assert.Contains("Tenant context is required", missing.Message, StringComparison.Ordinal);
+        harness.TenantProvider.TenantId = plan.TenantId;
+        Assert.Equal(before, await harness.Db.WorkOrders.CountAsync());
+    }
+
+    [Fact]
     public async Task Manual_create_does_not_snapshot_plan_tasks_or_source_name()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
