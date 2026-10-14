@@ -115,6 +115,10 @@ public sealed class PasswordRecoveryService(
                     Body: htmlBody),
                 cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             // Never surface existence / provider errors to the client.

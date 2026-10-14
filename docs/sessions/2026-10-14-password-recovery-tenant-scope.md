@@ -16,4 +16,4 @@ Follow-up branch `fix/password-recovery-harden-lows` (not merged; needs GLM/Fabl
 
 ## Update — existence oracle
 
-The same branch now records the 45s cooldown inside `PhoneVerificationSendGate.Decide` on every `Send`, and counts that request toward the IP window even when the decision is `Cooldown`. Staff recovery and customer password reset no longer call `RecordSuccess` only after a real send. Eleven fast requests from one IP return the same statuses for an existing address and for a missing or inactive one. `X-Forwarded-For` handling is unchanged (#109).
+The same branch now records the 45s cooldown inside `PhoneVerificationSendGate.Decide` on every `Send`, and counts that request toward the IP window even when the decision is `Cooldown`. Staff recovery and customer password reset no longer call `RecordSuccess` only after a real send. Eleven fast requests from one IP return the same statuses for an existing address and for a missing or inactive one. A canceled lookup propagates. A request with no subdomain, or with an unknown or inactive subdomain, returns before the gate and does not spend the IP window. `X-Forwarded-For` handling is unchanged (#109).

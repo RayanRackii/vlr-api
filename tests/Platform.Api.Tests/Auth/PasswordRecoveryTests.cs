@@ -138,6 +138,50 @@ public sealed class PasswordRecoveryTests
     }
 
     [Fact]
+    public async Task Member_without_an_auth_user_still_starts_the_cooldown()
+    {
+        var time = new TestTimeProvider(DateTimeOffset.Parse("2026-10-14T12:00:00Z"));
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), time);
+        await using var harness = await RecoveryHarness.CreateAsync(gate);
+        harness.Auth.AuthUserId = null;
+
+        var first = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+        var second = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(first));
+        Assert.Equal(GenericMessage, MessageOf(second));
+        Assert.False(harness.Queue.TryRead(out _));
+        Assert.Equal(["ana@club.test"], harness.Auth.FindCalls);
+        Assert.Empty(harness.Auth.RecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Canceled_lookup_propagates()
+    {
+        var tenant = new Tenant("Club A", "66666666000191", subdomain: "club-a");
+        var tenantProvider = new FakeTenantProvider { TenantId = tenant.Id };
+        await using var db = InMemoryAppDb.Create(tenantProvider);
+        db.Tenants.Add(tenant);
+        db.Users.Add(new User(tenant.Id, "auth-ana", "Ana A", "ana@club.test"));
+        await db.SaveChangesAsync();
+
+        var auth = new RecordingAuthAdmin { AuthUserId = "auth-ana" };
+        var service = CreateService(db, tenantProvider, auth, new NotificationQueue());
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.RequestAsync("ana@club.test", canceled.Token));
+        Assert.Empty(auth.RecoveryCalls);
+    }
+
+    [Fact]
     public async Task Forgot_password_returns_the_same_message_for_member_unknown_and_other_tenant()
     {
         await using var harness = await RecoveryHarness.CreateAsync();
@@ -344,6 +388,68 @@ public sealed class PasswordRecoveryTests
     }
 
     [Fact]
+    public async Task Saturated_ip_returns_429_for_unknown_and_inactive_email()
+    {
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
+        await using var harness = await RecoveryHarness.CreateAsync(gate);
+        FillIpWindow(gate, IPhoneVerificationSendGate.StaffPasswordRecoveryScope);
+
+        var unknown = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "missing@club.test" },
+            "club-a",
+            CancellationToken.None);
+        await harness.DeactivateAnaAAsync();
+        var inactive = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        AssertRateLimited(unknown);
+        AssertRateLimited(inactive);
+        Assert.Equal(ErrorOf(unknown), ErrorOf(inactive));
+        Assert.False(harness.Queue.TryRead(out _));
+        Assert.Empty(harness.Auth.FindCalls);
+        Assert.Empty(harness.Auth.RecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Missing_or_invalid_subdomain_does_not_spend_the_ip_window()
+    {
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
+        await using var harness = await RecoveryHarness.CreateAsync(gate);
+        await harness.DeactivateClubBAsync();
+
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts + 1; i++)
+        {
+            var noSubdomain = await harness.Controller.ForgotPassword(
+                new ForgotPasswordRequestDto { Email = "ana@club.test" },
+                null,
+                CancellationToken.None);
+            var invalidSubdomain = await harness.Controller.ForgotPassword(
+                new ForgotPasswordRequestDto { Email = "ana@club.test" },
+                "missing-club",
+                CancellationToken.None);
+            var inactiveSubdomain = await harness.Controller.ForgotPassword(
+                new ForgotPasswordRequestDto { Email = "ana@club.test" },
+                "club-b",
+                CancellationToken.None);
+            Assert.Equal(GenericMessage, MessageOf(noSubdomain));
+            Assert.Equal(GenericMessage, MessageOf(invalidSubdomain));
+            Assert.Equal(GenericMessage, MessageOf(inactiveSubdomain));
+        }
+
+        var allowed = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(allowed));
+        Assert.Contains("Olá Ana A,", ReadSingle(harness.Queue).Body, StringComparison.Ordinal);
+        Assert.Equal(["ana@club.test"], harness.Auth.FindCalls);
+        Assert.Equal(["ana@club.test"], harness.Auth.RecoveryCalls);
+    }
+
+    [Fact]
     public async Task Eleven_fast_requests_match_for_active_inactive_and_unknown_email()
     {
         var active = await StaffBurstAsync("ana@club.test", deactivateMember: false);
@@ -445,6 +551,19 @@ public sealed class PasswordRecoveryTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var body = Assert.IsType<ForgotPasswordResponseDto>(ok.Value);
         return body.Message;
+    }
+
+    private static void AssertRateLimited(ActionResult<ForgotPasswordResponseDto> result)
+    {
+        var status = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, status.StatusCode);
+        Assert.Equal(TwilioVerifyPhoneVerificationClient.RateLimitedMessage, ErrorOf(result));
+    }
+
+    private static string? ErrorOf(ActionResult<ForgotPasswordResponseDto> result)
+    {
+        var status = Assert.IsType<ObjectResult>(result.Result);
+        return status.Value?.GetType().GetProperty("error")?.GetValue(status.Value) as string;
     }
 
     private sealed class RecoveryHarness : IAsyncDisposable
