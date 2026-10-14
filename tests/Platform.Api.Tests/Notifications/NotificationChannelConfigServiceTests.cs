@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Modules.Notifications;
@@ -312,7 +313,11 @@ public sealed class NotificationChannelConfigServiceTests
         FakeTenantProvider tenantProvider)
     {
         var permissions = new FakePermissionResolver();
-        var catalogPublisher = new CatalogNotificationPublisher(db, tenantProvider, permissions);
+        var catalogPublisher = new CatalogNotificationPublisher(
+            db,
+            tenantProvider,
+            permissions,
+            NullLogger<CatalogNotificationPublisher>.Instance);
         var rentalsPublisher = new RentalsNotificationPublisher(db, tenantProvider);
         var accessor = new TenantModuleAccessor(db, tenantProvider);
         return new NotificationChannelConfigService(

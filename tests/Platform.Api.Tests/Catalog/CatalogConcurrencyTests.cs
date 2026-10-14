@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
@@ -108,7 +109,11 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
     {
         var storageOptions = Options.Create(new StorageOptions());
         var storage = new DevStorageProvider(new FakeHostEnvironment(), storageOptions);
-        var publisher = new CatalogNotificationPublisher(db, tenantProvider, new FakePermissionResolver());
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            tenantProvider,
+            new FakePermissionResolver(),
+            NullLogger<CatalogNotificationPublisher>.Instance);
         return new CatalogPortalService(
             db,
             tenantProvider,
@@ -120,7 +125,11 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
 
     private static CatalogOrderService CreateOrders(AppDbContext db, FakeTenantProvider tenantProvider)
     {
-        var publisher = new CatalogNotificationPublisher(db, tenantProvider, new FakePermissionResolver());
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            tenantProvider,
+            new FakePermissionResolver(),
+            NullLogger<CatalogNotificationPublisher>.Instance);
         return new CatalogOrderService(
             db,
             tenantProvider,
