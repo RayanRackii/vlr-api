@@ -44,7 +44,7 @@ public sealed class RbacGrantGuard(
             throw RbacException.PrivilegeEscalation();
         }
 
-        var enabled = await permissionResolver.GetEnabledCatalogKeysAsync(
+        var wildcard = await permissionResolver.GetAdminWildcardKeysAsync(
             actor.TenantId,
             cancellationToken);
         var actorPerms = await permissionResolver.GetEffectivePermissionsAsync(
@@ -58,9 +58,16 @@ public sealed class RbacGrantGuard(
 
         foreach (var key in keys)
         {
-            var allowed = enabled.Contains(key)
+            // Keys outside the wildcard view are not "inert": excluded keys such as
+            // core.customers.read are live explicit grants. A tenant Admin may opt in
+            // (they do not receive the key from the wildcard). Anyone else may hand
+            // the key out only when they already hold it. Disabled-module and unknown
+            // keys stay Admin-only.
+            var allowed = wildcard.Contains(key)
                 ? actorPerms.Contains(key)
-                : actorIsAdmin;
+                : actorIsAdmin
+                    || (PermissionCatalog.AdminWildcardExcludedKeys.Contains(key)
+                        && actorPerms.Contains(key));
 
             if (!allowed)
             {
@@ -102,7 +109,7 @@ public sealed class RbacGrantGuard(
         }
 
         var keys = new HashSet<string>(StringComparer.Ordinal);
-        var catalog = await permissionResolver.GetEnabledCatalogKeysAsync(
+        var wildcardCatalog = await permissionResolver.GetAdminWildcardKeysAsync(
             actor.TenantId,
             cancellationToken);
 
@@ -110,7 +117,7 @@ public sealed class RbacGrantGuard(
         {
             if (role.IsSystemRole && PermissionResolver.IsAdminOrSuperAdminName(role.Name))
             {
-                foreach (var key in catalog)
+                foreach (var key in wildcardCatalog)
                 {
                     keys.Add(key);
                 }
@@ -120,9 +127,10 @@ public sealed class RbacGrantGuard(
 
             foreach (var rolePermission in role.RolePermissions)
             {
-                if (catalog.Contains(rolePermission.Permission.Key))
+                var key = rolePermission.Permission.Key;
+                if (IsHandedOutKey(key, wildcardCatalog))
                 {
-                    keys.Add(rolePermission.Permission.Key);
+                    keys.Add(key);
                 }
             }
         }
@@ -164,6 +172,17 @@ public sealed class RbacGrantGuard(
             throw RbacException.LastAdminProtected();
         }
     }
+
+    /// <summary>
+    /// True when assigning <paramref name="key"/> would confer it.
+    /// The wildcard catalog omits <see cref="PermissionCatalog.AdminWildcardExcludedKeys"/>
+    /// and any explicit-grant key whose module is off. Those keys are still real
+    /// grants and must reach <see cref="EnsureCanGrantKeysAsync"/>.
+    /// </summary>
+    private static bool IsHandedOutKey(string key, IReadOnlySet<string> wildcardCatalog) =>
+        wildcardCatalog.Contains(key)
+        || PermissionCatalog.AdminWildcardExcludedKeys.Contains(key)
+        || PermissionCatalog.ExplicitGrantOnlyKeys.Contains(key);
 
     private async Task<bool> ActorHasAdminWildcardAsync(
         Guid tenantId,
