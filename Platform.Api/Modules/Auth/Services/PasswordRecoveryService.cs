@@ -34,7 +34,7 @@ public sealed class PasswordRecoveryService(
         {
             var displayName = await dbContext.Users
                 .AsNoTracking()
-                .Where(user => user.TenantId == tenantId && user.Email.ToLower() == normalized)
+                .Where(user => user.TenantId == tenantId && user.Email == normalized)
                 .OrderByDescending(user => user.CreatedAt)
                 .Select(user => user.FullName)
                 .FirstOrDefaultAsync(cancellationToken);

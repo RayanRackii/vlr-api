@@ -192,6 +192,28 @@ public sealed class PasswordRecoveryTests
     }
 
     [Fact]
+    public async Task Unknown_or_inactive_subdomain_returns_the_generic_message_and_sends_nothing()
+    {
+        await using var harness = await RecoveryHarness.CreateAsync();
+        await harness.DeactivateClubBAsync();
+
+        var unknown = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "missing-club",
+            CancellationToken.None);
+        var inactive = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-b",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(unknown));
+        Assert.Equal(GenericMessage, MessageOf(inactive));
+        Assert.Empty(harness.Auth.FindCalls);
+        Assert.Empty(harness.Auth.RecoveryCalls);
+        Assert.False(harness.Queue.TryRead(out _));
+    }
+
+    [Fact]
     public async Task Empty_email_is_rejected_before_any_lookup()
     {
         await using var harness = await RecoveryHarness.CreateAsync();
@@ -242,17 +264,26 @@ public sealed class PasswordRecoveryTests
     private sealed class RecoveryHarness : IAsyncDisposable
     {
         private readonly AppDbContext _db;
+        private readonly Tenant _tenantB;
 
         private RecoveryHarness(
             AppDbContext db,
+            Tenant tenantB,
             PasswordRecoveryController controller,
             NotificationQueue queue,
             RecordingAuthAdmin auth)
         {
             _db = db;
+            _tenantB = tenantB;
             Controller = controller;
             Queue = queue;
             Auth = auth;
+        }
+
+        public async Task DeactivateClubBAsync()
+        {
+            _tenantB.Deactivate();
+            await _db.SaveChangesAsync();
         }
 
         public ValueTask DisposeAsync() => _db.DisposeAsync();
@@ -284,7 +315,7 @@ public sealed class PasswordRecoveryTests
             var service = CreateService(db, tenantProvider, auth, queue);
             var binder = new PublicTenantBinder(db, ambient);
             var controller = new PasswordRecoveryController(service, binder);
-            return new RecoveryHarness(db, controller, queue, auth);
+            return new RecoveryHarness(db, tenantB, controller, queue, auth);
         }
     }
 

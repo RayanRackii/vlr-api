@@ -29,7 +29,15 @@ public sealed class PasswordRecoveryController(
 
         if (!string.IsNullOrWhiteSpace(tenantSubdomain))
         {
-            await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            try
+            {
+                await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            }
+            catch (TenantResolutionException)
+            {
+                // Unknown or inactive slug must not be distinguishable from a missing account.
+                return Ok(new ForgotPasswordResponseDto(GenericMessage));
+            }
         }
 
         await passwordRecoveryService.RequestAsync(request.Email, cancellationToken);
