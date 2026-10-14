@@ -34,14 +34,20 @@ public sealed class PhoneVerificationSendGate(
                 return PhoneVerificationSendDecision.Limited;
             }
 
-            if (cache.TryGetValue(CooldownKey(gateScope, tenantId, normalizedEmail), out DateTimeOffset lastSuccess)
-                && now - lastSuccess < EmailCooldown)
+            // Count before the cooldown branch so a cooled-down address spends the same
+            // IP budget as an address that has not been seen yet.
+            attempts.Add(now);
+            cache.Set(IpKey(gateScope, ip), attempts, IpWindow);
+
+            var cooldownKey = CooldownKey(gateScope, tenantId, normalizedEmail);
+            if (cache.TryGetValue(cooldownKey, out DateTimeOffset lastMarked)
+                && now - lastMarked < EmailCooldown)
             {
                 return PhoneVerificationSendDecision.Cooldown;
             }
 
-            attempts.Add(now);
-            cache.Set(IpKey(gateScope, ip), attempts, IpWindow);
+            // Start the window now, before the caller looks up the account.
+            cache.Set(cooldownKey, now, EmailCooldown);
             return PhoneVerificationSendDecision.Send;
         }
     }
