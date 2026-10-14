@@ -174,6 +174,13 @@ Runbook: [`docs/runbooks/database-migrations.md`](./docs/runbooks/database-migra
 
 Follow-up: `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway env `development` currently sets `ASPNETCORE_ENVIRONMENT=Production`. Do not flip that without reviewing notification/host gates.
 
+## 5.3. CI — `dotnet test`
+
+Workflow: `.github/workflows/ci.yml`. Dispara em pull request para `develop`/`main` e em push nesses branches. Não altera `database-migrations.yml`, secrets nem deploy.
+
+- [x] `dotnet test tests/Platform.Api.Tests` no job `dotnet test`
+- [x] Testes `DockerFact` rodam contra Postgres 16 (`postgres:16-alpine`) via service container e `ROLVIX_TEST_POSTGRES_CONNECTION` em `127.0.0.1`. Sem Docker e sem essa variável, o `DockerFact` continua ignorando a prova em vez de falhar.
+
 ## 6. Catalog & Orders v1 — EM ANDAMENTO (código)
 
 Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/2026-08-28-catalog-orders.md). Branch `feat/catalog-orders`. Pack: [`docs/context-packs/active/catalog.md`](./docs/context-packs/active/catalog.md).
@@ -207,6 +214,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-14 | **CI:** workflow `ci` passa a rodar `dotnet test` em pull requests e pushes de `develop`/`main`. Provas `DockerFact` usam Postgres 16 em service container (`ROLVIX_TEST_POSTGRES_CONNECTION` loopback), o mesmo contrato do fixture local. `database-migrations.yml`, secrets e deploy não mudam. |
 | 2026-10-13 | **Review-fix (API, sem merge):** `GET /api/users` mantém `[RequirePermission(core.users.read)]` e o 401 imperativo só quando não há tenant. Migration `AddCoreCustomersReadPermission` insere `core.customers.read` (`ON CONFLICT (key) DO NOTHING`; Down apaga `role_permissions` e depois a permissão). Não aplicada e sem grant. `GET /api/users` paginado: API #99 e Web #94 no mesmo release. |
 | 2026-10-12 | **Correção local (sem merge):** três blockers de aulas por data na branch `fix/teacher-lessons-release-blockers`. Update/delete de template recusa escrita quando a quadra mudou depois da escolha do lock. Remove de aula persistida exige origem ativa canônica (aula, ou o open vencedor). Web não oferece slot `Available` com `reservationId` e só confirma sucesso se o corpo da resposta for o slot esperado. Rota/nav da agenda permanece em `rentals.schedule.read` (plano 2026-10-08 L30/L36). `TeacherLessonConcurrencyTests` 18 skipped sem Docker — não é PASS. Spec `docs/plans/active/2026-10-12-teacher-lessons-release-blockers.md`. Sem migration, grant, deploy ou merge em `main`. |
 | 2026-10-08 | **Pronto para revisão local (API + WEB):** teacher date-only lessons FICC — permissão dedicada sem fallback, allowlist server-side de seis quadras, conflitos/reservas verificados sob lock transacional, migration apenas de catálogo, UI RHF/Zod. API 806 pass/1 skip; WEB 454 pass/build OK. Revisão final do Grok pendente; sem migration aplicada, role criada/atribuída, deploy ou commit. Spec `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`. |
