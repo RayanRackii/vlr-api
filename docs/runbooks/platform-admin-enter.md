@@ -23,6 +23,8 @@ Cascade delete de tenant apagou (ou deixou órfão) o Auth do PlatformAdmin. O J
 ## Sessão efetiva depois do exit
 `POST /api/admin/tenants/exit` limpa `app_metadata.tenant_id` no Auth. O access token pode continuar com o valor antigo até o refresh. A API não usa esse claim para Super-Admin: o tenant da request é a metadata viva mais uma membership `User` ativa. Sem os dois, o request fica em modo plataforma.
 
+A leitura dessa metadata no Auth admin expira em 3s. O valor resolvido fica em cache por 30s, chaveado pelo auth id, e o enter/exit tira a entrada do cache. Timeout ou falha de leitura não escolhe tenant; o log da request traz a exceção, sem token e sem o corpo do usuário.
+
 ## Não fazer
 - Não reintroduzir header `X-Support-Tenant-Id` / abrir tenant em nova aba.
 - Não deletar Auth de PlatformAdmin ao limpar um tenant.
