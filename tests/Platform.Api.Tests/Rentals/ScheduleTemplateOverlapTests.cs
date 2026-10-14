@@ -533,7 +533,8 @@ internal sealed class ScheduleOverlapHarness : IAsyncDisposable
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            TimeProvider.System);
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 }

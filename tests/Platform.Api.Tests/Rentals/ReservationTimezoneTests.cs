@@ -14,6 +14,8 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ReservationTimezoneTests
 {
     private static readonly DateOnly CivilDate = new(2026, 9, 10);
+    private static readonly TimeProvider BookingClock =
+        new TestTimeProvider(BrazilTimeZone.AtLocal(CivilDate, new TimeOnly(9, 0)));
     private static readonly TimeOnly Ten = new(10, 0);
     private static readonly TimeOnly Eleven = new(11, 0);
     private static readonly TimeOnly TwentyTwo = new(22, 0);
@@ -282,7 +284,8 @@ public sealed class ReservationTimezoneTests
                 new FakeTrialGuard(),
                 queue,
                 SilentRentalsNotifications.Publisher,
-                SilentRentalsNotifications.Scheduler);
+                SilentRentalsNotifications.Scheduler,
+                BookingClock);
             var schedule = new ScheduleService(
                 db,
                 tenantProvider,
@@ -290,7 +293,8 @@ public sealed class ReservationTimezoneTests
                 new FakeTrialGuard(),
                 queue,
                 SilentRentalsNotifications.Publisher,
-                SilentRentalsNotifications.Scheduler);
+                SilentRentalsNotifications.Scheduler,
+                BookingClock);
 
             return new TimezoneBookingHarness(
                 db,

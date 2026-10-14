@@ -170,7 +170,8 @@ public sealed class RentalsEmailNotificationTests
             new FakeTrialGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
             publisher,
-            scheduler);
+            scheduler,
+            LocationBookingHarness.BookingClock);
 
         return new Context(harness, publisher, scheduler, processor, email, reservations);
     }

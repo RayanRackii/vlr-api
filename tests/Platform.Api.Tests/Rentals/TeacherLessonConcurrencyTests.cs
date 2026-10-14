@@ -14,6 +14,8 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContainerFixture>
 {
     private static readonly DateOnly Tuesday = new(2026, 8, 25);
+    private static readonly TimeProvider BookingClock =
+        new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0)));
     private static readonly TimeOnly Ten = new(10, 0);
     private static readonly TimeOnly Eleven = new(11, 0);
 
@@ -1039,7 +1041,8 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
     private static ScheduleService CreateScheduleService(
         AppDbContext db,
@@ -1051,7 +1054,8 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
     private static CreateTeacherLessonRequestDto CreateLessonRequest(SeededGrid seed) =>
         new()

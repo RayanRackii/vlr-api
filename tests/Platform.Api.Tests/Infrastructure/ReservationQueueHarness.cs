@@ -221,7 +221,8 @@ internal sealed class ReservationQueueHarness : IAsyncDisposable
             new FakeTrialGuard(),
             Queue(),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            Time);
 
     public ScheduleService Schedule() =>
         new(
@@ -231,7 +232,8 @@ internal sealed class ReservationQueueHarness : IAsyncDisposable
             new FakeTrialGuard(),
             Queue(),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            Time);
 
     public Platform.Api.Modules.Rentals.Dtos.CreateReservationRequestDto BookRequest() =>
         new()
