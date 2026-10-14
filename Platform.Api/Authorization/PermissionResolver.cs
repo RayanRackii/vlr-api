@@ -47,7 +47,14 @@ public sealed class PermissionResolver(
         return effective.Contains(permissionKey);
     }
 
-    public async Task<IReadOnlySet<string>> GetEnabledCatalogKeysAsync(
+    /// <summary>
+    /// Admin-wildcard view: module-enabled catalog keys except
+    /// <see cref="PermissionCatalog.AdminWildcardExcludedKeys"/>.
+    /// Those excluded keys remain active on the explicit-grant path and are
+    /// omitted here on purpose. Callers that decide whether a key may be handed
+    /// out must account for them separately.
+    /// </summary>
+    public async Task<IReadOnlySet<string>> GetAdminWildcardKeysAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {

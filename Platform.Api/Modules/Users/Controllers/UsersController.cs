@@ -5,7 +5,6 @@ using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
 using Platform.Core.Domain.Constants;
-using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Users.Controllers;
 
@@ -14,8 +13,7 @@ namespace Platform.Api.Modules.Users.Controllers;
 [Route("api/users")]
 public sealed class UsersController(
     IUserDirectoryService userDirectoryService,
-    IRbacActorAccessor rbacActorAccessor,
-    ITenantProvider tenantProvider) : ControllerBase
+    IRbacActorAccessor rbacActorAccessor) : ControllerBase
 {
     [HttpGet("me")]
     public async Task<ActionResult<CurrentUserResponse>> GetCurrent(
@@ -40,12 +38,6 @@ public sealed class UsersController(
         [FromQuery] int pageSize = DirectoryPage.DefaultPageSize,
         CancellationToken cancellationToken = default)
     {
-        var denied = DirectoryAuthorization.RequireTenant(this, tenantProvider);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         if (!DirectoryPage.TryCreate(q, page, pageSize, out var directoryPage, out var error))
         {
             return BadRequest(new { error });

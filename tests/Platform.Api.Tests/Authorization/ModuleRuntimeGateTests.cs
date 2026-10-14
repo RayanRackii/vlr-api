@@ -440,7 +440,7 @@ public sealed class ModuleRuntimeGateTests
             NullLogger<PermissionResolver>.Instance);
 
         await resolver.GetEffectivePermissionsAsync(harness.Tenant.Id, user.Id);
-        await resolver.GetEnabledCatalogKeysAsync(harness.Tenant.Id);
+        await resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
         await accessor.GetActiveModuleKeysAsync();
 
         Assert.Equal(1, accessor.DatabaseLoadCount);
@@ -459,7 +459,7 @@ public sealed class ModuleRuntimeGateTests
             accessor,
             NullLogger<PermissionResolver>.Instance);
 
-        var catalog = await resolver.GetEnabledCatalogKeysAsync(harness.Tenant.Id);
+        var catalog = await resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
 
         Assert.Equal(1, accessor.Calls);
         Assert.Contains(Permissions.Rentals.AssetsRead, catalog);
