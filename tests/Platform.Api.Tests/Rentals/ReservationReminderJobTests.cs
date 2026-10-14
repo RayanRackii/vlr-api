@@ -180,7 +180,10 @@ public sealed class ReservationReminderJobTests
     private static async Task<Context> CreateContextAsync()
     {
         var harness = await LocationBookingHarness.CreateAsync();
-        var publisher = new RentalsNotificationPublisher(harness.Db, harness.TenantProvider);
+        var publisher = new RentalsNotificationPublisher(
+            harness.Db,
+            harness.TenantProvider,
+            NullLogger<RentalsNotificationPublisher>.Instance);
         var scheduler = new RecordingOutboxScheduler();
         var whatsApp = new DevWhatsAppRecorder();
         var processor = new NotificationOutboxProcessor(
@@ -282,7 +285,10 @@ public sealed class ReservationReminderJobTests
         db.Reservations.Add(reservation);
         await db.SaveChangesAsync();
 
-        var publisher = new RentalsNotificationPublisher(db, tenantProvider);
+        var publisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            NullLogger<RentalsNotificationPublisher>.Instance);
         await publisher.EnsureReadyAsync(CancellationToken.None);
         var config = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
@@ -317,7 +323,10 @@ public sealed class ReservationReminderJobTests
             var ambient = new AmbientTenantContext();
             var tenantProvider = new AmbientBackedTenantProvider(ambient);
             var db = InMemoryAppDb.Create(tenantProvider, databaseName);
-            var publisher = new RentalsNotificationPublisher(db, tenantProvider);
+            var publisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            NullLogger<RentalsNotificationPublisher>.Instance);
             return new ReminderJobTestScope(ambient, db, publisher, scheduler);
         }
     }

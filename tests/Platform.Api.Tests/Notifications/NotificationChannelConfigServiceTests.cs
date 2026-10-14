@@ -318,7 +318,10 @@ public sealed class NotificationChannelConfigServiceTests
             tenantProvider,
             permissions,
             NullLogger<CatalogNotificationPublisher>.Instance);
-        var rentalsPublisher = new RentalsNotificationPublisher(db, tenantProvider);
+        var rentalsPublisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            NullLogger<RentalsNotificationPublisher>.Instance);
         var accessor = new TenantModuleAccessor(db, tenantProvider);
         return new NotificationChannelConfigService(
             db,
