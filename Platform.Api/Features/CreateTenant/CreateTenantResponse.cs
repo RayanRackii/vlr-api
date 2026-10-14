@@ -3,7 +3,8 @@ namespace Platform.Api.Features.CreateTenant;
 public sealed record CreateTenantResponse(
     Guid TenantId,
     Guid HeadquartersUnitId,
-    Guid AdminUserId,
+    Guid? AdminUserId,
     Guid SuperAdminRoleId,
-    string SupabaseAuthId,
-    string? Subdomain = null);
+    string? SupabaseAuthId,
+    string? Subdomain = null,
+    Guid? InviteId = null);

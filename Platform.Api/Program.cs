@@ -70,6 +70,7 @@ try
     builder.Services.AddRegistrationFieldsModule();
     builder.Services.AddModuleMenuItemsModule();
     builder.Services.AddAdminModule();
+    builder.Services.AddSingleton<IAnonymousTrialCreateGate, AnonymousTrialCreateGate>();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));

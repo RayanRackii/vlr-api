@@ -21,6 +21,12 @@ public interface ITenantUserAdminService
     Task<TenantInviteResponseDto> InviteAsync(
         Guid tenantId,
         InviteTenantUserRequestDto request,
+        CancellationToken cancellationToken,
+        bool enqueueEmail = true);
+
+    Task DeliverInviteEmailAsync(
+        Guid tenantId,
+        Guid inviteId,
         CancellationToken cancellationToken);
 
     Task ResendInviteAsync(Guid tenantId, Guid inviteId, CancellationToken cancellationToken);
@@ -100,7 +106,8 @@ public sealed class TenantUserAdminService(
     public async Task<TenantInviteResponseDto> InviteAsync(
         Guid tenantId,
         InviteTenantUserRequestDto request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enqueueEmail = true)
     {
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
         await trialGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
@@ -174,7 +181,10 @@ public sealed class TenantUserAdminService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        await EnqueueInviteEmailAsync(invite, cancellationToken);
+        if (enqueueEmail)
+        {
+            await EnqueueInviteEmailAsync(invite, cancellationToken);
+        }
 
         logger.LogInformation(
             "RBAC invitation created. TenantId={TenantId} InviteId={InviteId}",
@@ -182,6 +192,21 @@ public sealed class TenantUserAdminService(
             invite.Id);
 
         return ToInviteDto(invite);
+    }
+
+    public async Task DeliverInviteEmailAsync(
+        Guid tenantId,
+        Guid inviteId,
+        CancellationToken cancellationToken)
+    {
+        var invite = await dbContext.UserInvites
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                item => item.Id == inviteId && item.TenantId == tenantId,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("Invite was not found.");
+
+        await EnqueueInviteEmailAsync(invite, cancellationToken);
     }
 
     public async Task ResendInviteAsync(
