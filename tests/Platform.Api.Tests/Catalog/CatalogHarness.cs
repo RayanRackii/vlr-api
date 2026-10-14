@@ -78,7 +78,11 @@ internal sealed class CatalogHarness : IAsyncDisposable
         var storageOptions = Options.Create(new StorageOptions());
         var storage = new DevStorageProvider(new FakeHostEnvironment(), storageOptions);
         var permissions = new FakePermissionResolver();
-        var publisher = new CatalogNotificationPublisher(db, tenantProvider, permissions);
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            tenantProvider,
+            permissions,
+            NullLogger<CatalogNotificationPublisher>.Instance);
         var scheduler = new RecordingOutboxScheduler();
         var email = new DevEmailRecorder();
         var whatsApp = new DevWhatsAppRecorder();
