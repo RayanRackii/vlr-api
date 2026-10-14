@@ -6,9 +6,9 @@ B2B "Esqueci a senha" must send a **Rolvix-branded** email (same chrome as invit
 
 ## How it works
 
-1. Frontend `POST /api/auth/forgot-password` with `{ email }` (does **not** call `resetPasswordForEmail`).
-2. API looks up the Auth user (admin). If missing → still returns a generic OK (anti-enumeration).
-3. API calls GoTrue `POST /auth/v1/admin/generate_link` with `type=recovery`.
+1. Frontend `POST /api/auth/forgot-password` with `{ email }` (does **not** call `resetPasswordForEmail`). Optional header `X-Tenant-Subdomain` selects the tenant. The B2B panel client does not send that header yet.
+2. API looks up `core.users` for that email **in the current tenant only**. Unknown email, a member of another tenant, or no current tenant → same generic OK, no Auth admin call, no email (anti-enumeration). A null tenant must not scan every tenant.
+3. When that membership exists and the Auth user exists, API calls GoTrue `POST /auth/v1/admin/generate_link` with `type=recovery`.
 4. API builds a **first-party** link (avoids Supabase Site URL fallback to `localhost:3000`):
 
    `https://rolvix.com.br/reset-password?token_hash=…&type=recovery`

@@ -3,8 +3,9 @@ namespace Platform.Api.Modules.Auth.Services;
 public interface IPasswordRecoveryService
 {
     /// <summary>
-    /// Always succeeds from the caller's perspective (anti-enumeration).
-    /// When the Auth user exists, enqueues a Rolvix-branded Resend email with a recovery link.
+    /// Always completes without telling the caller whether the email exists.
+    /// Sends a Rolvix recovery email only when the address is a user of the current tenant
+    /// and an Auth account exists. No current tenant means no lookup and no email.
     /// </summary>
     Task RequestAsync(string email, CancellationToken cancellationToken);
 }

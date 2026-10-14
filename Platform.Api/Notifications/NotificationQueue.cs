@@ -19,4 +19,7 @@ public sealed class NotificationQueue
     {
         return _channel.Reader.ReadAsync(cancellationToken);
     }
+
+    internal bool TryRead(out NotificationMessage message) =>
+        _channel.Reader.TryRead(out message!);
 }
