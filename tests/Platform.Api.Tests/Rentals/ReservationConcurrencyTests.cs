@@ -19,6 +19,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
     private static readonly DateOnly Date = new(2026, 9, 1);
     private static readonly DateOnly FutureOccupancyDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(21));
     private static readonly DateOnly PastOccupancyDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-3));
+    private static readonly TimeProvider BookingClock =
+        new TestTimeProvider(BrazilTimeZone.AtLocal(Date, new TimeOnly(9, 0)));
     private static readonly TimeOnly Start = new(10, 0);
     private static readonly TimeOnly End = new(11, 0);
 
@@ -46,14 +48,16 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new FakeTrialGuard(),
             TestReservationQueue.Create(db1, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
         var service2 = new ReservationService(
             db2,
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db2, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
         var request = new CreateReservationRequestDto
         {
@@ -94,7 +98,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new FakeTrialGuard(),
             TestReservationQueue.Create(db1, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
         var service2 = new ScheduleService(
             db2,
             tenantProvider,
@@ -102,7 +107,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new FakeTrialGuard(),
             TestReservationQueue.Create(db2, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
         var request = new BookSlotRequestDto
         {
@@ -166,7 +172,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
         var booked = await scheduleService.BookSlotAsync(
             occupied.Seed.CustomerId,
             new BookSlotRequestDto
@@ -238,7 +245,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new FakeTrialGuard(),
             TestReservationQueue.Create(dbBook, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
         var captured = await Task.WhenAll(
             CaptureAsync(cancelService.CancelAsync(occupied.ReservationId, CancellationToken.None)),
@@ -955,7 +963,14 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
     private static ReservationService CreateReservationService(
         AppDbContext db,
         FakeTenantProvider tenantProvider) =>
-        new(db, tenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(db, tenantProvider), SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler);
+        new(
+            db,
+            tenantProvider,
+            new FakeTrialGuard(),
+            TestReservationQueue.Create(db, tenantProvider),
+            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
     private static CreateReservationRequestDto CreateRequest(SeededLocation seed) =>
         new()
@@ -1176,7 +1191,8 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
 
         var ioe = Assert.IsType<InvalidOperationException>(failure);
         Assert.True(
-            ioe.Message.Contains("not available", StringComparison.OrdinalIgnoreCase)
+            ioe.Message.Contains("não está disponível para o intervalo solicitado", StringComparison.Ordinal)
+            || ioe.Message.Contains("not available", StringComparison.OrdinalIgnoreCase)
             || ioe.Message.Contains("already reserved", StringComparison.OrdinalIgnoreCase),
             ioe.Message);
     }

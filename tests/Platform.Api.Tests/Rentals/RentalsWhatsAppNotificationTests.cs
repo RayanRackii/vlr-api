@@ -173,7 +173,8 @@ public sealed class RentalsWhatsAppNotificationTests
                 otherDb,
                 otherProvider,
                 NullLogger<RentalsNotificationPublisher>.Instance),
-            new NoOpNotificationOutboxScheduler());
+            new NoOpNotificationOutboxScheduler(),
+            TimeProvider.System);
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             otherService.CompleteAsync(reservation.Id, CancellationToken.None));
@@ -285,7 +286,8 @@ public sealed class RentalsWhatsAppNotificationTests
             new FakeTrialGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
             publisher,
-            scheduler);
+            scheduler,
+            LocationBookingHarness.BookingClock);
 
         return new Context(harness, publisher, scheduler, processor, whatsApp, reservations);
     }

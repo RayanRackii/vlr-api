@@ -13,6 +13,12 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
     public static readonly DateOnly Date = new(2026, 9, 1);
     public static readonly TimeOnly Start = new(10, 0);
     public static readonly TimeOnly End = new(11, 0);
+
+    /// <summary>
+    /// Pinned before <see cref="Start"/> on <see cref="Date"/> so fixture bookings stay in the future.
+    /// </summary>
+    public static readonly TimeProvider BookingClock =
+        new TestTimeProvider(BrazilTimeZone.AtLocal(Date, new TimeOnly(9, 0)));
     public const string AssetName = "Quadra 1";
 
     private LocationBookingHarness(
@@ -235,7 +241,8 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
     public ScheduleService CreateScheduleService() =>
         new(
@@ -245,7 +252,8 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 

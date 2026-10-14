@@ -860,6 +860,9 @@ internal sealed class BlockingTrialGuard : ITrialGuard
 
 internal sealed class TeacherLessonHarness : IAsyncDisposable
 {
+    private static readonly TimeProvider BookingClock =
+        new TestTimeProvider(BrazilTimeZone.AtLocal(new DateOnly(2026, 8, 24), new TimeOnly(9, 0)));
+
     private TeacherLessonHarness(
         AppDbContext db,
         FakeTenantProvider tenantProvider,
@@ -885,7 +888,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             db,
             tenantProvider,
             trialGuard,
-            new TestTimeProvider(BrazilTimeZone.AtLocal(new DateOnly(2026, 8, 24), new TimeOnly(9, 0))),
+            BookingClock,
             new TestTeacherLessonScope());
         Schedule = new ScheduleService(
             db,
@@ -894,7 +897,8 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
     }
 
     public AppDbContext Db { get; }
@@ -1040,7 +1044,8 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            BookingClock);
 
     public async Task<(OccupancyKind Open, OccupancyKind Lesson, OccupancyKind Closed)> EnsureKindsAsync()
     {
