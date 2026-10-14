@@ -1,6 +1,8 @@
+using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Platform.Api.Authorization;
@@ -246,49 +248,280 @@ public sealed class TrialOnboardingInviteTests
     }
 
     [Fact]
-    public async Task Non_trial_public_create_still_requires_and_sets_a_password()
+    public void Json_without_is_trial_binds_as_false()
+    {
+        var json = """
+            {
+              "legalName": "Club",
+              "taxId": "1",
+              "headquartersUnitName": "Matriz",
+              "adminFullName": "Ada Admin",
+              "adminEmail": "ada@club.test",
+              "adminPhone": "11999998888",
+              "adminPassword": "password1"
+            }
+            """;
+
+        var request = JsonSerializer.Deserialize<CreateTenantRequest>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(request);
+        Assert.False(request.IsTrial);
+        Assert.Equal("password1", request.AdminPassword);
+    }
+
+    [Fact]
+    public async Task Anonymous_non_trial_is_rejected_and_creates_nothing()
+    {
+        await using var harness = await Harness.CreateAsync();
+        const string suppliedPassword = "attacker-chosen-1";
+        const string clientIp = "203.0.113.44";
+
+        var explicitFalse = await harness.Handler.HandleAsync(
+            new CreateTenantRequest(
+                "Legacy Club",
+                "11222333000181",
+                null,
+                "Matriz",
+                "HQ",
+                "Legacy Admin",
+                "legacy@club.test",
+                suppliedPassword,
+                "11977776666",
+                IsTrial: false),
+            CancellationToken.None,
+            clientIp);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Status(explicitFalse));
+        Assert.Equal(AnonymousOnboardingErrorCodes.TrialRequired, Error(explicitFalse));
+
+        var omitted = await harness.Handler.HandleAsync(
+            new CreateTenantRequest(
+                "Legacy Club",
+                "11222333000181",
+                null,
+                "Matriz",
+                "HQ",
+                "Legacy Admin",
+                "legacy@club.test",
+                suppliedPassword,
+                "11977776666"),
+            CancellationToken.None,
+            clientIp);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Status(omitted));
+        Assert.Equal(AnonymousOnboardingErrorCodes.TrialRequired, Error(omitted));
+        Assert.Empty(harness.Auth.Created);
+        Assert.Empty(harness.Auth.PasswordsSet);
+        Assert.Empty(harness.Auth.MetadataUpdates);
+        Assert.Empty(await harness.Db.Tenants.ToListAsync());
+        Assert.Empty(await harness.Db.TrialSignupClaims.ToListAsync());
+        Assert.Empty(await harness.Db.UserInvites.ToListAsync());
+        Assert.Empty(await harness.Db.Users.ToListAsync());
+        Assert.False(harness.Queue.TryRead(out _));
+        var logs = string.Join('\n', harness.Logger.Messages.Concat(harness.HandlerLogger.Messages));
+        Assert.DoesNotContain(suppliedPassword, logs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejected_non_trial_does_not_consume_the_ip_budget()
+    {
+        await using var harness = await Harness.CreateAsync();
+        const string clientIp = "203.0.113.45";
+
+        for (var i = 0; i < AnonymousTrialCreateGate.IpMaxAttempts + 1; i++)
+        {
+            var rejected = await harness.Handler.HandleAsync(
+                new CreateTenantRequest(
+                    "Legacy Club",
+                    "11222333000181",
+                    null,
+                    "Matriz",
+                    "HQ",
+                    "Legacy Admin",
+                    $"legacy{i}@club.test",
+                    "password1",
+                    IsTrial: false),
+                CancellationToken.None,
+                clientIp);
+            Assert.Equal(AnonymousOnboardingErrorCodes.TrialRequired, Error(rejected));
+        }
+
+        var created = await harness.Handler.HandleAsync(
+            TrialRequest("after-reject@club.test", "11966665555"),
+            CancellationToken.None,
+            clientIp);
+
+        Assert.Equal(StatusCodes.Status201Created, Status(created));
+        Assert.Equal(1, await harness.Db.Tenants.CountAsync());
+        Assert.Empty(harness.Auth.Created);
+    }
+
+    [Fact]
+    public async Task Ip_limit_blocks_the_next_trial_and_creates_nothing_more()
+    {
+        await using var harness = await Harness.CreateAsync();
+        const string clientIp = "203.0.113.10";
+
+        for (var i = 0; i < AnonymousTrialCreateGate.IpMaxAttempts; i++)
+        {
+            var created = await harness.Handler.HandleAsync(
+                TrialRequest($"rate{i}@club.test", $"1191000{i:0000}"),
+                CancellationToken.None,
+                clientIp);
+            Assert.Equal(StatusCodes.Status201Created, Status(created));
+        }
+
+        var blocked = await harness.Handler.HandleAsync(
+            TrialRequest("blocked@club.test", "11910009999"),
+            CancellationToken.None,
+            clientIp);
+
+        Assert.Equal(StatusCodes.Status429TooManyRequests, Status(blocked));
+        Assert.Equal(AnonymousOnboardingErrorCodes.RateLimited, Error(blocked));
+        Assert.Equal(AnonymousTrialCreateGate.IpMaxAttempts, await harness.Db.Tenants.CountAsync());
+        Assert.Equal(AnonymousTrialCreateGate.IpMaxAttempts, await harness.Db.UserInvites.CountAsync());
+        Assert.Empty(harness.Auth.Created);
+
+        var recipients = DrainRecipients(harness);
+        Assert.Equal(AnonymousTrialCreateGate.IpMaxAttempts, recipients.Count);
+        Assert.DoesNotContain("blocked@club.test", recipients);
+    }
+
+    [Fact]
+    public async Task A_different_ip_is_not_blocked_by_another_address()
     {
         await using var harness = await Harness.CreateAsync();
 
-        var missing = await harness.Handler.HandleAsync(
-            new CreateTenantRequest(
-                "Legacy Club",
-                "11222333000181",
-                null,
-                "Matriz",
-                "HQ",
-                "Legacy Admin",
-                "legacy@club.test",
-                IsTrial: false),
-            CancellationToken.None);
+        for (var i = 0; i < AnonymousTrialCreateGate.IpMaxAttempts; i++)
+        {
+            var created = await harness.Handler.HandleAsync(
+                TrialRequest($"ip-a{i}@club.test", $"1192000{i:0000}"),
+                CancellationToken.None,
+                "203.0.113.10");
+            Assert.Equal(StatusCodes.Status201Created, Status(created));
+        }
 
-        Assert.Equal(StatusCodes.Status400BadRequest, Status(missing));
-        Assert.Equal("AdminPassword is required.", Error(missing));
-        Assert.Empty(harness.Auth.Created);
+        var blocked = await harness.Handler.HandleAsync(
+            TrialRequest("ip-a-blocked@club.test", "11920009999"),
+            CancellationToken.None,
+            "203.0.113.10");
+        Assert.Equal(StatusCodes.Status429TooManyRequests, Status(blocked));
 
-        var created = await harness.Handler.HandleAsync(
-            new CreateTenantRequest(
-                "Legacy Club",
-                "11222333000181",
-                null,
-                "Matriz",
-                "HQ",
-                "Legacy Admin",
-                "legacy@club.test",
-                "password1",
-                IsTrial: false),
-            CancellationToken.None);
+        var other = await harness.Handler.HandleAsync(
+            TrialRequest("ip-b@club.test", "11920008888"),
+            CancellationToken.None,
+            "203.0.113.11");
+        Assert.Equal(StatusCodes.Status201Created, Status(other));
+        Assert.Equal(AnonymousTrialCreateGate.IpMaxAttempts + 1, await harness.Db.Tenants.CountAsync());
+    }
 
-        Assert.Equal(StatusCodes.Status201Created, Status(created));
-        var body = Body<CreateTenantResponse>(created);
-        Assert.NotNull(body.AdminUserId);
-        Assert.Equal(harness.Auth.NextUserId, body.SupabaseAuthId);
-        Assert.Null(body.InviteId);
-        var authUser = Assert.Single(harness.Auth.Created);
-        Assert.Equal("legacy@club.test", authUser.Email);
-        Assert.Equal("password1", authUser.Password);
-        Assert.Empty(await harness.Db.UserInvites.ToListAsync());
+    [Fact]
+    public async Task Missing_and_blank_ip_share_one_bucket()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        for (var i = 0; i < AnonymousTrialCreateGate.IpMaxAttempts; i++)
+        {
+            var created = await harness.Handler.HandleAsync(
+                TrialRequest($"anon{i}@club.test", $"1193000{i:0000}"),
+                CancellationToken.None,
+                clientIp: null);
+            Assert.Equal(StatusCodes.Status201Created, Status(created));
+        }
+
+        var blocked = await harness.Handler.HandleAsync(
+            TrialRequest("anon-blocked@club.test", "11930009999"),
+            CancellationToken.None,
+            clientIp: " ");
+        Assert.Equal(StatusCodes.Status429TooManyRequests, Status(blocked));
+        Assert.Equal(AnonymousOnboardingErrorCodes.RateLimited, Error(blocked));
+        Assert.Equal(AnonymousTrialCreateGate.IpMaxAttempts, await harness.Db.Tenants.CountAsync());
+    }
+
+    [Fact]
+    public async Task Ip_limit_expires_after_the_window()
+    {
+        var time = new TestTimeProvider(DateTimeOffset.Parse("2026-10-14T12:00:00Z"));
+        var gate = new AnonymousTrialCreateGate(new MemoryCache(new MemoryCacheOptions()), time);
+        await using var harness = await Harness.CreateAsync(gate);
+
+        for (var i = 0; i < AnonymousTrialCreateGate.IpMaxAttempts; i++)
+        {
+            var created = await harness.Handler.HandleAsync(
+                TrialRequest($"window{i}@club.test", $"1194000{i:0000}"),
+                CancellationToken.None,
+                "203.0.113.12");
+            Assert.Equal(StatusCodes.Status201Created, Status(created));
+        }
+
+        var blocked = await harness.Handler.HandleAsync(
+            TrialRequest("window-blocked@club.test", "11940009999"),
+            CancellationToken.None,
+            "203.0.113.12");
+        Assert.Equal(StatusCodes.Status429TooManyRequests, Status(blocked));
+
+        time.Advance(AnonymousTrialCreateGate.IpWindow);
+
+        var allowed = await harness.Handler.HandleAsync(
+            TrialRequest("window-later@club.test", "11940008888"),
+            CancellationToken.None,
+            "203.0.113.12");
+        Assert.Equal(StatusCodes.Status201Created, Status(allowed));
+    }
+
+    [Theory]
+    [InlineData(409, StatusCodes.Status409Conflict, AnonymousOnboardingErrorCodes.SignupRejected)]
+    [InlineData(422, StatusCodes.Status409Conflict, AnonymousOnboardingErrorCodes.SignupRejected)]
+    [InlineData(500, StatusCodes.Status502BadGateway, AnonymousOnboardingErrorCodes.SignupUnavailable)]
+    public async Task Auth_provider_failures_do_not_echo_the_provider_message(
+        int providerStatus,
+        int httpStatus,
+        string errorCode)
+    {
+        const string raw = "supabase raw detail user already registered victim@secret.test";
+        var invites = new ThrowingInviteService(
+            new SupabaseAuthAdminException(raw, providerStatus));
+        await using var harness = await Harness.CreateAsync(invites: invites);
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest($"provider{providerStatus}@club.test", "11955554444"),
+            CancellationToken.None,
+            "203.0.113.50");
+
+        Assert.Equal(httpStatus, Status(result));
+        Assert.Equal(errorCode, Error(result));
+        Assert.DoesNotContain("supabase raw", Error(result), StringComparison.Ordinal);
+        Assert.DoesNotContain("victim@secret.test", Error(result), StringComparison.Ordinal);
+        Assert.Contains(raw, string.Join('\n', harness.HandlerLogger.Messages), StringComparison.Ordinal);
         Assert.False(harness.Queue.TryRead(out _));
+        Assert.Empty(harness.Auth.Created);
+    }
+
+    [Fact]
+    public void Client_ip_keeps_the_first_forwarded_hop()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Forwarded-For"] = "203.0.113.5, 10.0.0.8";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.8");
+
+        Assert.Equal("203.0.113.5", AnonymousOnboardingClientIp.From(context));
+    }
+
+    [Fact]
+    public void Client_ip_uses_remote_address_when_the_forwarded_header_is_missing_or_blank()
+    {
+        var missing = new DefaultHttpContext();
+        missing.Connection.RemoteIpAddress = IPAddress.Parse("198.51.100.20");
+        Assert.Equal("198.51.100.20", AnonymousOnboardingClientIp.From(missing));
+
+        var blank = new DefaultHttpContext();
+        blank.Request.Headers["X-Forwarded-For"] = "   ";
+        blank.Connection.RemoteIpAddress = IPAddress.Parse("198.51.100.21");
+        Assert.Equal("198.51.100.21", AnonymousOnboardingClientIp.From(blank));
+
+        Assert.Null(AnonymousOnboardingClientIp.From(null));
     }
 
     private static CreateTenantRequest TrialRequest(
@@ -329,15 +562,27 @@ public sealed class TrialOnboardingInviteTests
         return Assert.IsType<string>(error);
     }
 
+    private static List<string> DrainRecipients(Harness harness)
+    {
+        var recipients = new List<string>();
+        while (harness.Queue.TryRead(out var message))
+        {
+            recipients.Add(message.Recipient);
+        }
+
+        return recipients;
+    }
+
     private sealed class Harness : IAsyncDisposable
     {
         private Harness(
             AppDbContext db,
             CreateTenantHandler handler,
-            TenantUserAdminService invites,
+            ITenantUserAdminService invites,
             RecordingAuth auth,
             NotificationQueue queue,
-            ListLogger<TenantUserAdminService> logger)
+            ListLogger<TenantUserAdminService> logger,
+            ListLogger<CreateTenantHandler> handlerLogger)
         {
             Db = db;
             Handler = handler;
@@ -345,13 +590,14 @@ public sealed class TrialOnboardingInviteTests
             Auth = auth;
             Queue = queue;
             Logger = logger;
+            HandlerLogger = handlerLogger;
         }
 
         public AppDbContext Db { get; }
 
         public CreateTenantHandler Handler { get; }
 
-        public TenantUserAdminService Invites { get; }
+        public ITenantUserAdminService Invites { get; }
 
         public RecordingAuth Auth { get; }
 
@@ -359,7 +605,11 @@ public sealed class TrialOnboardingInviteTests
 
         public ListLogger<TenantUserAdminService> Logger { get; }
 
-        public static async Task<Harness> CreateAsync()
+        public ListLogger<CreateTenantHandler> HandlerLogger { get; }
+
+        public static async Task<Harness> CreateAsync(
+            IAnonymousTrialCreateGate? trialCreateGate = null,
+            ITenantUserAdminService? invites = null)
         {
             var tenantProvider = new FakeTenantProvider { TenantId = null };
             var db = InMemoryAppDb.Create(tenantProvider, ignoreInMemoryTransactions: true);
@@ -380,7 +630,7 @@ public sealed class TrialOnboardingInviteTests
                 })
                 .Build();
             var platformAdmin = new FakePlatformAdminChecker();
-            var invites = new TenantUserAdminService(
+            var inviteService = invites ?? new TenantUserAdminService(
                 db,
                 auth,
                 queue,
@@ -389,13 +639,17 @@ public sealed class TrialOnboardingInviteTests
                 new TrialGuard(db, tenantProvider, platformAdmin),
                 platformAdmin,
                 logger);
+            var handlerLogger = new ListLogger<CreateTenantHandler>();
             var handler = new CreateTenantHandler(
                 db,
-                auth,
                 new TenantAccessBootstrapper(db),
-                invites);
+                inviteService,
+                trialCreateGate ?? new AnonymousTrialCreateGate(
+                    new MemoryCache(new MemoryCacheOptions()),
+                    TimeProvider.System),
+                handlerLogger);
 
-            return new Harness(db, handler, invites, auth, queue, logger);
+            return new Harness(db, handler, inviteService, auth, queue, logger, handlerLogger);
         }
 
         public ValueTask DisposeAsync() => Db.DisposeAsync();
@@ -477,6 +731,51 @@ public sealed class TrialOnboardingInviteTests
 
     private sealed record CreatedAuthUser(string Email, string Password, string UserId);
 
+    private sealed class ThrowingInviteService(SupabaseAuthAdminException exception) : ITenantUserAdminService
+    {
+        public Task<TenantUsersBundleDto> ListUsersAndInvitesAsync(
+            Guid tenantId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<TenantInviteResponseDto> InviteAsync(
+            Guid tenantId,
+            InviteTenantUserRequestDto request,
+            CancellationToken cancellationToken,
+            bool enqueueEmail = true) =>
+            throw exception;
+
+        public Task DeliverInviteEmailAsync(
+            Guid tenantId,
+            Guid inviteId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ResendInviteAsync(
+            Guid tenantId,
+            Guid inviteId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RevokeInviteAsync(
+            Guid tenantId,
+            Guid inviteId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task PromoteAsync(
+            Guid tenantId,
+            Guid userId,
+            PromoteTenantUserRequestDto request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<AcceptInviteResponseDto> AcceptInviteAsync(
+            AcceptInviteRequestDto request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class ListLogger<T> : ILogger<T>
     {
         public List<string> Messages { get; } = [];
@@ -494,7 +793,13 @@ public sealed class TrialOnboardingInviteTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            Messages.Add(formatter(state, exception));
+            var text = formatter(state, exception);
+            if (exception is not null)
+            {
+                text = $"{text} {exception}";
+            }
+
+            Messages.Add(text);
         }
 
         private sealed class NullScope : IDisposable

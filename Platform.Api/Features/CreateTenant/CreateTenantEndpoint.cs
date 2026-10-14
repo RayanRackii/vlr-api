@@ -9,8 +9,12 @@ public static class CreateTenantEndpoint
                 async (
                     CreateTenantRequest request,
                     ICreateTenantHandler handler,
+                    HttpContext httpContext,
                     CancellationToken cancellationToken) =>
-                    await handler.HandleAsync(request, cancellationToken))
+                    await handler.HandleAsync(
+                        request,
+                        cancellationToken,
+                        AnonymousOnboardingClientIp.From(httpContext)))
             .AllowAnonymous()
             .WithName("CreateTenant")
             .WithTags("Onboarding");
