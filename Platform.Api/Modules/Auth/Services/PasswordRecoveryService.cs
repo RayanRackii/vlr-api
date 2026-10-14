@@ -8,6 +8,7 @@ namespace Platform.Api.Modules.Auth.Services;
 public sealed class PasswordRecoveryService(
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     AppDbContext dbContext,
+    ITenantProvider tenantProvider,
     NotificationQueue notificationQueue,
     IConfiguration configuration,
     IHostEnvironment environment,
@@ -21,8 +22,30 @@ public sealed class PasswordRecoveryService(
             return;
         }
 
+        // A null tenant turns the global query filter off. Do not scan every tenant.
+        if (tenantProvider.TenantId is not Guid tenantId)
+        {
+            logger.LogInformation(
+                "Password recovery requested without a tenant; no lookup was performed.");
+            return;
+        }
+
         try
         {
+            var displayName = await dbContext.Users
+                .AsNoTracking()
+                .Where(user => user.TenantId == tenantId && user.Email == normalized)
+                .OrderByDescending(user => user.CreatedAt)
+                .Select(user => user.FullName)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (displayName is null)
+            {
+                logger.LogInformation(
+                    "Password recovery requested for an email outside the current tenant.");
+                return;
+            }
+
             var authUserId = await supabaseAuthAdminClient.FindUserIdByEmailAsync(
                 normalized,
                 cancellationToken);
@@ -49,14 +72,6 @@ public sealed class PasswordRecoveryService(
             logger.LogInformation(
                 "Password recovery link prepared for Auth user (frontend={FrontendBaseUrl}).",
                 frontendBaseUrl);
-
-            var displayName = await dbContext.Users
-                .AsNoTracking()
-                .IgnoreQueryFilters()
-                .Where(u => u.Email == normalized)
-                .OrderByDescending(u => u.CreatedAt)
-                .Select(u => u.FullName)
-                .FirstOrDefaultAsync(cancellationToken);
 
             if (string.IsNullOrWhiteSpace(displayName))
             {

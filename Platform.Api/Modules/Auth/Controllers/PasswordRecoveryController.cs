@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Authentication;
 using Platform.Api.Modules.Auth.Dtos;
 using Platform.Api.Modules.Auth.Services;
 
@@ -8,7 +9,8 @@ namespace Platform.Api.Modules.Auth.Controllers;
 [ApiController]
 [Route("api/auth")]
 public sealed class PasswordRecoveryController(
-    IPasswordRecoveryService passwordRecoveryService) : ControllerBase
+    IPasswordRecoveryService passwordRecoveryService,
+    IPublicTenantBinder publicTenantBinder) : ControllerBase
 {
     private const string GenericMessage =
         "Se existir uma conta com este e-mail, enviamos um link para redefinir a senha.";
@@ -17,11 +19,25 @@ public sealed class PasswordRecoveryController(
     [HttpPost("forgot-password")]
     public async Task<ActionResult<ForgotPasswordResponseDto>> ForgotPassword(
         [FromBody] ForgotPasswordRequestDto request,
+        [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Email))
         {
             return BadRequest(new { error = "Email is required." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(tenantSubdomain))
+        {
+            try
+            {
+                await publicTenantBinder.BindFromSubdomainAsync(tenantSubdomain, cancellationToken);
+            }
+            catch (TenantResolutionException)
+            {
+                // Unknown or inactive slug must not be distinguishable from a missing account.
+                return Ok(new ForgotPasswordResponseDto(GenericMessage));
+            }
         }
 
         await passwordRecoveryService.RequestAsync(request.Email, cancellationToken);

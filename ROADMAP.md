@@ -147,6 +147,7 @@ Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-no
 - [x] FE `/invite` chama API real
 - [x] E-mail (Resend) com layout Rolvix + `App:FrontendBaseUrl` (prod nunca emite localhost)
 - [x] Reset de senha B2B: `POST /api/auth/forgot-password` → `generate_link` + Resend (`RolvixEmailLayout`); FE não usa mais `resetPasswordForEmail`
+- [x] Recuperação B2B só procura o e-mail no tenant atual (`ITenantProvider` + `X-Tenant-Subdomain` opcional). Sem tenant, subdomínio desconhecido/inativo, ou e-mail fora desse tenant: mesma frase 200 e nenhum e-mail. Comparação de e-mail igual à do diretório (`Trim` + `ToLowerInvariant`, igualdade exata). Sem migration. PR com gate GLM/Fable; sem merge.
 - [ ] **Ops (humano):** Railway PROD deve ter `Notifications__AllowExternalEmail=true` (obrigatório para convite/recovery; não é opcional de DEV). Ver `docs/runbooks/password-recovery-resend.md`.
 - [x] Tenant RBAC v1 (API): `RequirePermission`, catálogo, Roles CRUD, invite `roleIds[]`, `/me` additive. UI no `vlr-web`.
 - [ ] Migrar onboarding público para invite (remover senha do admin)
@@ -216,6 +217,8 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-14 | **Review-fix (API, sem merge):** subdomínio desconhecido ou inativo em `POST /api/auth/forgot-password` devolve o mesmo 200 genérico e não enfileira e-mail (`TenantResolutionException` capturada só nesta rota). E-mail comparado como em `UserDirectoryService` (entrada normalizada, coluna exata). |
+| 2026-10-14 | **Review (API, sem merge):** `POST /api/auth/forgot-password` deixa de procurar o e-mail em todos os tenants. O lookup de `core.users` exige o tenant atual; header `X-Tenant-Subdomain` opcional define esse tenant. Sem tenant, sem e-mail em outro tenant, ou e-mail desconhecido: mesma resposta genérica e nenhum link. Sem migration, sem secrets. O painel B2B ainda não manda o header. Gate GLM/Fable pendente. |
 | 2026-10-14 | **Fix (API):** `ReservationLocks` e `PmocPlanAssetLock` (`maintenance_plans`, `assets`) passam a filtrar `tenant_id` no `FOR UPDATE`. Um lock com o tenant errado não espera nem marca a linha do outro tenant. `TryGenerateAutomaticAsync` recebe `tenantId` e recarrega plano/ativo com o mesmo predicado. Sem migration. |
 | 2026-10-14 | **Pre-release (API, sem merge):** `EnsureCanAssignRolesAsync` inclui chaves fora do wildcard Admin (`AdminWildcardExcludedKeys` e explicit-grant). Quem tem `core.users.assign_roles` e não tem `core.customers.read` não atribui um role com essa chave, inclusive a si mesmo (`PUT /api/users/{id}/roles` → 403). `GetEnabledCatalogKeysAsync` passa a se chamar `GetAdminWildcardKeysAsync` (visão do wildcard; as chaves excluídas continuam ativas no grant explícito). `RequireTenant` inalcançável saiu de `UsersController.List`. `GET /api/users` sem tenant permanece 403. Sem migration, grant, secrets ou infra. |
 | 2026-10-14 | **CI:** workflow `ci` passa a rodar `dotnet test` em pull requests e pushes de `develop`/`main`. Provas `DockerFact` usam Postgres 16 em service container (`ROLVIX_TEST_POSTGRES_CONNECTION` loopback), o mesmo contrato do fixture local. `database-migrations.yml`, secrets e deploy não mudam. |
