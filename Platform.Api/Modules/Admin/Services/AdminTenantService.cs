@@ -6,6 +6,7 @@ using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Services.Svg;
+using Platform.Core.Domain.Common;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -354,8 +355,11 @@ public sealed class AdminTenantService(
                     throw new KeyNotFoundException("Tenant not found.");
                 }
 
+                // Users are tenant-scoped. After enter, the ambient filter would hide the
+                // target tenant's memberships and any other tenant that still shares an auth id.
                 var tenantUsers = await dbContext.Users
                     .AsNoTracking()
+                    .IgnoreQueryFilters()
                     .Where(u => u.TenantId == id)
                     .Select(u => new { u.SupabaseAuthId, u.Email })
                     .ToListAsync(cancellationToken);
@@ -375,6 +379,7 @@ public sealed class AdminTenantService(
                     ? new HashSet<string>(StringComparer.Ordinal)
                     : (await dbContext.Users
                         .AsNoTracking()
+                        .IgnoreQueryFilters()
                         .Where(u =>
                             u.TenantId != id
                             && candidateAuthIds.Contains(u.SupabaseAuthId))
@@ -394,88 +399,39 @@ public sealed class AdminTenantService(
                         && !platformAdminAuthIds.Contains(authId))
                     .ToList();
 
-                // Rentals / scheduling (children before parents with Restrict FKs)
-                await dbContext.Slots
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.ReservationItems
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.Reservations
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.ScheduleTemplates
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.RentalLayoutItems
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.RentalLayouts
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.RentalPricings
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.OccupancyKinds
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.RentalAssets
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
+                // Ambient filter would hide this tenant's rows when the Super-Admin JWT
+                // still carries another tenant id. Restrict FKs then block the tenant
+                // delete; tables without a tenant FK would be left behind. Scope stays
+                // TenantId == id.
+                await DeleteForTenantAsync(dbContext.Slots, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.ReservationItems, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.Reservations, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.ScheduleTemplates, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.RentalLayoutItems, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.RentalLayouts, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.RentalPricings, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.OccupancyKinds, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.RentalAssets, id, cancellationToken);
 
-                // Work orders / PMOC / inventory
-                await dbContext.WorkOrderTasks
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.WorkOrders
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.PlanTasks
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.MaintenancePlans
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.Assets
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.TenantAssetFamilies
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.AssetCategories
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
+                await DeleteForTenantAsync(dbContext.WorkOrderTasks, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.WorkOrders, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.PlanTasks, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.MaintenancePlans, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.Assets, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantAssetFamilies, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.AssetCategories, id, cancellationToken);
 
-                // B2C portal
-                await dbContext.OtpCodes
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.Customers
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.TenantModuleMenuItems
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.TenantRegistrationFields
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.UserInvites
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
+                await DeleteForTenantAsync(dbContext.OtpCodes, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.Customers, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantModuleMenuItems, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantRegistrationFields, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.UserInvites, id, cancellationToken);
 
-                // Identity (UserRoles cascade from users; RolePermissions cascade from roles)
-                await dbContext.Users
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.Roles
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.Units
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
-                await dbContext.TenantModules
-                    .Where(x => x.TenantId == id)
-                    .ExecuteDeleteAsync(cancellationToken);
+                // UserRoles cascade from users; RolePermissions cascade from roles.
+                await DeleteForTenantAsync(dbContext.Users, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.Roles, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.Units, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantModules, id, cancellationToken);
 
                 await dbContext.Tenants
                     .Where(t => t.Id == id)
@@ -798,6 +754,19 @@ public sealed class AdminTenantService(
                 $"{fieldName} must be a hex color like #1A2B3C.");
         }
     }
+
+    /// <summary>
+    /// Deletes rows for <paramref name="tenantId"/> only. IgnoreQueryFilters is required
+    /// because the global filter is the ambient tenant, not the tenant being deleted.
+    /// </summary>
+    private static Task<int> DeleteForTenantAsync<TEntity>(
+        DbSet<TEntity> set,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+        where TEntity : class, ITenantScoped =>
+        set.IgnoreQueryFilters()
+            .Where(entity => entity.TenantId == tenantId)
+            .ExecuteDeleteAsync(cancellationToken);
 
     private static bool IsTenantIdentityUniqueViolation(DbUpdateException exception)
     {
