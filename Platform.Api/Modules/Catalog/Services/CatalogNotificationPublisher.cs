@@ -76,6 +76,11 @@ public sealed class CatalogNotificationPublisher(
         string eventType,
         CancellationToken cancellationToken = default)
     {
+        if (tenantProvider.TenantId is not Guid)
+        {
+            return [];
+        }
+
         if (eventType == CatalogEventTypes.OrderPreparing)
         {
             return [];

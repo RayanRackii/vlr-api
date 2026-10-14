@@ -20,6 +20,11 @@ public sealed class WorkOrderGenerationService(
         GenerateWorkOrderCommand command,
         CancellationToken cancellationToken)
     {
+        if (tenantProvider.TenantId is not Guid permissionTenantId)
+        {
+            throw new UnauthorizedAccessException("Tenant context is required.");
+        }
+
         var plan = await dbContext.MaintenancePlans
             .Include(item => item.Tasks)
             .FirstOrDefaultAsync(item => item.Id == command.PlanId, cancellationToken)
@@ -46,7 +51,6 @@ public sealed class WorkOrderGenerationService(
                 $"Asset '{asset.Id}' is not eligible for this maintenance plan.");
         }
 
-        var permissionTenantId = tenantProvider.TenantId ?? plan.TenantId;
         var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
             dbContext,
             permissionResolver,
