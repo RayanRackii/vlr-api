@@ -15,6 +15,12 @@ public interface IPhoneVerificationSendGate
 
     public const string PasswordResetConfirmScope = "password-reset-confirm";
 
+    /// <summary>
+    /// Staff <c>POST /api/auth/forgot-password</c>. Separate from customer reset so the two
+    /// inboxes do not share a cooldown or an IP window.
+    /// </summary>
+    public const string StaffPasswordRecoveryScope = "staff-password-recovery";
+
     PhoneVerificationSendDecision Decide(
         Guid tenantId,
         string normalizedEmail,

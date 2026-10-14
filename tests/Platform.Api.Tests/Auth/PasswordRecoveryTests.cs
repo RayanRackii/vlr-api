@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Auth.Controllers;
 using Platform.Api.Modules.Auth.Dtos;
 using Platform.Api.Modules.Auth.Services;
+using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Notifications;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
@@ -229,11 +231,135 @@ public sealed class PasswordRecoveryTests
         Assert.False(harness.Queue.TryRead(out _));
     }
 
+    [Fact]
+    public async Task Deactivated_member_gets_the_generic_message_and_no_recovery_email()
+    {
+        await using var harness = await RecoveryHarness.CreateAsync();
+        await harness.DeactivateAnaAAsync();
+
+        var result = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(result));
+        Assert.False(harness.Queue.TryRead(out _));
+        Assert.Empty(harness.Auth.FindCalls);
+        Assert.Empty(harness.Auth.RecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Cooldown_returns_the_generic_message_and_does_not_queue_a_second_email()
+    {
+        var time = new TestTimeProvider(DateTimeOffset.Parse("2026-10-14T12:00:00Z"));
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), time);
+        await using var harness = await RecoveryHarness.CreateAsync(gate);
+
+        var first = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+        var second = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ANA@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(first));
+        Assert.Equal(GenericMessage, MessageOf(second));
+        Assert.Contains("Olá Ana A,", ReadSingle(harness.Queue).Body, StringComparison.Ordinal);
+        Assert.False(harness.Queue.TryRead(out _));
+        Assert.Equal(["ana@club.test"], harness.Auth.RecoveryCalls);
+
+        var otherTenant = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-b",
+            CancellationToken.None);
+        Assert.Equal(GenericMessage, MessageOf(otherTenant));
+        Assert.Contains("Olá Ana B,", ReadSingle(harness.Queue).Body, StringComparison.Ordinal);
+
+        time.Advance(TimeSpan.FromSeconds(46));
+        var afterCooldown = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+        Assert.Equal(GenericMessage, MessageOf(afterCooldown));
+        Assert.Contains("Olá Ana A,", ReadSingle(harness.Queue).Body, StringComparison.Ordinal);
+        Assert.Equal(3, harness.Auth.RecoveryCalls.Count);
+    }
+
+    [Fact]
+    public async Task Ip_limit_returns_429_and_customer_reset_limit_does_not_block_staff_recovery()
+    {
+        var openCache = new MemoryCache(new MemoryCacheOptions());
+        var openGate = new PhoneVerificationSendGate(openCache, TimeProvider.System);
+        await using var open = await RecoveryHarness.CreateAsync(openGate);
+        FillIpWindow(openGate, IPhoneVerificationSendGate.PasswordResetScope);
+
+        var allowed = await open.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(allowed));
+        Assert.Contains("Olá Ana A,", ReadSingle(open.Queue).Body, StringComparison.Ordinal);
+
+        var limitedCache = new MemoryCache(new MemoryCacheOptions());
+        var limitedGate = new PhoneVerificationSendGate(limitedCache, TimeProvider.System);
+        await using var limited = await RecoveryHarness.CreateAsync(limitedGate);
+        FillIpWindow(limitedGate, IPhoneVerificationSendGate.StaffPasswordRecoveryScope);
+
+        var result = await limited.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        var status = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, status.StatusCode);
+        Assert.Equal(
+            TwilioVerifyPhoneVerificationClient.RateLimitedMessage,
+            status.Value?.GetType().GetProperty("error")?.GetValue(status.Value));
+        Assert.False(limited.Queue.TryRead(out _));
+        Assert.Empty(limited.Auth.FindCalls);
+        Assert.Empty(limited.Auth.RecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Ip_window_uses_the_forwarded_for_first_hop()
+    {
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        accessor.HttpContext.Request.Headers["X-Forwarded-For"] = "203.0.113.5, 10.0.0.1";
+        await using var harness = await RecoveryHarness.CreateAsync(gate, accessor);
+        FillIpWindow(gate, IPhoneVerificationSendGate.StaffPasswordRecoveryScope, "203.0.113.5");
+
+        var result = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        var status = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, status.StatusCode);
+        Assert.False(harness.Queue.TryRead(out _));
+        Assert.Empty(harness.Auth.RecoveryCalls);
+    }
+
+    private static void FillIpWindow(PhoneVerificationSendGate gate, string scope, string? clientIp = null)
+    {
+        var tenantId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts; i++)
+        {
+            var decision = gate.Decide(tenantId, $"prefill{i}@club.test", clientIp, scope);
+            Assert.Equal(PhoneVerificationSendDecision.Send, decision);
+        }
+    }
+
     private static PasswordRecoveryService CreateService(
         AppDbContext db,
         ITenantProvider tenantProvider,
         RecordingAuthAdmin auth,
-        NotificationQueue queue) =>
+        NotificationQueue queue,
+        IPhoneVerificationSendGate? sendGate = null,
+        IHttpContextAccessor? httpContextAccessor = null) =>
         new(
             auth,
             db,
@@ -246,7 +372,9 @@ public sealed class PasswordRecoveryTests
                 })
                 .Build(),
             new FakeHostEnvironment { EnvironmentName = "Production" },
-            NullLogger<PasswordRecoveryService>.Instance);
+            sendGate ?? new AllowAllPhoneVerificationSendGate(),
+            NullLogger<PasswordRecoveryService>.Instance,
+            httpContextAccessor);
 
     private static NotificationMessage ReadSingle(NotificationQueue queue)
     {
@@ -265,16 +393,19 @@ public sealed class PasswordRecoveryTests
     {
         private readonly AppDbContext _db;
         private readonly Tenant _tenantB;
+        private readonly User _anaA;
 
         private RecoveryHarness(
             AppDbContext db,
             Tenant tenantB,
+            User anaA,
             PasswordRecoveryController controller,
             NotificationQueue queue,
             RecordingAuthAdmin auth)
         {
             _db = db;
             _tenantB = tenantB;
+            _anaA = anaA;
             Controller = controller;
             Queue = queue;
             Auth = auth;
@@ -286,6 +417,12 @@ public sealed class PasswordRecoveryTests
             await _db.SaveChangesAsync();
         }
 
+        public async Task DeactivateAnaAAsync()
+        {
+            _anaA.Deactivate();
+            await _db.SaveChangesAsync();
+        }
+
         public ValueTask DisposeAsync() => _db.DisposeAsync();
 
         public PasswordRecoveryController Controller { get; }
@@ -294,10 +431,13 @@ public sealed class PasswordRecoveryTests
 
         public RecordingAuthAdmin Auth { get; }
 
-        public static async Task<RecoveryHarness> CreateAsync()
+        public static async Task<RecoveryHarness> CreateAsync(
+            IPhoneVerificationSendGate? sendGate = null,
+            IHttpContextAccessor? httpContextAccessor = null)
         {
             var tenantA = new Tenant("Club A", "66666666000191", subdomain: "club-a");
             var tenantB = new Tenant("Club B", "11222333000181", subdomain: "club-b");
+            var anaA = new User(tenantA.Id, "auth-ana", "Ana A", "ana@club.test");
             var ambient = new AmbientTenantContext();
             var tenantProvider = new HttpContextTenantProvider(
                 new HttpContextAccessor(),
@@ -305,17 +445,17 @@ public sealed class PasswordRecoveryTests
                 new FakePlatformAdminChecker());
             var db = InMemoryAppDb.Create(tenantProvider);
             db.Tenants.AddRange(tenantA, tenantB);
-            db.Users.Add(new User(tenantA.Id, "auth-ana", "Ana A", "ana@club.test"));
+            db.Users.Add(anaA);
             db.Users.Add(new User(tenantA.Id, "auth-only-a", "Only A", "only-a@club.test"));
             db.Users.Add(new User(tenantB.Id, "auth-ana", "Ana B", "ana@club.test"));
             await db.SaveChangesAsync();
 
             var auth = new RecordingAuthAdmin { AuthUserId = "auth-ana" };
             var queue = new NotificationQueue();
-            var service = CreateService(db, tenantProvider, auth, queue);
+            var service = CreateService(db, tenantProvider, auth, queue, sendGate, httpContextAccessor);
             var binder = new PublicTenantBinder(db, ambient);
             var controller = new PasswordRecoveryController(service, binder);
-            return new RecoveryHarness(db, tenantB, controller, queue, auth);
+            return new RecoveryHarness(db, tenantB, anaA, controller, queue, auth);
         }
     }
 

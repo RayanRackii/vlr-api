@@ -7,8 +7,8 @@ B2B "Esqueci a senha" must send a **Rolvix-branded** email (same chrome as invit
 ## How it works
 
 1. Frontend `POST /api/auth/forgot-password` with `{ email }` (does **not** call `resetPasswordForEmail`). Optional header `X-Tenant-Subdomain` selects the tenant. The B2B panel client does not send that header yet.
-2. API looks up `core.users` for that email **in the current tenant only** (`Trim` + lower invariant, then exact `Email` match, same as the user directory). Unknown email, a member of another tenant, no current tenant, or an unknown/inactive `X-Tenant-Subdomain` → same generic OK, no Auth admin call, no email (anti-enumeration). A null tenant must not scan every tenant. This route catches tenant-resolution failure locally so it does not become HTTP 401.
-3. When that membership exists and the Auth user exists, API calls GoTrue `POST /auth/v1/admin/generate_link` with `type=recovery`.
+2. API looks up `core.users` for that email **in the current tenant only** (`Trim` + lower invariant, then exact `Email` match, same as the user directory) and only when `IsActive` is true. Unknown email, an inactive membership, a member of another tenant, no current tenant, or an unknown/inactive `X-Tenant-Subdomain` → same generic OK, no Auth admin call, no email (anti-enumeration). A null tenant must not scan every tenant. This route catches tenant-resolution failure locally so it does not become HTTP 401.
+3. The route uses the same send gate as customer password reset, on scope `staff-password-recovery` (45s cooldown per tenant+email, 10 requests / 10 min per IP). Cooldown stays on the generic 200 and does not send again. The IP window returns 429 `{ "error": "Too many verification attempts. Try again shortly." }`. The buckets are not shared with customer reset. When the membership is active and the Auth user exists, and the gate allows a send, API calls GoTrue `POST /auth/v1/admin/generate_link` with `type=recovery`.
 4. API builds a **first-party** link (avoids Supabase Site URL fallback to `localhost:3000`):
 
    `https://rolvix.com.br/reset-password?token_hash=…&type=recovery`

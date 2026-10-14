@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Auth.Dtos;
 using Platform.Api.Modules.Auth.Services;
+using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 
 namespace Platform.Api.Modules.Auth.Controllers;
 
@@ -40,7 +41,14 @@ public sealed class PasswordRecoveryController(
             }
         }
 
-        await passwordRecoveryService.RequestAsync(request.Email, cancellationToken);
-        return Ok(new ForgotPasswordResponseDto(GenericMessage));
+        try
+        {
+            await passwordRecoveryService.RequestAsync(request.Email, cancellationToken);
+            return Ok(new ForgotPasswordResponseDto(GenericMessage));
+        }
+        catch (PhoneVerificationRateLimitedException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
     }
 }
