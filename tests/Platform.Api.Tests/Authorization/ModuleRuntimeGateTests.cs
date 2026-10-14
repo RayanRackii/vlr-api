@@ -983,6 +983,29 @@ public sealed class ModuleRuntimeGateTests
             Guid tenantId,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<AssetFamilyDetailResponse>>([]);
+
+        public Task<IReadOnlyList<AssetFamilyDetailResponse>> ListCatalogIncludingInactiveAsync(
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<AssetFamilyDetailResponse> GetByIdAsync(
+            Guid id,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<AssetFamilyDetailResponse> CreateAsync(
+            CreateAssetFamilyRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<AssetFamilyDetailResponse> UpdateAsync(
+            Guid id,
+            UpdateAssetFamilyRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubAssetRegistry : IAssetRegistry

@@ -21,3 +21,17 @@ public sealed record AssetFamilyDetailResponse(
     IReadOnlyList<AssetFamilyFieldDto> Fields,
     int SortOrder,
     bool IsActive);
+
+public sealed record CreateAssetFamilyRequest(
+    string Key,
+    string Label,
+    IReadOnlyList<AssetFamilyFieldDto> Fields,
+    int SortOrder,
+    bool IsActive);
+
+public sealed record UpdateAssetFamilyRequest(
+    string Label,
+    IReadOnlyList<AssetFamilyFieldDto> Fields,
+    int SortOrder,
+    bool IsActive,
+    string? Key = null);
