@@ -95,6 +95,36 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
     }
 
     [Fact]
+    public async Task Active_membership_whose_tenant_row_is_gone_does_not_resolve()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var databaseName = $"orphan-membership-{Guid.NewGuid():N}";
+        var handler = new CountingTenantHandler();
+        var client = CreateAuthClient(handler, new SupabaseUserTenantMetadataCache());
+
+        await using (var seed = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName))
+        {
+            var tenant = new Tenant("Club A", "11111111000191", subdomain: "cluba");
+            seed.Tenants.Add(tenant);
+            seed.Users.Add(new User(tenant.Id, authId, "Super Admin", AdminEmail));
+            await seed.SaveChangesAsync();
+            handler.TenantId = tenant.Id;
+        }
+
+        await using (var db = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName))
+        {
+            var tenant = await db.Tenants.SingleAsync();
+            db.Tenants.Remove(tenant);
+            await db.SaveChangesAsync();
+        }
+
+        var session = await InvokeResolvedAsync(client, authId, databaseName);
+
+        Assert.Null(session.TenantId);
+        Assert.Equal(1, handler.Gets);
+    }
+
+    [Fact]
     public async Task Request_abort_is_not_logged_as_a_tenant_failure()
     {
         var logger = new CaptureLogger<PlatformAdminTenantSessionMiddleware>();

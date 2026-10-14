@@ -102,14 +102,17 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
 
             // The lookup runs before the session is resolved, so the global query
             // filter would follow a stale JWT tenant or match every row. The
-            // predicate pins TenantId, SupabaseAuthId, and IsActive.
+            // predicate pins TenantId, SupabaseAuthId, and IsActive. The tenant
+            // row must still exist: an active membership left behind after that
+            // tenant was deleted is not a support session.
             var isMember = await dbContext.Users
                 .AsNoTracking()
                 .IgnoreQueryFilters()
                 .AnyAsync(
                     user => user.TenantId == tenantId
                         && user.SupabaseAuthId == authId
-                        && user.IsActive,
+                        && user.IsActive
+                        && dbContext.Tenants.Any(tenant => tenant.Id == tenantId),
                     cancellationToken);
 
             session.Resolve(isMember ? tenantId : null);

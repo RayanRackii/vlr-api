@@ -251,6 +251,120 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
     }
 
     [Fact]
+    public async Task Expired_epochs_are_evicted_and_do_not_resurrect_a_stale_store()
+    {
+        var cache = new SupabaseUserTenantMetadataCache();
+        var authId = Guid.NewGuid().ToString("D");
+        var staleTenant = Guid.NewGuid();
+        var epoch = cache.CaptureEpoch(authId);
+        cache.Store(authId, staleTenant, epoch);
+        Assert.True(cache.TryGet(authId, out var served));
+        Assert.Equal(staleTenant, served);
+        Assert.Equal(1, cache.TrackedAuthIdCount);
+
+        cache.Invalidate(authId);
+        cache.EvictExpired(DateTimeOffset.UtcNow);
+        cache.Store(authId, staleTenant, epoch);
+        Assert.False(cache.TryGet(authId, out served));
+        Assert.Null(served);
+
+        var kept = Guid.NewGuid().ToString("D");
+        var keptTenant = Guid.NewGuid();
+        var keptEpoch = cache.CaptureEpoch(kept);
+        cache.Store(kept, keptTenant, keptEpoch);
+
+        cache.EvictExpired(DateTimeOffset.UtcNow.Add(SupabaseUserTenantMetadataCache.Duration).AddSeconds(1));
+
+        Assert.Equal(0, cache.TrackedAuthIdCount);
+        cache.Store(authId, staleTenant, epoch);
+        Assert.False(cache.TryGet(authId, out served));
+        Assert.False(cache.TryGet(kept, out served));
+
+        var freshTenant = Guid.NewGuid();
+        var freshEpoch = cache.CaptureEpoch(authId.ToUpperInvariant());
+        cache.Store(authId, freshTenant, freshEpoch);
+        Assert.True(cache.TryGet(authId, out served));
+        Assert.Equal(freshTenant, served);
+        Assert.Equal(1, cache.TrackedAuthIdCount);
+    }
+
+    [Fact]
+    public void Epoch_map_refuses_new_auth_ids_past_the_cap()
+    {
+        var cache = new SupabaseUserTenantMetadataCache(maxTrackedAuthIds: 2);
+        var first = Guid.NewGuid().ToString("D");
+        var second = Guid.NewGuid().ToString("D");
+        var overflow = Guid.NewGuid().ToString("D");
+        var firstTenant = Guid.NewGuid();
+        var overflowTenant = Guid.NewGuid();
+
+        var firstEpoch = cache.CaptureEpoch(first);
+        cache.Store(first, firstTenant, firstEpoch);
+        cache.CaptureEpoch(second);
+        var overflowEpoch = cache.CaptureEpoch(overflow);
+        cache.Store(overflow, overflowTenant, overflowEpoch);
+
+        Assert.Equal(2, cache.TrackedAuthIdCount);
+        Assert.True(cache.TryGet(first, out var served));
+        Assert.Equal(firstTenant, served);
+        Assert.False(cache.TryGet(overflow, out served));
+        Assert.Null(served);
+
+        cache.Invalidate(first.ToUpperInvariant());
+        cache.Store(first, overflowTenant, firstEpoch);
+        Assert.False(cache.TryGet(first, out served));
+        Assert.Equal(2, cache.TrackedAuthIdCount);
+    }
+
+    [Fact]
+    public async Task Every_auth_admin_call_stops_on_the_shared_http_timeout()
+    {
+        var handler = new TenantMetadataHandler { Delay = TimeSpan.FromSeconds(5) };
+        var client = CreateClient(
+            handler,
+            new SupabaseUserTenantMetadataCache(),
+            TimeSpan.FromMilliseconds(200));
+        var methods = typeof(SupabaseAuthAdminClient)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+            .Where(method => typeof(Task).IsAssignableFrom(method.ReturnType))
+            .OrderBy(method => method.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(9, methods.Length);
+
+        foreach (var method in methods)
+        {
+            handler.ResetCounts();
+            var args = method.GetParameters()
+                .Select(parameter => SampleArgument(parameter.ParameterType))
+                .ToArray();
+
+            var started = DateTimeOffset.UtcNow;
+            Task task;
+            try
+            {
+                task = (Task)method.Invoke(client, args)!;
+            }
+            catch (TargetInvocationException ex)
+            {
+                task = Task.FromException(ex.InnerException ?? ex);
+            }
+
+            var exception = await Record.ExceptionAsync(() => task);
+            var elapsed = DateTimeOffset.UtcNow - started;
+
+            Assert.True(handler.Calls > 0, method.Name);
+            Assert.NotNull(exception);
+            var failure = exception!;
+            Assert.True(
+                failure is OperationCanceledException
+                    || (failure is SupabaseAuthAdminException admin && admin.StatusCode == 504),
+                $"{method.Name} threw {failure.GetType().Name}: {failure.Message}");
+            Assert.True(elapsed < TimeSpan.FromSeconds(2), $"{method.Name} waited {elapsed}");
+        }
+    }
+
+    [Fact]
     public async Task Caller_cancellation_is_not_reported_as_an_auth_timeout()
     {
         var handler = new TenantMetadataHandler { Delay = TimeSpan.FromSeconds(5) };
@@ -260,6 +374,26 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.GetUserTenantAppMetadataAsync(Guid.NewGuid().ToString("D"), cancellation.Token));
+    }
+
+    private static object SampleArgument(Type type)
+    {
+        if (type == typeof(string))
+        {
+            return "person@example.test";
+        }
+
+        if (type == typeof(Guid))
+        {
+            return Guid.NewGuid();
+        }
+
+        if (type == typeof(CancellationToken))
+        {
+            return CancellationToken.None;
+        }
+
+        throw new InvalidOperationException($"No sample argument for {type.Name}.");
     }
 
     private static SupabaseAuthAdminClient CreateClient(
@@ -291,6 +425,14 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
     {
         public int Gets { get; private set; }
 
+        public int Calls { get; private set; }
+
+        public void ResetCounts()
+        {
+            Gets = 0;
+            Calls = 0;
+        }
+
         public Guid? TenantId { get; set; }
 
         public HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
@@ -303,6 +445,7 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            Calls++;
             if (request.Method == HttpMethod.Get)
             {
                 Gets++;

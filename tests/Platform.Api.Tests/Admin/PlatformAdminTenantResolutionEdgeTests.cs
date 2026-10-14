@@ -106,6 +106,51 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
     }
 
     [Fact]
+    public async Task Active_membership_left_after_tenant_delete_stays_in_platform_mode()
+    {
+        var seed = await SeedAsync(activeMembership: true);
+        var auth = new ScriptedAuthAdmin();
+        auth.SetTenant(AuthId, seed.TenantA);
+        using var host = await StartHostAsync(seed.DatabaseName, auth);
+
+        await DeleteTenantOnlyAsync(seed.DatabaseName, seed.TenantA);
+        await AssertOrphanMembershipRemainsAsync(seed);
+
+        await AssertPlatformModeAsync(host, seed.TenantB);
+        Assert.True(auth.ReadCalls > 0);
+        Assert.Equal(AuthId, Assert.Single(auth.ReadIds.Distinct()));
+
+        await AssertOrphanMembershipRemainsAsync(seed);
+    }
+
+    [Fact]
+    public void Orphan_membership_lookup_selects_only_when_the_tenant_row_exists()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=postgres")
+            .UseSnakeCaseNamingConvention()
+            .Options;
+        using var db = new AppDbContext(options, new FakeTenantProvider());
+        var tenantId = Guid.NewGuid();
+        var sql = db.Users
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(user => user.TenantId == tenantId
+                && user.SupabaseAuthId == AuthId
+                && user.IsActive
+                && db.Tenants.Any(tenant => tenant.Id == tenantId))
+            .ToQueryString();
+
+        var statements = sql.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Assert.Single(statements);
+        Assert.Contains("core.users", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("core.tenants", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("is_active", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("supabase_auth_id", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Malformed_sub_does_not_leak_or_select_a_tenant()
     {
         const string malformed = "not-a-guid";
@@ -271,6 +316,25 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
             });
         await db.SaveChangesAsync();
         return new Seed(databaseName, tenantA.Id, tenantB.Id);
+    }
+
+    private static async Task DeleteTenantOnlyAsync(string databaseName, Guid tenantId)
+    {
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName);
+        var tenant = await db.Tenants.SingleAsync(item => item.Id == tenantId);
+        db.Tenants.Remove(tenant);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task AssertOrphanMembershipRemainsAsync(Seed seed)
+    {
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider(), seed.DatabaseName);
+        var membership = await db.Users
+            .IgnoreQueryFilters()
+            .SingleAsync(user => user.SupabaseAuthId == AuthId);
+        Assert.Equal(seed.TenantA, membership.TenantId);
+        Assert.True(membership.IsActive);
+        Assert.False(await db.Tenants.AnyAsync(tenant => tenant.Id == seed.TenantA));
     }
 
     private static async Task DeleteTenantGraphAsync(string databaseName, Guid tenantId)
