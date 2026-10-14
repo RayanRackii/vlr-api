@@ -24,7 +24,8 @@ public interface ICatalogNotificationPublisher
 public sealed class CatalogNotificationPublisher(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    IPermissionResolver permissionResolver) : ICatalogNotificationPublisher
+    IPermissionResolver permissionResolver,
+    ILogger<CatalogNotificationPublisher> logger) : ICatalogNotificationPublisher
 {
     public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
@@ -76,8 +77,11 @@ public sealed class CatalogNotificationPublisher(
         string eventType,
         CancellationToken cancellationToken = default)
     {
-        if (tenantProvider.TenantId is not Guid)
+        if (tenantProvider.TenantId is not Guid tenantId)
         {
+            logger.LogWarning(
+                "Catalog order notification skipped because the ambient tenant is missing. EventType={EventType}",
+                eventType);
             return [];
         }
 
@@ -101,11 +105,11 @@ public sealed class CatalogNotificationPublisher(
         };
 
         var configs = await dbContext.TenantNotificationChannelConfigs
-            .Where(c => c.EventType == eventType && c.IsActive)
+            .Where(c => c.TenantId == tenantId && c.EventType == eventType && c.IsActive)
             .ToListAsync(cancellationToken);
 
         foreach (var local in dbContext.TenantNotificationChannelConfigs.Local
-                     .Where(c => c.EventType == eventType && c.IsActive))
+                     .Where(c => c.TenantId == tenantId && c.EventType == eventType && c.IsActive))
         {
             if (configs.All(c => c.Id != local.Id))
             {

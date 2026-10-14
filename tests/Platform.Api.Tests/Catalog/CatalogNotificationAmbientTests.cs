@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
@@ -43,7 +44,13 @@ public sealed class CatalogNotificationAmbientTests
         var permissions = new GrantingPermissionResolver();
         permissions.Grant(staffA.Id);
         permissions.Grant(staffB.Id);
-        var publisher = new CatalogNotificationPublisher(db, tenantProvider, permissions);
+        var logs = new CapturingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logs));
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            tenantProvider,
+            permissions,
+            loggerFactory.CreateLogger<CatalogNotificationPublisher>());
         var order = new CatalogOrder
         {
             TenantId = tenantB.Id,
@@ -54,12 +61,72 @@ public sealed class CatalogNotificationAmbientTests
         };
 
         tenantProvider.TenantId = null;
-        await publisher.PublishOrderEventAsync(order, CatalogEventTypes.OrderCreated);
+        var queued = await publisher.PublishOrderEventAsync(order, CatalogEventTypes.OrderCreated);
         await db.SaveChangesAsync();
 
+        Assert.Empty(queued);
         Assert.Equal(0, permissions.Calls);
         Assert.Empty(db.Notifications.ToList());
         Assert.Empty(db.NotificationDeliveries.ToList());
+        var warning = Assert.Single(logs.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains("ambient tenant is missing", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ana", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ana@club.test", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(order.CustomerId.ToString(), warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(tenantB.Id.ToString(), warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Order_created_channel_configs_are_limited_to_the_ambient_tenant_without_the_query_filter()
+    {
+        var dbTenant = new FakeTenantProvider();
+        var ambient = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(dbTenant);
+        var tenantA = new Tenant("Filter A", "88888888000191");
+        var tenantB = new Tenant("Filter B", "99999999000191");
+        db.Tenants.AddRange(tenantA, tenantB);
+        db.TenantNotificationChannelConfigs.AddRange(
+            new TenantNotificationChannelConfig
+            {
+                TenantId = tenantA.Id,
+                EventType = CatalogEventTypes.OrderCreated,
+                Channel = NotificationChannel.Email,
+                IsActive = true,
+            },
+            new TenantNotificationChannelConfig
+            {
+                TenantId = tenantB.Id,
+                EventType = CatalogEventTypes.OrderCreated,
+                Channel = NotificationChannel.InApp,
+                IsActive = true,
+            });
+        await db.SaveChangesAsync();
+
+        dbTenant.TenantId = null;
+        ambient.TenantId = tenantB.Id;
+        using var loggerFactory = LoggerFactory.Create(_ => { });
+        var publisher = new CatalogNotificationPublisher(
+            db,
+            ambient,
+            new GrantingPermissionResolver(),
+            loggerFactory.CreateLogger<CatalogNotificationPublisher>());
+        var order = new CatalogOrder
+        {
+            TenantId = tenantB.Id,
+            CustomerId = Guid.NewGuid(),
+            OrderNumber = 7,
+            CustomerNameSnapshot = "Bruno",
+            CustomerEmailSnapshot = "bruno@club.test",
+        };
+
+        await publisher.PublishOrderEventAsync(order, CatalogEventTypes.OrderCreated);
+        await db.SaveChangesAsync();
+
+        var deliveries = db.NotificationDeliveries.ToList();
+        var delivery = Assert.Single(deliveries);
+        Assert.Equal(NotificationChannel.InApp, delivery.Channel);
+        Assert.Equal(tenantB.Id, delivery.TenantId);
+        Assert.Equal(NotificationRecipientKind.Customer, delivery.RecipientKind);
     }
 
     [Fact]
