@@ -327,6 +327,166 @@ public sealed class PermissionResolverTests
         Assert.DoesNotContain(Permissions.Inventory.FamiliesRead, effective);
         Assert.DoesNotContain(effective, key => key.StartsWith("inventory.", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public async Task Mismatched_ambient_returns_empty_for_other_tenant_admin_even_when_modules_would_grant()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        var tenantB = AddTenant(harness, "Other RBAC", "22222222000191");
+        harness.Db.TenantModules.Add(new TenantModule(tenantB.Id, PlatformModules.WorkOrders, isActive: true));
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: true));
+        var admin = AddAdmin(harness, tenantB, "admin-b");
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(tenantB.Id, admin.Id);
+
+        Assert.Empty(effective);
+        Assert.DoesNotContain(Permissions.Os.WorkOrdersRead, effective);
+        Assert.DoesNotContain(Permissions.Core.UsersRead, effective);
+        Assert.DoesNotContain(Permissions.Catalog.OrdersManage, effective);
+    }
+
+    [Fact]
+    public async Task Mismatched_ambient_admin_wildcard_is_empty_even_when_ambient_has_os()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        var tenantB = AddTenant(harness, "Wildcard B", "33333333000191");
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.WorkOrders, isActive: true));
+        harness.Db.TenantModules.Add(new TenantModule(tenantB.Id, PlatformModules.WorkOrders, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var keys = await harness.Resolver.GetAdminWildcardKeysAsync(tenantB.Id);
+
+        Assert.Empty(keys);
+        Assert.DoesNotContain(keys, key => key.StartsWith("os.", StringComparison.Ordinal));
+        Assert.DoesNotContain(Permissions.Core.UsersRead, keys);
+    }
+
+    [Fact]
+    public async Task Null_ambient_returns_empty_for_real_admin_including_core_keys()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.WorkOrders, isActive: true));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("null-ambient-admin");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+        harness.TenantProvider.TenantId = null;
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(harness.Tenant.Id, admin.Id);
+        var wildcard = await harness.Resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
+
+        Assert.Empty(effective);
+        Assert.Empty(wildcard);
+        Assert.DoesNotContain(Permissions.Core.UsersRead, effective);
+        Assert.DoesNotContain(Permissions.Core.DashboardRead, effective);
+        Assert.DoesNotContain(Permissions.Core.UsersRead, wildcard);
+        Assert.DoesNotContain(Permissions.Os.WorkOrdersRead, wildcard);
+    }
+
+    [Fact]
+    public async Task Matching_ambient_still_returns_enabled_module_keys()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.WorkOrders, isActive: true));
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("matching-admin");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var effective = await harness.Resolver.GetEffectivePermissionsAsync(harness.Tenant.Id, admin.Id);
+        var wildcard = await harness.Resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
+
+        Assert.Contains(Permissions.Os.WorkOrdersRead, effective);
+        Assert.Contains(Permissions.Os.WorkOrdersExecute, effective);
+        Assert.Contains(Permissions.Core.UsersRead, effective);
+        Assert.Contains(Permissions.Os.WorkOrdersRead, wildcard);
+        Assert.DoesNotContain(Permissions.Catalog.OrdersManage, effective);
+    }
+
+    [Fact]
+    public async Task Ambient_mismatch_is_not_memoized()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        var tenantB = AddTenant(harness, "Memo B", "44444444000191");
+        harness.Db.TenantModules.Add(new TenantModule(tenantB.Id, PlatformModules.WorkOrders, isActive: true));
+        var admin = AddAdmin(harness, tenantB, "memo-admin");
+        await harness.Db.SaveChangesAsync();
+
+        var missed = await harness.Resolver.GetEffectivePermissionsAsync(tenantB.Id, admin.Id);
+        Assert.Empty(missed);
+
+        harness.TenantProvider.TenantId = tenantB.Id;
+        var matched = await harness.Resolver.GetEffectivePermissionsAsync(tenantB.Id, admin.Id);
+        Assert.Contains(Permissions.Os.WorkOrdersExecute, matched);
+        Assert.Contains(Permissions.Core.UsersRead, matched);
+
+        harness.TenantProvider.TenantId = harness.Tenant.Id;
+        var revoked = await harness.Resolver.GetEffectivePermissionsAsync(tenantB.Id, admin.Id);
+        Assert.Empty(revoked);
+
+        harness.TenantProvider.TenantId = null;
+        Assert.Empty(await harness.Resolver.GetAdminWildcardKeysAsync(tenantB.Id));
+
+        harness.TenantProvider.TenantId = tenantB.Id;
+        var wildcard = await harness.Resolver.GetAdminWildcardKeysAsync(tenantB.Id);
+        Assert.Contains(Permissions.Os.WorkOrdersRead, wildcard);
+    }
+
+    [Fact]
+    public async Task Mismatched_ambient_does_not_load_modules()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+        var tenantB = AddTenant(harness, "No Load", "55555555000191");
+        var admin = AddAdmin(harness, tenantB, "noload-admin");
+        await harness.Db.SaveChangesAsync();
+
+        var accessor = new CountingModuleAccessor(PlatformModules.WorkOrders);
+        var resolver = new PermissionResolver(
+            harness.Db,
+            accessor,
+            harness.TenantProvider,
+            NullLogger<PermissionResolver>.Instance);
+
+        Assert.Empty(await resolver.GetEffectivePermissionsAsync(tenantB.Id, admin.Id));
+        Assert.Empty(await resolver.GetAdminWildcardKeysAsync(tenantB.Id));
+        Assert.Equal(0, accessor.Calls);
+
+        harness.TenantProvider.TenantId = tenantB.Id;
+        var matched = await resolver.GetEffectivePermissionsAsync(tenantB.Id, admin.Id);
+        Assert.Contains(Permissions.Os.WorkOrdersExecute, matched);
+        Assert.Equal(1, accessor.Calls);
+    }
+
+    private static Tenant AddTenant(RbacResolverHarness harness, string name, string document)
+    {
+        var tenant = new Tenant(name, document);
+        harness.Db.Tenants.Add(tenant);
+        return tenant;
+    }
+
+    private static User AddAdmin(RbacResolverHarness harness, Tenant tenant, string authId)
+    {
+        var role = new Role(tenant.Id, SystemRoles.Admin, "Admin (system)", isSystemRole: true);
+        harness.Db.Roles.Add(role);
+        var user = new User(tenant.Id, authId, authId, $"{authId}@test.com");
+        harness.Db.Users.Add(user);
+        harness.Db.UserRoles.Add(new UserRole(user.Id, role.Id));
+        return user;
+    }
+
+    private sealed class CountingModuleAccessor(params string[] keys) : ITenantModuleAccessor
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlySet<string>> GetActiveModuleKeysAsync(
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            IReadOnlySet<string> set = keys.ToHashSet(StringComparer.Ordinal);
+            return Task.FromResult(set);
+        }
+    }
 }
 
 internal sealed class RbacResolverHarness : IAsyncDisposable

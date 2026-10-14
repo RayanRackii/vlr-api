@@ -437,6 +437,7 @@ public sealed class ModuleRuntimeGateTests
         var resolver = new PermissionResolver(
             harness.Db,
             accessor,
+            harness.TenantProvider,
             NullLogger<PermissionResolver>.Instance);
 
         await resolver.GetEffectivePermissionsAsync(harness.Tenant.Id, user.Id);
@@ -457,6 +458,7 @@ public sealed class ModuleRuntimeGateTests
         var resolver = new PermissionResolver(
             harness.Db,
             accessor,
+            harness.TenantProvider,
             NullLogger<PermissionResolver>.Instance);
 
         var catalog = await resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);

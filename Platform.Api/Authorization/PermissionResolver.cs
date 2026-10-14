@@ -8,6 +8,7 @@ namespace Platform.Api.Authorization;
 public sealed class PermissionResolver(
     AppDbContext dbContext,
     ITenantModuleAccessor tenantModuleAccessor,
+    ITenantProvider tenantProvider,
     ILogger<PermissionResolver> logger) : IPermissionResolver
 {
     private readonly Dictionary<(Guid TenantId, Guid UserId), IReadOnlySet<string>> _memo = [];
@@ -60,6 +61,11 @@ public sealed class PermissionResolver(
     {
         try
         {
+            if (tenantProvider.TenantId != tenantId)
+            {
+                return FrozenEmpty;
+            }
+
             var activeModules = await tenantModuleAccessor.GetActiveModuleKeysAsync(cancellationToken);
             return FilterCatalog(activeModules);
         }
@@ -78,6 +84,11 @@ public sealed class PermissionResolver(
         Guid userId,
         CancellationToken cancellationToken)
     {
+        if (tenantProvider.TenantId != tenantId)
+        {
+            return FrozenEmpty;
+        }
+
         var cacheKey = (tenantId, userId);
         if (_memo.TryGetValue(cacheKey, out var cached))
         {
