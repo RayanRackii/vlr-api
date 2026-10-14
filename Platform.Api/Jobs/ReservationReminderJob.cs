@@ -20,7 +20,7 @@ public sealed class ReservationReminderJob(
         var windowEnd = now.Add(ReservationReminderSchedule.LeadTime);
 
         logger.LogInformation(
-            "Scanning reservations for WhatsApp reminders due before {WindowEnd}.",
+            "Scanning reservations for reminders due before {WindowEnd}.",
             windowEnd);
 
         var reminderTenantIds = await ListReminderTenantIdsAsync(cancellationToken);
@@ -78,8 +78,9 @@ public sealed class ReservationReminderJob(
             .AsNoTracking()
             .Where(c =>
                 c.EventType == RentalEventTypes.ReservationReminder
-                && c.Channel == NotificationChannel.WhatsApp
-                && c.IsActive)
+                && c.IsActive
+                && (c.Channel == NotificationChannel.Email
+                    || c.Channel == NotificationChannel.WhatsApp))
             .Select(c => c.TenantId)
             .Distinct()
             .ToListAsync(cancellationToken);

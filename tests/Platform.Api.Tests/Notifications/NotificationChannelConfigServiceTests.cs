@@ -60,7 +60,7 @@ public sealed class NotificationChannelConfigServiceTests
     }
 
     [Fact]
-    public async Task Rentals_only_tenant_lists_whatsapp_channels_default_off()
+    public async Task Rentals_only_tenant_lists_email_and_whatsapp_channels_default_off()
     {
         await using var harness = await Harness.CreateAsync(PlatformModules.Rentals);
 
@@ -81,10 +81,16 @@ public sealed class NotificationChannelConfigServiceTests
 
         foreach (var evt in rentals.Events)
         {
-            var channel = Assert.Single(evt.Channels);
-            Assert.Equal(NotificationChannel.WhatsApp, channel.Channel);
-            Assert.False(channel.IsActive);
-            Assert.True(channel.Configurable);
+            Assert.Equal(
+                [NotificationChannel.Email, NotificationChannel.WhatsApp],
+                evt.Channels.Select(item => item.Channel));
+            Assert.DoesNotContain(evt.Channels, item => item.Channel is NotificationChannel.Sms or NotificationChannel.InApp);
+
+            foreach (var channel in evt.Channels)
+            {
+                Assert.False(channel.IsActive);
+                Assert.True(channel.Configurable);
+            }
         }
     }
 
@@ -172,14 +178,53 @@ public sealed class NotificationChannelConfigServiceTests
         Assert.Equal("Unknown notification event.", ex.Message);
     }
 
+    [Theory]
+    [InlineData(RentalEventTypes.ReservationPendingDeposit)]
+    [InlineData(RentalEventTypes.ReservationConfirmed)]
+    [InlineData(RentalEventTypes.ReservationCanceled)]
+    [InlineData(RentalEventTypes.ReservationCompleted)]
+    [InlineData(RentalEventTypes.ReservationReminder)]
+    public async Task Enable_then_disable_rentals_email_persists_and_leaves_whatsapp_off(string eventType)
+    {
+        await using var harness = await Harness.CreateAsync(PlatformModules.Rentals);
+
+        Assert.False(FindChannel(await harness.Service.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            eventType,
+            NotificationChannel.Email).IsActive);
+
+        var enabled = await harness.Service.UpsertAsync(
+            Request(eventType, NotificationChannel.Email, true),
+            CancellationToken.None);
+        Assert.True(enabled.IsActive);
+        Assert.Equal(NotificationChannel.Email, enabled.Channel);
+        Assert.True(FindChannel(await harness.Service.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            eventType,
+            NotificationChannel.Email).IsActive);
+        Assert.False(FindChannel(await harness.Service.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            eventType,
+            NotificationChannel.WhatsApp).IsActive);
+
+        var disabled = await harness.Service.UpsertAsync(
+            Request(eventType, NotificationChannel.Email, false),
+            CancellationToken.None);
+        Assert.False(disabled.IsActive);
+        Assert.False(FindChannel(await harness.Service.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            eventType,
+            NotificationChannel.Email).IsActive);
+    }
+
     [Fact]
-    public async Task Put_email_on_rentals_event_is_not_configurable()
+    public async Task Put_in_app_on_rentals_event_is_not_configurable()
     {
         await using var harness = await Harness.CreateAsync(PlatformModules.Rentals);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
             () => harness.Service.UpsertAsync(
-                Request(RentalEventTypes.ReservationConfirmed, NotificationChannel.Email, true),
+                Request(RentalEventTypes.ReservationConfirmed, NotificationChannel.InApp, true),
                 CancellationToken.None));
         Assert.Equal("Channel is not configurable for this event.", ex.Message);
     }
@@ -264,6 +309,72 @@ public sealed class NotificationChannelConfigServiceTests
             dbB.TenantNotificationChannelConfigs.IgnoreQueryFilters().Count(item =>
                 item.TenantId == tenantB.Id
                 && item.EventType == RentalEventTypes.ReservationConfirmed
+                && item.Channel == NotificationChannel.WhatsApp
+                && item.IsActive));
+    }
+
+    [Fact]
+    public async Task Tenant_b_cannot_see_or_update_tenant_a_email_configs()
+    {
+        var databaseName = $"notif-email-iso-{Guid.NewGuid():N}";
+        var providerA = new FakeTenantProvider();
+        var providerB = new FakeTenantProvider();
+
+        await using var dbA = InMemoryAppDb.Create(providerA, databaseName);
+        await using var dbB = InMemoryAppDb.Create(providerB, databaseName);
+
+        var tenantA = SeedTenant(dbA, providerA, "Club A", "66666666000191", PlatformModules.Rentals);
+        var tenantB = SeedTenant(dbB, providerB, "Club B", "66666666000192", PlatformModules.Rentals);
+        await dbA.SaveChangesAsync();
+        await dbB.SaveChangesAsync();
+
+        var serviceA = CreateService(dbA, providerA);
+        var serviceB = CreateService(dbB, providerB);
+
+        await serviceA.UpsertAsync(
+            Request(RentalEventTypes.ReservationConfirmed, NotificationChannel.Email, true),
+            CancellationToken.None);
+
+        Assert.True(FindChannel(await serviceA.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            RentalEventTypes.ReservationConfirmed,
+            NotificationChannel.Email).IsActive);
+        Assert.False(FindChannel(await serviceB.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            RentalEventTypes.ReservationConfirmed,
+            NotificationChannel.Email).IsActive);
+
+        await serviceB.UpsertAsync(
+            Request(RentalEventTypes.ReservationConfirmed, NotificationChannel.Email, false),
+            CancellationToken.None);
+
+        Assert.True(FindChannel(await serviceA.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            RentalEventTypes.ReservationConfirmed,
+            NotificationChannel.Email).IsActive);
+        Assert.False(FindChannel(await serviceB.ListAsync(CancellationToken.None),
+            PlatformModules.Rentals,
+            RentalEventTypes.ReservationConfirmed,
+            NotificationChannel.Email).IsActive);
+
+        Assert.Equal(
+            1,
+            dbA.TenantNotificationChannelConfigs.IgnoreQueryFilters().Count(item =>
+                item.TenantId == tenantA.Id
+                && item.EventType == RentalEventTypes.ReservationConfirmed
+                && item.Channel == NotificationChannel.Email
+                && item.IsActive));
+        Assert.Equal(
+            0,
+            dbB.TenantNotificationChannelConfigs.IgnoreQueryFilters().Count(item =>
+                item.TenantId == tenantB.Id
+                && item.EventType == RentalEventTypes.ReservationConfirmed
+                && item.Channel == NotificationChannel.Email
+                && item.IsActive));
+        Assert.Equal(
+            0,
+            dbA.TenantNotificationChannelConfigs.IgnoreQueryFilters().Count(item =>
+                item.TenantId == tenantA.Id
                 && item.Channel == NotificationChannel.WhatsApp
                 && item.IsActive));
     }

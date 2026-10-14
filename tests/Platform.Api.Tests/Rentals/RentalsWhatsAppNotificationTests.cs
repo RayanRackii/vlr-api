@@ -144,6 +144,9 @@ public sealed class RentalsWhatsAppNotificationTests
         Assert.DoesNotContain(
             ctx.Harness.Db.NotificationDeliveries,
             d => d.Channel == NotificationChannel.WhatsApp);
+        Assert.DoesNotContain(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
         Assert.Equal(0, ctx.WhatsApp.SendCount);
     }
 

@@ -89,7 +89,7 @@ Restart and confirm boot: `External WhatsApp delivery enabled`.
 If AppSecret is missing in Production host, treat WhatsApp as **BLOCKED**.
 
 Catalog tenant channel: existing wrapper `/api/catalog/notification-channels` (history UI stays on `/catalogo/notificacoes`).
-Rentals and Catalog tenant channels: normal enablement is the unified API `PUT /api/notifications/channel-configs` (WEB `/configuracoes/notificacoes`). SQL below is **emergency/diagnostic only**.
+Rentals and Catalog tenant channels: normal enablement is the unified API `PUT /api/notifications/channel-configs` (WEB `/configuracoes/notificacoes`). Rentals Email is configurable on the same events and stays off until a tenant enables it. External email still requires `Notifications__AllowExternalEmail=true` plus Resend; the channel toggle does not bypass that gate. SQL below is **emergency/diagnostic only**.
 
 ```sql
 UPDATE core.tenant_notification_channel_configs
