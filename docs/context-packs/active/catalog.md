@@ -5,7 +5,7 @@ Derived context — NOT canonical.
 - Scope: Catalog & Orders module (tenant-owned product catalog + customer requests)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/plans/active/2026-08-28-catalog-orders.md`; `docs/adr/0004-module-dependencies-asset-registry.md`
-- Last verified: 2026-09-07
+- Last verified: 2026-10-14
 
 ## Purpose
 
@@ -41,6 +41,7 @@ Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queu
 ## Critical invariants
 
 - Tenant isolation via ITenantScoped + GQF; B2C/public commercial surfaces use `[RequireActiveModule]` (Wave 5), not a Catalog-only gate
+- Catalog order notifications publish only when `order.TenantId` equals the ambient tenant. Channel-default seeding uses an explicit `TenantId == ambient` predicate on query and tracked rows
 - Never authorize with role name
 - Internal files never public
 - Client-supplied prices ignored

@@ -63,7 +63,7 @@ These are future product possibilities, not unfinished Phase 3 work: per-plan as
 - `GET/POST /api/maintenance-plans`, header update, `PUT /api/maintenance-plans/{id}/tasks`, `POST /api/maintenance-plans/from-template`
 - `GET /api/maintenance-plans/{id}/coverage` (`pmoc` + `pmoc.plans.read`)
 - `GET /api/global-templates` (Published only; checklist and provenance; no scheduling fields)
-- `POST /api/work-orders/from-plan` and `GET /api/work-orders?maintenancePlanId=`
+- `POST /api/work-orders/from-plan` and `GET /api/work-orders?maintenancePlanId=`. Authenticated from-plan with no tenant context is 403 `FORBIDDEN`; unauthenticated is 401
 - Delete of a plan that already has a work order: 409 `PLAN_IN_USE`
 - Seed template id `6f1c2a0e-4b9d-4f3a-9c7e-1d2a3b4c5d6e`
 

@@ -34,14 +34,35 @@ namespace Platform.Api.Tests.WorkOrders;
 
 /// <summary>
 /// HTTP contract for POST /api/work-orders/from-plan.
-/// An authenticated caller with no tenant, and one who lacks os.work_orders.create,
-/// both fail closed as 403 FORBIDDEN. The action is not reached, so the service
-/// UnauthorizedAccessException (401) does not apply.
+/// An authenticated caller with no tenant context fails the
+/// <c>[RequirePermission]</c> requirement and returns 403 FORBIDDEN, the same
+/// fail-closed status as a caller who lacks <c>os.work_orders.create</c> and
+/// the same contract <c>GET /api/users</c> already uses. Unauthenticated
+/// callers receive 401. The action is not reached, so
+/// <c>GenerateAsync</c>'s <c>UnauthorizedAccessException</c> does not decide
+/// this status. <c>DirectoryAuthorization.RequireTenant</c> is a different
+/// surface and stays out of this route.
 /// </summary>
 public sealed class WorkOrderFromPlanAuthorizationTests
 {
     private const string ReaderEmail = "reader@club.test";
     private const string CreatorEmail = "creator@club.test";
+
+    [Fact]
+    public async Task From_plan_without_authentication_returns_unauthorized()
+    {
+        var seed = await SeedAsync();
+        using var host = StartHost(seed.DatabaseName);
+        var client = host.GetTestClient();
+        var payload = """
+            {"planId":"11111111-1111-1111-1111-111111111111","assetId":"22222222-2222-2222-2222-222222222222","scheduledDate":"2026-09-18"}
+            """;
+        var response = await client.PostAsync(
+            "/api/work-orders/from-plan",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 
     [Fact]
     public async Task From_plan_without_tenant_context_returns_forbidden()
