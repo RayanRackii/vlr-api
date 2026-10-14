@@ -54,7 +54,18 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
 
         var raw = user.FindFirst("sub")?.Value
             ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrWhiteSpace(raw) || raw.Contains('/') || raw.Contains('?'))
+
+        // A blank subject is not an auth id, but the session is still resolved.
+        // ResolveAsync withholds the tenant and does not call Auth admin, so a
+        // stale access-token tenant_id is not selected. A present but blank
+        // "sub" does not fall through to NameIdentifier.
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        // Path or query characters are not sent to Auth admin. Same withhold.
+        if (raw.Contains('/') || raw.Contains('?'))
         {
             return true;
         }
