@@ -1,5 +1,6 @@
 using System.Net;
 using System.Reflection;
+using System.Text;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -37,6 +38,7 @@ public sealed class PeopleDirectoryHttpTests
     private const string AdminEmail = "admin@club.test";
     private const string StaffEmail = "staff@club.test";
     private const string ViewerEmail = "viewer@club.test";
+    private const string AssignerEmail = "assigner@club.test";
     private const string SecretHash = "secret-hash-should-not-leak";
     private const string SecretPhone = "11988887777";
     private const string SecretDocument = "12345678901";
@@ -125,6 +127,48 @@ public sealed class PeopleDirectoryHttpTests
 
         Assert.Equal(HttpStatusCode.BadRequest, shortSearch.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, hugePage.StatusCode);
+    }
+
+    [Fact]
+    public async Task Users_list_without_tenant_is_forbidden()
+    {
+        var seed = await SeedAsync();
+        using var host = await StartHostAsync(seed.DatabaseName);
+
+        var viewer = await GetAsync(host, "/api/users", ViewerEmail, tenantId: null);
+        var platform = await GetAsync(host, "/api/users", PlatformEmail, tenantId: null);
+        var viewerBody = await viewer.Content.ReadAsStringAsync();
+        var platformBody = await platform.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Forbidden, viewer.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, platform.StatusCode);
+        Assert.Equal(
+            RbacErrorCodes.Forbidden,
+            JsonDocument.Parse(viewerBody).RootElement.GetProperty("error").GetString());
+        Assert.Equal(
+            RbacErrorCodes.Forbidden,
+            JsonDocument.Parse(platformBody).RootElement.GetProperty("error").GetString());
+        Assert.DoesNotContain(StaffEmail, viewerBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Assigner_without_customer_read_cannot_grant_that_role_to_self()
+    {
+        var seeded = await SeedAssignerAsync();
+        using var host = await StartHostAsync(seeded.DatabaseName);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, AssignerEmail);
+        client.DefaultRequestHeaders.Add(TestAuthHandler.TenantHeader, seeded.TenantId.ToString());
+
+        var payload = JsonSerializer.Serialize(new { roleIds = new[] { seeded.CustomersRoleId } });
+        var response = await client.PutAsync(
+            $"/api/users/{seeded.AssignerId}/roles",
+            new StringContent(payload, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(
+            RbacErrorCodes.PrivilegeEscalationBlocked,
+            JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("error").GetString());
     }
 
     [Fact]
@@ -262,6 +306,32 @@ public sealed class PeopleDirectoryHttpTests
         return new Seed(databaseName, tenantA.Id, bruno.Id);
     }
 
+    private static async Task<AssignerSeed> SeedAssignerAsync()
+    {
+        var databaseName = $"people-assign-{Guid.NewGuid():N}";
+        var provider = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(provider, databaseName);
+        var tenant = new Tenant("Club A", "11111111000191", subdomain: "cluba");
+        db.Tenants.Add(tenant);
+
+        var assignRoles = new Permission(Permissions.Core.UsersAssignRoles, "Assign roles");
+        var customersRead = new Permission(Permissions.Core.CustomersRead, "Read portal customers");
+        db.Permissions.AddRange(assignRoles, customersRead);
+
+        var assignerRole = new Role(tenant.Id, "RoleAssigner", "Assigns roles");
+        var portalRole = new Role(tenant.Id, "PortalReaders", "Reads customers");
+        db.Roles.AddRange(assignerRole, portalRole);
+        db.RolePermissions.Add(new RolePermission(assignerRole.Id, assignRoles.Id));
+        db.RolePermissions.Add(new RolePermission(portalRole.Id, customersRead.Id));
+
+        var assigner = new User(tenant.Id, AssignerEmail, "Assigner", AssignerEmail);
+        db.Users.Add(assigner);
+        db.UserRoles.Add(new UserRole(assigner.Id, assignerRole.Id));
+        await db.SaveChangesAsync();
+
+        return new AssignerSeed(databaseName, tenant.Id, assigner.Id, portalRole.Id);
+    }
+
     private static Task<IHost> StartHostAsync(string databaseName)
     {
         var host = new HostBuilder()
@@ -324,6 +394,12 @@ public sealed class PeopleDirectoryHttpTests
     }
 
     private sealed record Seed(string DatabaseName, Guid TenantA, Guid OtherCustomerId);
+
+    private sealed record AssignerSeed(
+        string DatabaseName,
+        Guid TenantId,
+        Guid AssignerId,
+        Guid CustomersRoleId);
 
     private sealed class SelectedControllers(params Type[] controllerTypes) : ControllerFeatureProvider
     {

@@ -29,6 +29,7 @@ public interface IWorkOrderGenerationService
         CancellationToken cancellationToken);
 
     Task<PmocAutomaticGenerationResult> TryGenerateAutomaticAsync(
+        Guid tenantId,
         Guid planId,
         Guid assetId,
         DateOnly asOfDate,
