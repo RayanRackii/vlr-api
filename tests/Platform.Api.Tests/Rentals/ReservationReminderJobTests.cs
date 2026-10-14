@@ -118,6 +118,29 @@ public sealed class ReservationReminderJobTests
     }
 
     [Fact]
+    public async Task Email_reminder_on_and_whatsapp_off_publishes_email_only()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderEmailAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(0, ctx.WhatsApp.SendCount);
+        Assert.DoesNotContain(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.WhatsApp);
+        var email = Assert.Single(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
+        Assert.Equal(NotificationDeliveryStatus.Sent, email.Status);
+        Assert.Equal(ctx.Harness.TenantId, email.TenantId);
+        Assert.Equal("cliente@club.test", email.RecipientEmail);
+    }
+
+    [Fact]
     public async Task WhatsApp_channel_off_does_not_publish_reminder()
     {
         await using var ctx = await CreateContextAsync();
@@ -132,6 +155,9 @@ public sealed class ReservationReminderJobTests
         Assert.DoesNotContain(
             ctx.Harness.Db.NotificationDeliveries,
             d => d.Channel == NotificationChannel.WhatsApp);
+        Assert.DoesNotContain(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
     }
 
     [Fact]
@@ -192,6 +218,16 @@ public sealed class ReservationReminderJobTests
             whatsApp,
             NullLogger<NotificationOutboxProcessor>.Instance);
         return new Context(harness, publisher, scheduler, processor, whatsApp);
+    }
+
+    private static async Task EnableReminderEmailAsync(Context ctx)
+    {
+        await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
+            c.EventType == RentalEventTypes.ReservationReminder
+            && c.Channel == NotificationChannel.Email);
+        config.IsActive = true;
+        await ctx.Harness.Db.SaveChangesAsync();
     }
 
     private static async Task EnableReminderWhatsAppAsync(Context ctx)

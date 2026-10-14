@@ -27,6 +27,7 @@ public static class NotificationChannelCapability
 
     private static readonly NotificationChannelCapabilityEntry[] RentalsChannels =
     [
+        new(NotificationChannel.Email, Configurable: true),
         new(NotificationChannel.WhatsApp, Configurable: true),
     ];
 
