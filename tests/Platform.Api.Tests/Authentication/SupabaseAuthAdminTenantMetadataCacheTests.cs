@@ -17,6 +17,7 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
     public void Request_timeout_is_configured_between_two_and_five_seconds()
     {
         Assert.InRange(SupabaseAuthAdminClient.RequestTimeout.TotalSeconds, 2d, 5d);
+        Assert.Equal(TimeSpan.FromSeconds(10), SupabaseUserTenantMetadataCache.Duration);
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -178,6 +179,75 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
 
         Assert.Equal(handler.TenantId, resolved);
         Assert.Equal(2, handler.Gets);
+    }
+
+    [Fact]
+    public void Store_with_the_captured_epoch_is_not_served_after_invalidate()
+    {
+        var cache = new SupabaseUserTenantMetadataCache();
+        var authId = Guid.NewGuid().ToString("D");
+        var staleTenant = Guid.NewGuid();
+        var epoch = cache.CaptureEpoch(authId);
+
+        cache.Invalidate(authId);
+        cache.Store(authId, staleTenant, epoch);
+
+        Assert.False(cache.TryGet(authId, out var served));
+        Assert.Null(served);
+
+        var current = cache.CaptureEpoch(authId.ToUpperInvariant());
+        var freshTenant = Guid.NewGuid();
+        cache.Store(authId, freshTenant, current);
+
+        Assert.True(cache.TryGet(authId, out served));
+        Assert.Equal(freshTenant, served);
+    }
+
+    [Fact]
+    public async Task Configured_http_timeout_fails_the_metadata_write()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var cachedTenant = Guid.NewGuid();
+        var handler = new TenantMetadataHandler { TenantId = cachedTenant };
+        var cache = new SupabaseUserTenantMetadataCache();
+        var client = CreateClient(handler, cache, TimeSpan.FromMilliseconds(200));
+
+        Assert.Equal(cachedTenant, await client.GetUserTenantAppMetadataAsync(authId));
+        Assert.Equal(1, handler.Gets);
+
+        handler.Delay = TimeSpan.FromSeconds(5);
+        var started = DateTimeOffset.UtcNow;
+        var timeout = await Assert.ThrowsAsync<SupabaseAuthAdminException>(
+            () => client.UpdateUserAppMetadataAsync(authId, Guid.NewGuid()));
+        var elapsed = DateTimeOffset.UtcNow - started;
+
+        Assert.Equal(504, timeout.StatusCode);
+        Assert.Contains("Timed out updating", timeout.Message, StringComparison.Ordinal);
+        Assert.IsType<TaskCanceledException>(timeout.InnerException);
+        Assert.True(elapsed < TimeSpan.FromSeconds(2), $"timeout waited {elapsed}");
+
+        handler.Delay = TimeSpan.Zero;
+        var nextTenant = Guid.NewGuid();
+        handler.TenantId = nextTenant;
+        var resolved = await client.GetUserTenantAppMetadataAsync(authId);
+
+        Assert.Equal(nextTenant, resolved);
+        Assert.Equal(2, handler.Gets);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_on_metadata_write_is_not_an_auth_timeout()
+    {
+        var handler = new TenantMetadataHandler { Delay = TimeSpan.FromSeconds(5) };
+        var client = CreateClient(handler, new SupabaseUserTenantMetadataCache());
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.UpdateUserAppMetadataAsync(
+                Guid.NewGuid().ToString("D"),
+                Guid.NewGuid(),
+                cancellation.Token));
     }
 
     [Fact]

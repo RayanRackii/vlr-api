@@ -3,12 +3,14 @@ using System.Collections.Concurrent;
 namespace Platform.Core.Infrastructure.Supabase;
 
 /// <summary>
-/// Short-lived per-auth-id copy of live <c>app_metadata.tenant_id</c>.
-/// Enter and exit drop the entry so the next read hits Auth again.
+/// In-process, per-auth-id copy of live <c>app_metadata.tenant_id</c>.
+/// Assumes a single API replica: the dictionary is not shared, so another
+/// process can still serve the previous tenant until this TTL after exit.
+/// Enter and exit drop the entry on this process so the next read hits Auth again.
 /// </summary>
 public sealed class SupabaseUserTenantMetadataCache
 {
-    public static readonly TimeSpan Duration = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan Duration = TimeSpan.FromSeconds(10);
 
     private readonly ConcurrentDictionary<string, int> _epochs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);

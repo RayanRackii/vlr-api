@@ -208,7 +208,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
     {
         var relativeUri = $"admin/users/{Uri.EscapeDataString(supabaseUserId)}";
         using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
-        using var response = await SendTenantMetadataAsync(request, cancellationToken);
+        using var response = await SendAppMetadataAsync(
+            request,
+            cancellationToken,
+            "Timed out reading Supabase user app_metadata.");
 
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -236,9 +239,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
     }
 
-    private async Task<HttpResponseMessage> SendTenantMetadataAsync(
+    private async Task<HttpResponseMessage> SendAppMetadataAsync(
         HttpRequestMessage request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string timeoutMessage)
     {
         try
         {
@@ -246,10 +250,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new SupabaseAuthAdminException(
-                "Timed out reading Supabase user app_metadata.",
-                504,
-                ex);
+            throw new SupabaseAuthAdminException(timeoutMessage, 504, ex);
         }
     }
 
@@ -371,7 +372,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
                 new { app_metadata = appMetadata },
                 options: JsonOptions);
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await SendAppMetadataAsync(
+                request,
+                cancellationToken,
+                "Timed out updating Supabase user app_metadata.");
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)

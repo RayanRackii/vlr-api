@@ -1,10 +1,14 @@
+using System.Net;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
+using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.Supabase;
 
@@ -44,6 +48,50 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
         Assert.DoesNotContain(AuthId, entry.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(AdminEmail, entry.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("eyJ", entry.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Cache_hit_still_runs_the_live_membership_query()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var databaseName = $"membership-cache-{Guid.NewGuid():N}";
+        var tenant = new Tenant("Club A", "11111111000191", subdomain: "cluba");
+        var handler = new CountingTenantHandler { TenantId = tenant.Id };
+        var cache = new SupabaseUserTenantMetadataCache();
+        var client = CreateAuthClient(handler, cache);
+
+        await using (var seed = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName))
+        {
+            seed.Tenants.Add(tenant);
+            seed.Users.Add(new User(tenant.Id, authId, "Super Admin", AdminEmail));
+            await seed.SaveChangesAsync();
+        }
+
+        var active = await InvokeResolvedAsync(client, authId, databaseName);
+        Assert.Equal(tenant.Id, active.TenantId);
+        Assert.Equal(1, handler.Gets);
+
+        await using (var db = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName))
+        {
+            var member = await db.Users.IgnoreQueryFilters().SingleAsync(user => user.SupabaseAuthId == authId);
+            member.Deactivate();
+            await db.SaveChangesAsync();
+        }
+
+        var inactive = await InvokeResolvedAsync(client, authId, databaseName);
+        Assert.Null(inactive.TenantId);
+        Assert.Equal(1, handler.Gets);
+
+        await using (var db = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName))
+        {
+            var member = await db.Users.IgnoreQueryFilters().SingleAsync(user => user.SupabaseAuthId == authId);
+            member.Activate();
+            await db.SaveChangesAsync();
+        }
+
+        var restored = await InvokeResolvedAsync(client, authId, databaseName);
+        Assert.Equal(tenant.Id, restored.TenantId);
+        Assert.Equal(1, handler.Gets);
     }
 
     [Fact]
@@ -100,6 +148,77 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
         await using var db = InMemoryAppDb.Create(new FakeTenantProvider());
 
         await middleware.InvokeAsync(context, session, checker, auth, db, logger);
+    }
+
+    private static async Task<PlatformAdminTenantSession> InvokeResolvedAsync(
+        ISupabaseAuthAdminClient auth,
+        string authId,
+        string databaseName)
+    {
+        var middleware = new PlatformAdminTenantSessionMiddleware(_ => Task.CompletedTask);
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(
+                new ClaimsIdentity(
+                    [
+                        new Claim("sub", authId),
+                        new Claim("email", AdminEmail),
+                    ],
+                    authenticationType: "Test")),
+        };
+        var session = new PlatformAdminTenantSession();
+        var checker = new PlatformAdminChecker(
+            Options.Create(new PlatformAdminOptions { Emails = [AdminEmail] }));
+        var logger = new CaptureLogger<PlatformAdminTenantSessionMiddleware>();
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName);
+
+        await middleware.InvokeAsync(context, session, checker, auth, db, logger);
+
+        Assert.True(session.IsResolved);
+        Assert.Empty(logger.Entries);
+        return session;
+    }
+
+    private static SupabaseAuthAdminClient CreateAuthClient(
+        HttpMessageHandler handler,
+        SupabaseUserTenantMetadataCache cache)
+    {
+        var http = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://auth.example.test/auth/v1/"),
+        };
+        return new SupabaseAuthAdminClient(
+            http,
+            Options.Create(new SupabaseOptions
+            {
+                Url = "https://auth.example.test",
+                JwtSecret = "test-jwt-secret",
+                ServiceRoleKey = "eyJ-test-service-role-key",
+            }),
+            cache);
+    }
+
+    private sealed class CountingTenantHandler : HttpMessageHandler
+    {
+        public int Gets { get; private set; }
+
+        public Guid TenantId { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                Gets++;
+            }
+
+            var body = "{\"app_metadata\":{\"tenant_id\":\"" + TenantId.ToString("D") + "\"}}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            });
+        }
     }
 
     private sealed class ThrowingAuthAdminClient(Exception failure) : ISupabaseAuthAdminClient
