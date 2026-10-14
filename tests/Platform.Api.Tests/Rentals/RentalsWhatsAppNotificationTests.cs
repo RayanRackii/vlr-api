@@ -166,7 +166,10 @@ public sealed class RentalsWhatsAppNotificationTests
             otherProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(otherDb, otherProvider),
-            new RentalsNotificationPublisher(otherDb, otherProvider),
+            new RentalsNotificationPublisher(
+                otherDb,
+                otherProvider,
+                NullLogger<RentalsNotificationPublisher>.Instance),
             new NoOpNotificationOutboxScheduler());
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
@@ -262,7 +265,10 @@ public sealed class RentalsWhatsAppNotificationTests
         });
         await harness.Db.SaveChangesAsync();
 
-        var publisher = new RentalsNotificationPublisher(harness.Db, harness.TenantProvider);
+        var publisher = new RentalsNotificationPublisher(
+            harness.Db,
+            harness.TenantProvider,
+            NullLogger<RentalsNotificationPublisher>.Instance);
         var scheduler = new RecordingOutboxScheduler();
         var whatsApp = new DevWhatsAppRecorder();
         var processor = new NotificationOutboxProcessor(

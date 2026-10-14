@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using Platform.Api.Notifications;
 using Platform.Core.Domain.Constants;
@@ -35,7 +36,8 @@ public sealed class NoOpRentalsNotificationPublisher : IRentalsNotificationPubli
 
 public sealed class RentalsNotificationPublisher(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IRentalsNotificationPublisher
+    ITenantProvider tenantProvider,
+    ILogger<RentalsNotificationPublisher> logger) : IRentalsNotificationPublisher
 {
     public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
@@ -90,6 +92,22 @@ public sealed class RentalsNotificationPublisher(
         string eventType,
         CancellationToken cancellationToken = default)
     {
+        if (tenantProvider.TenantId is not Guid tenantId)
+        {
+            logger.LogWarning(
+                "Rentals reservation notification skipped because the ambient tenant is missing. EventType={EventType}",
+                eventType);
+            return [];
+        }
+
+        if (reservation.TenantId != tenantId)
+        {
+            logger.LogWarning(
+                "Rentals reservation notification skipped because the reservation tenant does not match the ambient tenant. EventType={EventType}",
+                eventType);
+            return [];
+        }
+
         if (!RentalEventTypes.Notifying.Contains(eventType))
         {
             return [];
@@ -98,7 +116,8 @@ public sealed class RentalsNotificationPublisher(
         if (eventType == RentalEventTypes.ReservationReminder)
         {
             var alreadyReminded = await dbContext.Notifications.AnyAsync(
-                n => n.EventType == RentalEventTypes.ReservationReminder
+                n => n.TenantId == tenantId
+                     && n.EventType == RentalEventTypes.ReservationReminder
                      && n.AggregateType == "Reservation"
                      && n.AggregateId == reservation.Id,
                 cancellationToken);
@@ -110,16 +129,16 @@ public sealed class RentalsNotificationPublisher(
 
         var tenant = await dbContext.Tenants
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == reservation.TenantId, cancellationToken);
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
 
         var payload = BuildPayload(reservation, tenant);
 
         var configs = await dbContext.TenantNotificationChannelConfigs
-            .Where(c => c.EventType == eventType && c.IsActive)
+            .Where(c => c.TenantId == tenantId && c.EventType == eventType && c.IsActive)
             .ToListAsync(cancellationToken);
 
         foreach (var local in dbContext.TenantNotificationChannelConfigs.Local
-                     .Where(c => c.EventType == eventType && c.IsActive))
+                     .Where(c => c.TenantId == tenantId && c.EventType == eventType && c.IsActive))
         {
             if (configs.All(c => c.Id != local.Id))
             {
@@ -134,7 +153,7 @@ public sealed class RentalsNotificationPublisher(
 
         var notification = new NotificationEntity
         {
-            TenantId = reservation.TenantId,
+            TenantId = tenantId,
             EventType = eventType,
             AggregateType = "Reservation",
             AggregateId = reservation.Id,
@@ -147,7 +166,7 @@ public sealed class RentalsNotificationPublisher(
         {
             var delivery = new NotificationDelivery
             {
-                TenantId = reservation.TenantId,
+                TenantId = tenantId,
                 NotificationId = notification.Id,
                 Channel = config.Channel,
                 RecipientKind = NotificationRecipientKind.Customer,
@@ -209,6 +228,7 @@ public sealed class RentalsNotificationPublisher(
     {
         var existing = await dbContext.TenantNotificationChannelConfigs
             .AsNoTracking()
+            .Where(c => c.TenantId == tenantId)
             .Select(c => new { c.EventType, c.Channel })
             .ToListAsync(cancellationToken);
 
@@ -216,7 +236,7 @@ public sealed class RentalsNotificationPublisher(
             .Select(c => $"{c.EventType}|{c.Channel}")
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var local in dbContext.TenantNotificationChannelConfigs.Local)
+        foreach (var local in dbContext.TenantNotificationChannelConfigs.Local.Where(c => c.TenantId == tenantId))
         {
             existingSet.Add($"{local.EventType}|{local.Channel}");
         }
