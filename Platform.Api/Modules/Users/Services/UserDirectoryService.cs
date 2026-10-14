@@ -75,7 +75,7 @@ public sealed class UserDirectoryService(
                     }
                 }
 
-                var wildcard = await permissionResolver.GetEnabledCatalogKeysAsync(
+                var wildcard = await permissionResolver.GetAdminWildcardKeysAsync(
                     tenantId,
                     cancellationToken);
 

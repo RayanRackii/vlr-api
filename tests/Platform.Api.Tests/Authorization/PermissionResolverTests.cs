@@ -30,6 +30,17 @@ public sealed class PermissionResolverTests
     }
 
     [Fact]
+    public async Task Admin_wildcard_keys_omit_portal_customer_read()
+    {
+        await using var harness = await RbacResolverHarness.CreateAsync();
+
+        var keys = await harness.Resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
+
+        Assert.Contains(Permissions.Core.UsersRead, keys);
+        Assert.DoesNotContain(Permissions.Core.CustomersRead, keys);
+    }
+
+    [Fact]
     public async Task Custom_role_can_receive_portal_customer_read_explicitly()
     {
         await using var harness = await RbacResolverHarness.CreateAsync();
