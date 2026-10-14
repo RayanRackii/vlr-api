@@ -83,8 +83,9 @@ Decisões: ADR [`docs/adr/0002-asset-families-jsonb.md`](./docs/adr/0002-asset-f
 - [x] `GET /api/admin/asset-families` — catálogo global para SuperAdmin (policy PlatformAdmin, sem `tenant_id`); B2B `GET /api/asset-families` permanece `RequirePermission` / fail-closed sem tenant
 - [x] Validação de attributes no `AssetService`
 - [x] F-16: `BulkCreate` respeita `RentalType` (Location = N entidades qty 1; Good = 1 entidade com estoque)
+- [x] CRUD Super-Admin do catálogo global (API): `GET /api/admin/asset-families` segue só ativos; `?includeInactive=true` inclui inativos; `GET /{id}` inclui inativos; `POST` 201, `PUT /{id}`, `DELETE /{id}` 204. Policy `PlatformAdmin`, sem `RequirePermission` e sem `tenant_id`. `key` imutável (`^[a-z][a-z0-9_]{0,63}$`, duplicata 409). Seeds `spaces` / `electrical` / `goods` / `generic` não apagam nem desativam (409); label, ordem e schema podem mudar, sem backfill de `Asset.Attributes`. Delete de família custom só sem linhas em `assets.assets` ou `tenant_asset_families` (contagem com `IgnoreQueryFilters`). Sem migration.
 - [ ] Aplicar migration `AddAssetFamilies` no Supabase/Railway
-- [ ] CRUD visual de famílias no Super-Admin (follow-up)
+- [ ] CRUD visual de famílias no Super-Admin (`vlr-web`, follow-up)
 
 ## 2.9. Meu Perfil B2C — FEITO (código)
 
@@ -220,6 +221,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-14 | **Feature (API, sem merge):** CRUD Super-Admin de `assets.asset_families`. `GET /api/admin/asset-families` continua só ativos; `?includeInactive=true` e `GET /{id}` incluem inativos. `POST`/`PUT`/`DELETE` na policy PlatformAdmin, sem `RequirePermission` e sem `tenant_id`. `key` imutável; seeds `spaces`/`electrical`/`goods`/`generic` não saem nem desativam; delete hard só sem referência em `assets.assets` ou `tenant_asset_families` (contagem com `IgnoreQueryFilters`). Sem migration, sem backfill de `Asset.Attributes`, sem secrets. UI visual continua no `vlr-web`. |
 | 2026-10-14 | **Docs:** aulas por data (piloto FICC) alinhadas ao git. Código em `origin/develop` e `origin/main`: #92 `e86335dbbad0e0ce51bf8253bc4d8d8691ce5ab6`, #95 `83c0f09aa0a29e176235932a52e31d8117c49c44` (em `main` também via #96 `ef8c7a5f38e18e020c1de9c3607492c06d6e4947`). #126 `409c2d54cc17c1400d26fb5c93963404d479415d` é só teste, está em `origin/develop` e ainda não em `origin/main`. Permissão `rentals.schedule.lessons.write`; allowlist FICC com seis `rental_asset` IDs. Migration `AddRentalsScheduleLessonsWritePermission` continua por aplicar no DEV (`database-migrations`: `list`, depois `apply`). Sem grant. |
 | 2026-10-14 | **Harden follow-up (API, sem merge):** #123 porta os guards de tenant do Catalog para `RentalsNotificationPublisher`. Consulta e `.Local` de channel config, e o seed de defaults, exigem o `TenantId` do ambient. Publish falha fechado se o ambient é nulo ou difere de `reservation.TenantId`, com warning sem PII, e grava o tenant do ambient nas linhas de notificação. Sem migration, secrets ou deploy. Gate GLM/Fable pendente. |
 | 2026-10-14 | **Harden follow-up (API, sem merge):** Lows do Fable em #118 (#119). `PublishOrderEventAsync` não publica quando `order.TenantId` difere do ambient e não grava esse id nas linhas de notificação. `EnsureTenantChannelDefaultsAsync` exige `TenantId == tenantId` na consulta e nas entidades rastreadas. `POST /api/work-orders/from-plan` autenticado sem tenant permanece 403 `FORBIDDEN` (401 só sem autenticação); inverter quebraria o contrato já em PROD via #120. Sem migration, secrets ou deploy. Gate GLM/Fable pendente. |
