@@ -41,6 +41,7 @@ Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queu
 ## Critical invariants
 
 - Tenant isolation via ITenantScoped + GQF; B2C/public commercial surfaces use `[RequireActiveModule]` (Wave 5), not a Catalog-only gate
+- Super-Admin `DeleteAsync` removes this tenant's Catalog, ProductRequest, Notification, channel-config, and linked TrialSignupClaim rows with `TenantId == id` and the ambient filter ignored. Orders and product requests are deleted before the customer (`ON DELETE RESTRICT`). Delivery attempts follow that tenant's deliveries. `NotificationTemplate` is global and is not deleted
 - Catalog order notifications publish only when `order.TenantId` equals the ambient tenant. Channel-default seeding uses an explicit `TenantId == ambient` predicate on query and tracked rows
 - Never authorize with role name
 - Internal files never public

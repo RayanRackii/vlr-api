@@ -421,6 +421,33 @@ public sealed class AdminTenantService(
                 await DeleteForTenantAsync(dbContext.TenantAssetFamilies, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.AssetCategories, id, cancellationToken);
 
+                // Catalog orders and product requests restrict the customer
+                // (ON DELETE RESTRICT). Remove that graph for this tenant before
+                // the customer row. Order items also restrict the product.
+                await DeleteForTenantAsync(dbContext.CatalogOrderItems, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogOrderStatusHistories, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogOrders, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogProductFiles, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogProducts, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogOrderNumberSequences, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.ProductRequestFiles, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.ProductRequests, id, cancellationToken);
+
+                // Attempts have no TenantId. Scope them through this tenant's
+                // deliveries before the delivery row is removed. Notification
+                // templates are global and are not deleted.
+                await DeleteDeliveryAttemptsForTenantAsync(id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.NotificationDeliveries, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.Notifications, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantNotificationChannelConfigs, id, cancellationToken);
+
+                // TrialSignupClaim is not ITenantScoped: TenantId is optional and
+                // there is no tenant FK. Unlinked claims and other tenants stay.
+                await dbContext.TrialSignupClaims
+                    .IgnoreQueryFilters()
+                    .Where(claim => claim.TenantId == id)
+                    .ExecuteDeleteAsync(cancellationToken);
+
                 await DeleteForTenantAsync(dbContext.OtpCodes, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.Customers, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.TenantModuleMenuItems, id, cancellationToken);
@@ -753,6 +780,25 @@ public sealed class AdminTenantService(
             throw new ArgumentException(
                 $"{fieldName} must be a hex color like #1A2B3C.");
         }
+    }
+
+    /// <summary>
+    /// Delivery attempts are not tenant-scoped. The predicate is still this tenant:
+    /// only attempts whose delivery has <paramref name="tenantId"/>.
+    /// </summary>
+    private Task<int> DeleteDeliveryAttemptsForTenantAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var deliveryIds = dbContext.NotificationDeliveries
+            .IgnoreQueryFilters()
+            .Where(delivery => delivery.TenantId == tenantId)
+            .Select(delivery => delivery.Id);
+
+        return dbContext.NotificationDeliveryAttempts
+            .IgnoreQueryFilters()
+            .Where(attempt => deliveryIds.Contains(attempt.DeliveryId))
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     /// <summary>

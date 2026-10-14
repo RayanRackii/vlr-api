@@ -148,6 +148,7 @@ Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-no
 - [x] `POST /api/invites/accept` (anonymous) → Supabase user + `User` + role (`UserInviteRole` quando houver, senão `RoleName`)
 - [x] `GET/DELETE /api/admin/users` (lista global Super-Admin + exclusão; índices `full_name` / `tenant_id`)
 - [x] Membership Super-Admin por tenant (`User` único em TenantId+SupabaseAuthId) + enter/exit via app_metadata.tenant_id
+- [x] `DELETE /api/admin/tenants/{id}` também apaga Catalog (pedido, item, histórico, produto, arquivo, sequência), ProductRequest (+ arquivo), Notification (+ delivery e attempt daquela delivery), `TenantNotificationChannelConfig` e `TrialSignupClaim` ligado àquele tenant. Predicado `TenantId == id` com o filtro ambient ignorado. Pedidos e product requests saem antes do customer (`ON DELETE RESTRICT`). Attempt não tem `TenantId`: sai pelas deliveries daquele tenant. `NotificationTemplate` (global) e claim sem tenant ficam. Sem migration. #136.
 - [x] Wizard Super-Admin: passo “Admin” (nome/e-mail, sem senha)
 - [x] Edit tenant: seção usuários/convites
 - [x] FE `/invite` chama API real
@@ -223,6 +224,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-14 | **Fix (API, sem merge):** `DELETE /api/admin/tenants/{id}` passa a apagar Catalog, Notification, `TenantNotificationChannelConfig`, ProductRequest e `TrialSignupClaim` do tenant alvo (`TenantId == id`, filtro ambient ignorado). Pedidos e product requests saem antes do customer para não esbarrar no `ON DELETE RESTRICT`. Attempts saem pela delivery daquele tenant. Template global e claim sem tenant ficam. Sem migration. #136. Gate GLM/Fable pendente. |
 | 2026-10-14 | **Fix (API, sem merge):** o scan `rentals-reservation-reminder` deixa de varrer tenant cujo módulo comercial `rentals` está inativo ou ausente em `core.tenant_modules`, mesmo com Email ou WhatsApp do reminder ligado. Reativar o módulo volta a incluir o tenant. Sem migration, sem mudança de contrato. Gate GLM/Fable pendente. |
 | 2026-10-14 | **Executado (API):** Email de Rentals entra na matriz `GET/PUT /api/notifications/channel-configs` nos cinco eventos (`pending_deposit`, `confirmed`, `canceled`, `completed`, `reminder`), default **off**. Ligar o canal grava `TenantNotificationChannelConfig` só do tenant ambient e não escolhe Resend: o outbox continua em `IEmailProvider` resolvido por `Notifications__AllowExternalEmail` (unset/`false` = `DevEmailProvider`). O job de lembrete passa a varrer tenant com Email ou WhatsApp do reminder ativo. Sem migration, sem auth nova. Contrato aditivo: o grupo `rentals` ganha o canal `Email`. |
 | 2026-10-14 | **Fix (API):** `DELETE /api/admin/tenants/{id}` apaga os filhos do tenant alvo com `IgnoreQueryFilters` e `TenantId == id`. Com o Super-Admin dentro de outro tenant, o filtro ambient escondia esses filhos: FKs `Restrict` (users, units, roles) bloqueavam o delete, e tabelas sem FK de tenant ficavam órfãs depois que a linha do tenant saía. O lookup de auth id compartilhado também ignora o filtro ambient. Sem migration. |
