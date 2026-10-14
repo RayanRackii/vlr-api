@@ -343,6 +343,64 @@ public sealed class PasswordRecoveryTests
         Assert.Empty(harness.Auth.RecoveryCalls);
     }
 
+    [Fact]
+    public async Task Eleven_fast_requests_match_for_active_inactive_and_unknown_email()
+    {
+        var active = await StaffBurstAsync("ana@club.test", deactivateMember: false);
+        var inactive = await StaffBurstAsync("ana@club.test", deactivateMember: true);
+        var unknown = await StaffBurstAsync("missing@club.test", deactivateMember: false);
+
+        Assert.Equal(active.Statuses, inactive.Statuses);
+        Assert.Equal(active.Statuses, unknown.Statuses);
+        Assert.Equal(PhoneVerificationSendGate.IpMaxAttempts + 1, active.Statuses.Count);
+        Assert.All(
+            active.Statuses.Take(PhoneVerificationSendGate.IpMaxAttempts),
+            status => Assert.Equal(StatusCodes.Status200OK, status));
+        Assert.Equal(StatusCodes.Status429TooManyRequests, active.Statuses[^1]);
+        Assert.Equal(1, active.EmailsQueued);
+        Assert.Equal(0, inactive.EmailsQueued);
+        Assert.Equal(0, unknown.EmailsQueued);
+    }
+
+    private static async Task<StaffBurst> StaffBurstAsync(string email, bool deactivateMember)
+    {
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
+        await using var harness = await RecoveryHarness.CreateAsync(gate);
+        if (deactivateMember)
+        {
+            await harness.DeactivateAnaAAsync();
+        }
+
+        var statuses = new List<int>(PhoneVerificationSendGate.IpMaxAttempts + 1);
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts + 1; i++)
+        {
+            var result = await harness.Controller.ForgotPassword(
+                new ForgotPasswordRequestDto { Email = email },
+                "club-a",
+                CancellationToken.None);
+            statuses.Add(StatusCodeOf(result));
+        }
+
+        var queued = 0;
+        while (harness.Queue.TryRead(out _))
+        {
+            queued++;
+        }
+
+        return new StaffBurst(statuses, queued);
+    }
+
+    private static int StatusCodeOf(ActionResult<ForgotPasswordResponseDto> result) =>
+        result.Result switch
+        {
+            OkObjectResult ok => ok.StatusCode ?? StatusCodes.Status200OK,
+            ObjectResult obj => obj.StatusCode ?? StatusCodes.Status500InternalServerError,
+            _ => throw new InvalidOperationException(
+                $"Unexpected forgot-password result {result.Result?.GetType().Name}."),
+        };
+
+    private sealed record StaffBurst(IReadOnlyList<int> Statuses, int EmailsQueued);
+
     private static void FillIpWindow(PhoneVerificationSendGate gate, string scope, string? clientIp = null)
     {
         var tenantId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");

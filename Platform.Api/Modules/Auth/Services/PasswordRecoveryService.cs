@@ -114,12 +114,6 @@ public sealed class PasswordRecoveryService(
                     Subject: "Redefinir senha — Rolvix",
                     Body: htmlBody),
                 cancellationToken);
-
-            sendGate.RecordSuccess(
-                tenantId,
-                normalized,
-                clientIp,
-                IPhoneVerificationSendGate.StaffPasswordRecoveryScope);
         }
         catch (Exception ex)
         {

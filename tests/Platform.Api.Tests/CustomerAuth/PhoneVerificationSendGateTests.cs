@@ -77,6 +77,31 @@ public sealed class PhoneVerificationSendGateTests
     }
 
     [Fact]
+    public void Send_records_cooldown_without_record_success_and_cooldown_counts_toward_ip()
+    {
+        var time = new TestTimeProvider(DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
+        var sut = CreateSut(time);
+        var tenantId = Guid.NewGuid();
+        var email = "oracle@club.test";
+        var ip = "7.7.7.7";
+        var decisions = new List<PhoneVerificationSendDecision>();
+
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts + 1; i++)
+        {
+            decisions.Add(sut.Decide(tenantId, email, ip));
+        }
+
+        Assert.Equal(PhoneVerificationSendDecision.Send, decisions[0]);
+        Assert.All(
+            decisions.Skip(1).Take(PhoneVerificationSendGate.IpMaxAttempts - 1),
+            decision => Assert.Equal(PhoneVerificationSendDecision.Cooldown, decision));
+        Assert.Equal(PhoneVerificationSendDecision.Limited, decisions[^1]);
+        Assert.Equal(
+            PhoneVerificationSendDecision.Limited,
+            sut.Decide(tenantId, "other@club.test", ip));
+    }
+
+    [Fact]
     public void Missing_ip_shares_unknown_bucket()
     {
         var time = new TestTimeProvider(DateTimeOffset.Parse("2026-08-31T12:00:00Z"));

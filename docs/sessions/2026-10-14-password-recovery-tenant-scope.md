@@ -13,3 +13,7 @@ The lookup now requires `ITenantProvider.TenantId` and matches `core.users` only
 #100 is on `develop` (`c901e83`, DEV deployed). The same `develop` also contains #101 (`23f7bbb`, tenant filter on `FOR UPDATE`) and the #96 tree (stale template locks / lesson source; merge `ef8c7a5` on `main` matches #95 `83c0f09` on `develop`).
 
 Follow-up branch `fix/password-recovery-harden-lows` (not merged; needs GLM/Fable): an inactive `core.users` row does not queue recovery mail, and the public route uses `PhoneVerificationSendGate` scope `staff-password-recovery`. Email cooldown stays a generic 200. The IP window returns 429. No migration and no deploy.
+
+## Update — existence oracle
+
+The same branch now records the 45s cooldown inside `PhoneVerificationSendGate.Decide` on every `Send`, and counts that request toward the IP window even when the decision is `Cooldown`. Staff recovery and customer password reset no longer call `RecordSuccess` only after a real send. Eleven fast requests from one IP return the same statuses for an existing address and for a missing or inactive one. `X-Forwarded-For` handling is unchanged (#109).

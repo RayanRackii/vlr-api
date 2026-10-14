@@ -346,11 +346,6 @@ public sealed class CustomerAuthService(
 
             var code = await verificationCodes.IssuePasswordResetAsync(customer, cancellationToken);
             passwordResetEmails.Enqueue(new PasswordResetEmailWork(email, customer.Name, code));
-            sendGate.RecordSuccess(
-                tenantId,
-                email,
-                clientIp,
-                IPhoneVerificationSendGate.PasswordResetScope);
             logger.LogInformation(
                 "Password reset code issued for customer {CustomerId}.",
                 customer.Id);
