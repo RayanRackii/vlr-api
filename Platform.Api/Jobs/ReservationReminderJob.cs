@@ -74,13 +74,21 @@ public sealed class ReservationReminderJob(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // Ambient tenant stays unset on this scope, so the global filter does not hide
+        // other tenants. The query still returns only tenant ids.
+        var activeRentalsTenantIds = dbContext.TenantModules
+            .AsNoTracking()
+            .Where(module => module.ModuleName == PlatformModules.Rentals && module.IsActive)
+            .Select(module => module.TenantId);
+
         return await dbContext.TenantNotificationChannelConfigs
             .AsNoTracking()
             .Where(c =>
                 c.EventType == RentalEventTypes.ReservationReminder
                 && c.IsActive
                 && (c.Channel == NotificationChannel.Email
-                    || c.Channel == NotificationChannel.WhatsApp))
+                    || c.Channel == NotificationChannel.WhatsApp)
+                && activeRentalsTenantIds.Contains(c.TenantId))
             .Select(c => c.TenantId)
             .Distinct()
             .ToListAsync(cancellationToken);

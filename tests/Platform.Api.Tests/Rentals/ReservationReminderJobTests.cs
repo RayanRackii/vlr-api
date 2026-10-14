@@ -188,6 +188,85 @@ public sealed class ReservationReminderJobTests
             unfiltered.Notifications.Count(n => n.EventType == RentalEventTypes.ReservationReminder));
     }
 
+    [Fact]
+    public async Task Two_tenants_email_only_and_whatsapp_only_each_get_one_delivery()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderEmailAsync(ctx);
+        await SetReminderChannelAsync(ctx.Harness.Db, NotificationChannel.InApp, isActive: false);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+        var tenantB = await SeedSecondTenantReminderAsync(
+            ctx,
+            now.AddHours(8),
+            NotificationChannel.WhatsApp,
+            inAppActive: false);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(1, ctx.WhatsApp.SendCount);
+
+        await using var unfiltered = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var deliveries = await unfiltered.NotificationDeliveries.ToListAsync();
+        Assert.Equal(2, deliveries.Count);
+
+        var email = Assert.Single(deliveries, d => d.TenantId == ctx.Harness.TenantId);
+        Assert.Equal(NotificationChannel.Email, email.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, email.Status);
+
+        var whatsApp = Assert.Single(deliveries, d => d.TenantId == tenantB);
+        Assert.Equal(NotificationChannel.WhatsApp, whatsApp.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, whatsApp.Status);
+    }
+
+    [Fact]
+    public async Task Inactive_rentals_module_skips_reminder_while_active_tenant_still_receives_one()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        await SetReminderChannelAsync(ctx.Harness.Db, NotificationChannel.InApp, isActive: false);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+        await SetRentalsModuleActiveAsync(ctx.Harness.Db, ctx.Harness.TenantId, isActive: false);
+        var tenantB = await SeedSecondTenantReminderAsync(
+            ctx,
+            now.AddHours(8),
+            NotificationChannel.WhatsApp,
+            inAppActive: false);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        await using var unfiltered = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var deliveries = await unfiltered.NotificationDeliveries.ToListAsync();
+        Assert.DoesNotContain(deliveries, d => d.TenantId == ctx.Harness.TenantId);
+        var activeDelivery = Assert.Single(deliveries);
+        Assert.Equal(tenantB, activeDelivery.TenantId);
+        Assert.Equal(NotificationChannel.WhatsApp, activeDelivery.Channel);
+        Assert.Equal(1, ctx.WhatsApp.SendCount);
+
+        await SetRentalsModuleActiveAsync(ctx.Harness.Db, ctx.Harness.TenantId, isActive: true);
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        await using var after = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var restored = await after.NotificationDeliveries.ToListAsync();
+        Assert.Equal(2, restored.Count);
+        var restoredForA = Assert.Single(restored, d => d.TenantId == ctx.Harness.TenantId);
+        Assert.Equal(NotificationChannel.WhatsApp, restoredForA.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, restoredForA.Status);
+        var stillOneForB = Assert.Single(restored, d => d.TenantId == tenantB);
+        Assert.Equal(NotificationChannel.WhatsApp, stillOneForB.Channel);
+        Assert.Equal(2, ctx.WhatsApp.SendCount);
+    }
+
     private static ReservationReminderJob CreateJob(Context ctx, DateTimeOffset utcNow) =>
         new(
             new ReminderJobTestScopeFactory(ctx.Harness.DatabaseName, ctx.Scheduler),
@@ -223,6 +302,7 @@ public sealed class ReservationReminderJobTests
     private static async Task EnableReminderEmailAsync(Context ctx)
     {
         await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        await EnsureActiveRentalsModuleAsync(ctx.Harness.Db, ctx.Harness.TenantId);
         var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
             && c.Channel == NotificationChannel.Email);
@@ -233,6 +313,7 @@ public sealed class ReservationReminderJobTests
     private static async Task EnableReminderWhatsAppAsync(Context ctx)
     {
         await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        await EnsureActiveRentalsModuleAsync(ctx.Harness.Db, ctx.Harness.TenantId);
         var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
             && c.Channel == NotificationChannel.WhatsApp);
@@ -240,7 +321,55 @@ public sealed class ReservationReminderJobTests
         await ctx.Harness.Db.SaveChangesAsync();
     }
 
-    private static async Task SeedSecondTenantReminderAsync(Context ctx, DateTimeOffset start)
+    private static async Task SetReminderChannelAsync(
+        AppDbContext db,
+        NotificationChannel channel,
+        bool isActive)
+    {
+        var config = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
+            c.EventType == RentalEventTypes.ReservationReminder
+            && c.Channel == channel);
+        config.IsActive = isActive;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task EnsureActiveRentalsModuleAsync(AppDbContext db, Guid tenantId)
+    {
+        var module = await db.TenantModules.FirstOrDefaultAsync(m =>
+            m.TenantId == tenantId && m.ModuleName == PlatformModules.Rentals);
+        if (module is null)
+        {
+            db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        }
+        else if (!module.IsActive)
+        {
+            module.Activate();
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SetRentalsModuleActiveAsync(AppDbContext db, Guid tenantId, bool isActive)
+    {
+        var module = await db.TenantModules.FirstAsync(m =>
+            m.TenantId == tenantId && m.ModuleName == PlatformModules.Rentals);
+        if (isActive)
+        {
+            module.Activate();
+        }
+        else
+        {
+            module.Deactivate();
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<Guid> SeedSecondTenantReminderAsync(
+        Context ctx,
+        DateTimeOffset start,
+        NotificationChannel channel = NotificationChannel.WhatsApp,
+        bool inAppActive = true)
     {
         var tenantProvider = new FakeTenantProvider();
         await using var db = InMemoryAppDb.Create(tenantProvider, ctx.Harness.DatabaseName);
@@ -312,6 +441,7 @@ public sealed class ReservationReminderJobTests
 
         tenantProvider.TenantId = tenant.Id;
         db.Tenants.Add(tenant);
+        db.TenantModules.Add(new TenantModule(tenant.Id, PlatformModules.Rentals, isActive: true));
         db.Units.Add(unit);
         db.AssetCategories.Add(category);
         db.AssetFamilies.Add(family);
@@ -328,9 +458,18 @@ public sealed class ReservationReminderJobTests
         await publisher.EnsureReadyAsync(CancellationToken.None);
         var config = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
-            && c.Channel == NotificationChannel.WhatsApp);
+            && c.Channel == channel);
         config.IsActive = true;
+        if (!inAppActive)
+        {
+            var inApp = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
+                c.EventType == RentalEventTypes.ReservationReminder
+                && c.Channel == NotificationChannel.InApp);
+            inApp.IsActive = false;
+        }
+
         await db.SaveChangesAsync();
+        return tenant.Id;
     }
 
     private static async Task ProcessQueuedAsync(Context ctx)
