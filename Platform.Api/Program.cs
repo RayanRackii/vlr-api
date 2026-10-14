@@ -49,6 +49,7 @@ try
         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
 
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<PlatformAdminTenantSession>();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
     builder.Services.AddSingleton(TimeProvider.System);
@@ -152,6 +153,7 @@ try
     app.UseSerilogRequestLogging();
 
     app.UseAuthentication();
+    app.UseMiddleware<PlatformAdminTenantSessionMiddleware>();
     app.UseAuthorization();
 
     app.UsePlatformHangfireDashboard();

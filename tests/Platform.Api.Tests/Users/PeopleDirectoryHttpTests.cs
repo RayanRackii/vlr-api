@@ -347,6 +347,7 @@ public sealed class PeopleDirectoryHttpTests
                     services.AddSingleton<NotificationQueue>();
                     services.AddSingleton<IPlatformAdminChecker>(_ => new FakePlatformAdminChecker(PlatformEmail));
                     services.AddScoped<AmbientTenantContext>();
+                    services.AddScoped<PlatformAdminTenantSession>();
                     services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
                     services.AddScoped<AppDbContext>(sp =>
                         InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), databaseName));
@@ -439,6 +440,9 @@ public sealed class PeopleDirectoryHttpTests
                 claims.Add(new Claim(
                     TenantClaimTypes.AppMetadata,
                     $"{{\"tenant_id\":\"{tenantId}\"}}"));
+                // Test stand-in for the live support session. Production resolves
+                // that session in middleware and does not read this claim.
+                Context.RequestServices.GetService<PlatformAdminTenantSession>()?.Resolve(tenantId);
             }
 
             var identity = new ClaimsIdentity(claims, Scheme.Name);
