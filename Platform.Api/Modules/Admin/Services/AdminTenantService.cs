@@ -25,9 +25,8 @@ public sealed class AdminTenantService(
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
         CancellationToken cancellationToken)
     {
-        var tenants = await dbContext.Tenants
+        var tenants = await TenantsIncludingModules()
             .AsNoTracking()
-            .Include(t => t.Modules)
             .OrderBy(t => t.LegalName)
             .ToListAsync(cancellationToken);
 
@@ -45,9 +44,8 @@ public sealed class AdminTenantService(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var tenant = await dbContext.Tenants
+        var tenant = await TenantsIncludingModules()
             .AsNoTracking()
-            .Include(t => t.Modules)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
         if (tenant is null)
@@ -185,15 +183,14 @@ public sealed class AdminTenantService(
                 }
             }
 
-            var created = await dbContext.Tenants
+            var created = await TenantsIncludingModules()
                 .AsNoTracking()
-                .Include(t => t.Modules)
                 .FirstAsync(t => t.Id == tenant.Id, cancellationToken);
 
             var familyKeys = await LoadFamilyKeysAsync(tenant.Id, cancellationToken);
             return ToResponse(created, familyKeys);
         }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        catch (DbUpdateException ex) when (IsTenantIdentityUniqueViolation(ex))
         {
             if (transaction is not null)
             {
@@ -260,8 +257,7 @@ public sealed class AdminTenantService(
 
         try
         {
-            var tenant = await dbContext.Tenants
-                .Include(t => t.Modules)
+            var tenant = await TenantsIncludingModules()
                 .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
             if (tenant is null)
@@ -274,6 +270,8 @@ public sealed class AdminTenantService(
             {
                 throw new ArgumentException(ReservedTenantSubdomains.ReservedMessage);
             }
+
+            await EnsureTaxIdAndSubdomainAvailableAsync(id, taxId, subdomain, cancellationToken);
 
             var existingActive = tenant.Modules
                 .Where(m => m.IsActive)
@@ -311,15 +309,14 @@ public sealed class AdminTenantService(
                 await transaction.CommitAsync(cancellationToken);
             }
 
-            var updated = await dbContext.Tenants
+            var updated = await TenantsIncludingModules()
                 .AsNoTracking()
-                .Include(t => t.Modules)
                 .FirstAsync(t => t.Id == id, cancellationToken);
 
             var familyKeys = await LoadFamilyKeysAsync(id, cancellationToken);
             return ToResponse(updated, familyKeys);
         }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        catch (DbUpdateException ex) when (IsTenantIdentityUniqueViolation(ex))
         {
             if (transaction is not null)
             {
@@ -583,7 +580,10 @@ public sealed class AdminTenantService(
         IReadOnlyList<ResolvedAssetFamily> desiredFamilies,
         CancellationToken cancellationToken)
     {
+        // Ambient filter would hide this tenant's families when the JWT points elsewhere
+        // and the update would insert duplicates. Still limited to tenantId.
         var existing = await dbContext.TenantAssetFamilies
+            .IgnoreQueryFilters()
             .Where(t => t.TenantId == tenantId)
             .ToListAsync(cancellationToken);
 
@@ -719,6 +719,36 @@ public sealed class AdminTenantService(
                 g => (IReadOnlyList<string>)g.Select(x => x.Key).ToList());
     }
 
+    /// <summary>
+    /// Platform-admin tenant graph. <see cref="TenantModule"/> is tenant-scoped, so the
+    /// ambient filter would hide modules whenever the Super-Admin JWT still carries
+    /// another tenant id. Callers keep an explicit tenant predicate (or list every
+    /// tenant, which this policy is allowed to do). Other tenants' rows stay on their
+    /// own navigations.
+    /// </summary>
+    private IQueryable<Tenant> TenantsIncludingModules() =>
+        dbContext.Tenants.IgnoreQueryFilters().Include(t => t.Modules);
+
+    private async Task EnsureTaxIdAndSubdomainAvailableAsync(
+        Guid exceptTenantId,
+        string taxId,
+        string subdomain,
+        CancellationToken cancellationToken)
+    {
+        var taken = await dbContext.Tenants
+            .AsNoTracking()
+            .AnyAsync(
+                t => t.Id != exceptTenantId
+                    && (t.TaxId == taxId || t.Subdomain == subdomain),
+                cancellationToken);
+
+        if (taken)
+        {
+            throw new InvalidOperationException(
+                "A tenant with the same TaxId or Subdomain already exists.");
+        }
+    }
+
     private static bool IsValidSubdomain(string subdomain)
     {
         if (subdomain.Length is < 2 or > 63)
@@ -769,10 +799,11 @@ public sealed class AdminTenantService(
         }
     }
 
-    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    private static bool IsTenantIdentityUniqueViolation(DbUpdateException exception)
     {
         return exception.InnerException is PostgresException postgresException
-            && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
+            && postgresException.SqlState == PostgresErrorCodes.UniqueViolation
+            && postgresException.ConstraintName is "ix_tenants_tax_id" or "ix_tenants_subdomain";
     }
 
     private static TenantAdminResponseDto ToResponse(
