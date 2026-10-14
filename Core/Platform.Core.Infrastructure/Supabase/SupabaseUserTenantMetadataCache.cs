@@ -10,7 +10,9 @@ namespace Platform.Core.Infrastructure.Supabase;
 /// Epoch keys are dropped once they are older than <see cref="Duration"/>. The
 /// sweep runs at most once a second, and the map stops tracking new auth ids at
 /// <see cref="DefaultMaxTrackedAuthIds"/>. An epoch value may be reused after that
-/// TTL. Auth admin calls are bounded by <see cref="SupabaseAuthAdminClient.RequestTimeout"/>,
+/// TTL. <see cref="CaptureEpoch"/> returns a value only after the touch is published,
+/// so a lost update cannot hand back an epoch a sweep already reused. Auth admin
+/// calls are bounded by <see cref="SupabaseAuthAdminClient.RequestTimeout"/>,
 /// which is shorter, so a read still in flight cannot store into a reused epoch.
 /// </summary>
 public sealed class SupabaseUserTenantMetadataCache
@@ -25,6 +27,18 @@ public sealed class SupabaseUserTenantMetadataCache
     private readonly ConcurrentDictionary<string, EpochState> _epochs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private long _nextEpochSweepTicks;
+
+    /// <summary>Test seam. Production leaves this unset.</summary>
+    internal Action? BeforeStoreEpochRecheck { get; set; }
+
+    /// <summary>Test seam. Production leaves this unset.</summary>
+    internal Action? BeforeStoreEntryRemoval { get; set; }
+
+    /// <summary>Test seam. Production leaves this unset.</summary>
+    internal Action? BeforeTryGetSnapshotRemoval { get; set; }
+
+    /// <summary>Test seam. Production leaves this unset.</summary>
+    internal Action? BeforeEpochTouch { get; set; }
 
     public SupabaseUserTenantMetadataCache()
         : this(DefaultMaxTrackedAuthIds)
@@ -61,13 +75,13 @@ public sealed class SupabaseUserTenantMetadataCache
 
         if (!_epochs.TryGetValue(key, out var epoch) || epoch.Value != entry.Epoch)
         {
-            _entries.TryRemove(key, out _);
+            RemoveSnapshot(key, entry);
             return false;
         }
 
         if (entry.ExpiresAt <= now)
         {
-            _entries.TryRemove(key, out _);
+            RemoveSnapshot(key, entry);
             return false;
         }
 
@@ -85,24 +99,31 @@ public sealed class SupabaseUserTenantMetadataCache
             return UntrackedEpoch;
         }
 
-        if (_epochs.TryGetValue(key, out var existing))
+        while (true)
         {
-            _epochs.TryUpdate(key, new EpochState(existing.Value, now), existing);
-            return existing.Value;
-        }
+            now = DateTimeOffset.UtcNow;
+            if (_epochs.TryGetValue(key, out var existing))
+            {
+                BeforeEpochTouch?.Invoke();
+                if (_epochs.TryUpdate(key, new EpochState(existing.Value, now), existing))
+                {
+                    return existing.Value;
+                }
 
-        if (_epochs.Count >= _maxTrackedAuthIds)
-        {
-            return UntrackedEpoch;
-        }
+                continue;
+            }
 
-        var added = new EpochState(0, now);
-        if (!_epochs.TryAdd(key, added))
-        {
-            return _epochs.TryGetValue(key, out var raced) ? raced.Value : UntrackedEpoch;
-        }
+            if (_epochs.Count >= _maxTrackedAuthIds)
+            {
+                return UntrackedEpoch;
+            }
 
-        return added.Value;
+            var added = new EpochState(0, now);
+            if (_epochs.TryAdd(key, added))
+            {
+                return added.Value;
+            }
+        }
     }
 
     internal void Store(string authId, Guid? tenantId, int epoch)
@@ -121,13 +142,11 @@ public sealed class SupabaseUserTenantMetadataCache
         }
 
         _entries[key] = new Entry(tenantId, epoch, now.Add(Duration));
+        BeforeStoreEpochRecheck?.Invoke();
 
         if (!_epochs.TryGetValue(key, out current) || current.Value != epoch)
         {
-            if (_entries.TryGetValue(key, out var stored) && stored.Epoch == epoch)
-            {
-                _entries.TryRemove(key, out _);
-            }
+            EvictEpoch(key, epoch);
         }
         else
         {
@@ -188,6 +207,46 @@ public sealed class SupabaseUserTenantMetadataCache
                 _entries.TryRemove(pair);
             }
         }
+    }
+
+    internal void SetEpoch(string authId, int epoch)
+    {
+        var key = Normalize(authId);
+        if (key.Length == 0)
+        {
+            return;
+        }
+
+        _epochs[key] = new EpochState(epoch, DateTimeOffset.UtcNow);
+    }
+
+    internal void SetEntry(string authId, Guid? tenantId, int epoch)
+    {
+        var key = Normalize(authId);
+        if (key.Length == 0)
+        {
+            return;
+        }
+
+        _entries[key] = new Entry(tenantId, epoch, DateTimeOffset.UtcNow.Add(Duration));
+    }
+
+    private void EvictEpoch(string key, int epoch)
+    {
+        while (_entries.TryGetValue(key, out var stored) && stored.Epoch == epoch)
+        {
+            BeforeStoreEntryRemoval?.Invoke();
+            if (_entries.TryRemove(new KeyValuePair<string, Entry>(key, stored)))
+            {
+                return;
+            }
+        }
+    }
+
+    private void RemoveSnapshot(string key, Entry snapshot)
+    {
+        BeforeTryGetSnapshotRemoval?.Invoke();
+        _entries.TryRemove(new KeyValuePair<string, Entry>(key, snapshot));
     }
 
     private void SweepExpired(DateTimeOffset now)

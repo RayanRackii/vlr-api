@@ -43,7 +43,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             },
             options: JsonOptions);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAdminAsync(
+            request,
+            cancellationToken,
+            "Timed out creating Supabase user.");
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -77,7 +80,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             $"admin/users?page=1&per_page=50&filter={Uri.EscapeDataString(normalized)}";
 
         using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAdminAsync(
+            request,
+            cancellationToken,
+            "Timed out looking up Supabase user.");
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -162,7 +168,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         CancellationToken cancellationToken = default)
     {
         using var request = CreateAdminRequest(HttpMethod.Get, $"admin/users/{supabaseUserId}");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAdminAsync(
+            request,
+            cancellationToken,
+            "Timed out checking Supabase user.");
         return response.IsSuccessStatusCode;
     }
 
@@ -208,7 +217,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
     {
         var relativeUri = $"admin/users/{Uri.EscapeDataString(supabaseUserId)}";
         using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
-        using var response = await SendAppMetadataAsync(
+        using var response = await SendAdminAsync(
             request,
             cancellationToken,
             "Timed out reading Supabase user app_metadata.");
@@ -239,7 +248,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
     }
 
-    private async Task<HttpResponseMessage> SendAppMetadataAsync(
+    private async Task<HttpResponseMessage> SendAdminAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken,
         string timeoutMessage)
@@ -268,7 +277,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             },
             options: JsonOptions);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAdminAsync(
+            request,
+            cancellationToken,
+            "Timed out updating Supabase user password.");
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -284,7 +296,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         CancellationToken cancellationToken = default)
     {
         using var request = CreateAdminRequest(HttpMethod.Delete, $"admin/users/{supabaseUserId}");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAdminAsync(
+            request,
+            cancellationToken,
+            "Timed out deleting Supabase user.");
 
         if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NotFound)
         {
@@ -313,7 +328,10 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             },
             options: JsonOptions);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAdminAsync(
+            request,
+            cancellationToken,
+            "Timed out generating Supabase recovery link.");
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -372,7 +390,7 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
                 new { app_metadata = appMetadata },
                 options: JsonOptions);
 
-            using var response = await SendAppMetadataAsync(
+            using var response = await SendAdminAsync(
                 request,
                 cancellationToken,
                 "Timed out updating Supabase user app_metadata.");
