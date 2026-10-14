@@ -7,5 +7,9 @@ namespace Platform.Api.Tests.Infrastructure;
 internal static class TestPermissionResolvers
 {
     public static PermissionResolver Create(AppDbContext db, ITenantProvider tenantProvider) =>
-        new(db, new TenantModuleAccessor(db, tenantProvider), NullLogger<PermissionResolver>.Instance);
+        new(
+            db,
+            new TenantModuleAccessor(db, tenantProvider),
+            tenantProvider,
+            NullLogger<PermissionResolver>.Instance);
 }

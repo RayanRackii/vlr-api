@@ -24,7 +24,7 @@ internal static class WorkOrderAssigneeGuard
             .Include(user => user.UserRoles)
                 .ThenInclude(userRole => userRole.Role)
             .FirstOrDefaultAsync(
-                user => user.Id == userId && user.IsActive,
+                user => user.Id == userId && user.IsActive && user.TenantId == tenantId,
                 cancellationToken)
             ?? throw new KeyNotFoundException(
                 $"Assigned user '{userId}' was not found.");

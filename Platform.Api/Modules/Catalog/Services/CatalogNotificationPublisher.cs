@@ -188,10 +188,14 @@ public sealed class CatalogNotificationPublisher(
 
         if (eventType == CatalogEventTypes.OrderCreated)
         {
-            var tenantId = tenantProvider.TenantId ?? order.TenantId;
+            if (tenantProvider.TenantId is not Guid tenantId)
+            {
+                return list;
+            }
+
             var users = await dbContext.Users
                 .AsNoTracking()
-                .Where(u => u.IsActive)
+                .Where(u => u.IsActive && u.TenantId == tenantId)
                 .ToListAsync(cancellationToken);
 
             foreach (var user in users)
