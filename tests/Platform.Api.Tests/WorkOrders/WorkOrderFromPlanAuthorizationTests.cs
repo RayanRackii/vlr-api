@@ -169,6 +169,7 @@ public sealed class WorkOrderFromPlanAuthorizationTests
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IPlatformAdminChecker>(_ => new FakePlatformAdminChecker());
                     services.AddScoped<AmbientTenantContext>();
+                    services.AddScoped<PlatformAdminTenantSession>();
                     services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
                     services.AddScoped<AppDbContext>(sp =>
                         InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), databaseName));

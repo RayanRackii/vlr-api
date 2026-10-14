@@ -176,6 +176,31 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             cancellationToken);
     }
 
+    public async Task<Guid?> GetUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var relativeUri = $"admin/users/{Uri.EscapeDataString(supabaseUserId)}";
+        using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new SupabaseAuthAdminException(
+                $"Failed to read Supabase user app_metadata. Status: {(int)response.StatusCode}",
+                (int)response.StatusCode);
+        }
+
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var document = JsonDocument.Parse(responseBody);
+        return SupabaseUserTenantMetadata.ReadTenantId(document.RootElement);
+    }
+
     public async Task SetUserPasswordAsync(
         string supabaseUserId,
         string password,

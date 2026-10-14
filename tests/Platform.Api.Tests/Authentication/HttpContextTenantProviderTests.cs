@@ -99,8 +99,113 @@ public sealed class HttpContextTenantProviderTests
         Assert.Null(provider.TenantId);
     }
 
+    [Fact]
+    public void Platform_admin_ignores_access_token_tenant_until_session_is_resolved()
+    {
+        var staleTenantId = Guid.NewGuid();
+        var identity = StaffIdentity(staleTenantId);
+        var provider = CreateProvider(
+            new ClaimsPrincipal(identity),
+            new PlatformAdminTenantSession(),
+            AdminEmail);
+
+        Assert.Null(provider.TenantId);
+    }
+
+    [Fact]
+    public void Platform_admin_uses_resolved_session_instead_of_stale_access_token()
+    {
+        var staleTenantId = Guid.NewGuid();
+        var liveTenantId = Guid.NewGuid();
+        var session = new PlatformAdminTenantSession();
+        session.Resolve(liveTenantId);
+        var provider = CreateProvider(
+            new ClaimsPrincipal(StaffIdentity(staleTenantId)),
+            session,
+            AdminEmail);
+
+        Assert.Equal(liveTenantId, provider.TenantId);
+    }
+
+    [Fact]
+    public void Platform_admin_resolved_without_tenant_ignores_stale_access_token()
+    {
+        var session = new PlatformAdminTenantSession();
+        session.Resolve(null);
+        var provider = CreateProvider(
+            new ClaimsPrincipal(StaffIdentity(Guid.NewGuid())),
+            session,
+            AdminEmail);
+
+        Assert.Null(provider.TenantId);
+    }
+
+    [Fact]
+    public void Ambient_tenant_wins_over_a_resolved_platform_admin_session()
+    {
+        var ambientTenantId = Guid.NewGuid();
+        var session = new PlatformAdminTenantSession();
+        session.Resolve(Guid.NewGuid());
+        var accessor = new FakeHttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(StaffIdentity(Guid.NewGuid())),
+            },
+        };
+        var provider = new HttpContextTenantProvider(
+            accessor,
+            new AmbientTenantContext { TenantId = ambientTenantId },
+            new PlatformAdminChecker(Options.Create(new PlatformAdminOptions
+            {
+                Emails = [AdminEmail],
+            })),
+            session);
+
+        Assert.Equal(ambientTenantId, provider.TenantId);
+    }
+
+    [Fact]
+    public void Staff_still_resolves_tenant_from_app_metadata()
+    {
+        var tenantId = Guid.NewGuid();
+        var provider = CreateProvider(new ClaimsPrincipal(StaffIdentity(tenantId)));
+
+        Assert.Equal(tenantId, provider.TenantId);
+    }
+
+    [Fact]
+    public void Staff_missing_app_metadata_tenant_throws()
+    {
+        var identity = new ClaimsIdentity(
+            [new Claim("email", "staff@rolvix.test")],
+            authenticationType: "Bearer");
+        var provider = CreateProvider(new ClaimsPrincipal(identity));
+
+        var exception = Assert.Throws<TenantResolutionException>(() => provider.TenantId);
+        Assert.Equal(
+            "The access token is missing a valid app_metadata.tenant_id.",
+            exception.Message);
+    }
+
+    private static ClaimsIdentity StaffIdentity(Guid tenantId) =>
+        new(
+            [
+                new Claim("email", AdminEmail),
+                new Claim(
+                    TenantClaimTypes.AppMetadata,
+                    $"{{\"tenant_id\":\"{tenantId}\"}}"),
+            ],
+            authenticationType: "Bearer");
+
     private static HttpContextTenantProvider CreateProvider(
         ClaimsPrincipal user,
+        params string[] platformAdminEmails) =>
+        CreateProvider(user, new PlatformAdminTenantSession(), platformAdminEmails);
+
+    private static HttpContextTenantProvider CreateProvider(
+        ClaimsPrincipal user,
+        PlatformAdminTenantSession session,
         params string[] platformAdminEmails)
     {
         var accessor = new FakeHttpContextAccessor
@@ -114,6 +219,7 @@ public sealed class HttpContextTenantProviderTests
             new PlatformAdminChecker(Options.Create(new PlatformAdminOptions
             {
                 Emails = [.. platformAdminEmails],
-            })));
+            })),
+            session);
     }
 }

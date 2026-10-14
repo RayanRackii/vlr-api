@@ -494,6 +494,11 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
             CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
+        public Task<Guid?> GetUserTenantAppMetadataAsync(
+            string supabaseUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Guid?>(null);
+
         public Task SetUserPasswordAsync(
             string supabaseUserId,
             string password,

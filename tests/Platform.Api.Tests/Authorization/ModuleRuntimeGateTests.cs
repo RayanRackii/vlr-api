@@ -642,6 +642,7 @@ public sealed class ModuleRuntimeGateTests
                     services.AddScoped<AmbientTenantContext>();
                     services.AddSingleton<IPlatformAdminChecker>(_ => new FakePlatformAdminChecker(AdminEmail));
                     services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
+                    services.AddScoped<PlatformAdminTenantSession>();
                     services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
                     services.AddScoped<AppDbContext>(sp =>
                     {
@@ -899,6 +900,7 @@ public sealed class ModuleRuntimeGateTests
                     new Claim(
                         TenantClaimTypes.AppMetadata,
                         $"{{\"tenant_id\":\"{tenantId}\"}}"));
+                Context.RequestServices.GetService<PlatformAdminTenantSession>()?.Resolve(tenantId);
             }
 
             return Task.FromResult(

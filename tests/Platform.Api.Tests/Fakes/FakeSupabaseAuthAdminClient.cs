@@ -4,7 +4,12 @@ namespace Platform.Api.Tests.Fakes;
 
 public sealed class FakeSupabaseAuthAdminClient : ISupabaseAuthAdminClient
 {
+    private readonly Dictionary<string, Guid?> _tenantByUser = new(StringComparer.Ordinal);
+
     public string NextUserId { get; set; } = Guid.NewGuid().ToString("N");
+
+    /// <summary>When set, email lookup returns this Auth id instead of null.</summary>
+    public string? EmailLookupUserId { get; set; }
 
     public Task<string> CreateUserAsync(
         string email,
@@ -15,7 +20,7 @@ public sealed class FakeSupabaseAuthAdminClient : ISupabaseAuthAdminClient
     public Task<string?> FindUserIdByEmailAsync(
         string email,
         CancellationToken cancellationToken = default) =>
-        Task.FromResult<string?>(null);
+        Task.FromResult(EmailLookupUserId);
 
     public Task<bool> UserExistsAsync(
         string supabaseUserId,
@@ -25,13 +30,25 @@ public sealed class FakeSupabaseAuthAdminClient : ISupabaseAuthAdminClient
     public Task UpdateUserAppMetadataAsync(
         string supabaseUserId,
         Guid tenantId,
-        CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+        CancellationToken cancellationToken = default)
+    {
+        _tenantByUser[supabaseUserId] = tenantId;
+        return Task.CompletedTask;
+    }
 
     public Task ClearUserTenantAppMetadataAsync(
         string supabaseUserId,
+        CancellationToken cancellationToken = default)
+    {
+        _tenantByUser[supabaseUserId] = null;
+        return Task.CompletedTask;
+    }
+
+    public Task<Guid?> GetUserTenantAppMetadataAsync(
+        string supabaseUserId,
         CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+        Task.FromResult(
+            _tenantByUser.TryGetValue(supabaseUserId, out var tenantId) ? tenantId : null);
 
     public Task SetUserPasswordAsync(
         string supabaseUserId,
