@@ -106,6 +106,29 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
     }
 
     [Fact]
+    public async Task Deactivated_tenant_with_live_metadata_and_active_membership_stays_in_platform_mode()
+    {
+        var seed = await SeedAsync(activeMembership: true);
+        var auth = new ScriptedAuthAdmin();
+        auth.SetTenant(AuthId, seed.TenantA);
+        using var host = await StartHostAsync(seed.DatabaseName, auth);
+
+        var inside = await GetAsync(host, "/api/users/me", seed.TenantB);
+        Assert.Equal(HttpStatusCode.OK, inside.StatusCode);
+        using (var insideDoc = JsonDocument.Parse(await inside.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(seed.TenantA, insideDoc.RootElement.GetProperty("tenantId").GetGuid());
+        }
+
+        await DeactivateTenantAsync(seed.DatabaseName, seed.TenantA);
+        await AssertDeactivatedTenantKeepsActiveMembershipAsync(seed);
+
+        await AssertPlatformModeAsync(host, seed.TenantB);
+        Assert.True(auth.ReadCalls > 0);
+        Assert.Equal(AuthId, Assert.Single(auth.ReadIds.Distinct()));
+    }
+
+    [Fact]
     public async Task Active_membership_left_after_tenant_delete_stays_in_platform_mode()
     {
         var seed = await SeedAsync(activeMembership: true);
@@ -138,7 +161,7 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
             .Where(user => user.TenantId == tenantId
                 && user.SupabaseAuthId == AuthId
                 && user.IsActive
-                && db.Tenants.Any(tenant => tenant.Id == tenantId))
+                && db.Tenants.Any(tenant => tenant.Id == tenantId && tenant.IsActive))
             .ToQueryString();
 
         var statements = sql.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -148,6 +171,9 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
         Assert.Contains("EXISTS", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("is_active", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("supabase_auth_id", sql, StringComparison.OrdinalIgnoreCase);
+        var tenantsAt = sql.IndexOf("core.tenants", StringComparison.OrdinalIgnoreCase);
+        Assert.True(tenantsAt >= 0);
+        Assert.Contains("is_active", sql[tenantsAt..], StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -316,6 +342,26 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
             });
         await db.SaveChangesAsync();
         return new Seed(databaseName, tenantA.Id, tenantB.Id);
+    }
+
+    private static async Task DeactivateTenantAsync(string databaseName, Guid tenantId)
+    {
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName);
+        var tenant = await db.Tenants.SingleAsync(item => item.Id == tenantId);
+        tenant.Deactivate();
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task AssertDeactivatedTenantKeepsActiveMembershipAsync(Seed seed)
+    {
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider(), seed.DatabaseName);
+        var membership = await db.Users
+            .IgnoreQueryFilters()
+            .SingleAsync(user => user.SupabaseAuthId == AuthId);
+        Assert.Equal(seed.TenantA, membership.TenantId);
+        Assert.True(membership.IsActive);
+        var tenant = await db.Tenants.SingleAsync(item => item.Id == seed.TenantA);
+        Assert.False(tenant.IsActive);
     }
 
     private static async Task DeleteTenantOnlyAsync(string databaseName, Guid tenantId)

@@ -328,6 +328,63 @@ public sealed class TeacherLessonServiceTests
     }
 
     [Fact]
+    public async Task Create_on_ficc_dev_quadra_uses_rental_asset_id_and_portuguese_not_found()
+    {
+        var lessonDate = new DateOnly(2026, 10, 15);
+        Assert.Equal(DayOfWeek.Thursday, lessonDate.DayOfWeek);
+        await using var harness = await TeacherLessonHarness.CreateAsync(
+            tenantId: FiccTeacherLessonScope.DevTenantId,
+            assetId: FiccTeacherLessonScope.DevQuadra1AssetId,
+            rentalAssetId: FiccTeacherLessonScope.DevQuadra1RentalAssetId,
+            templateDay: DayOfWeek.Thursday,
+            templateStart: new TimeOnly(15, 0),
+            templateEnd: new TimeOnly(16, 0),
+            scope: new FiccTeacherLessonScope(),
+            timeProvider: new TestTimeProvider(
+                BrazilTimeZone.AtLocal(new DateOnly(2026, 10, 14), new TimeOnly(9, 0))));
+
+        var created = await harness.Lessons.CreateAsync(
+            new CreateTeacherLessonRequestDto
+            {
+                RentalAssetId = FiccTeacherLessonScope.DevQuadra1RentalAssetId,
+                Date = lessonDate,
+                StartTime = new TimeOnly(15, 0),
+                EndTime = new TimeOnly(16, 0),
+                Label = "Turma A",
+            },
+            CancellationToken.None);
+
+        Assert.Equal(FiccTeacherLessonScope.DevQuadra1RentalAssetId, created.RentalAssetId);
+        Assert.NotEqual(FiccTeacherLessonScope.DevQuadra1AssetId, created.RentalAssetId);
+        Assert.Equal("lesson", created.OccupancyKindKey);
+        var slot = Assert.Single(await harness.Db.Slots.ToListAsync());
+        Assert.Equal(FiccTeacherLessonScope.DevQuadra1RentalAssetId, slot.RentalAssetId);
+
+        var assetIdRequest = new CreateTeacherLessonRequestDto
+        {
+            RentalAssetId = FiccTeacherLessonScope.DevQuadra1AssetId,
+            Date = lessonDate,
+            StartTime = new TimeOnly(15, 0),
+            EndTime = new TimeOnly(16, 0),
+        };
+        var assetIdError = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            harness.Lessons.CreateAsync(assetIdRequest, CancellationToken.None));
+        Assert.Equal(TeacherLessonMessages.RentableNotFound, assetIdError.Message);
+
+        var missingCourt = new CreateTeacherLessonRequestDto
+        {
+            RentalAssetId = FiccTeacherLessonScope.DevQuadra2RentalAssetId,
+            Date = lessonDate,
+            StartTime = new TimeOnly(15, 0),
+            EndTime = new TimeOnly(16, 0),
+        };
+        var missingCourtError = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            harness.Lessons.CreateAsync(missingCourt, CancellationToken.None));
+        Assert.Equal(TeacherLessonMessages.RentableNotFound, missingCourtError.Message);
+        Assert.Single(await harness.Db.Slots.ToListAsync());
+    }
+
+    [Fact]
     public async Task Remove_with_production_scope_rejects_unlisted_court_without_write()
     {
         await using var harness = await TeacherLessonHarness.CreateAsync();
@@ -779,7 +836,7 @@ public sealed class TeacherLessonServiceTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             harness.Lessons.RemoveAsync(RemoveRequest(harness), CancellationToken.None));
 
-        Assert.Equal("The lesson source template is unverifiable.", exception.Message);
+        Assert.Equal(TeacherLessonMessages.LessonSourceUnverifiable, exception.Message);
         var persisted = await harness.Db.Slots.AsNoTracking().SingleAsync(slot => slot.Id == lesson.Id);
         var kind = await harness.Db.OccupancyKinds.AsNoTracking().SingleAsync(item => item.Id == persisted.OccupancyKindId);
         Assert.Equal("lesson", kind.Key);
@@ -814,7 +871,7 @@ public sealed class TeacherLessonServiceTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             harness.Lessons.RemoveAsync(RemoveRequest(harness), CancellationToken.None));
 
-        Assert.Equal("The lesson source template is unverifiable.", exception.Message);
+        Assert.Equal(TeacherLessonMessages.LessonSourceUnverifiable, exception.Message);
         var persisted = await harness.Db.Slots.AsNoTracking().SingleAsync(item => item.Id == lesson.Id);
         var kind = await harness.Db.OccupancyKinds.AsNoTracking().SingleAsync(item => item.Id == persisted.OccupancyKindId);
         Assert.Equal("lesson", kind.Key);
@@ -873,7 +930,9 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
         Guid rentalAssetId,
         Guid openTemplateId,
         string databaseName,
-        ITrialGuard trialGuard)
+        ITrialGuard trialGuard,
+        ITeacherLessonScope? scope = null,
+        TimeProvider? timeProvider = null)
     {
         Db = db;
         TenantProvider = tenantProvider;
@@ -888,8 +947,8 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             db,
             tenantProvider,
             trialGuard,
-            BookingClock,
-            new TestTeacherLessonScope());
+            timeProvider ?? BookingClock,
+            scope ?? new TestTeacherLessonScope());
         Schedule = new ScheduleService(
             db,
             tenantProvider,
@@ -929,7 +988,15 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
         bool seedHourlyOpen = true,
         string? databaseName = null,
         ITrialGuard? trialGuard = null,
-        IEnumerable<IInterceptor>? interceptors = null)
+        IEnumerable<IInterceptor>? interceptors = null,
+        Guid? tenantId = null,
+        Guid? assetId = null,
+        Guid? rentalAssetId = null,
+        DayOfWeek? templateDay = null,
+        TimeOnly? templateStart = null,
+        TimeOnly? templateEnd = null,
+        ITeacherLessonScope? scope = null,
+        TimeProvider? timeProvider = null)
     {
         var name = databaseName ?? $"teacher-{Guid.NewGuid():N}";
         var tenantProvider = new FakeTenantProvider();
@@ -940,6 +1007,11 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             interceptors);
 
         var tenant = new Tenant("Clube Aula", UniqueTaxId(), subdomain: $"aula-{Guid.NewGuid():N}"[..16]);
+        if (tenantId is Guid pinnedTenantId)
+        {
+            db.Entry(tenant).Property(entity => entity.Id).CurrentValue = pinnedTenantId;
+        }
+
         var unit = new Unit(tenant.Id, "Matriz");
         var category = new AssetCategory { TenantId = tenant.Id, Name = "Quadras" };
         var family = new AssetFamily
@@ -959,6 +1031,11 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             Status = AssetStatus.Active,
             IsRentable = true,
         };
+        if (assetId is Guid pinnedAssetId)
+        {
+            db.Entry(asset).Property(entity => entity.Id).CurrentValue = pinnedAssetId;
+        }
+
         var rental = new RentalAsset
         {
             TenantId = tenant.Id,
@@ -972,6 +1049,11 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             CloseTime = new TimeOnly(22, 0),
             QueueEnabled = false,
         };
+        if (rentalAssetId is Guid pinnedRentalAssetId)
+        {
+            db.Entry(rental).Property(entity => entity.Id).CurrentValue = pinnedRentalAssetId;
+        }
+
         var customer = new Customer
         {
             TenantId = tenant.Id,
@@ -1013,9 +1095,9 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             {
                 TenantId = tenant.Id,
                 RentalAssetId = rental.Id,
-                DayOfWeek = DayOfWeek.Tuesday,
-                StartTime = new TimeOnly(10, 0),
-                EndTime = new TimeOnly(11, 0),
+                DayOfWeek = templateDay ?? DayOfWeek.Tuesday,
+                StartTime = templateStart ?? new TimeOnly(10, 0),
+                EndTime = templateEnd ?? new TimeOnly(11, 0),
                 OccupancyKindId = open.Id,
                 IsActive = true,
             };
@@ -1034,7 +1116,9 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             rental.Id,
             openTemplateId,
             name,
-            trialGuard ?? new FakeTrialGuard());
+            trialGuard ?? new FakeTrialGuard(),
+            scope,
+            timeProvider);
     }
 
     public ReservationService CreateReservationService() =>

@@ -5,8 +5,8 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
-- Last verified: 2026-10-08
-- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD); teacher lessons are local-only, unmerged and undeployed
+- Last verified: 2026-10-14
+- Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD); teacher lessons are on `develop` and `main`. FICC DEV courts are allowlisted in code and are not a production deploy.
   - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
   - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
   - B2C self-cancel DEV: API `89b3e6d` / PR #64; WEB `3478355` / PR #59
@@ -17,11 +17,11 @@ Derived context — NOT canonical.
 
 Load when the question is Reservation, Rentable, Slot, SlotGrid, OpenHours, schedule, pricing, booking conflicts, Layout picker, the optional Location waiting queue, or reservation Complete/Cancel.
 
-The historical sections below describe **shipped PROD**. A separate local feature is under review and has not changed DEV or PROD.
+The historical sections below describe **shipped PROD**. Teacher date-only lessons are in `develop` and `main`; the FICC DEV court allowlist is a code change and is not a production data change.
 
 ## Local feature under review — Teacher date-only lessons
 
-Local worktrees add a dedicated `rentals.schedule.lessons.write` capability and date-only create/remove endpoints for SlotGrid. Endpoints require only that permission and the server allowlists the FICC tenant plus its six reviewed rental asset IDs. They share tenant-scoped `RentalAssetLocks` with bookings and schedule writers. The migration is not applied; no role has been configured; the feature is not merged or deployed.
+`POST /api/schedule/lessons` requires `rentals.schedule.lessons.write` and does not fall back to `rentals.schedule.write`. The server allowlists the production FICC tenant plus its six reviewed rental asset IDs, and the FICC DEV tenant plus Quadra 1 and Quadra 2 rental asset IDs. Asset ids are rejected. Create and remove share tenant-scoped `RentalAssetLocks` with bookings and schedule writers. The permission migration is still not applied on DEV; this allowlist change does not grant the key.
 
 RLS is disabled in source migrations for the 11 Rentals tables listed in `ROADMAP.md`. Current API tenant isolation relies on EF `TenantId` query filters and explicit scoped checks; this source finding alone does not prove public exposure or the database connection role. No RLS changes are part of this feature.
 
