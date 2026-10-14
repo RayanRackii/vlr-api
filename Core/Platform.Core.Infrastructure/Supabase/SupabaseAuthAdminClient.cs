@@ -6,15 +6,26 @@ namespace Platform.Core.Infrastructure.Supabase;
 
 public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
 {
+    /// <summary>
+    /// Bounds every Auth admin call so a hung GoTrue request cannot stall the pipeline.
+    /// Tenant resolution treats this timeout as a failed read.
+    /// </summary>
+    public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(3);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _httpClient;
     private readonly SupabaseOptions _options;
+    private readonly SupabaseUserTenantMetadataCache _tenantMetadataCache;
 
-    public SupabaseAuthAdminClient(HttpClient httpClient, IOptions<SupabaseOptions> options)
+    public SupabaseAuthAdminClient(
+        HttpClient httpClient,
+        IOptions<SupabaseOptions> options,
+        SupabaseUserTenantMetadataCache tenantMetadataCache)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _tenantMetadataCache = tenantMetadataCache;
     }
 
     public async Task<string> CreateUserAsync(
@@ -180,9 +191,27 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         string supabaseUserId,
         CancellationToken cancellationToken = default)
     {
+        if (_tenantMetadataCache.TryGet(supabaseUserId, out var cached))
+        {
+            return cached;
+        }
+
+        var epoch = _tenantMetadataCache.CaptureEpoch(supabaseUserId);
+        var tenantId = await ReadUserTenantAppMetadataAsync(supabaseUserId, cancellationToken);
+        _tenantMetadataCache.Store(supabaseUserId, tenantId, epoch);
+        return tenantId;
+    }
+
+    private async Task<Guid?> ReadUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken)
+    {
         var relativeUri = $"admin/users/{Uri.EscapeDataString(supabaseUserId)}";
         using var request = CreateAdminRequest(HttpMethod.Get, relativeUri);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAppMetadataAsync(
+            request,
+            cancellationToken,
+            "Timed out reading Supabase user app_metadata.");
 
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -197,8 +226,32 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         }
 
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(responseBody);
-        return SupabaseUserTenantMetadata.ReadTenantId(document.RootElement);
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            return SupabaseUserTenantMetadata.ReadTenantId(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            throw new SupabaseAuthAdminException(
+                "Supabase user app_metadata response was not valid JSON.",
+                502);
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendAppMetadataAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken,
+        string timeoutMessage)
+    {
+        try
+        {
+            return await _httpClient.SendAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new SupabaseAuthAdminException(timeoutMessage, 504, ex);
+        }
     }
 
     public async Task SetUserPasswordAsync(
@@ -309,19 +362,32 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
         object appMetadata,
         CancellationToken cancellationToken)
     {
-        using var request = CreateAdminRequest(HttpMethod.Put, $"admin/users/{supabaseUserId}");
-        request.Content = JsonContent.Create(
-            new { app_metadata = appMetadata },
-            options: JsonOptions);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        // Drop the cached tenant before and after the write so a read that
+        // overlaps enter/exit cannot repopulate the previous metadata.
+        _tenantMetadataCache.Invalidate(supabaseUserId);
+        try
         {
-            throw new SupabaseAuthAdminException(
-                $"Failed to update Supabase user app_metadata. Response: {responseBody}",
-                (int)response.StatusCode);
+            using var request = CreateAdminRequest(HttpMethod.Put, $"admin/users/{supabaseUserId}");
+            request.Content = JsonContent.Create(
+                new { app_metadata = appMetadata },
+                options: JsonOptions);
+
+            using var response = await SendAppMetadataAsync(
+                request,
+                cancellationToken,
+                "Timed out updating Supabase user app_metadata.");
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new SupabaseAuthAdminException(
+                    $"Failed to update Supabase user app_metadata. Response: {responseBody}",
+                    (int)response.StatusCode);
+            }
+        }
+        finally
+        {
+            _tenantMetadataCache.Invalidate(supabaseUserId);
         }
     }
 

@@ -110,7 +110,10 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
         catch (Exception ex)
         {
             var status = ex is SupabaseAuthAdminException admin ? admin.StatusCode : 0;
+            // The exception object is the diagnostic. The template stays free of
+            // tokens, passwords, and user payloads.
             logger.LogWarning(
+                ex,
                 "Platform admin tenant session could not be verified ({ExceptionType}, status {StatusCode}). Tenant context withheld.",
                 ex.GetType().Name,
                 status);
