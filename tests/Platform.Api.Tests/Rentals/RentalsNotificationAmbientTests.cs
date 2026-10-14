@@ -48,7 +48,95 @@ public sealed class RentalsNotificationAmbientTests
         Assert.Equal(NotificationChannel.Email, delivery.Channel);
         Assert.Equal(NotificationRecipientKind.Customer, delivery.RecipientKind);
         Assert.Equal(reservation.CustomerId, delivery.RecipientId);
+        Assert.Equal("ana@club.test", delivery.RecipientEmail);
         Assert.Equal(queued, [delivery.Id]);
+    }
+
+    [Fact]
+    public async Task Reservation_event_resolves_customer_email_when_the_navigation_is_not_loaded()
+    {
+        var tenantProvider = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(tenantProvider);
+        var tenant = new Tenant("Email Lookup", "26262626000191");
+        var customer = new Customer
+        {
+            TenantId = tenant.Id,
+            Name = "Ana",
+            Email = "ana@club.test",
+        };
+        db.Tenants.Add(tenant);
+        db.Customers.Add(customer);
+        db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+        {
+            TenantId = tenant.Id,
+            EventType = RentalEventTypes.ReservationConfirmed,
+            Channel = NotificationChannel.Email,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        tenantProvider.TenantId = tenant.Id;
+        using var loggerFactory = LoggerFactory.Create(_ => { });
+        var publisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            loggerFactory.CreateLogger<RentalsNotificationPublisher>());
+        var reservation = ReservationFor(tenant.Id);
+        reservation.CustomerId = customer.Id;
+        reservation.Customer = null!;
+
+        await publisher.PublishReservationEventAsync(
+            reservation,
+            RentalEventTypes.ReservationConfirmed);
+        await db.SaveChangesAsync();
+
+        var delivery = Assert.Single(db.NotificationDeliveries.ToList());
+        Assert.Equal("ana@club.test", delivery.RecipientEmail);
+        Assert.Equal(customer.Id, delivery.RecipientId);
+    }
+
+    [Fact]
+    public async Task Reservation_event_does_not_copy_email_from_another_tenant()
+    {
+        var tenantProvider = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(tenantProvider);
+        var tenant = new Tenant("Email Tenant", "27272727000191");
+        var other = new Tenant("Other Tenant", "28282828000191");
+        var foreignCustomer = new Customer
+        {
+            TenantId = other.Id,
+            Name = "Outra",
+            Email = "outra@club.test",
+        };
+        db.Tenants.AddRange(tenant, other);
+        db.Customers.Add(foreignCustomer);
+        db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+        {
+            TenantId = tenant.Id,
+            EventType = RentalEventTypes.ReservationConfirmed,
+            Channel = NotificationChannel.Email,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        tenantProvider.TenantId = tenant.Id;
+        using var loggerFactory = LoggerFactory.Create(_ => { });
+        var publisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            loggerFactory.CreateLogger<RentalsNotificationPublisher>());
+        var reservation = ReservationFor(tenant.Id);
+        reservation.CustomerId = foreignCustomer.Id;
+        reservation.Customer = null!;
+
+        await publisher.PublishReservationEventAsync(
+            reservation,
+            RentalEventTypes.ReservationConfirmed);
+        await db.SaveChangesAsync();
+
+        var delivery = Assert.Single(db.NotificationDeliveries.ToList());
+        Assert.Null(delivery.RecipientEmail);
+        Assert.Equal(foreignCustomer.Id, delivery.RecipientId);
     }
 
     [Fact]
