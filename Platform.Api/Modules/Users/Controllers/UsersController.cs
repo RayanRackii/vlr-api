@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
 using Platform.Core.Domain.Constants;
@@ -31,10 +32,18 @@ public sealed class UsersController(
 
     [HttpGet]
     [RequirePermission(Permissions.Core.UsersRead)]
-    public async Task<ActionResult<IReadOnlyList<TenantMemberResponse>>> List(
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        [FromQuery] string? q,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DirectoryPage.DefaultPageSize,
+        CancellationToken cancellationToken = default)
     {
-        var users = await userDirectoryService.ListAsync(cancellationToken);
+        if (!DirectoryPage.TryCreate(q, page, pageSize, out var directoryPage, out var error))
+        {
+            return BadRequest(new { error });
+        }
+
+        var users = await userDirectoryService.ListAsync(directoryPage, cancellationToken);
         return Ok(users);
     }
 

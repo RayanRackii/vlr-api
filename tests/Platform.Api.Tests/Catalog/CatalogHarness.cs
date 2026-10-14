@@ -166,7 +166,7 @@ internal sealed class FakePermissionResolver : IPermissionResolver
         return effective.Contains(permissionKey);
     }
 
-    public Task<IReadOnlySet<string>> GetEnabledCatalogKeysAsync(
+    public Task<IReadOnlySet<string>> GetAdminWildcardKeysAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlySet<string>>(new HashSet<string>(StringComparer.Ordinal));

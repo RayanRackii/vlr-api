@@ -74,9 +74,14 @@ public sealed class TenantRbacAccessTests
 
         var lessonPermission = await harness.Db.Permissions.SingleAsync(
             item => item.Key == Permissions.Rentals.ScheduleLessonsWrite);
+        var customersPermission = await harness.Db.Permissions.SingleAsync(
+            item => item.Key == Permissions.Core.CustomersRead);
         Assert.False(
             await harness.Db.RolePermissions.AnyAsync(item =>
                 item.RoleId == adminRole.Id && item.PermissionId == lessonPermission.Id));
+        Assert.False(
+            await harness.Db.RolePermissions.AnyAsync(item =>
+                item.RoleId == adminRole.Id && item.PermissionId == customersPermission.Id));
     }
 
     [Fact]

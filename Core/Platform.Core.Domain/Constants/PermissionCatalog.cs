@@ -8,7 +8,7 @@ public sealed record PermissionDefinition(
     string Resource);
 
 /// <summary>
-/// System-defined permission catalog (47 keys). Tenants cannot create keys.
+/// System-defined permission catalog (48 keys). Tenants cannot create keys.
 /// </summary>
 public static class PermissionCatalog
 {
@@ -16,6 +16,7 @@ public static class PermissionCatalog
     [
         Define(Permissions.Core.DashboardRead, "Read dashboard", "View tenant dashboard metrics."),
         Define(Permissions.Core.UsersRead, "Read users", "List tenant users."),
+        Define(Permissions.Core.CustomersRead, "Read portal customers", "List portal customers of the current tenant."),
         Define(Permissions.Core.UsersInvite, "Invite users", "Invite users to the tenant."),
         Define(Permissions.Core.UsersAssignRoles, "Assign user roles", "Change roles assigned to a user."),
         Define(Permissions.Core.RolesRead, "Read roles", "List roles and the permission catalog."),
@@ -95,11 +96,23 @@ public static class PermissionCatalog
     /// <summary>
     /// Catalog keys that exist for explicit role configuration only.
     /// System-role bootstrap must not persist them onto Admin/User/Technician.
-    /// Admin wildcard still includes them at runtime when the module is enabled.
+    /// The Admin wildcard still includes these keys at runtime when the module is enabled,
+    /// except keys listed in <see cref="AdminWildcardExcludedKeys"/>.
     /// </summary>
     public static readonly IReadOnlySet<string> ExplicitGrantOnlyKeys = new HashSet<string>(StringComparer.Ordinal)
     {
         Permissions.Rentals.ScheduleLessonsWrite,
+        Permissions.Core.CustomersRead,
+    };
+
+    /// <summary>
+    /// Explicit-grant keys the system Admin role does not receive from the wildcard.
+    /// A custom role can still persist them. A platform admin inside a tenant is
+    /// authorized separately and does not depend on this set.
+    /// </summary>
+    public static readonly IReadOnlySet<string> AdminWildcardExcludedKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Permissions.Core.CustomersRead,
     };
 
     public static bool IsCoreModule(string? moduleKey) =>

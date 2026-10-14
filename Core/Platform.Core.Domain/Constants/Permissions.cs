@@ -9,6 +9,7 @@ public static class Permissions
     {
         public const string DashboardRead = "core.dashboard.read";
         public const string UsersRead = "core.users.read";
+        public const string CustomersRead = "core.customers.read";
         public const string UsersInvite = "core.users.invite";
         public const string UsersAssignRoles = "core.users.assign_roles";
         public const string RolesRead = "core.roles.read";

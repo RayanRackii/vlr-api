@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: dotnet test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # DockerFact tests need PostgreSQL. ubuntu-latest exposes a Docker socket, so
+      # leaving this unset would start Testcontainers inside the job. The fixture
+      # prefers ROLVIX_TEST_POSTGRES_CONNECTION when the host is loopback, which a
+      # service container satisfies. Without Docker and without this variable,
+      # DockerFact skips instead of failing the suite.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: rolvix_ci
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      ROLVIX_TEST_POSTGRES_CONNECTION: "Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=rolvix_ci;SSL Mode=Disable"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj --configuration Release --verbosity minimal

@@ -20,6 +20,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Admin.Controllers;
 using Platform.Api.Modules.Assets.Controllers;
 using Platform.Api.Modules.Assets.Dtos;
@@ -439,7 +440,7 @@ public sealed class ModuleRuntimeGateTests
             NullLogger<PermissionResolver>.Instance);
 
         await resolver.GetEffectivePermissionsAsync(harness.Tenant.Id, user.Id);
-        await resolver.GetEnabledCatalogKeysAsync(harness.Tenant.Id);
+        await resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
         await accessor.GetActiveModuleKeysAsync();
 
         Assert.Equal(1, accessor.DatabaseLoadCount);
@@ -458,7 +459,7 @@ public sealed class ModuleRuntimeGateTests
             accessor,
             NullLogger<PermissionResolver>.Instance);
 
-        var catalog = await resolver.GetEnabledCatalogKeysAsync(harness.Tenant.Id);
+        var catalog = await resolver.GetAdminWildcardKeysAsync(harness.Tenant.Id);
 
         Assert.Equal(1, accessor.Calls);
         Assert.Contains(Permissions.Rentals.AssetsRead, catalog);
@@ -1355,7 +1356,9 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<TenantMemberResponse>> ListAsync(CancellationToken cancellationToken) =>
+        public Task<PagedResult<TenantMemberResponse>> ListAsync(
+            DirectoryPage page,
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task AssignRolesAsync(

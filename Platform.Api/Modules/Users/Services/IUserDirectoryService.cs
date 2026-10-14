@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
 
 namespace Platform.Api.Modules.Users.Services;
@@ -13,7 +14,9 @@ public interface IUserDirectoryService
     Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<TenantMemberResponse>> ListAsync(CancellationToken cancellationToken);
+    Task<PagedResult<TenantMemberResponse>> ListAsync(
+        DirectoryPage page,
+        CancellationToken cancellationToken);
 
     Task AssignRolesAsync(
         Guid userId,
