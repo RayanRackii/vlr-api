@@ -199,7 +199,7 @@ public sealed class MaintenancePlanService(
         UpdateMaintenancePlanRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var plan = await dbContext.MaintenancePlans
             .Include(p => p.Tasks)
@@ -217,7 +217,7 @@ public sealed class MaintenancePlanService(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            await PmocPlanAssetLock.LockPlanRowAsync(dbContext, plan.Id, cancellationToken);
+            await PmocPlanAssetLock.LockPlanRowAsync(dbContext, tenantId, plan.Id, cancellationToken);
             await dbContext.Entry(plan).ReloadAsync(cancellationToken);
 
             plan.UnitId = request.UnitId;

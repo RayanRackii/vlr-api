@@ -46,6 +46,8 @@ Eligibility: same tenant, plan `UnitId`, plan `AssetCategoryId`, Asset `Active`,
 
 Automatic generation runs when the plan is active and auto-generate is on, and the asset is DueToday or Overdue. It skips an existing Pending or InProgress PMOC work order for that plan and asset. `ScheduledDate` is `effectiveNextDueDate`, including a past date. Only `Completed` resets the clock. Pending and InProgress do not. Manual Gerar OS stays first-class and may be created before, on, or after the due date, including while another PMOC OS is open.
 
+`PmocPlanAssetLock` row locks (`pmoc.maintenance_plans` and `assets.assets` `FOR UPDATE`) include `tenant_id`. `TryGenerateAutomaticAsync` receives that tenant id from the job and reloads the plan and asset with the same predicate. The advisory lock is unchanged. Empty tenant id throws. No schema change.
+
 Due state is derived, not stored. Coverage and the generator share `PmocDueCalculator`. H6 (plan-list aggregates) is NO. H7 (Inventory/Asset PMOC surface) is NO.
 
 There is no `Frequency`, `ScheduleMode`, `PmocDueCalendar`, or `MaintenancePlanAsset`. Applicability stays Unit + AssetCategory. Technician has no `pmoc.*`. Work order task rows are historical snapshots.
