@@ -106,7 +106,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Same OccupancyKind cannot overlap itself on a Rentable+weekday; different kinds may
 - `PublishDay` gap-fills by rentable + start; does not wipe existing slots
 - Create/book/teacher-lesson/schedule-write/policy-write serialize occupancy with `RentalAssetLocks` `FOR UPDATE` on `rentals.rental_assets` (`id` + `tenant_id`) ordered by `RentalAssetId` ascending (reservation rows are not locked on create/book)
-- Confirm/Complete/Cancel serialize on `ReservationLocks` `FOR UPDATE` **first** (load only after lock). Cancel then locks distinct `RentalAssetId`s ascending via `RentalAssetLocks` before `MarkAvailable`. Confirm and Complete lock the reservation only and do not free slots
+- Confirm/Complete/Cancel serialize on `ReservationLocks` `FOR UPDATE` **first** (`id` + `tenant_id`; empty tenant throws; load only after lock). Cancel then locks distinct `RentalAssetId`s ascending via `RentalAssetLocks` before `MarkAvailable`. Confirm and Complete lock the reservation only and do not free slots
 - Confirm is not terminal: `PendingDeposit → Confirmed` (idempotent 200 on Confirmed); `Canceled`/`Completed` → 409. Sequential Confirm then Cancel both succeed
 - Complete is staff-only: `Confirmed → Completed`; `Completed` is idempotent 200; `PendingDeposit`/`Canceled` → 409. Does not free slots.
 - Customer JWT cannot Complete. Customer can self-cancel own eligible reservation (`POST /api/reservations/mine/{id}/cancel`) when status is `PendingDeposit`/`Confirmed` and `UtcNow < StartDateTime`. Non-owner → 404 `"Reservation not found."`. Staff Cancel has no cutoff.
@@ -132,7 +132,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 ## Important implementation seams
 
 - `Platform.Api/Modules/Rentals/Services/ReservationService.cs` (`ToDateTimeRange`, Confirm/Complete/Cancel lock-then-load)
-- `Platform.Api/Modules/Rentals/Services/ReservationLocks.cs` / `RentalAssetLocks.cs` (`FOR UPDATE` + tenant predicate; no-op when `!IsRelational()`)
+- `Platform.Api/Modules/Rentals/Services/ReservationLocks.cs` / `RentalAssetLocks.cs` (`FOR UPDATE` on `id` + `tenant_id`; no-op when `!IsRelational()`)
 - `Platform.Api/Modules/Rentals/Services/TeacherLessonService.cs` — date-only lesson create/remove (`rentals.schedule.lessons.write`)
 - `Platform.Api/Modules/Rentals/Services/ScheduleService.cs` (`ToDateTime` → `BrazilTimeZone.AtLocal`; `LoadReservedWindowsAsync` civil-day bounds)
 - `Platform.Api/Modules/Rentals/Services/ReservationQueueService.cs` / `ReservationQueueClock.cs` (`BrazilTimeZone`)

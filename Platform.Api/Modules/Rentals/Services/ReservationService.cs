@@ -409,7 +409,7 @@ public sealed class ReservationService(
         Guid reservationId,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
         await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
@@ -421,6 +421,7 @@ public sealed class ReservationService(
         {
             await ReservationLocks.LockByReservationIdAsync(
                 dbContext,
+                tenantId,
                 reservationId,
                 cancellationToken);
 
@@ -468,7 +469,7 @@ public sealed class ReservationService(
         Guid reservationId,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
         await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
@@ -480,6 +481,7 @@ public sealed class ReservationService(
         {
             await ReservationLocks.LockByReservationIdAsync(
                 dbContext,
+                tenantId,
                 reservationId,
                 cancellationToken);
 
@@ -527,7 +529,7 @@ public sealed class ReservationService(
         Guid reservationId,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
         await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
@@ -539,6 +541,7 @@ public sealed class ReservationService(
         {
             await ReservationLocks.LockByReservationIdAsync(
                 dbContext,
+                tenantId,
                 reservationId,
                 cancellationToken);
 
@@ -579,7 +582,7 @@ public sealed class ReservationService(
         Guid reservationId,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
         await notificationPublisher.EnsureReadyAsync(cancellationToken);
 
@@ -591,6 +594,7 @@ public sealed class ReservationService(
         {
             await ReservationLocks.LockByReservationIdAsync(
                 dbContext,
+                tenantId,
                 reservationId,
                 cancellationToken);
 

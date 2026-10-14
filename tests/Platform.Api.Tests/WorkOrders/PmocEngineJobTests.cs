@@ -404,6 +404,7 @@ public sealed class PmocEngineJobTests
         await harness.Db.SaveChangesAsync();
 
         var result = await CreateGenerator(harness).TryGenerateAutomaticAsync(
+            plan.TenantId,
             plan.Id,
             asset.Id,
             AsOf,
@@ -423,6 +424,7 @@ public sealed class PmocEngineJobTests
         await harness.Db.SaveChangesAsync();
 
         var result = await CreateGenerator(harness).TryGenerateAutomaticAsync(
+            plan.TenantId,
             plan.Id,
             asset.Id,
             AsOf,
