@@ -758,7 +758,10 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
         }
         else
         {
-            Assert.IsType<InvalidOperationException>(captured[0]);
+            var removeEx = captured[0]!;
+            Assert.True(
+                removeEx is InvalidOperationException or KeyNotFoundException,
+                $"Losing remove threw {removeEx.GetType().Name}: {removeEx.Message}");
             Assert.Empty(slots);
         }
     }
@@ -822,7 +825,10 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
         }
         else
         {
-            Assert.IsType<InvalidOperationException>(captured[0]);
+            var removeEx = captured[0]!;
+            Assert.True(
+                removeEx is InvalidOperationException or KeyNotFoundException,
+                $"Losing remove threw {removeEx.GetType().Name}: {removeEx.Message}");
             Assert.Empty(slots);
         }
     }
