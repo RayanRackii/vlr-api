@@ -2,6 +2,8 @@ using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Admin.Dtos;
+using Platform.Api.Modules.Admin.Services;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -13,13 +15,14 @@ namespace Platform.Api.Features.CreateTenant;
 
 public interface ICreateTenantHandler
 {
-    Task<IResult> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken);
+    Task<IResult> HandleAsync(
+        CreateTenantRequest request,
+        CancellationToken cancellationToken,
+        string? clientIp = null);
 }
 
 public sealed class CreateTenantHandler : ICreateTenantHandler
 {
-    private const int MinimumPasswordLength = 8;
-
     internal static readonly string[] TrialModules =
     [
         PlatformModules.Inventory,
@@ -37,40 +40,79 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
     ];
 
     private readonly AppDbContext _dbContext;
-    private readonly ISupabaseAuthAdminClient _supabaseAuthAdminClient;
     private readonly ITenantAccessBootstrapper _tenantAccessBootstrapper;
+    private readonly ITenantUserAdminService _tenantUserAdminService;
+    private readonly IAnonymousTrialCreateGate _trialCreateGate;
+    private readonly ILogger<CreateTenantHandler> _logger;
 
     public CreateTenantHandler(
         AppDbContext dbContext,
-        ISupabaseAuthAdminClient supabaseAuthAdminClient,
-        ITenantAccessBootstrapper tenantAccessBootstrapper)
+        ITenantAccessBootstrapper tenantAccessBootstrapper,
+        ITenantUserAdminService tenantUserAdminService,
+        IAnonymousTrialCreateGate trialCreateGate,
+        ILogger<CreateTenantHandler> logger)
     {
         _dbContext = dbContext;
-        _supabaseAuthAdminClient = supabaseAuthAdminClient;
         _tenantAccessBootstrapper = tenantAccessBootstrapper;
+        _tenantUserAdminService = tenantUserAdminService;
+        _trialCreateGate = trialCreateGate;
+        _logger = logger;
     }
 
-    public async Task<IResult> HandleAsync(CreateTenantRequest request, CancellationToken cancellationToken)
+    public async Task<IResult> HandleAsync(
+        CreateTenantRequest request,
+        CancellationToken cancellationToken,
+        string? clientIp = null)
     {
+        if (!request.IsTrial)
+        {
+            return Results.BadRequest(new { error = AnonymousOnboardingErrorCodes.TrialRequired });
+        }
+
         var validationError = ValidateRequest(request);
         if (validationError is not null)
         {
             return Results.BadRequest(new { error = validationError });
         }
 
-        string? supabaseUserId = null;
+        if (!_trialCreateGate.TryConsume(clientIp))
+        {
+            return Results.Json(
+                new { error = AnonymousOnboardingErrorCodes.RateLimited },
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
         TrialSignupClaim? trialClaim = null;
+        Guid? pendingInviteId = null;
+        Guid createdTenantId = Guid.Empty;
+        Guid headquartersUnitId = Guid.Empty;
+        Guid superAdminRoleId = Guid.Empty;
+        string? subdomain = null;
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            string? subdomain = null;
-
             if (request.IsTrial)
             {
                 var emailNormalized = request.AdminEmail.Trim().ToLowerInvariant();
                 var phoneNormalized = BrazilianDocumentValidator.NormalizePhoneBr(request.AdminPhone);
+
+                var alreadyClaimed = await _dbContext.TrialSignupClaims
+                    .AsNoTracking()
+                    .AnyAsync(
+                        claim => claim.EmailNormalized == emailNormalized
+                            || claim.PhoneNormalized == phoneNormalized,
+                        cancellationToken);
+
+                if (alreadyClaimed)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Results.Conflict(new
+                    {
+                        error = "Trial already used for this email or phone.",
+                    });
+                }
 
                 trialClaim = new TrialSignupClaim(emailNormalized, phoneNormalized);
                 _dbContext.TrialSignupClaims.Add(trialClaim);
@@ -136,33 +178,13 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            supabaseUserId = await _supabaseAuthAdminClient.CreateUserAsync(
-                request.AdminEmail,
-                request.AdminPassword,
-                cancellationToken);
-
-            await _supabaseAuthAdminClient.UpdateUserAppMetadataAsync(
-                supabaseUserId,
-                tenant.Id,
-                cancellationToken);
-
             var superAdminRole = new Role(
                 tenant.Id,
                 SystemRoles.SuperAdmin,
                 "Tenant super administrator with full access.",
                 isSystemRole: true);
 
-            var adminUser = new User(
-                tenant.Id,
-                supabaseUserId,
-                request.AdminFullName,
-                request.AdminEmail);
-
-            var userRole = new UserRole(adminUser.Id, superAdminRole.Id);
-
             _dbContext.Roles.Add(superAdminRole);
-            _dbContext.Users.Add(adminUser);
-            _dbContext.UserRoles.Add(userRole);
 
             if (trialClaim is not null)
             {
@@ -172,52 +194,88 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             await _dbContext.SaveChangesAsync(cancellationToken);
             await _tenantAccessBootstrapper.EnsureAsync(tenant.Id, cancellationToken);
 
+            if (request.IsTrial)
+            {
+                // The invite row shares this transaction. The email is queued only
+                // after commit so a rolled-back claim cannot send a live token.
+                var invite = await _tenantUserAdminService.InviteAsync(
+                    tenant.Id,
+                    new InviteTenantUserRequestDto
+                    {
+                        FullName = request.AdminFullName.Trim(),
+                        Email = request.AdminEmail,
+                        RoleIds = [superAdminRole.Id],
+                    },
+                    cancellationToken,
+                    enqueueEmail: false);
+
+                pendingInviteId = invite.Id;
+            }
+
             await transaction.CommitAsync(cancellationToken);
 
-            var response = new CreateTenantResponse(
-                tenant.Id,
-                headquartersUnit.Id,
-                adminUser.Id,
-                superAdminRole.Id,
-                supabaseUserId,
-                tenant.Subdomain);
-
-            return Results.Created($"/api/tenants/{tenant.Id}", response);
+            createdTenantId = tenant.Id;
+            headquartersUnitId = headquartersUnit.Id;
+            superAdminRoleId = superAdminRole.Id;
+            subdomain = tenant.Subdomain;
         }
         catch (ArgumentException ex)
         {
-            await RollbackWithCompensationAsync(transaction, supabaseUserId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
             return Results.BadRequest(new { error = ex.Message });
         }
         catch (InvalidOperationException ex) when (
             ex.Message.Contains("Trial already used", StringComparison.Ordinal))
         {
-            await RollbackWithCompensationAsync(transaction, supabaseUserId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
             return Results.Conflict(new { error = ex.Message });
         }
         catch (SupabaseAuthAdminException ex)
         {
-            await RollbackWithCompensationAsync(transaction, supabaseUserId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
+            _logger.LogWarning(
+                ex,
+                "Anonymous onboarding failed in the auth provider. StatusCode={StatusCode}",
+                ex.StatusCode);
 
             if (ex.StatusCode is 409 or 422)
             {
-                return Results.Conflict(new { error = ex.Message });
+                return Results.Conflict(new { error = AnonymousOnboardingErrorCodes.SignupRejected });
             }
 
             return Results.Json(
-                new { error = ex.Message },
+                new { error = AnonymousOnboardingErrorCodes.SignupUnavailable },
                 statusCode: StatusCodes.Status502BadGateway);
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
-            await RollbackWithCompensationAsync(transaction, supabaseUserId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
             return Results.Conflict(new { error = "A tenant or user with the same unique identifier already exists." });
         }
         catch
         {
-            await RollbackWithCompensationAsync(transaction, supabaseUserId, cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+
+        if (pendingInviteId is Guid inviteId)
+        {
+            await _tenantUserAdminService.DeliverInviteEmailAsync(
+                createdTenantId,
+                inviteId,
+                cancellationToken);
+        }
+
+        return Results.Created(
+            $"/api/tenants/{createdTenantId}",
+            new CreateTenantResponse(
+                createdTenantId,
+                headquartersUnitId,
+                null,
+                superAdminRoleId,
+                null,
+                subdomain,
+                pendingInviteId));
     }
 
     private async Task<IReadOnlyList<Guid>> ResolveTrialFamilyIdsAsync(CancellationToken cancellationToken)
@@ -272,17 +330,12 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             return "AdminEmail is not a valid email address.";
         }
 
-        if (string.IsNullOrWhiteSpace(request.AdminPassword))
+        if (!string.IsNullOrWhiteSpace(request.AdminPassword))
         {
-            return "AdminPassword is required.";
+            return "AdminPassword is not accepted.";
         }
 
-        if (request.AdminPassword.Length < MinimumPasswordLength)
-        {
-            return $"AdminPassword must be at least {MinimumPasswordLength} characters long.";
-        }
-
-        if (request.IsTrial && string.IsNullOrWhiteSpace(request.AdminPhone))
+        if (string.IsNullOrWhiteSpace(request.AdminPhone))
         {
             return "AdminPhone is required for trial signup.";
         }
@@ -309,25 +362,4 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
     }
 
-    private async Task RollbackWithCompensationAsync(
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
-        string? supabaseUserId,
-        CancellationToken cancellationToken)
-    {
-        await transaction.RollbackAsync(cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(supabaseUserId))
-        {
-            return;
-        }
-
-        try
-        {
-            await _supabaseAuthAdminClient.DeleteUserAsync(supabaseUserId, cancellationToken);
-        }
-        catch (SupabaseAuthAdminException)
-        {
-            // Compensation best-effort; the original error remains the primary failure.
-        }
-    }
 }
