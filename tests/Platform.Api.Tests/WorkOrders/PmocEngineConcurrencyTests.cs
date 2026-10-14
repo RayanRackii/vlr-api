@@ -42,11 +42,13 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
             await using var db1 = factory.Create(tenantProvider);
             await using var db2 = factory.Create(tenantProvider);
             var first = CreateGenerator(db1, tenantProvider).TryGenerateAutomaticAsync(
+                seed.TenantId,
                 seed.PlanId,
                 seed.AssetId,
                 AsOf,
                 CancellationToken.None);
             var second = CreateGenerator(db2, tenantProvider).TryGenerateAutomaticAsync(
+                seed.TenantId,
                 seed.PlanId,
                 seed.AssetId,
                 AsOf,
@@ -79,6 +81,7 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
             await using var generationDb = factory.Create(tenantProvider);
             await using var completionDb = factory.Create(tenantProvider);
             var generate = CreateGenerator(generationDb, tenantProvider).TryGenerateAutomaticAsync(
+                seed.TenantId,
                 seed.PlanId,
                 seed.AssetId,
                 AsOf,
@@ -182,7 +185,7 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
         db.MaintenancePlans.Add(plan);
         db.Assets.Add(asset);
         await db.SaveChangesAsync();
-        return new Seed(plan.Id, asset.Id);
+        return new Seed(tenant.Id, plan.Id, asset.Id);
     }
 
     private static WorkOrderGenerationService CreateGenerator(AppDbContext db, FakeTenantProvider tenantProvider) =>
@@ -215,5 +218,5 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
         return new WorkOrderService(db, tenantProvider, http, users, resolver, registry);
     }
 
-    private sealed record Seed(Guid PlanId, Guid AssetId);
+    private sealed record Seed(Guid TenantId, Guid PlanId, Guid AssetId);
 }

@@ -1188,6 +1188,7 @@ public sealed class ModuleRuntimeGateTests
             throw new NotSupportedException();
 
         public Task<PmocAutomaticGenerationResult> TryGenerateAutomaticAsync(
+            Guid tenantId,
             Guid planId,
             Guid assetId,
             DateOnly asOfDate,

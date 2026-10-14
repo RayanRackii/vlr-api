@@ -105,23 +105,31 @@ public sealed class WorkOrderGenerationService(
     }
 
     public async Task<PmocAutomaticGenerationResult> TryGenerateAutomaticAsync(
+        Guid tenantId,
         Guid planId,
         Guid assetId,
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
+        if (tenantId == Guid.Empty)
+        {
+            throw new ArgumentException("Tenant id is required to generate a maintenance plan work order.");
+        }
+
         dbContext.ChangeTracker.Clear();
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
             await PmocPlanAssetLock.AcquireAsync(dbContext, planId, assetId, cancellationToken);
-            await PmocPlanAssetLock.LockPlanRowAsync(dbContext, planId, cancellationToken);
+            await PmocPlanAssetLock.LockPlanRowAsync(dbContext, tenantId, planId, cancellationToken);
 
             var plan = await dbContext.MaintenancePlans
                 .IgnoreQueryFilters()
                 .Include(item => item.Tasks)
-                .FirstOrDefaultAsync(item => item.Id == planId, cancellationToken);
+                .FirstOrDefaultAsync(
+                    item => item.Id == planId && item.TenantId == tenantId,
+                    cancellationToken);
 
             if (plan is null)
             {
@@ -136,11 +144,13 @@ public sealed class WorkOrderGenerationService(
                 return SkippedRevalidation();
             }
 
-            await PmocPlanAssetLock.LockAssetRowAsync(dbContext, assetId, cancellationToken);
+            await PmocPlanAssetLock.LockAssetRowAsync(dbContext, tenantId, assetId, cancellationToken);
 
             var asset = await dbContext.Assets
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(item => item.Id == assetId, cancellationToken);
+                .FirstOrDefaultAsync(
+                    item => item.Id == assetId && item.TenantId == tenantId,
+                    cancellationToken);
 
             if (asset is null
                 || !PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId))

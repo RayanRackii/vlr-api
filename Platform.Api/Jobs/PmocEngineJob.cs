@@ -138,6 +138,7 @@ public sealed class PmocEngineJob(
             try
             {
                 result = await workOrderGenerationService.TryGenerateAutomaticAsync(
+                    plan.TenantId,
                     plan.Id,
                     assetId,
                     asOfDate,
