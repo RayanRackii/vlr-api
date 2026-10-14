@@ -13,6 +13,13 @@ public sealed class FakeTenantUserAdminService : ITenantUserAdminService
     public Task<TenantInviteResponseDto> InviteAsync(
         Guid tenantId,
         InviteTenantUserRequestDto request,
+        CancellationToken cancellationToken,
+        bool enqueueEmail = true) =>
+        throw new NotSupportedException();
+
+    public Task DeliverInviteEmailAsync(
+        Guid tenantId,
+        Guid inviteId,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
