@@ -7,8 +7,8 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(48, PermissionCatalog.All.Length);
-        Assert.Equal(48, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(50, PermissionCatalog.All.Length);
+        Assert.Equal(50, PermissionCatalog.AllKeys.Count);
         Assert.Contains(Permissions.Core.CustomersRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Core.CustomersRead, PermissionCatalog.ExplicitGrantOnlyKeys);
         Assert.Contains(Permissions.Core.CustomersRead, PermissionCatalog.AdminWildcardExcludedKeys);
@@ -25,6 +25,16 @@ public sealed class PermissionCatalogCatalogTests
         Assert.Contains(Permissions.Rentals.ScheduleLessonsWrite, PermissionCatalog.ExplicitGrantOnlyKeys);
         Assert.Contains(Permissions.Core.NotificationsRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Core.NotificationsWrite, PermissionCatalog.AllKeys);
+        Assert.Contains(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.AllKeys);
+        Assert.Contains(Permissions.Rentals.BookingPolicyWrite, PermissionCatalog.AllKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.ExplicitGrantOnlyKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyWrite, PermissionCatalog.ExplicitGrantOnlyKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.AdminWildcardExcludedKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyWrite, PermissionCatalog.AdminWildcardExcludedKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyWrite, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.DoesNotContain(Permissions.Rentals.BookingPolicyWrite, PermissionCatalog.TechnicianLegacyKeys);
         Assert.DoesNotContain(Permissions.Catalog.ProductsRead, PermissionCatalog.DefaultUserKeys);
         Assert.DoesNotContain(Permissions.Catalog.OrdersManage, PermissionCatalog.DefaultUserKeys);
         Assert.DoesNotContain(Permissions.Rentals.ReservationsComplete, PermissionCatalog.DefaultUserKeys);

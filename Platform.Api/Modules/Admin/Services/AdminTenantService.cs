@@ -412,6 +412,7 @@ public sealed class AdminTenantService(
                 await DeleteForTenantAsync(dbContext.RentalPricings, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.OccupancyKinds, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.RentalAssets, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.BookingPolicies, id, cancellationToken);
 
                 await DeleteForTenantAsync(dbContext.WorkOrderTasks, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.WorkOrders, id, cancellationToken);

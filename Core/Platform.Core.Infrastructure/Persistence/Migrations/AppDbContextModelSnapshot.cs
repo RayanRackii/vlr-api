@@ -247,6 +247,57 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("asset_families", "assets");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.BookingPolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CancellationPolicyText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("cancellation_policy_text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("MaxActiveReservationsPerCustomerPerDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_active_reservations_per_customer_per_day");
+
+                    b.Property<string>("ResourceType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("resource_type");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_booking_policies");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_booking_policies_tenant_default")
+                        .HasFilter("resource_type IS NULL");
+
+                    b.HasIndex("TenantId", "ResourceType")
+                        .IsUnique()
+                        .HasDatabaseName("ux_booking_policies_tenant_resource_type")
+                        .HasFilter("resource_type IS NOT NULL");
+
+                    b.ToTable("booking_policies", "rentals", t =>
+                        {
+                            t.HasCheckConstraint("ck_booking_policies_daily_limit", "max_active_reservations_per_customer_per_day IS NULL OR (max_active_reservations_per_customer_per_day >= 1 AND max_active_reservations_per_customer_per_day <= 100)");
+                        });
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
                 {
                     b.Property<Guid>("Id")

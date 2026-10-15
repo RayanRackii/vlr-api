@@ -65,6 +65,8 @@ public static class Permissions
         public const string LayoutsWrite = "rentals.layouts.write";
         public const string OccupancyKindsRead = "rentals.occupancy_kinds.read";
         public const string OccupancyKindsWrite = "rentals.occupancy_kinds.write";
+        public const string BookingPolicyRead = "rentals.booking_policy.read";
+        public const string BookingPolicyWrite = "rentals.booking_policy.write";
     }
 
     public static class Catalog

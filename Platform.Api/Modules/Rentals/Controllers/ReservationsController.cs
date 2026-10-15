@@ -227,6 +227,10 @@ public sealed class ReservationsController(
 
             return Created($"/api/reservations/{reservation.Id}", reservation);
         }
+        catch (DailyBookingLimitReachedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = DailyBookingLimitReachedException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });

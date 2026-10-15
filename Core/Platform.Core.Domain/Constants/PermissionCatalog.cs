@@ -8,7 +8,7 @@ public sealed record PermissionDefinition(
     string Resource);
 
 /// <summary>
-/// System-defined permission catalog (48 keys). Tenants cannot create keys.
+/// System-defined permission catalog (50 keys). Tenants cannot create keys.
 /// </summary>
 public static class PermissionCatalog
 {
@@ -56,6 +56,8 @@ public static class PermissionCatalog
         Define(Permissions.Rentals.LayoutsWrite, "Write rental layouts", "Create, update, and delete rental layouts."),
         Define(Permissions.Rentals.OccupancyKindsRead, "Read occupancy kinds", "List occupancy kinds."),
         Define(Permissions.Rentals.OccupancyKindsWrite, "Write occupancy kinds", "Create and update occupancy kinds."),
+        Define(Permissions.Rentals.BookingPolicyRead, "Read booking policy", "View the tenant booking policy for every bookable resource type."),
+        Define(Permissions.Rentals.BookingPolicyWrite, "Write booking policy", "Update the tenant booking policy for every bookable resource type."),
         Define(Permissions.Catalog.ProductsRead, "Read catalog products", "List and view catalog products."),
         Define(Permissions.Catalog.ProductsManage, "Manage catalog products", "Create, update, and deactivate catalog products and files."),
         Define(Permissions.Catalog.OrdersRead, "Read catalog orders", "List and view catalog orders."),
