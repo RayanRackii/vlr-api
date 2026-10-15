@@ -1,8 +1,10 @@
+using System.Net.Http;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using Platform.Core.Infrastructure.Supabase;
 
 namespace Platform.Api.Authentication;
 
@@ -58,6 +60,15 @@ public static class SupabaseAuthenticationExtensions
                         SecurityAlgorithms.HmacSha256,
                     ],
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = context =>
+                    {
+                        var guard = context.HttpContext.RequestServices
+                            .GetRequiredService<IStaffWriteSessionGuard>();
+                        return guard.ValidateAsync(context);
+                    },
+                };
             })
             .AddJwtBearer(CustomerJwtBearerDefaults.AuthenticationScheme, options =>
             {
@@ -76,6 +87,19 @@ public static class SupabaseAuthenticationExtensions
             });
 
         services.AddAuthorization(options => options.AddRolvixPolicies());
+
+        services.Configure<SupabaseOptions>(configuration.GetSection(SupabaseOptions.SectionName));
+        services.AddHttpClient(GoTrueAccessSessionProbe.HttpClientName, client =>
+            {
+                client.BaseAddress = new Uri($"{supabaseUrl.TrimEnd('/')}/auth/v1/");
+                client.Timeout = TimeSpan.FromSeconds(3);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+            });
+        services.AddScoped<IGoTrueAccessSessionProbe, GoTrueAccessSessionProbe>();
+        services.AddScoped<IStaffWriteSessionGuard, StaffWriteSessionGuard>();
 
         services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
         services.AddSingleton<ICustomerJwtIssuer, CustomerJwtIssuer>();
