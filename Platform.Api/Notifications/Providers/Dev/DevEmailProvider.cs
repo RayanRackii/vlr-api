@@ -6,11 +6,20 @@ public sealed class DevEmailProvider(ILogger<DevEmailProvider> logger) : IEmailP
         string recipient,
         string subject,
         string body,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SendAsync(recipient, subject, body, fromDisplayName: null, cancellationToken);
+
+    public Task SendAsync(
+        string recipient,
+        string subject,
+        string body,
+        string? fromDisplayName,
+        CancellationToken cancellationToken)
     {
         logger.LogInformation(
-            "DEV EMAIL → To: {Recipient} | Subject: {Subject} | Body: {Body}",
+            "DEV EMAIL → To: {Recipient} | FromName: {FromName} | Subject: {Subject} | Body: {Body}",
             recipient,
+            string.IsNullOrWhiteSpace(fromDisplayName) ? "(provider default)" : fromDisplayName.Trim(),
             subject,
             body);
 

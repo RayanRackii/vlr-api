@@ -37,7 +37,9 @@ public sealed class NoOpRentalsNotificationPublisher : IRentalsNotificationPubli
 public sealed class RentalsNotificationPublisher(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ILogger<RentalsNotificationPublisher> logger) : IRentalsNotificationPublisher
+    ILogger<RentalsNotificationPublisher> logger,
+    IConfiguration? configuration = null,
+    IHostEnvironment? environment = null) : IRentalsNotificationPublisher
 {
     public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
@@ -131,7 +133,11 @@ public sealed class RentalsNotificationPublisher(
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
 
-        var payload = BuildPayload(reservation, tenant);
+        var payload = await BuildPayloadAsync(
+            reservation,
+            tenant,
+            tenantId,
+            cancellationToken);
 
         var configs = await dbContext.TenantNotificationChannelConfigs
             .Where(c => c.TenantId == tenantId && c.EventType == eventType && c.IsActive)
@@ -216,27 +222,123 @@ public sealed class RentalsNotificationPublisher(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private static Dictionary<string, string?> BuildPayload(
+    private async Task<Dictionary<string, string?>> BuildPayloadAsync(
         Reservation reservation,
-        Tenant? tenant)
+        Tenant? tenant,
+        Guid tenantId,
+        CancellationToken cancellationToken)
     {
         var tenantName = tenant?.TradeName is { Length: > 0 } trade
             ? trade
             : tenant?.LegalName;
         var reference = FormatReservationReference(reservation);
+        var zone = TenantBookingClock.Resolve(
+            tenant is null ? null : TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
+        var schedule = ReservationCustomerEmail.FormatSchedule(
+            reservation.StartDateTime,
+            reservation.EndDateTime,
+            zone);
+        var portalUrl = configuration is null || environment is null
+            ? null
+            : CustomerPortalLinks.ReservationAgenda(
+                FrontendBaseUrlResolver.Resolve(configuration, environment),
+                tenant?.Subdomain,
+                reservation.Id);
+
         return new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            ["tenantName"] = tenantName,
-            ["customerName"] = reservation.CustomerName,
-            ["reservationReference"] = reference,
-            ["reservationStatus"] = NotificationCustomerCopy.Label(reservation.Status),
-            ["reservationDateTime"] = BrazilTimeZone.FormatCivilDateTime(reservation.StartDateTime),
+            [ReservationCustomerEmail.TenantNameKey] = tenantName,
+            [ReservationCustomerEmail.CustomerNameKey] = reservation.CustomerName,
+            [ReservationCustomerEmail.ReferenceKey] = reference,
+            [ReservationCustomerEmail.StatusKey] = NotificationCustomerCopy.Label(reservation.Status),
+            [ReservationCustomerEmail.DateTimeKey] = BrazilTimeZone.FormatCivilDateTime(reservation.StartDateTime),
+            [ReservationCustomerEmail.DateKey] = schedule.Date,
+            [ReservationCustomerEmail.StartKey] = schedule.Start,
+            [ReservationCustomerEmail.EndKey] = schedule.End,
+            [ReservationCustomerEmail.TotalKey] = ReservationCustomerEmail.FormatMoney(reservation.TotalAmount),
+            [ReservationCustomerEmail.DepositKey] = await ResolveDepositTextAsync(
+                reservation,
+                tenantId,
+                zone,
+                cancellationToken),
+            [ReservationCustomerEmail.UrlKey] = portalUrl,
         };
+    }
+
+    private async Task<string?> ResolveDepositTextAsync(
+        Reservation reservation,
+        Guid tenantId,
+        TimeZoneInfo zone,
+        CancellationToken cancellationToken)
+    {
+        if (reservation.Status != ReservationStatus.PendingDeposit || reservation.TotalAmount <= 0m)
+        {
+            return null;
+        }
+
+        var startLocal = TimeZoneInfo.ConvertTime(reservation.StartDateTime, zone);
+        var endLocal = TimeZoneInfo.ConvertTime(reservation.EndDateTime, zone);
+        if (startLocal.Date != endLocal.Date)
+        {
+            return null;
+        }
+
+        var date = DateOnly.FromDateTime(startLocal.Date);
+        var startTime = TimeOnly.FromTimeSpan(startLocal.TimeOfDay);
+        var endTime = TimeOnly.FromTimeSpan(endLocal.TimeOfDay);
+        decimal deposit = 0m;
+        var counted = 0;
+
+        foreach (var item in reservation.Items)
+        {
+            if (item.TenantId != tenantId)
+            {
+                continue;
+            }
+
+            var requiresDeposit = item.RentalAsset?.RequiresDeposit;
+            if (item.RentalAsset is null)
+            {
+                requiresDeposit = await dbContext.RentalAssets
+                    .AsNoTracking()
+                    .Where(rental => rental.TenantId == tenantId && rental.Id == item.RentalAssetId)
+                    .Select(rental => (bool?)rental.RequiresDeposit)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            if (requiresDeposit != true)
+            {
+                continue;
+            }
+
+            var percentage = await dbContext.RentalPricings
+                .AsNoTracking()
+                .Where(pricing => pricing.TenantId == tenantId && pricing.RentalAssetId == item.RentalAssetId)
+                .Where(pricing => pricing.DayOfWeek == date.DayOfWeek)
+                .Where(pricing => pricing.StartTime <= startTime && pricing.EndTime >= endTime)
+                .OrderBy(pricing => pricing.PricePerHour)
+                .Select(pricing => (decimal?)pricing.DepositPercentage)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (percentage is null)
+            {
+                return null;
+            }
+
+            deposit += decimal.Round(
+                item.SubTotal * percentage.Value / 100m,
+                2,
+                MidpointRounding.AwayFromZero);
+            counted++;
+        }
+
+        return counted == 0 ? null : ReservationCustomerEmail.FormatMoney(deposit);
     }
 
     internal static string FormatReservationReference(Reservation reservation)
     {
         var names = reservation.Items
+            .Where(item => item.TenantId == reservation.TenantId)
             .Select(item => item.RentalAsset?.Asset?.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Select(name => name!)
@@ -348,6 +450,8 @@ internal static class RentalsNotificationTemplates
             };
     }
 
+    // Email subject/body seeds are not the customer message. The outbox renders
+    // ReservationCustomerEmail for these events so missing price or deposit lines drop out.
     public static IReadOnlyList<Seed> Seeds { get; } =
     [
         new(RentalEventTypes.ReservationPendingDeposit, NotificationChannel.InApp, "Reserva {{reservationReference}} aguardando depósito."),

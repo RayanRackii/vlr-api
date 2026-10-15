@@ -552,15 +552,22 @@ public sealed class TenantUserAdminService(
             ? null
             : $"{tenant.Subdomain.Trim().ToLowerInvariant()}.rolvix.com.br";
 
+        var roleNames = await StaffInviteRoleNames.LoadAsync(
+            dbContext,
+            invite.TenantId,
+            invite.Id,
+            invite.RoleName,
+            cancellationToken);
+
         var htmlBody = RolvixEmailLayout.Wrap(
             invite.FullName,
-            RolvixEmailLayout.InviteBody(inviteUrl, companyName, portalHost));
+            RolvixEmailLayout.InviteBody(inviteUrl, companyName, portalHost, roleNames: roleNames));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(
                 Type: "Email",
                 Recipient: invite.Email,
-                Subject: $"Convite Rolvix — admin de {companyName}",
+                Subject: RolvixEmailLayout.InviteSubject(companyName, roleNames),
                 Body: htmlBody),
             cancellationToken);
     }
