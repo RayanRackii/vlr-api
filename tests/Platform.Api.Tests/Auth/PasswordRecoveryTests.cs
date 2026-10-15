@@ -619,7 +619,8 @@ public sealed class PasswordRecoveryTests
             var tenantProvider = new HttpContextTenantProvider(
                 new HttpContextAccessor(),
                 ambient,
-                new FakePlatformAdminChecker());
+                new FakePlatformAdminChecker(),
+                new PlatformAdminTenantSession());
             var db = InMemoryAppDb.Create(tenantProvider);
             db.Tenants.AddRange(tenantA, tenantB);
             db.Users.Add(anaA);
@@ -682,6 +683,11 @@ public sealed class PasswordRecoveryTests
             string supabaseUserId,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<Guid?> GetUserTenantAppMetadataAsync(
+            string supabaseUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Guid?>(null);
 
         public Task SetUserPasswordAsync(
             string supabaseUserId,

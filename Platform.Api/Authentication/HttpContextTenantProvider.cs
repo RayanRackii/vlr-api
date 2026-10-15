@@ -8,15 +8,18 @@ public sealed class HttpContextTenantProvider : ITenantProvider
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AmbientTenantContext _ambientTenantContext;
     private readonly IPlatformAdminChecker _platformAdminChecker;
+    private readonly PlatformAdminTenantSession _platformAdminTenantSession;
 
     public HttpContextTenantProvider(
         IHttpContextAccessor httpContextAccessor,
         AmbientTenantContext ambientTenantContext,
-        IPlatformAdminChecker platformAdminChecker)
+        IPlatformAdminChecker platformAdminChecker,
+        PlatformAdminTenantSession platformAdminTenantSession)
     {
         _httpContextAccessor = httpContextAccessor;
         _ambientTenantContext = ambientTenantContext;
         _platformAdminChecker = platformAdminChecker;
+        _platformAdminTenantSession = platformAdminTenantSession;
     }
 
     public Guid? TenantId
@@ -61,11 +64,15 @@ public sealed class HttpContextTenantProvider : ITenantProvider
                     "The customer access token is missing a valid tenant_id claim.");
             }
 
-            // Platform Super-Admins: no tenant_id → cross-tenant platform mode.
-            // With tenant_id in JWT → operating inside that tenant as admin.
+            // Platform Super-Admins: the effective tenant is the request session
+            // filled from live Auth app_metadata plus active membership.
+            // A stale access-token tenant_id (still present after exit, until refresh)
+            // is never consulted. Unresolved means no support tenant.
             if (_platformAdminChecker.IsPlatformAdmin(user))
             {
-                return SupabaseAppMetadataParser.TryExtractTenantId(user);
+                return _platformAdminTenantSession.IsResolved
+                    ? _platformAdminTenantSession.TenantId
+                    : null;
             }
 
             return SupabaseAppMetadataParser.ExtractTenantId(user);

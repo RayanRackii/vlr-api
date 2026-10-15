@@ -87,7 +87,8 @@ public sealed class ScheduleTemplateCourtLockTests
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher,
-            SilentRentalsNotifications.Scheduler);
+            SilentRentalsNotifications.Scheduler,
+            TimeProvider.System);
 
     private static async Task<Guid> SeedCourtAsync(TeacherLessonHarness harness, string name, string tag)
     {

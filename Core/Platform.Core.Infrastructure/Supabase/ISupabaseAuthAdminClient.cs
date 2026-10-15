@@ -34,6 +34,14 @@ public interface ISupabaseAuthAdminClient
         string supabaseUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Live <c>app_metadata.tenant_id</c> for the Auth user, or null when it is absent.
+    /// This is the server-side support session. Callers must not substitute the access token.
+    /// </summary>
+    Task<Guid?> GetUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken = default);
+
     Task SetUserPasswordAsync(
         string supabaseUserId,
         string password,

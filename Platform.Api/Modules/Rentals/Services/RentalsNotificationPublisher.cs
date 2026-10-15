@@ -151,6 +151,11 @@ public sealed class RentalsNotificationPublisher(
             return [];
         }
 
+        var recipientEmail = await ResolveRecipientEmailAsync(
+            reservation,
+            tenantId,
+            cancellationToken);
+
         var notification = new NotificationEntity
         {
             TenantId = tenantId,
@@ -172,7 +177,7 @@ public sealed class RentalsNotificationPublisher(
                 RecipientKind = NotificationRecipientKind.Customer,
                 RecipientId = reservation.CustomerId,
                 RecipientName = reservation.CustomerName,
-                RecipientEmail = reservation.Customer?.Email,
+                RecipientEmail = recipientEmail,
                 RecipientPhone = reservation.CustomerWhatsApp,
                 Status = NotificationDeliveryStatus.Queued,
                 NextAttemptAt = DateTimeOffset.UtcNow,
@@ -192,6 +197,23 @@ public sealed class RentalsNotificationPublisher(
 
         dbContext.Notifications.Add(notification);
         return queuedExternal;
+    }
+
+    private async Task<string?> ResolveRecipientEmailAsync(
+        Reservation reservation,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(reservation.Customer?.Email))
+        {
+            return reservation.Customer.Email;
+        }
+
+        return await dbContext.Customers
+            .AsNoTracking()
+            .Where(customer => customer.TenantId == tenantId && customer.Id == reservation.CustomerId)
+            .Select(customer => customer.Email)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static Dictionary<string, string?> BuildPayload(

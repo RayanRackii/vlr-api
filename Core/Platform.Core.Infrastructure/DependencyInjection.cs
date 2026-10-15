@@ -45,6 +45,7 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         services.Configure<SupabaseOptions>(configuration.GetSection(SupabaseOptions.SectionName));
+        services.AddSingleton<SupabaseUserTenantMetadataCache>();
 
         services.AddHttpClient<ISupabaseAuthAdminClient, SupabaseAuthAdminClient>((serviceProvider, client) =>
         {
@@ -61,6 +62,7 @@ public static class DependencyInjection
             }
 
             client.BaseAddress = new Uri($"{options.Url.TrimEnd('/')}/auth/v1/");
+            client.Timeout = SupabaseAuthAdminClient.RequestTimeout;
         });
 
         return services;

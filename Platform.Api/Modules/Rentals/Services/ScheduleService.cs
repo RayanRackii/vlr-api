@@ -18,7 +18,8 @@ public sealed class ScheduleService(
     ITrialGuard trialGuard,
     IReservationQueueService reservationQueueService,
     IRentalsNotificationPublisher notificationPublisher,
-    INotificationOutboxScheduler outboxScheduler) : IScheduleService
+    INotificationOutboxScheduler outboxScheduler,
+    TimeProvider timeProvider) : IScheduleService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -1050,6 +1051,9 @@ public sealed class ScheduleService(
                     cancellationToken)
                 ?? throw new KeyNotFoundException("Slot was not found.");
 
+            var start = ToDateTime(slot.Date, slot.StartTime);
+            ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
+
             await reservationQueueService.EnsureActiveTurnForBookingAsync(
                 customerId,
                 slot.RentalAsset,
@@ -1067,7 +1071,6 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Slot does not belong to the given unit.");
             }
 
-            var start = ToDateTime(slot.Date, slot.StartTime);
             var end = ToDateTime(slot.Date, slot.EndTime);
             var hours = (decimal)(end - start).TotalHours;
 

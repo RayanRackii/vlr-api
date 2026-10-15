@@ -118,6 +118,29 @@ public sealed class ReservationReminderJobTests
     }
 
     [Fact]
+    public async Task Email_reminder_on_and_whatsapp_off_publishes_email_only()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderEmailAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(0, ctx.WhatsApp.SendCount);
+        Assert.DoesNotContain(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.WhatsApp);
+        var email = Assert.Single(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
+        Assert.Equal(NotificationDeliveryStatus.Sent, email.Status);
+        Assert.Equal(ctx.Harness.TenantId, email.TenantId);
+        Assert.Equal("cliente@club.test", email.RecipientEmail);
+    }
+
+    [Fact]
     public async Task WhatsApp_channel_off_does_not_publish_reminder()
     {
         await using var ctx = await CreateContextAsync();
@@ -132,6 +155,9 @@ public sealed class ReservationReminderJobTests
         Assert.DoesNotContain(
             ctx.Harness.Db.NotificationDeliveries,
             d => d.Channel == NotificationChannel.WhatsApp);
+        Assert.DoesNotContain(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
     }
 
     [Fact]
@@ -162,11 +188,258 @@ public sealed class ReservationReminderJobTests
             unfiltered.Notifications.Count(n => n.EventType == RentalEventTypes.ReservationReminder));
     }
 
-    private static ReservationReminderJob CreateJob(Context ctx, DateTimeOffset utcNow) =>
-        new(
+    [Fact]
+    public async Task Two_tenants_email_only_and_whatsapp_only_each_get_one_delivery()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderEmailAsync(ctx);
+        await SetReminderChannelAsync(ctx.Harness.Db, NotificationChannel.InApp, isActive: false);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+        var tenantB = await SeedSecondTenantReminderAsync(
+            ctx,
+            now.AddHours(8),
+            NotificationChannel.WhatsApp,
+            inAppActive: false);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(1, ctx.WhatsApp.SendCount);
+
+        await using var unfiltered = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var deliveries = await unfiltered.NotificationDeliveries.ToListAsync();
+        Assert.Equal(2, deliveries.Count);
+
+        var email = Assert.Single(deliveries, d => d.TenantId == ctx.Harness.TenantId);
+        Assert.Equal(NotificationChannel.Email, email.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, email.Status);
+
+        var whatsApp = Assert.Single(deliveries, d => d.TenantId == tenantB);
+        Assert.Equal(NotificationChannel.WhatsApp, whatsApp.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, whatsApp.Status);
+    }
+
+    [Fact]
+    public async Task Inactive_rentals_module_skips_reminder_while_active_tenant_still_receives_one()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        await SetReminderChannelAsync(ctx.Harness.Db, NotificationChannel.InApp, isActive: false);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+        await SetRentalsModuleActiveAsync(ctx.Harness.Db, ctx.Harness.TenantId, isActive: false);
+        var tenantB = await SeedSecondTenantReminderAsync(
+            ctx,
+            now.AddHours(8),
+            NotificationChannel.WhatsApp,
+            inAppActive: false);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        await using var unfiltered = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var deliveries = await unfiltered.NotificationDeliveries.ToListAsync();
+        Assert.DoesNotContain(deliveries, d => d.TenantId == ctx.Harness.TenantId);
+        var activeDelivery = Assert.Single(deliveries);
+        Assert.Equal(tenantB, activeDelivery.TenantId);
+        Assert.Equal(NotificationChannel.WhatsApp, activeDelivery.Channel);
+        Assert.Equal(1, ctx.WhatsApp.SendCount);
+
+        await SetRentalsModuleActiveAsync(ctx.Harness.Db, ctx.Harness.TenantId, isActive: true);
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        await using var after = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var restored = await after.NotificationDeliveries.ToListAsync();
+        Assert.Equal(2, restored.Count);
+        var restoredForA = Assert.Single(restored, d => d.TenantId == ctx.Harness.TenantId);
+        Assert.Equal(NotificationChannel.WhatsApp, restoredForA.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, restoredForA.Status);
+        var stillOneForB = Assert.Single(restored, d => d.TenantId == tenantB);
+        Assert.Equal(NotificationChannel.WhatsApp, stillOneForB.Channel);
+        Assert.Equal(2, ctx.WhatsApp.SendCount);
+    }
+
+    [Fact]
+    public void Send_gate_allows_only_pending_or_confirmed_reservations_that_have_not_started()
+    {
+        var start = DateTimeOffset.Parse("2026-10-15T19:00:00Z");
+        var bookedAt = DateTimeOffset.Parse("2026-10-14T23:49:17Z");
+
+        Assert.True(ReservationReminderSendGate.ShouldSend(
+            ReservationStatus.Confirmed,
+            start,
+            bookedAt));
+        Assert.True(ReservationReminderSendGate.ShouldSend(
+            ReservationStatus.PendingDeposit,
+            start,
+            bookedAt));
+        Assert.False(ReservationReminderSendGate.ShouldSend(
+            ReservationStatus.Canceled,
+            start,
+            bookedAt));
+        Assert.False(ReservationReminderSendGate.ShouldSend(
+            ReservationStatus.Completed,
+            start,
+            bookedAt));
+        Assert.False(ReservationReminderSendGate.ShouldSend(
+            ReservationStatus.Confirmed,
+            start,
+            start));
+        Assert.False(ReservationReminderSendGate.ShouldSend(
+            ReservationStatus.Confirmed,
+            start,
+            start.AddSeconds(1)));
+    }
+
+    [Theory]
+    [InlineData(ReservationStatus.Confirmed, ReservationStatus.Canceled, NotificationChannel.Email)]
+    [InlineData(ReservationStatus.Confirmed, ReservationStatus.Canceled, NotificationChannel.WhatsApp)]
+    [InlineData(ReservationStatus.PendingDeposit, ReservationStatus.Canceled, NotificationChannel.Email)]
+    [InlineData(ReservationStatus.Confirmed, ReservationStatus.Completed, NotificationChannel.Email)]
+    public async Task Reminder_queued_while_active_is_not_sent_after_status_changes(
+        ReservationStatus bookedStatus,
+        ReservationStatus statusAtSend,
+        NotificationChannel channel)
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderChannelAsync(ctx, channel);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        var start = now.AddHours(19);
+        await SeedAsync(ctx, bookedStatus, start);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        Assert.NotEmpty(ctx.Scheduler.Scheduled);
+
+        await SetReservationAsync(ctx, statusAtSend, start);
+        var scheduled = ctx.Scheduler.Scheduled.Count;
+        await ProcessQueuedAsync(ctx);
+        await ProcessQueuedAsync(ctx);
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+
+        Assert.Equal(0, ctx.Email.SendCount);
+        Assert.Equal(0, ctx.WhatsApp.SendCount);
+        Assert.Equal(scheduled, ctx.Scheduler.Scheduled.Count);
+        var delivery = Assert.Single(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == channel);
+        Assert.Equal(NotificationDeliveryStatus.Failed, delivery.Status);
+        Assert.Equal(ReservationReminderSendGate.SkippedMessage, delivery.ErrorMessage);
+        Assert.Equal(0, delivery.AttemptCount);
+        Assert.Null(delivery.NextAttemptAt);
+    }
+
+    [Fact]
+    public async Task Reminder_is_not_sent_when_the_reservation_row_is_missing()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderChannelAsync(ctx, NotificationChannel.Email);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(19));
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        var notification = await ctx.Harness.Db.Notifications.SingleAsync(n =>
+            n.EventType == RentalEventTypes.ReservationReminder);
+        notification.AggregateId = Guid.NewGuid();
+        await ctx.Harness.Db.SaveChangesAsync();
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(0, ctx.Email.SendCount);
+        var delivery = Assert.Single(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
+        Assert.Equal(NotificationDeliveryStatus.Failed, delivery.Status);
+        Assert.Equal(ReservationReminderSendGate.SkippedMessage, delivery.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Reminder_queued_for_a_future_start_is_not_sent_after_that_start_passes()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderChannelAsync(ctx, NotificationChannel.Email);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        var start = now.AddHours(19);
+        await SeedAsync(ctx, ReservationStatus.Confirmed, start);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        ctx.Clock.SetUtcNow(start);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(0, ctx.Email.SendCount);
+        var delivery = Assert.Single(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
+        Assert.Equal(NotificationDeliveryStatus.Failed, delivery.Status);
+        Assert.Equal(ReservationReminderSendGate.SkippedMessage, delivery.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Cancellation_email_still_sends_when_the_queued_reminder_is_skipped()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderChannelAsync(ctx, NotificationChannel.Email);
+        await EnableEventChannelAsync(
+            ctx,
+            RentalEventTypes.ReservationCanceled,
+            NotificationChannel.Email);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        var start = now.AddHours(19);
+        await SeedAsync(ctx, ReservationStatus.Confirmed, start);
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        var reservation = await ctx.Harness.Db.Reservations
+            .Include(r => r.Customer)
+            .Include(r => r.Items)
+                .ThenInclude(i => i.RentalAsset)
+                    .ThenInclude(a => a.Asset)
+            .SingleAsync();
+        reservation.Status = ReservationStatus.Canceled;
+        reservation.Touch();
+        var queuedCancel = await ctx.Publisher.PublishReservationEventAsync(
+            reservation,
+            RentalEventTypes.ReservationCanceled,
+            CancellationToken.None);
+        await ctx.Harness.Db.SaveChangesAsync();
+        foreach (var deliveryId in queuedCancel)
+        {
+            ctx.Scheduler.Schedule(deliveryId);
+        }
+
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(0, ctx.WhatsApp.SendCount);
+        Assert.Equal(1, ctx.Email.SendCount);
+        var deliveries = await ctx.Harness.Db.NotificationDeliveries
+            .Include(d => d.Notification)
+            .ToListAsync();
+        var reminder = Assert.Single(
+            deliveries,
+            d => d.Notification.EventType == RentalEventTypes.ReservationReminder
+                 && d.Channel == NotificationChannel.Email);
+        Assert.Equal(NotificationDeliveryStatus.Failed, reminder.Status);
+        Assert.Equal(ReservationReminderSendGate.SkippedMessage, reminder.ErrorMessage);
+        var cancellation = Assert.Single(
+            deliveries,
+            d => d.Notification.EventType == RentalEventTypes.ReservationCanceled
+                 && d.Channel == NotificationChannel.Email);
+        Assert.Equal(NotificationDeliveryStatus.Sent, cancellation.Status);
+    }
+
+    private static ReservationReminderJob CreateJob(Context ctx, DateTimeOffset utcNow)
+    {
+        ctx.Clock.SetUtcNow(utcNow);
+        return new ReservationReminderJob(
             new ReminderJobTestScopeFactory(ctx.Harness.DatabaseName, ctx.Scheduler),
-            new TestTimeProvider(utcNow),
+            ctx.Clock,
             NullLogger<ReservationReminderJob>.Instance);
+    }
 
     private static async Task SeedAsync(
         Context ctx,
@@ -186,17 +459,65 @@ public sealed class ReservationReminderJobTests
             NullLogger<RentalsNotificationPublisher>.Instance);
         var scheduler = new RecordingOutboxScheduler();
         var whatsApp = new DevWhatsAppRecorder();
+        var email = new DevEmailRecorder();
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-09-08T12:00:00Z"));
         var processor = new NotificationOutboxProcessor(
             harness.Db,
-            new DevEmailRecorder(),
+            email,
             whatsApp,
-            NullLogger<NotificationOutboxProcessor>.Instance);
-        return new Context(harness, publisher, scheduler, processor, whatsApp);
+            NullLogger<NotificationOutboxProcessor>.Instance,
+            clock);
+        return new Context(harness, publisher, scheduler, processor, whatsApp, email, clock);
+    }
+
+    private static Task EnableReminderChannelAsync(Context ctx, NotificationChannel channel) =>
+        channel switch
+        {
+            NotificationChannel.Email => EnableReminderEmailAsync(ctx),
+            NotificationChannel.WhatsApp => EnableReminderWhatsAppAsync(ctx),
+            _ => throw new ArgumentOutOfRangeException(nameof(channel), channel, null),
+        };
+
+    private static async Task EnableEventChannelAsync(
+        Context ctx,
+        string eventType,
+        NotificationChannel channel)
+    {
+        await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
+            c.EventType == eventType
+            && c.Channel == channel);
+        config.IsActive = true;
+        await ctx.Harness.Db.SaveChangesAsync();
+    }
+
+    private static async Task SetReservationAsync(
+        Context ctx,
+        ReservationStatus status,
+        DateTimeOffset start)
+    {
+        var reservation = await ctx.Harness.Db.Reservations.SingleAsync();
+        reservation.Status = status;
+        reservation.StartDateTime = start;
+        reservation.Touch();
+        await ctx.Harness.Db.SaveChangesAsync();
+    }
+
+    private static async Task EnableReminderEmailAsync(Context ctx)
+    {
+        await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        await EnsureActiveRentalsModuleAsync(ctx.Harness.Db, ctx.Harness.TenantId);
+        var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
+            c.EventType == RentalEventTypes.ReservationReminder
+            && c.Channel == NotificationChannel.Email);
+        config.IsActive = true;
+        await ctx.Harness.Db.SaveChangesAsync();
     }
 
     private static async Task EnableReminderWhatsAppAsync(Context ctx)
     {
         await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        await EnsureActiveRentalsModuleAsync(ctx.Harness.Db, ctx.Harness.TenantId);
         var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
             && c.Channel == NotificationChannel.WhatsApp);
@@ -204,7 +525,55 @@ public sealed class ReservationReminderJobTests
         await ctx.Harness.Db.SaveChangesAsync();
     }
 
-    private static async Task SeedSecondTenantReminderAsync(Context ctx, DateTimeOffset start)
+    private static async Task SetReminderChannelAsync(
+        AppDbContext db,
+        NotificationChannel channel,
+        bool isActive)
+    {
+        var config = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
+            c.EventType == RentalEventTypes.ReservationReminder
+            && c.Channel == channel);
+        config.IsActive = isActive;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task EnsureActiveRentalsModuleAsync(AppDbContext db, Guid tenantId)
+    {
+        var module = await db.TenantModules.FirstOrDefaultAsync(m =>
+            m.TenantId == tenantId && m.ModuleName == PlatformModules.Rentals);
+        if (module is null)
+        {
+            db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        }
+        else if (!module.IsActive)
+        {
+            module.Activate();
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SetRentalsModuleActiveAsync(AppDbContext db, Guid tenantId, bool isActive)
+    {
+        var module = await db.TenantModules.FirstAsync(m =>
+            m.TenantId == tenantId && m.ModuleName == PlatformModules.Rentals);
+        if (isActive)
+        {
+            module.Activate();
+        }
+        else
+        {
+            module.Deactivate();
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<Guid> SeedSecondTenantReminderAsync(
+        Context ctx,
+        DateTimeOffset start,
+        NotificationChannel channel = NotificationChannel.WhatsApp,
+        bool inAppActive = true)
     {
         var tenantProvider = new FakeTenantProvider();
         await using var db = InMemoryAppDb.Create(tenantProvider, ctx.Harness.DatabaseName);
@@ -276,6 +645,7 @@ public sealed class ReservationReminderJobTests
 
         tenantProvider.TenantId = tenant.Id;
         db.Tenants.Add(tenant);
+        db.TenantModules.Add(new TenantModule(tenant.Id, PlatformModules.Rentals, isActive: true));
         db.Units.Add(unit);
         db.AssetCategories.Add(category);
         db.AssetFamilies.Add(family);
@@ -292,9 +662,18 @@ public sealed class ReservationReminderJobTests
         await publisher.EnsureReadyAsync(CancellationToken.None);
         var config = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
-            && c.Channel == NotificationChannel.WhatsApp);
+            && c.Channel == channel);
         config.IsActive = true;
+        if (!inAppActive)
+        {
+            var inApp = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
+                c.EventType == RentalEventTypes.ReservationReminder
+                && c.Channel == NotificationChannel.InApp);
+            inApp.IsActive = false;
+        }
+
         await db.SaveChangesAsync();
+        return tenant.Id;
     }
 
     private static async Task ProcessQueuedAsync(Context ctx)
@@ -385,7 +764,9 @@ public sealed class ReservationReminderJobTests
         RentalsNotificationPublisher Publisher,
         RecordingOutboxScheduler Scheduler,
         NotificationOutboxProcessor Processor,
-        DevWhatsAppRecorder WhatsApp) : IAsyncDisposable
+        DevWhatsAppRecorder WhatsApp,
+        DevEmailRecorder Email,
+        TestTimeProvider Clock) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Harness.DisposeAsync();
     }

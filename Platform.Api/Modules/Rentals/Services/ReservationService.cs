@@ -17,7 +17,8 @@ public sealed class ReservationService(
     ITrialGuard trialGuard,
     IReservationQueueService reservationQueueService,
     IRentalsNotificationPublisher notificationPublisher,
-    INotificationOutboxScheduler outboxScheduler) : IReservationService
+    INotificationOutboxScheduler outboxScheduler,
+    TimeProvider timeProvider) : IReservationService
 {
     private static readonly ReservationStatus[] BlockingStatuses =
     [
@@ -50,6 +51,16 @@ public sealed class ReservationService(
                 AvailableQuantity: 0,
                 EstimatedTotalAmount: null,
                 Reason: "Rentable asset was not found or is inactive.");
+        }
+
+        if (ReservationBookingRules.StartsBeforeNow(start, timeProvider))
+        {
+            return new CheckAvailabilityResponseDto(
+                IsAvailable: false,
+                RequestedQuantity: quantity,
+                AvailableQuantity: 0,
+                EstimatedTotalAmount: null,
+                Reason: ReservationBookingRules.PastStartMessage);
         }
 
         var reservedQuantity = await GetReservedQuantityAsync(
@@ -148,6 +159,7 @@ public sealed class ReservationService(
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
 
         var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime);
+        ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
         var hours = (decimal)(end - start).TotalHours;
 
         var whatsAppSnapshot = string.IsNullOrWhiteSpace(customer.Phone)
@@ -248,7 +260,7 @@ public sealed class ReservationService(
                 if (rental.Type == RentalAssetType.Location && reservedQuantity > 0)
                 {
                     throw new InvalidOperationException(
-                        $"Location '{rental.Asset.Name}' is not available for the requested interval.");
+                        ReservationBookingRules.LocationUnavailable(rental.Asset.Name));
                 }
 
                 if (rental.Type == RentalAssetType.Good && quantity > availableQuantity)

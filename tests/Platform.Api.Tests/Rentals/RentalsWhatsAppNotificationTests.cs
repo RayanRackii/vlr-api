@@ -144,6 +144,9 @@ public sealed class RentalsWhatsAppNotificationTests
         Assert.DoesNotContain(
             ctx.Harness.Db.NotificationDeliveries,
             d => d.Channel == NotificationChannel.WhatsApp);
+        Assert.DoesNotContain(
+            ctx.Harness.Db.NotificationDeliveries,
+            d => d.Channel == NotificationChannel.Email);
         Assert.Equal(0, ctx.WhatsApp.SendCount);
     }
 
@@ -170,7 +173,8 @@ public sealed class RentalsWhatsAppNotificationTests
                 otherDb,
                 otherProvider,
                 NullLogger<RentalsNotificationPublisher>.Instance),
-            new NoOpNotificationOutboxScheduler());
+            new NoOpNotificationOutboxScheduler(),
+            TimeProvider.System);
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             otherService.CompleteAsync(reservation.Id, CancellationToken.None));
@@ -275,14 +279,16 @@ public sealed class RentalsWhatsAppNotificationTests
             harness.Db,
             new DevEmailRecorder(),
             whatsApp,
-            NullLogger<NotificationOutboxProcessor>.Instance);
+            NullLogger<NotificationOutboxProcessor>.Instance,
+            LocationBookingHarness.BookingClock);
         var reservations = new ReservationService(
             harness.Db,
             harness.TenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
             publisher,
-            scheduler);
+            scheduler,
+            LocationBookingHarness.BookingClock);
 
         return new Context(harness, publisher, scheduler, processor, whatsApp, reservations);
     }

@@ -426,6 +426,7 @@ public sealed class CustomerJwtBearerPipelineTests
                     services.AddSingleton(seed);
                     services.AddHttpContextAccessor();
                     services.AddScoped<AmbientTenantContext>();
+                    services.AddScoped<PlatformAdminTenantSession>();
                     services.AddSingleton<IPlatformAdminChecker>(_ =>
                         new PlatformAdminChecker(Options.Create(new PlatformAdminOptions
                         {
