@@ -1,13 +1,34 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Authentication;
 
-public class CustomerJwtSessionValidator(
-    AppDbContext dbContext,
-    ILogger<CustomerJwtSessionValidator> logger)
+public class CustomerJwtSessionValidator
 {
+    private readonly Func<Guid, Guid, CancellationToken, Task<CustomerPasswordStampRow?>> _lookup;
+    private readonly ILogger<CustomerJwtSessionValidator> _logger;
+
+    public CustomerJwtSessionValidator(
+        AppDbContext dbContext,
+        ILogger<CustomerJwtSessionValidator> logger)
+        : this(CreateStoreLookup(dbContext), logger)
+    {
+    }
+
+    /// <summary>
+    /// Test seam for store failures. Production DI uses the <see cref="AppDbContext"/> constructor.
+    /// </summary>
+    internal CustomerJwtSessionValidator(
+        Func<Guid, Guid, CancellationToken, Task<CustomerPasswordStampRow?>> lookup,
+        ILogger<CustomerJwtSessionValidator> logger)
+    {
+        _lookup = lookup ?? throw new ArgumentNullException(nameof(lookup));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     public virtual async Task ValidateAsync(TokenValidatedContext context)
     {
         try
@@ -20,19 +41,21 @@ public class CustomerJwtSessionValidator(
                 context.Fail("Session expired.");
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (context.HttpContext.RequestAborted.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            logger.LogError(ex, "Customer session stamp check failed.");
-            context.Fail("Session expired.");
+            // context.Fail is HTTP 401. A store outage must not look like an expired session.
+            // The replacement exception is what JwtBearer and the pipeline logger observe.
+            LogStoreFailure(_logger, exception);
+            throw new CustomerSessionStoreUnavailableException();
         }
     }
 
     public async Task<bool> IsCurrentAsync(
-        System.Security.Claims.ClaimsPrincipal? principal,
+        ClaimsPrincipal? principal,
         CancellationToken cancellationToken)
     {
         var customerIdRaw = principal?.FindFirst(CustomerClaimTypes.CustomerId)?.Value;
@@ -43,8 +66,7 @@ public class CustomerJwtSessionValidator(
             return false;
         }
 
-        var stamp = await Lookup(dbContext, customerId, tenantId)
-            .FirstOrDefaultAsync(cancellationToken);
+        var stamp = await _lookup(customerId, tenantId, cancellationToken);
 
         if (stamp is null)
         {
@@ -60,6 +82,10 @@ public class CustomerJwtSessionValidator(
         return CustomerPasswordStamp.Matches(claim, stamp.PasswordChangedAt.Value);
     }
 
+    // Session validation runs before the ambient tenant is bound. The global filter is
+    // off when that tenant is null, and when it is set it would hide a customer whose
+    // JWT tenant differs from the ambient value. IgnoreQueryFilters keeps this predicate
+    // as the only tenant constraint. Both ids come from the customer JWT, not from ambient state.
     public static IQueryable<CustomerPasswordStampRow> Lookup(
         AppDbContext dbContext,
         Guid customerId,
@@ -69,6 +95,63 @@ public class CustomerJwtSessionValidator(
             .IgnoreQueryFilters()
             .Where(customer => customer.Id == customerId && customer.TenantId == tenantId)
             .Select(customer => new CustomerPasswordStampRow(customer.PasswordChangedAt));
+
+    private static Func<Guid, Guid, CancellationToken, Task<CustomerPasswordStampRow?>> CreateStoreLookup(
+        AppDbContext dbContext)
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        return (customerId, tenantId, cancellationToken) =>
+            Lookup(dbContext, customerId, tenantId).FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private static void LogStoreFailure(ILogger logger, Exception exception)
+    {
+        var exceptionType = exception.GetType().FullName ?? exception.GetType().Name;
+        var sqlState = TryGetSqlState(exception);
+        if (sqlState is null)
+        {
+            logger.LogError(
+                "Customer session stamp check failed. ExceptionType={ExceptionType}",
+                exceptionType);
+            return;
+        }
+
+        logger.LogError(
+            "Customer session stamp check failed. ExceptionType={ExceptionType} SqlState={SqlState}",
+            exceptionType,
+            sqlState);
+    }
+
+    private static string? TryGetSqlState(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException postgres && IsSqlState(postgres.SqlState))
+            {
+                return postgres.SqlState;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSqlState(string? value)
+    {
+        if (value is not { Length: 5 })
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            if (character is not ((>= '0' and <= '9') or (>= 'A' and <= 'Z')))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 public sealed record CustomerPasswordStampRow(DateTimeOffset? PasswordChangedAt);
