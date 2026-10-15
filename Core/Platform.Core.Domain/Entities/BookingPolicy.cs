@@ -28,8 +28,10 @@ public class BookingPolicy : Entity, ITenantScoped
     public string? CancellationPolicyText { get; set; }
 
     /// <summary>
-    /// Cap on a customer's active reservations whose start falls on one civil day.
-    /// Null means unlimited.
+    /// Cap on a customer's <c>PendingDeposit</c> and <c>Confirmed</c> reservations
+    /// whose start falls on one civil day. <c>Completed</c> and <c>Canceled</c> do
+    /// not count. Null means unlimited. The day uses the tenant timezone when the
+    /// tenant model has one; otherwise America/Sao_Paulo.
     /// </summary>
     public int? MaxActiveReservationsPerCustomerPerDay { get; set; }
 

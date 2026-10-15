@@ -29,6 +29,11 @@ public sealed class BookingPolicyController(
         }
     }
 
+    /// <summary>
+    /// Replaces the tenant default booking policy. Send both
+    /// <c>cancellationPolicyText</c> and <c>maxActiveReservationsPerCustomerPerDay</c>.
+    /// An omitted or null property clears that stored value.
+    /// </summary>
     [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
     [HttpPut]
     public async Task<ActionResult<BookingPolicyResponseDto>> Upsert(

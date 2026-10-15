@@ -152,7 +152,7 @@ public sealed class BookingPolicyTests
     }
 
     [Fact]
-    public async Task Completed_and_pending_count_and_another_customer_does_not()
+    public async Task Pending_and_confirmed_count_completed_does_not()
     {
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
         await harness.SetLimitAsync(1);
@@ -165,13 +165,67 @@ public sealed class BookingPolicyTests
 
         var completed = await harness.Db.Reservations.SingleAsync(reservation => reservation.Id == pending.Id);
         completed.Status = ReservationStatus.Completed;
+        var rental = await harness.Db.RentalAssets.SingleAsync(item => item.AssetId == harness.AssetId);
+        rental.RequiresDeposit = false;
         await harness.Db.SaveChangesAsync();
 
+        var afterComplete = await harness.BookAsync(Day, Noon, One);
+        Assert.Equal(ReservationStatus.Confirmed, afterComplete.Status);
         await Assert.ThrowsAsync<DailyBookingLimitReachedException>(() =>
-            harness.BookAsync(Day, Noon, One));
+            harness.BookAsync(Day, new TimeOnly(14, 0), new TimeOnly(15, 0)));
 
         var other = await harness.BookAsOtherCustomerAsync(Day, Eleven, Noon);
         Assert.Equal(harness.OtherCustomerId, other.CustomerId);
+    }
+
+    [Fact]
+    public async Task Put_replaces_both_fields_and_an_omitted_value_clears_it()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+
+        var saved = await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto
+            {
+                CancellationPolicyText = "Bring the resource back clean.",
+                MaxActiveReservationsPerCustomerPerDay = 3,
+            },
+            CancellationToken.None);
+        Assert.Equal("Bring the resource back clean.", saved.CancellationPolicyText);
+        Assert.Equal(3, saved.MaxActiveReservationsPerCustomerPerDay);
+
+        var clearedText = await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MaxActiveReservationsPerCustomerPerDay = 4 },
+            CancellationToken.None);
+        Assert.Null(clearedText.CancellationPolicyText);
+        Assert.Equal(4, clearedText.MaxActiveReservationsPerCustomerPerDay);
+
+        var clearedLimit = await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { CancellationPolicyText = "Same note" },
+            CancellationToken.None);
+        Assert.Equal("Same note", clearedLimit.CancellationPolicyText);
+        Assert.Null(clearedLimit.MaxActiveReservationsPerCustomerPerDay);
+    }
+
+    [Fact]
+    public void Missing_tenant_timezone_falls_back_to_America_Sao_Paulo()
+    {
+        var tenant = new Tenant("North Club", "12345678000199");
+        Assert.Null(TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
+
+        var fallback = TenantBookingClock.Resolve(null);
+        Assert.Equal(BrazilTimeZone.Resolve().Id, fallback.Id);
+        Assert.Equal(fallback.Id, TenantBookingClock.Resolve("   ").Id);
+        Assert.Equal(fallback.Id, TenantBookingClock.Resolve("Not/AZone").Id);
+
+        var utc = TenantBookingClock.Resolve("UTC");
+        var (utcStart, utcEnd) = TenantBookingClock.CivilDay(Day, utc);
+        Assert.Equal(new DateTimeOffset(2026, 10, 14, 0, 0, 0, TimeSpan.Zero), utcStart);
+        Assert.Equal(new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero), utcEnd);
+
+        var brazilEvening = BrazilTimeZone.AtLocal(Day, new TimeOnly(22, 0));
+        var (brazilStart, brazilEnd) = TenantBookingClock.CivilDay(Day, fallback);
+        Assert.InRange(brazilEvening, brazilStart, brazilEnd.AddTicks(-1));
+        Assert.True(brazilEvening >= utcEnd);
     }
 
     [Fact]
@@ -179,6 +233,8 @@ public sealed class BookingPolicyTests
     {
         var clock = BrazilTimeZone.AtLocal(Day, new TimeOnly(12, 0));
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, clock);
+        var tenant = await harness.Db.Tenants.SingleAsync();
+        Assert.Null(TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
         await harness.SetLimitAsync(1);
 
         var evening = await harness.BookAsync(Day, new TimeOnly(22, 0), new TimeOnly(23, 0));

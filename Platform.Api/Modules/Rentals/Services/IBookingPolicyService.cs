@@ -6,6 +6,9 @@ public interface IBookingPolicyService
 {
     Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Replaces both policy fields. Omitted or null properties clear the stored value.
+    /// </summary>
     Task<BookingPolicyResponseDto> UpsertAsync(
         UpsertBookingPolicyRequestDto request,
         CancellationToken cancellationToken);
