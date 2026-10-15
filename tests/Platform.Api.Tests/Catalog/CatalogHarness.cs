@@ -90,7 +90,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
             db,
             email,
             whatsApp,
-            NullLogger<NotificationOutboxProcessor>.Instance);
+            NullLogger<NotificationOutboxProcessor>.Instance,
+            TimeProvider.System);
         var products = new CatalogProductService(db, tenantProvider, storage, storageOptions);
         var http = new FakeHttpContextAccessor();
         var orders = new CatalogOrderService(db, tenantProvider, http, publisher, scheduler);

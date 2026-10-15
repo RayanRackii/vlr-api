@@ -163,7 +163,8 @@ public sealed class RentalsEmailNotificationTests
             harness.Db,
             email,
             new DevWhatsAppRecorder(),
-            NullLogger<NotificationOutboxProcessor>.Instance);
+            NullLogger<NotificationOutboxProcessor>.Instance,
+            TimeProvider.System);
         var reservations = new ReservationService(
             harness.Db,
             harness.TenantProvider,
