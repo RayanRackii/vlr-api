@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -368,11 +369,46 @@ public sealed class PasswordRecoveryTests
     }
 
     [Fact]
-    public async Task Ip_window_uses_the_forwarded_for_first_hop()
+    public async Task Spoofed_forwarding_headers_do_not_select_the_ip_bucket()
     {
         var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
-        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        accessor.HttpContext.Request.Headers["X-Forwarded-For"] = "203.0.113.5, 10.0.0.1";
+        var accessor = ClientIpContext(
+            realIp: null,
+            forwardedFor: "203.0.113.5, 10.0.0.1",
+            connectingIp: "203.0.113.9",
+            remote: "198.51.100.20");
+        await using var harness = await RecoveryHarness.CreateAsync(gate, accessor);
+        FillIpWindow(gate, IPhoneVerificationSendGate.StaffPasswordRecoveryScope, "203.0.113.5");
+        var tenantId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        for (var i = 0; i < PhoneVerificationSendGate.IpMaxAttempts; i++)
+        {
+            var decision = gate.Decide(
+                tenantId,
+                $"cf{i}@club.test",
+                "203.0.113.9",
+                IPhoneVerificationSendGate.StaffPasswordRecoveryScope);
+            Assert.Equal(PhoneVerificationSendDecision.Send, decision);
+        }
+
+        var result = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        Assert.Equal(GenericMessage, MessageOf(result));
+        Assert.Contains("Olá Ana A,", ReadSingle(harness.Queue).Body, StringComparison.Ordinal);
+        Assert.Equal(["ana@club.test"], harness.Auth.RecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Ip_window_uses_validated_real_ip()
+    {
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
+        var accessor = ClientIpContext(
+            realIp: "203.0.113.5",
+            forwardedFor: "198.51.100.50, 10.0.0.1",
+            connectingIp: "198.51.100.51",
+            remote: "10.0.0.8");
         await using var harness = await RecoveryHarness.CreateAsync(gate, accessor);
         FillIpWindow(gate, IPhoneVerificationSendGate.StaffPasswordRecoveryScope, "203.0.113.5");
 
@@ -381,8 +417,29 @@ public sealed class PasswordRecoveryTests
             "club-a",
             CancellationToken.None);
 
-        var status = Assert.IsType<ObjectResult>(result.Result);
-        Assert.Equal(StatusCodes.Status429TooManyRequests, status.StatusCode);
+        AssertRateLimited(result);
+        Assert.False(harness.Queue.TryRead(out _));
+        Assert.Empty(harness.Auth.RecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Malformed_real_ip_uses_the_remote_address_bucket()
+    {
+        var gate = new PhoneVerificationSendGate(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System);
+        var accessor = ClientIpContext(
+            realIp: "not-an-ip",
+            forwardedFor: "203.0.113.5, 10.0.0.1",
+            connectingIp: "198.51.100.9",
+            remote: "198.51.100.20");
+        await using var harness = await RecoveryHarness.CreateAsync(gate, accessor);
+        FillIpWindow(gate, IPhoneVerificationSendGate.StaffPasswordRecoveryScope, "198.51.100.20");
+
+        var result = await harness.Controller.ForgotPassword(
+            new ForgotPasswordRequestDto { Email = "ana@club.test" },
+            "club-a",
+            CancellationToken.None);
+
+        AssertRateLimited(result);
         Assert.False(harness.Queue.TryRead(out _));
         Assert.Empty(harness.Auth.RecoveryCalls);
     }
@@ -506,6 +563,32 @@ public sealed class PasswordRecoveryTests
         };
 
     private sealed record StaffBurst(IReadOnlyList<int> Statuses, int EmailsQueued);
+
+    private static HttpContextAccessor ClientIpContext(
+        string? realIp,
+        string? forwardedFor,
+        string? connectingIp,
+        string remote)
+    {
+        var context = new DefaultHttpContext();
+        if (realIp is not null)
+        {
+            context.Request.Headers["X-Real-IP"] = realIp;
+        }
+
+        if (forwardedFor is not null)
+        {
+            context.Request.Headers["X-Forwarded-For"] = forwardedFor;
+        }
+
+        if (connectingIp is not null)
+        {
+            context.Request.Headers["CF-Connecting-IP"] = connectingIp;
+        }
+
+        context.Connection.RemoteIpAddress = IPAddress.Parse(remote);
+        return new HttpContextAccessor { HttpContext = context };
+    }
 
     private static void FillIpWindow(PhoneVerificationSendGate gate, string scope, string? clientIp = null)
     {
