@@ -1037,8 +1037,10 @@ public sealed class ScheduleService(
                 throw new KeyNotFoundException("Slot was not found.");
             }
 
+            var zone = await TenantBookingClock.ResolveForTenantAsync(
+                dbContext, tenantId, cancellationToken);
             ReservationBookingRules.EnsureStartNotBeforeNow(
-                ToDateTime(slotKey.Date, slotKey.StartTime),
+                TenantBookingClock.AtLocal(slotKey.Date, slotKey.StartTime, zone),
                 timeProvider);
 
             await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
@@ -1062,7 +1064,7 @@ public sealed class ScheduleService(
                     cancellationToken)
                 ?? throw new KeyNotFoundException("Slot was not found.");
 
-            var start = ToDateTime(slot.Date, slot.StartTime);
+            var start = TenantBookingClock.AtLocal(slot.Date, slot.StartTime, zone);
             ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
 
             await reservationQueueService.EnsureActiveTurnForBookingAsync(
@@ -1082,7 +1084,7 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Slot does not belong to the given unit.");
             }
 
-            var end = ToDateTime(slot.Date, slot.EndTime);
+            var end = TenantBookingClock.AtLocal(slot.Date, slot.EndTime, zone);
             var hours = (decimal)(end - start).TotalHours;
 
             var reservedQuantity = await GetReservedQuantityAsync(

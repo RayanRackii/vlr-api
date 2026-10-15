@@ -1,9 +1,10 @@
 namespace Platform.Api.Modules.Rentals.Services;
 
 /// <summary>
-/// Booking window in the platform civil clock (<c>America/Sao_Paulo</c> via
-/// <see cref="Platform.Core.Infrastructure.Time.BrazilTimeZone"/>). The injected
-/// <see cref="TimeProvider"/> is the only "now".
+/// Booking window on the tenant civil clock. <see cref="Tenant"/> has no timezone
+/// property, so <see cref="TenantBookingClock"/> falls back to
+/// <c>America/Sao_Paulo</c>. The injected <see cref="TimeProvider"/> is the only "now".
+/// A start equal to that instant is still allowed; only an earlier start is rejected.
 /// </summary>
 internal static class ReservationBookingRules
 {
@@ -16,11 +17,14 @@ internal static class ReservationBookingRules
     public static bool StartsBeforeNow(DateTimeOffset start, TimeProvider clock) =>
         start < clock.GetUtcNow();
 
-    public static void EnsureStartNotBeforeNow(DateTimeOffset start, TimeProvider clock)
+    public static void EnsureStartNotBeforeNow(
+        DateTimeOffset start,
+        TimeProvider clock,
+        string? message = null)
     {
         if (StartsBeforeNow(start, clock))
         {
-            throw new ArgumentException(PastStartMessage);
+            throw new StartInThePastException(message ?? PastStartMessage);
         }
     }
 }

@@ -31,6 +31,10 @@ public sealed class TeacherLessonsController(ITeacherLessonService teacherLesson
         {
             return NotFound(new { error = ex.Message });
         }
+        catch (StartInThePastException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = StartInThePastException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
