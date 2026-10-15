@@ -1,3 +1,5 @@
+using Platform.Api.Http;
+
 namespace Platform.Api.Features.CreateTenant;
 
 public static class CreateTenantEndpoint
@@ -14,7 +16,7 @@ public static class CreateTenantEndpoint
                     await handler.HandleAsync(
                         request,
                         cancellationToken,
-                        AnonymousOnboardingClientIp.From(httpContext)))
+                        RateLimitClientIp.From(httpContext)))
             .AllowAnonymous()
             .WithName("CreateTenant")
             .WithTags("Onboarding");

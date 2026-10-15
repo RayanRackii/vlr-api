@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Http;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Notifications;
 using Platform.Core.Infrastructure.Persistence;
@@ -126,24 +127,6 @@ public sealed class PasswordRecoveryService(
         }
     }
 
-    private string? GetClientIp()
-    {
-        var httpContext = httpContextAccessor?.HttpContext;
-        if (httpContext is null)
-        {
-            return null;
-        }
-
-        var forwarded = httpContext.Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrWhiteSpace(forwarded))
-        {
-            var firstHop = forwarded.Split(',', 2)[0].Trim();
-            if (firstHop.Length > 0)
-            {
-                return firstHop;
-            }
-        }
-
-        return httpContext.Connection.RemoteIpAddress?.ToString();
-    }
+    private string? GetClientIp() =>
+        RateLimitClientIp.From(httpContextAccessor?.HttpContext);
 }
