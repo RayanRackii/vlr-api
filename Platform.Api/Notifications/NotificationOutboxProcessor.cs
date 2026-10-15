@@ -107,23 +107,42 @@ public sealed class NotificationOutboxProcessor(
 
         try
         {
-            var template = await dbContext.NotificationTemplates
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    t => t.EventType == delivery.Notification.EventType
-                         && t.Channel == delivery.Channel
-                         && t.Language == "pt-BR"
-                         && t.IsActive,
-                    cancellationToken);
+            var reservationEmail = delivery.Channel == NotificationChannel.Email
+                && ReservationCustomerEmail.Applies(delivery.Notification.EventType);
 
-            if (template is null)
+            string body;
+            string subject;
+            string? fromDisplayName = null;
+            NotificationTemplate? template = null;
+            if (reservationEmail)
             {
-                throw new InvalidOperationException(
-                    $"No active template for {delivery.Notification.EventType}/{delivery.Channel}.");
+                var rendered = ReservationCustomerEmail.Render(
+                    delivery.Notification.EventType,
+                    delivery.Notification.Payload);
+                body = rendered.HtmlBody;
+                subject = rendered.Subject;
+                fromDisplayName = rendered.FromDisplayName;
             }
+            else
+            {
+                template = await dbContext.NotificationTemplates
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        t => t.EventType == delivery.Notification.EventType
+                             && t.Channel == delivery.Channel
+                             && t.Language == "pt-BR"
+                             && t.IsActive,
+                        cancellationToken);
 
-            var body = Render(template.BodyTemplate, delivery.Notification.Payload);
-            var subject = Render(template.SubjectTemplate ?? string.Empty, delivery.Notification.Payload);
+                if (template is null)
+                {
+                    throw new InvalidOperationException(
+                        $"No active template for {delivery.Notification.EventType}/{delivery.Channel}.");
+                }
+
+                body = Render(template.BodyTemplate, delivery.Notification.Payload);
+                subject = Render(template.SubjectTemplate ?? string.Empty, delivery.Notification.Payload);
+            }
 
             // Template lookup can outlive the cancel. Read the reservation again before the provider call.
             if (delivery.Notification.EventType == RentalEventTypes.ReservationReminder
@@ -141,11 +160,24 @@ public sealed class NotificationOutboxProcessor(
                         throw new InvalidOperationException("Email recipient is missing.");
                     }
 
-                    await emailProvider.SendAsync(
-                        delivery.RecipientEmail,
-                        subject,
-                        body,
-                        cancellationToken);
+                    if (reservationEmail)
+                    {
+                        await emailProvider.SendAsync(
+                            delivery.RecipientEmail,
+                            subject,
+                            body,
+                            fromDisplayName,
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        await emailProvider.SendAsync(
+                            delivery.RecipientEmail,
+                            subject,
+                            body,
+                            cancellationToken);
+                    }
+
                     break;
                 case NotificationChannel.WhatsApp:
                     if (string.IsNullOrWhiteSpace(delivery.RecipientPhone))
@@ -155,7 +187,7 @@ public sealed class NotificationOutboxProcessor(
                             isTransient: false);
                     }
 
-                    if (string.IsNullOrWhiteSpace(template.WhatsAppTemplateName))
+                    if (template is null || string.IsNullOrWhiteSpace(template.WhatsAppTemplateName))
                     {
                         throw new WhatsAppSendException(
                             $"Approved WhatsApp template is not configured for {delivery.Notification.EventType}.",

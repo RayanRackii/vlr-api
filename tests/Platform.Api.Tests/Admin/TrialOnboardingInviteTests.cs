@@ -85,7 +85,10 @@ public sealed class TrialOnboardingInviteTests
         Assert.False(harness.Queue.TryRead(out _));
         Assert.Equal("Email", message.Type);
         Assert.Equal("ada@club.test", message.Recipient);
-        Assert.StartsWith("Convite Rolvix", message.Subject, StringComparison.Ordinal);
+        Assert.StartsWith("Convite Rolvix — admin de ", message.Subject, StringComparison.Ordinal);
+        Assert.Contains("para administrar", message.Body, StringComparison.Ordinal);
+        Assert.Contains("no console Rolvix", message.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("como <strong>", message.Body, StringComparison.Ordinal);
         Assert.Contains($"/invite?token={invite.Token}", message.Body, StringComparison.Ordinal);
         Assert.DoesNotContain(invite.Token, string.Join('\n', harness.Logger.Messages), StringComparison.Ordinal);
     }

@@ -23,15 +23,23 @@ public sealed class ResendEmailProvider : IEmailProvider
         _httpClient = httpClient;
     }
 
+    public Task SendAsync(
+        string recipient,
+        string subject,
+        string body,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(recipient, subject, body, fromDisplayName: null, cancellationToken);
+
     public async Task SendAsync(
         string recipient,
         string subject,
         string body,
-        CancellationToken cancellationToken = default)
+        string? fromDisplayName,
+        CancellationToken cancellationToken)
     {
         var payload = new
         {
-            from = $"{_options.FromName} <{_options.FromEmail}>",
+            from = EmailFromHeader.Format(fromDisplayName, _options.FromEmail, _options.FromName),
             to = new[] { recipient },
             subject,
             html = body,
