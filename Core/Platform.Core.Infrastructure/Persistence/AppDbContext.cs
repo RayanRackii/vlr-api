@@ -107,6 +107,8 @@ public class AppDbContext : DbContext
 
     public DbSet<RentalLayout> RentalLayouts => Set<RentalLayout>();
 
+    public DbSet<BookingPolicy> BookingPolicies => Set<BookingPolicy>();
+
     public DbSet<RentalLayoutItem> RentalLayoutItems => Set<RentalLayoutItem>();
 
     // --- Schema: catalog ---

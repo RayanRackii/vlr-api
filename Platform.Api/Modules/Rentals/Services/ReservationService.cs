@@ -172,6 +172,13 @@ public sealed class ReservationService(
 
         try
         {
+            await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
+                dbContext,
+                tenantId,
+                customer.Id,
+                request.Date,
+                cancellationToken);
+
             var assetIds = request.Items
                 .Select(item => item.AssetId)
                 .Distinct()

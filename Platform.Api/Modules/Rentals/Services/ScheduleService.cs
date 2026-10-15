@@ -1027,20 +1027,31 @@ public sealed class ScheduleService(
             : null;
         try
         {
-            var rentalAssetId = await dbContext.Slots
+            var slotKey = await dbContext.Slots
                 .Where(s => s.Id == request.SlotId && s.TenantId == tenantId)
-                .Select(s => s.RentalAssetId)
+                .Select(s => new { s.RentalAssetId, s.Date, s.StartTime })
                 .FirstOrDefaultAsync(cancellationToken);
 
-            if (rentalAssetId == Guid.Empty)
+            if (slotKey is null)
             {
                 throw new KeyNotFoundException("Slot was not found.");
             }
 
+            ReservationBookingRules.EnsureStartNotBeforeNow(
+                ToDateTime(slotKey.Date, slotKey.StartTime),
+                timeProvider);
+
+            await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
+                dbContext,
+                tenantId,
+                customer.Id,
+                slotKey.Date,
+                cancellationToken);
+
             await RentalAssetLocks.LockByRentalAssetIdAsync(
                 dbContext,
                 tenantId,
-                rentalAssetId,
+                slotKey.RentalAssetId,
                 cancellationToken);
 
             var slot = await dbContext.Slots

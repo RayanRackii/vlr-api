@@ -243,6 +243,10 @@ public sealed class ScheduleController(
         {
             return NotFound(new { error = ex.Message });
         }
+        catch (DailyBookingLimitReachedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = DailyBookingLimitReachedException.Code });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });

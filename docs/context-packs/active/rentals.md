@@ -5,13 +5,17 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
-- Last verified: 2026-10-14
+- Last verified: 2026-10-15
 - Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD); teacher lessons are on `develop` and `main`. FICC DEV courts are allowlisted in code and are not a production deploy.
   - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
   - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
   - B2C self-cancel DEV: API `89b3e6d` / PR #64; WEB `3478355` / PR #59
 - Historical spec (delivered, do not re-implement): `docs/plans/active/2026-09-05-rentals-wave1-lifecycle-integrity.md`
 - Current specs: `docs/plans/active/2026-09-07-rentals-b2c-self-cancel.md`; local feature `docs/plans/active/2026-10-08-teacher-lessons-date-only.md`
+
+## Booking policy (tenant default)
+
+`BookingPolicy` with `ResourceType` null applies to every bookable resource type. Optional plain-text cancellation note (max 2000, no refund calculation) and optional `MaxActiveReservationsPerCustomerPerDay` (`null` = unlimited, no behavior change). Portal read: `GET /api/public/tenants/{subdomain}/booking-policy`. Admin: `GET/PUT /api/rentals/booking-policy` with `rentals.booking_policy.read` / `rentals.booking_policy.write` (system Admin wildcard; not granted to the User bundle; `core.customers.read` stays excluded). `PUT` replaces both fields; an omitted or null property clears the stored value. Customer self-booking counts `PendingDeposit` and `Confirmed` reservations whose start falls on that civil day. `Completed` and `Canceled` do not count. The civil day uses the tenant timezone when `Tenant` has one. It does not, so the fallback is `America/Sao_Paulo`, the same clock that stores the reservation instant. HTTP 409 `DAILY_BOOKING_LIMIT_REACHED`. A non-null `ResourceType` row is stored for a later override and is not applied. No staff create path. Migration `AddBookingPolicy` is additive and not applied from this change.
 
 ## Purpose
 
@@ -23,7 +27,7 @@ The historical sections below describe **shipped PROD**. Teacher date-only lesso
 
 `POST /api/schedule/lessons` requires `rentals.schedule.lessons.write` and does not fall back to `rentals.schedule.write`. The server allowlists the production FICC tenant plus its six reviewed rental asset IDs, and the FICC DEV tenant plus Quadra 1 and Quadra 2 rental asset IDs. Asset ids are rejected. Create and remove share tenant-scoped `RentalAssetLocks` with bookings and schedule writers. The permission migration is still not applied on DEV; this allowlist change does not grant the key.
 
-RLS is disabled in source migrations for the 11 Rentals tables listed in `ROADMAP.md`. Current API tenant isolation relies on EF `TenantId` query filters and explicit scoped checks; this source finding alone does not prove public exposure or the database connection role. No RLS changes are part of this feature.
+RLS is disabled in source migrations for the Rentals tables mapped in EF, including `booking_policies`. The 2026-10-08 finding covered the earlier 11 tables (`ROADMAP.md`). Current API tenant isolation relies on EF `TenantId` query filters and explicit scoped checks; this source finding alone does not prove public exposure or the database connection role. No RLS changes are part of this feature.
 
 ## Canonical sources
 
