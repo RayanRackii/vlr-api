@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -9,7 +10,8 @@ public sealed class NotificationOutboxProcessor(
     AppDbContext dbContext,
     IEmailProvider emailProvider,
     IWhatsAppProvider whatsAppProvider,
-    ILogger<NotificationOutboxProcessor> logger) : INotificationOutboxProcessor
+    ILogger<NotificationOutboxProcessor> logger,
+    TimeProvider timeProvider) : INotificationOutboxProcessor
 {
     private static readonly TimeSpan[] RetryDelays =
     [
@@ -68,6 +70,13 @@ public sealed class NotificationOutboxProcessor(
             return;
         }
 
+        if (delivery.Notification.EventType == RentalEventTypes.ReservationReminder
+            && !await IsReminderStillDueAsync(delivery.Notification, cancellationToken))
+        {
+            await SuppressReminderAsync(delivery, attempt: null, cancellationToken);
+            return;
+        }
+
         var attemptNumber = delivery.AttemptCount + 1;
         delivery.AttemptCount = attemptNumber;
         var attempt = new NotificationDeliveryAttempt
@@ -115,6 +124,14 @@ public sealed class NotificationOutboxProcessor(
 
             var body = Render(template.BodyTemplate, delivery.Notification.Payload);
             var subject = Render(template.SubjectTemplate ?? string.Empty, delivery.Notification.Payload);
+
+            // Template lookup can outlive the cancel. Read the reservation again before the provider call.
+            if (delivery.Notification.EventType == RentalEventTypes.ReservationReminder
+                && !await IsReminderStillDueAsync(delivery.Notification, cancellationToken))
+            {
+                await SuppressReminderAsync(delivery, attempt, cancellationToken);
+                return;
+            }
 
             switch (delivery.Channel)
             {
@@ -179,6 +196,52 @@ public sealed class NotificationOutboxProcessor(
             FinishFailedAttempt(delivery, attempt, attemptNumber, ex, IsTransient(ex));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private async Task SuppressReminderAsync(
+        NotificationDelivery delivery,
+        NotificationDeliveryAttempt? attempt,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Skipping reminder delivery {DeliveryId} for reservation {ReservationId}.",
+            delivery.Id,
+            delivery.Notification.AggregateId);
+        attempt?.Finish(
+            NotificationAttemptOutcome.PermanentFailure,
+            providerResponse: null,
+            ReservationReminderSendGate.SkippedMessage);
+        delivery.MarkFailed(ReservationReminderSendGate.SkippedMessage);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<bool> IsReminderStillDueAsync(
+        Notification notification,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(notification.AggregateType, "Reservation", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Hangfire has no ambient tenant, so the global filter is off. Ignore it explicitly and
+        // match the notification's own tenant so a different ambient tenant cannot hide the row.
+        var reservation = await dbContext.Reservations
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(r => r.Id == notification.AggregateId && r.TenantId == notification.TenantId)
+            .Select(r => new { r.Status, r.StartDateTime })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (reservation is null)
+        {
+            return false;
+        }
+
+        return ReservationReminderSendGate.ShouldSend(
+            reservation.Status,
+            reservation.StartDateTime,
+            timeProvider.GetUtcNow());
     }
 
     private void FinishFailedAttempt(

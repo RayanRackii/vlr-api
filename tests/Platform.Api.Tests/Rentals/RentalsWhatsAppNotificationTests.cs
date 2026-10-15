@@ -279,7 +279,8 @@ public sealed class RentalsWhatsAppNotificationTests
             harness.Db,
             new DevEmailRecorder(),
             whatsApp,
-            NullLogger<NotificationOutboxProcessor>.Instance);
+            NullLogger<NotificationOutboxProcessor>.Instance,
+            LocationBookingHarness.BookingClock);
         var reservations = new ReservationService(
             harness.Db,
             harness.TenantProvider,

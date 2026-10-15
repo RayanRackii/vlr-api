@@ -69,9 +69,11 @@ Earlier 2026-09-09 attempt had failed Graph **404 / 132001**; that WABA/template
 
 `RENTALS_REMINDER_LEAD_TIME = 24_HOURS`. Hangfire job `rentals-reservation-reminder` every minute. One reminder per reservation. Not 2h. No tenant setting.
 
-Skip Canceled, Completed, and after start. Idempotent via existing `core.notifications` row (`EventType = rentals.reservation.reminder`, `AggregateType = Reservation`).
+Skip Canceled, Completed, and after start at scan time. A booking whose start is already inside the next 24h is queued on the next sweep, not during create. Idempotent via existing `core.notifications` row (`EventType = rentals.reservation.reminder`, `AggregateType = Reservation`).
 
-Job only considers tenants with WhatsApp `rentals.reservation.reminder` **IsActive**. Default remains off.
+The outbox checks again immediately before Email or WhatsApp send. It sends only when that reservation is still `PendingDeposit` or `Confirmed` and `StartDateTime` is still in the future. Otherwise the delivery is marked `Failed` with `Reminder skipped because the reservation is not active or has already started.` and is not retried. Cancellation mail is a different event and still sends.
+
+Job only considers tenants with Email or WhatsApp `rentals.reservation.reminder` **IsActive** and an active `rentals` module. Default remains off. Hangfire uses one worker, so a reminder already queued can be processed before a cancellation email that was enqueued later.
 
 Each Hangfire sweep uses a **fresh DI scope per tenant** (`IServiceScopeFactory`) so `AppDbContext` / `AmbientTenantContext` / publisher tracking cannot bleed channel configs from tenant A into tenant B. Do not reuse one tracked `DbContext` across tenant switches.
 
