@@ -257,6 +257,32 @@ public sealed class TenantRbacAccessTests
     }
 
     [Fact]
+    public async Task Invite_email_names_a_non_admin_role_and_does_not_say_administrar()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        var professor = harness.AddCustomRole("Professor", Permissions.Core.DashboardRead);
+        var adminRole = harness.AddSystemRole(SystemRoles.Admin);
+        var admin = harness.AddUser("inviter");
+        harness.Assign(admin, adminRole);
+        await harness.Db.SaveChangesAsync();
+
+        var actor = new RbacActor(harness.Tenant.Id, admin.Id, IsPlatformAdminInTenant: true);
+        await harness.Users.InviteAsync(
+            actor,
+            new InviteTenantMemberRequest("Ada Professor", "ada@access.test", [professor.Id]),
+            CancellationToken.None);
+
+        Assert.True(harness.Queue.TryRead(out var message));
+        Assert.Contains("para acessar", message.Body, StringComparison.Ordinal);
+        Assert.Contains("como <strong>Professor</strong>", message.Body, StringComparison.Ordinal);
+        Assert.Contains("Access Club", message.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("administrar", message.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("admin de", message.Subject, StringComparison.Ordinal);
+        Assert.Equal("Convite Rolvix — Access Club", message.Subject);
+        Assert.False(harness.Queue.TryRead(out _));
+    }
+
+    [Fact]
     public async Task Accept_invite_uses_user_invite_roles_when_present()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
@@ -379,7 +405,8 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
         Tenant tenant,
         UserDirectoryService users,
         RoleService roles,
-        Platform.Api.Modules.Admin.Services.TenantUserAdminService adminInvites)
+        Platform.Api.Modules.Admin.Services.TenantUserAdminService adminInvites,
+        NotificationQueue queue)
     {
         Db = db;
         TenantProvider = tenantProvider;
@@ -387,6 +414,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
         Users = users;
         Roles = roles;
         AdminInvites = adminInvites;
+        Queue = queue;
     }
 
     public AppDbContext Db { get; }
@@ -400,6 +428,8 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
     public RoleService Roles { get; }
 
     public Platform.Api.Modules.Admin.Services.TenantUserAdminService AdminInvites { get; }
+
+    public NotificationQueue Queue { get; }
 
     public static async Task<RbacAccessHarness> CreateAsync(bool includeCatalogPermissionRows = true)
     {
@@ -423,6 +453,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
         var resolver = TestPermissionResolvers.Create(db, tenantProvider);
         var grantGuard = new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance);
         var configuration = new ConfigurationBuilder().Build();
+        var queue = new NotificationQueue();
         var users = new UserDirectoryService(
             db,
             tenantProvider,
@@ -430,7 +461,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
             resolver,
             grantGuard,
             new FakeTrialGuard(),
-            new NotificationQueue(),
+            queue,
             configuration,
             new FakeHostEnvironment(),
             NullLogger<UserDirectoryService>.Instance);
@@ -445,7 +476,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
             new FakePlatformAdminChecker(),
             NullLogger<Platform.Api.Modules.Admin.Services.TenantUserAdminService>.Instance);
 
-        return new RbacAccessHarness(db, tenantProvider, tenant, users, roles, adminInvites);
+        return new RbacAccessHarness(db, tenantProvider, tenant, users, roles, adminInvites, queue);
     }
 
     public Role AddCustomRole(string name, params string[] keys)

@@ -99,6 +99,10 @@ _Avoid_: Right, privilege (in code)
 A booking of one Rentable by a Customer for a concrete time window, owned by a Tenant. Prefer linking to a Slot when the tenant uses slot schedules. The owning Customer may self-cancel `PendingDeposit` or `Confirmed` only while `now < StartDateTime` (true instant). Staff cancel has no start cutoff. Cancel does not restore a queue ticket.
 _Avoid_: Booking, appointment, agendamento (in code)
 
+**BookingPolicy**:
+Tenant-level rules for customer self-booking. One default applies to every bookable resource type (`ResourceType` null). Optional cancellation note stored as plain text (no refund math) and an optional cap on how many of that customer's active reservations start on the same civil day. A null cap means unlimited. Active means `PendingDeposit` or `Confirmed`; `Completed` and `Canceled` do not count. The civil day uses the tenant's configured timezone when the tenant model has one. `Tenant` has no timezone property, so the day falls back to America/Sao_Paulo, the same clock that stores the reservation instant. `PUT` replaces both fields; an omitted or null property clears the stored value. A later per-resource-type override can store the same fields with `ResourceType` set; that override is not applied yet. There is no staff create-reservation API, so the cap is enforced only on customer self-booking.
+_Avoid_: court policy; quadra; refund calculator; per-rentable cap; treating the cap as a payment rule
+
 **Rentable**:
 Anything a Tenant offers for time-based rental through the Rentals module — a space, court, room, vehicle, or physical good. In code this is the existing `RentalAsset` (typed as location/good; categories refine the label).
 _Avoid_: Court-only language in the module core; Quadra as the only product shape

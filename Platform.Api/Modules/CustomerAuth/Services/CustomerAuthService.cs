@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authentication;
+using Platform.Api.Http;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.RegistrationFields.Services;
@@ -682,26 +683,8 @@ public sealed class CustomerAuthService(
             cancellationToken);
     }
 
-    private string? GetClientIp()
-    {
-        var httpContext = httpContextAccessor?.HttpContext;
-        if (httpContext is null)
-        {
-            return null;
-        }
-
-        var forwarded = httpContext.Request.Headers["X-Forwarded-For"].ToString();
-        if (!string.IsNullOrWhiteSpace(forwarded))
-        {
-            var firstHop = forwarded.Split(',', 2)[0].Trim();
-            if (firstHop.Length > 0)
-            {
-                return firstHop;
-            }
-        }
-
-        return httpContext.Connection.RemoteIpAddress?.ToString();
-    }
+    private string? GetClientIp() =>
+        RateLimitClientIp.From(httpContextAccessor?.HttpContext);
 
     private static bool IsFullPendingMatch(
         Customer customer,

@@ -109,10 +109,15 @@ public sealed class RentalsEmailNotificationTests
             gate.Logs.Entries,
             log => log.Level == LogLevel.Information
                 && log.Message.Contains("DEV EMAIL", StringComparison.Ordinal)
-                && log.Message.Contains("cliente@club.test", StringComparison.Ordinal));
+                && log.Message.Contains("cliente@club.test", StringComparison.Ordinal)
+                && log.Message.Contains("Reserva Quadra 1 confirmada", StringComparison.Ordinal));
         Assert.DoesNotContain(
             gate.Logs.Entries,
-            log => log.Message.Contains("re_test_not_a_real_key", StringComparison.Ordinal));
+            log => log.Message.Contains("re_test_not_a_real_key", StringComparison.Ordinal)
+                || log.Message.Contains("Cliente B2C", StringComparison.Ordinal)
+                || log.Message.Contains("Clube Reserva", StringComparison.Ordinal)
+                || log.Message.Contains("<html", StringComparison.OrdinalIgnoreCase)
+                || log.Message.Contains("agenda?reservation", StringComparison.Ordinal));
     }
 
     private static NotificationChannelConfigService CreateConfigService(LocationBookingHarness harness)

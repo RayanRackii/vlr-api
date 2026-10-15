@@ -1,4 +1,3 @@
-using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -86,7 +85,10 @@ public sealed class TrialOnboardingInviteTests
         Assert.False(harness.Queue.TryRead(out _));
         Assert.Equal("Email", message.Type);
         Assert.Equal("ada@club.test", message.Recipient);
-        Assert.StartsWith("Convite Rolvix", message.Subject, StringComparison.Ordinal);
+        Assert.StartsWith("Convite Rolvix — admin de ", message.Subject, StringComparison.Ordinal);
+        Assert.Contains("para administrar", message.Body, StringComparison.Ordinal);
+        Assert.Contains("no console Rolvix", message.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("como <strong>", message.Body, StringComparison.Ordinal);
         Assert.Contains($"/invite?token={invite.Token}", message.Body, StringComparison.Ordinal);
         Assert.DoesNotContain(invite.Token, string.Join('\n', harness.Logger.Messages), StringComparison.Ordinal);
     }
@@ -497,31 +499,6 @@ public sealed class TrialOnboardingInviteTests
         Assert.Contains(raw, string.Join('\n', harness.HandlerLogger.Messages), StringComparison.Ordinal);
         Assert.False(harness.Queue.TryRead(out _));
         Assert.Empty(harness.Auth.Created);
-    }
-
-    [Fact]
-    public void Client_ip_keeps_the_first_forwarded_hop()
-    {
-        var context = new DefaultHttpContext();
-        context.Request.Headers["X-Forwarded-For"] = "203.0.113.5, 10.0.0.8";
-        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.8");
-
-        Assert.Equal("203.0.113.5", AnonymousOnboardingClientIp.From(context));
-    }
-
-    [Fact]
-    public void Client_ip_uses_remote_address_when_the_forwarded_header_is_missing_or_blank()
-    {
-        var missing = new DefaultHttpContext();
-        missing.Connection.RemoteIpAddress = IPAddress.Parse("198.51.100.20");
-        Assert.Equal("198.51.100.20", AnonymousOnboardingClientIp.From(missing));
-
-        var blank = new DefaultHttpContext();
-        blank.Request.Headers["X-Forwarded-For"] = "   ";
-        blank.Connection.RemoteIpAddress = IPAddress.Parse("198.51.100.21");
-        Assert.Equal("198.51.100.21", AnonymousOnboardingClientIp.From(blank));
-
-        Assert.Null(AnonymousOnboardingClientIp.From(null));
     }
 
     private static CreateTenantRequest TrialRequest(
