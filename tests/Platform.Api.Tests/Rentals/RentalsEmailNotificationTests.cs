@@ -25,19 +25,155 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class RentalsEmailNotificationTests
 {
     [Fact]
-    public async Task Email_off_by_default_does_not_queue_email()
+    public async Task New_tenant_reserve_and_cancel_enqueues_email_and_not_whatsapp()
     {
         await using var ctx = await CreateContextAsync(requiresDeposit: false);
-        await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
 
-        await ctx.Reservations.CreateReservationAsync(
+        var created = await ctx.Reservations.CreateReservationAsync(
             ctx.Harness.CustomerId,
             CreateRequest(ctx.Harness),
             CancellationToken.None);
+        Assert.Equal(ReservationStatus.Confirmed, created.Status);
 
+        var canceled = await ctx.Reservations.CancelAsync(created.Id, CancellationToken.None);
+        Assert.Equal(ReservationStatus.Canceled, canceled.Status);
+
+        var notifications = ctx.Harness.Db.Notifications.ToList();
+        var deliveries = ctx.Harness.Db.NotificationDeliveries.ToList();
+        var confirmedEmail = EmailDelivery(notifications, deliveries, RentalEventTypes.ReservationConfirmed);
+        var canceledEmail = EmailDelivery(notifications, deliveries, RentalEventTypes.ReservationCanceled);
+
+        Assert.Equal(NotificationDeliveryStatus.Queued, confirmedEmail.Status);
+        Assert.Equal(NotificationDeliveryStatus.Queued, canceledEmail.Status);
+        Assert.Equal(ctx.Harness.TenantId, confirmedEmail.TenantId);
+        Assert.Equal(ctx.Harness.TenantId, canceledEmail.TenantId);
+        Assert.Equal("cliente@club.test", confirmedEmail.RecipientEmail);
+        Assert.Equal("cliente@club.test", canceledEmail.RecipientEmail);
+        Assert.Contains(ctx.Scheduler.Scheduled, id => id == confirmedEmail.Id);
+        Assert.Contains(ctx.Scheduler.Scheduled, id => id == canceledEmail.Id);
+        Assert.DoesNotContain(deliveries, delivery => delivery.Channel == NotificationChannel.WhatsApp);
+        Assert.DoesNotContain(deliveries, delivery => delivery.Channel == NotificationChannel.Sms);
+
+        var configs = ctx.Harness.Db.TenantNotificationChannelConfigs.ToList();
+        Assert.Equal(RentalEventTypes.Notifying.Length * 4, configs.Count);
+        Assert.All(
+            configs.Where(config => config.Channel is NotificationChannel.InApp or NotificationChannel.Email),
+            config => Assert.True(config.IsActive));
+        Assert.All(
+            configs.Where(config => config.Channel is NotificationChannel.WhatsApp or NotificationChannel.Sms),
+            config => Assert.False(config.IsActive));
+    }
+
+    [Fact]
+    public async Task Existing_inactive_email_config_is_not_overwritten_on_reserve_or_cancel()
+    {
+        await using var ctx = await CreateContextAsync(requiresDeposit: false);
+        await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        var confirmedEmail = await ctx.Harness.Db.TenantNotificationChannelConfigs.SingleAsync(config =>
+            config.EventType == RentalEventTypes.ReservationConfirmed
+            && config.Channel == NotificationChannel.Email);
+        confirmedEmail.IsActive = false;
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        var created = await ctx.Reservations.CreateReservationAsync(
+            ctx.Harness.CustomerId,
+            CreateRequest(ctx.Harness),
+            CancellationToken.None);
+        await ctx.Reservations.CancelAsync(created.Id, CancellationToken.None);
+
+        var notifications = ctx.Harness.Db.Notifications.ToList();
+        var deliveries = ctx.Harness.Db.NotificationDeliveries.ToList();
         Assert.DoesNotContain(
-            ctx.Harness.Db.NotificationDeliveries,
-            delivery => delivery.Channel == NotificationChannel.Email);
+            notifications,
+            notification => notification.EventType == RentalEventTypes.ReservationConfirmed
+                && deliveries.Any(delivery =>
+                    delivery.NotificationId == notification.Id
+                    && delivery.Channel == NotificationChannel.Email));
+        Assert.NotNull(EmailDelivery(notifications, deliveries, RentalEventTypes.ReservationCanceled));
+        Assert.DoesNotContain(deliveries, delivery => delivery.Channel == NotificationChannel.WhatsApp);
+
+        var stored = await ctx.Harness.Db.TenantNotificationChannelConfigs.SingleAsync(config =>
+            config.EventType == RentalEventTypes.ReservationConfirmed
+            && config.Channel == NotificationChannel.Email);
+        Assert.False(stored.IsActive);
+        Assert.Equal(confirmedEmail.Id, stored.Id);
+    }
+
+    [Fact]
+    public async Task Reserve_and_cancel_does_not_enqueue_or_rewrite_another_tenants_email()
+    {
+        await using var ctx = await CreateContextAsync(requiresDeposit: false);
+        var other = new Tenant("Outro Clube", "88888888000191", subdomain: "outro-clube");
+        ctx.Harness.Db.Tenants.Add(other);
+        foreach (var eventType in RentalEventTypes.Notifying)
+        {
+            foreach (var channel in new[]
+                     {
+                         NotificationChannel.InApp,
+                         NotificationChannel.Email,
+                         NotificationChannel.WhatsApp,
+                         NotificationChannel.Sms,
+                     })
+            {
+                ctx.Harness.Db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+                {
+                    TenantId = other.Id,
+                    EventType = eventType,
+                    Channel = channel,
+                    IsActive = channel == NotificationChannel.InApp,
+                });
+            }
+        }
+
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        await using var before = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var otherBefore = await before.TenantNotificationChannelConfigs
+            .Where(config => config.TenantId == other.Id)
+            .Select(config => new { config.Id, config.EventType, config.Channel, config.IsActive })
+            .ToListAsync();
+
+        var created = await ctx.Reservations.CreateReservationAsync(
+            ctx.Harness.CustomerId,
+            CreateRequest(ctx.Harness),
+            CancellationToken.None);
+        await ctx.Reservations.CancelAsync(created.Id, CancellationToken.None);
+
+        await using var after = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = null },
+            ctx.Harness.DatabaseName);
+        var deliveries = await after.NotificationDeliveries
+            .Include(delivery => delivery.Notification)
+            .ToListAsync();
+        Assert.NotEmpty(deliveries);
+        Assert.All(deliveries, delivery => Assert.Equal(ctx.Harness.TenantId, delivery.TenantId));
+        Assert.Contains(
+            deliveries,
+            delivery => delivery.Channel == NotificationChannel.Email
+                && delivery.Notification.EventType == RentalEventTypes.ReservationConfirmed);
+        Assert.Contains(
+            deliveries,
+            delivery => delivery.Channel == NotificationChannel.Email
+                && delivery.Notification.EventType == RentalEventTypes.ReservationCanceled);
+        Assert.DoesNotContain(deliveries, delivery => delivery.Channel == NotificationChannel.WhatsApp);
+        Assert.DoesNotContain(deliveries, delivery => delivery.TenantId == other.Id);
+
+        var otherAfter = await after.TenantNotificationChannelConfigs
+            .Where(config => config.TenantId == other.Id)
+            .ToListAsync();
+        Assert.Equal(otherBefore.Count, otherAfter.Count);
+        Assert.All(otherBefore, previous =>
+        {
+            var current = Assert.Single(otherAfter, config => config.Id == previous.Id);
+            Assert.Equal(previous.EventType, current.EventType);
+            Assert.Equal(previous.Channel, current.Channel);
+            Assert.Equal(previous.IsActive, current.IsActive);
+        });
+        Assert.All(
+            otherAfter.Where(config => config.Channel == NotificationChannel.Email),
+            config => Assert.False(config.IsActive));
     }
 
     [Fact]
@@ -191,6 +327,18 @@ public sealed class RentalsEmailNotificationTests
             EndTime = LocationBookingHarness.End,
             Items = [new CreateReservationItemRequestDto { AssetId = harness.AssetId, Quantity = 1 }],
         };
+
+    private static NotificationDelivery EmailDelivery(
+        IReadOnlyList<Notification> notifications,
+        IReadOnlyList<NotificationDelivery> deliveries,
+        string eventType)
+    {
+        var notification = Assert.Single(notifications, item => item.EventType == eventType);
+        return Assert.Single(
+            deliveries,
+            delivery => delivery.NotificationId == notification.Id
+                && delivery.Channel == NotificationChannel.Email);
+    }
 
     private sealed record Context(
         LocationBookingHarness Harness,

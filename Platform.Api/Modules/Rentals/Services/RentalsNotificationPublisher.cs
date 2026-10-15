@@ -386,7 +386,7 @@ public sealed class RentalsNotificationPublisher(
                     TenantId = tenantId,
                     EventType = eventType,
                     Channel = channel,
-                    IsActive = channel == NotificationChannel.InApp,
+                    IsActive = channel is NotificationChannel.InApp or NotificationChannel.Email,
                 });
                 existingSet.Add(key);
             }

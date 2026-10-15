@@ -411,16 +411,16 @@ public sealed class RentalsNotificationAmbientTests
         Assert.True(foreignEmail.IsActive);
         Assert.Equal(RentalEventTypes.Notifying.Length * DefaultChannels.Length, seeded.Count);
         Assert.All(
-            seeded.Where(config => config.Channel == NotificationChannel.InApp),
+            seeded.Where(config => config.Channel is NotificationChannel.InApp or NotificationChannel.Email),
             config => Assert.True(config.IsActive));
         Assert.All(
-            seeded.Where(config => config.Channel != NotificationChannel.InApp),
+            seeded.Where(config => config.Channel is NotificationChannel.WhatsApp or NotificationChannel.Sms),
             config => Assert.False(config.IsActive));
         Assert.Contains(
             seeded,
             config => config.EventType == RentalEventTypes.ReservationConfirmed
                 && config.Channel == NotificationChannel.Email
-                && !config.IsActive);
+                && config.IsActive);
         Assert.DoesNotContain(configs, config => config.TenantId != tenantA.Id && config.TenantId != tenantB.Id);
     }
 
