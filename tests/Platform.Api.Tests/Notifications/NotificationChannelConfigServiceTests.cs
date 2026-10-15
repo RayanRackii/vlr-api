@@ -60,7 +60,7 @@ public sealed class NotificationChannelConfigServiceTests
     }
 
     [Fact]
-    public async Task Rentals_only_tenant_lists_email_and_whatsapp_channels_default_off()
+    public async Task Rentals_only_tenant_lists_email_active_and_whatsapp_off()
     {
         await using var harness = await Harness.CreateAsync(PlatformModules.Rentals);
 
@@ -86,11 +86,13 @@ public sealed class NotificationChannelConfigServiceTests
                 evt.Channels.Select(item => item.Channel));
             Assert.DoesNotContain(evt.Channels, item => item.Channel is NotificationChannel.Sms or NotificationChannel.InApp);
 
-            foreach (var channel in evt.Channels)
-            {
-                Assert.False(channel.IsActive);
-                Assert.True(channel.Configurable);
-            }
+            var email = evt.Channels.Single(item => item.Channel == NotificationChannel.Email);
+            Assert.True(email.IsActive);
+            Assert.True(email.Configurable);
+
+            var whatsApp = evt.Channels.Single(item => item.Channel == NotificationChannel.WhatsApp);
+            Assert.False(whatsApp.IsActive);
+            Assert.True(whatsApp.Configurable);
         }
     }
 
@@ -188,7 +190,7 @@ public sealed class NotificationChannelConfigServiceTests
     {
         await using var harness = await Harness.CreateAsync(PlatformModules.Rentals);
 
-        Assert.False(FindChannel(await harness.Service.ListAsync(CancellationToken.None),
+        Assert.True(FindChannel(await harness.Service.ListAsync(CancellationToken.None),
             PlatformModules.Rentals,
             eventType,
             NotificationChannel.Email).IsActive);
@@ -339,7 +341,7 @@ public sealed class NotificationChannelConfigServiceTests
             PlatformModules.Rentals,
             RentalEventTypes.ReservationConfirmed,
             NotificationChannel.Email).IsActive);
-        Assert.False(FindChannel(await serviceB.ListAsync(CancellationToken.None),
+        Assert.True(FindChannel(await serviceB.ListAsync(CancellationToken.None),
             PlatformModules.Rentals,
             RentalEventTypes.ReservationConfirmed,
             NotificationChannel.Email).IsActive);

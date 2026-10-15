@@ -518,6 +518,10 @@ public sealed class ReservationReminderJobTests
     {
         await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
         await EnsureActiveRentalsModuleAsync(ctx.Harness.Db, ctx.Harness.TenantId);
+        var email = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
+            c.EventType == RentalEventTypes.ReservationReminder
+            && c.Channel == NotificationChannel.Email);
+        email.IsActive = false;
         var config = await ctx.Harness.Db.TenantNotificationChannelConfigs.FirstAsync(c =>
             c.EventType == RentalEventTypes.ReservationReminder
             && c.Channel == NotificationChannel.WhatsApp);
@@ -664,6 +668,13 @@ public sealed class ReservationReminderJobTests
             c.EventType == RentalEventTypes.ReservationReminder
             && c.Channel == channel);
         config.IsActive = true;
+        if (channel != NotificationChannel.Email)
+        {
+            var email = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
+                c.EventType == RentalEventTypes.ReservationReminder
+                && c.Channel == NotificationChannel.Email);
+            email.IsActive = false;
+        }
         if (!inAppActive)
         {
             var inApp = await db.TenantNotificationChannelConfigs.FirstAsync(c =>
