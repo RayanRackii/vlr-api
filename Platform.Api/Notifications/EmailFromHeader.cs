@@ -35,15 +35,16 @@ public static class EmailFromHeader
 
     private static string Sanitize(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        var stripped = EmailHeaderText.StripControls(value);
+        if (stripped.Length == 0)
         {
             return string.Empty;
         }
 
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value)
+        var builder = new StringBuilder(stripped.Length);
+        foreach (var character in stripped)
         {
-            if (character is '\r' or '\n' or '\0' or '<' or '>' or '@')
+            if (character is '<' or '>' or '@')
             {
                 continue;
             }

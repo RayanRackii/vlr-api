@@ -70,6 +70,30 @@ public sealed class StaffInviteEmailTests
     }
 
     [Fact]
+    public void Invite_subject_strips_line_breaks_and_unicode_separators()
+    {
+        const string hostile = "Acme\r\nBcc: evil@x.com\0\u2028\u2029\u0085";
+
+        Assert.Equal(
+            "Convite Rolvix — AcmeBcc: evil@x.com",
+            RolvixEmailLayout.InviteSubject(hostile, ["Professor"]));
+        Assert.Equal(
+            "Convite Rolvix — admin de AcmeBcc: evil@x.com",
+            RolvixEmailLayout.InviteSubject(hostile, [SystemRoles.Admin]));
+        Assert.Equal(
+            "Convite Rolvix — sua empresa",
+            RolvixEmailLayout.InviteSubject("\r\n\0\u2028\u2029\u0085", ["Professor"]));
+
+        var subject = RolvixEmailLayout.InviteSubject(hostile, ["Professor"]);
+        Assert.DoesNotContain("\r", subject, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n", subject, StringComparison.Ordinal);
+        Assert.DoesNotContain("\0", subject, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u2028", subject, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u2029", subject, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u0085", subject, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Role_name_is_encoded()
     {
         var html = RolvixEmailLayout.InviteBody(
