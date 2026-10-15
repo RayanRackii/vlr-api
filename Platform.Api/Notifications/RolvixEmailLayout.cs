@@ -81,10 +81,16 @@ public static class RolvixEmailLayout
 
     public static string InviteSubject(string companyName, IReadOnlyList<string>? roleNames)
     {
+        var company = EmailHeaderText.StripControls(companyName);
+        if (company.Length == 0)
+        {
+            company = "sua empresa";
+        }
+
         var names = NormalizeRoles(roleNames);
         return names.Count > 0 && names.All(IsAdministrativeRole)
-            ? $"Convite Rolvix — admin de {companyName}"
-            : $"Convite Rolvix — {companyName}";
+            ? $"Convite Rolvix — admin de {company}"
+            : $"Convite Rolvix — {company}";
     }
 
     public static string InviteBody(

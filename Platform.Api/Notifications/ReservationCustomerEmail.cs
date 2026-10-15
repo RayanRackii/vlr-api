@@ -189,24 +189,7 @@ public static class ReservationCustomerEmail
         return value.Trim();
     }
 
-    private static string CleanSubject(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value)
-        {
-            if (character is not ('\r' or '\n' or '\0'))
-            {
-                builder.Append(character);
-            }
-        }
-
-        return builder.ToString().Trim();
-    }
+    private static string CleanSubject(string? value) => EmailHeaderText.StripControls(value);
 }
 
 public sealed record ReservationEmailContent(
