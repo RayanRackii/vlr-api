@@ -4,9 +4,9 @@ namespace Platform.Api.Authentication;
 
 /// <summary>
 /// The staff session could not be checked with GoTrue. This is an infrastructure
-/// failure, not a revoked session: the pipeline exception handler returns HTTP 500.
-/// The message is fixed and the inner exception is omitted so logs and the
-/// response cannot carry access tokens or Auth payloads.
+/// failure, not a revoked session. The pipeline exception handler answers HTTP 500
+/// with its generic body. This message stays off that body. The inner exception is
+/// omitted so logs and the response cannot carry access tokens or Auth payloads.
 /// </summary>
 internal sealed class StaffSessionStoreUnavailableException : Exception
 {
@@ -71,7 +71,7 @@ internal sealed class StaffWriteSessionGuard(
             return;
         }
 
-        LogStoreFailure(logger, null);
+        // Unavailable is already logged by the probe (status and safe error code only).
         throw new StaffSessionStoreUnavailableException();
     }
 
