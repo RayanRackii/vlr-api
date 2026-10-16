@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Features.CreateTenant;
+using Platform.Api.Http;
 using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
@@ -21,6 +22,7 @@ using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
 using Platform.Api.Storage;
+using Microsoft.Extensions.Options;
 using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
 using Serilog;
@@ -48,6 +50,7 @@ try
         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
 
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddRateLimitClientIp(builder.Configuration);
     builder.Services.AddScoped<PlatformAdminTenantSession>();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
@@ -77,7 +80,11 @@ try
     builder.Services.AddWebhooksModule();
     builder.Services.AddStorage(builder.Configuration, builder.Environment);
     builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
-    builder.Services.AddPlatformHangfire(connectionString);
+    var enableHangfire = !builder.Environment.IsEnvironment("Test");
+    if (enableHangfire)
+    {
+        builder.Services.AddPlatformHangfire(connectionString);
+    }
 
     if (builder.Environment.IsDevelopment())
     {
@@ -107,6 +114,12 @@ try
     });
 
     var app = builder.Build();
+    RateLimitClientIp.TrySelectHeaderName(
+        app.Services.GetRequiredService<IOptions<RateLimitOptions>>().Value.ClientIpHeader,
+        out var rateLimitClientIpHeader);
+    app.Logger.LogInformation(
+        "Rate limit client IP header is {ClientIpHeader}.",
+        rateLimitClientIpHeader);
     ModuleGateStartupValidator.Validate(
         app.Services.GetRequiredService<IActionDescriptorCollectionProvider>());
 
@@ -132,7 +145,10 @@ try
     app.UseMiddleware<PlatformAdminTenantSessionMiddleware>();
     app.UseAuthorization();
 
-    app.UsePlatformHangfireDashboard();
+    if (enableHangfire)
+    {
+        app.UsePlatformHangfireDashboard();
+    }
 
     app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
         .AllowAnonymous();
@@ -140,11 +156,14 @@ try
     app.MapCreateTenantEndpoint();
     app.MapControllers();
 
-    app.MapPlatformRecurringJobs();
+    if (enableHangfire)
+    {
+        app.MapPlatformRecurringJobs();
+    }
 
     app.Run();
 }
-catch (Exception ex)
+catch (Exception ex) when (ex is not HostAbortedException)
 {
     Log.Fatal(ex, "Platform.Api host terminated unexpectedly");
     throw;
@@ -187,4 +206,8 @@ static string[] ResolveCorsAllowedOrigins(IConfiguration configuration)
         .Concat(fromConfig)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
+}
+
+public partial class Program
+{
 }
