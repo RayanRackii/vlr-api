@@ -5,7 +5,7 @@ Derived context — NOT canonical.
 - Scope: Rentals beachhead (spaces/goods; club booking)
 - Repositories: vlr-api (canonical domain); vlr-web (UI)
 - Canonical sources: `CONTEXT.md`; `docs/adr/0001-rentals-slot-schedule.md`; `docs/adr/0003-reservation-waiting-queue.md`; `docs/adr/0004-module-dependencies-asset-registry.md`; `.cursor/rules/30-rentals.mdc`; `ROADMAP.md`
-- Last verified: 2026-10-15
+- Last verified: 2026-10-16
 - Verified at: Wave 1 **PROD_COMPLETE**; B2C self-cancel **CLOSED_DEV** (not PROD); teacher lessons are on `develop` and `main`. FICC DEV courts are allowlisted in code and are not a production deploy.
   - API PROD / `origin/main`: `54b385d5d14d0438fceb0c358872cf7ef1e1f589`
   - WEB PROD / `origin/main`: `0d995955dd56338cc8cbfda6bf8ff6950afb68f6`
@@ -19,7 +19,7 @@ The outbox renders Rentals reservation email (pending deposit, confirmed, cancel
 
 ## Past start and staff write revocation (#184)
 
-`POST /api/reservations`, `POST /api/schedule/slots/book`, and `POST /api/schedule/lessons` return HTTP 400 `{ error, code: "START_IN_THE_PAST" }` when the civil start is before `TimeProvider.GetUtcNow()`. The zone is `TenantBookingClock` (fallback `America/Sao_Paulo`, because `Tenant` has no timezone). A start equal to now is accepted. Availability stays HTTP 200 with the Portuguese reason and no `code`. An existing lesson stays on `GetDay` and `POST /api/schedule/lessons/remove` still removes it. Staff writes (POST/PUT/PATCH/DELETE) ask GoTrue `GET /auth/v1/user` with the caller's access token; a rejected session is HTTP 401. Reads stay on local JWT checks. ADR `docs/adr/0007-staff-write-session-revocation.md`.
+`POST /api/reservations`, `POST /api/schedule/slots/book`, and `POST /api/schedule/lessons` return HTTP 400 `{ error, code: "START_IN_THE_PAST" }` when the civil start is before `TimeProvider.GetUtcNow()`. The zone is `TenantBookingClock` (fallback `America/Sao_Paulo`, because `Tenant` has no timezone). A start equal to now is accepted. Availability stays HTTP 200 with the Portuguese reason and no `code`. An existing lesson stays on `GetDay` and `POST /api/schedule/lessons/remove` still removes it. Staff writes (POST/PUT/PATCH/DELETE) ask GoTrue `GET /auth/v1/user` with the caller's access token. HTTP 401 only when the Auth body or `x-sb-error-code` is `session_not_found` or `session_expired`. Other non-2xx answers, including Kong 401/404 and HTTP 3xx, are HTTP 500 with `{ "error": "An unexpected error occurred." }`. This process remembers the outcome for 2 seconds per `session_id` (not per raw token), at most 1024 sessions, and concurrent writes for one session share one Auth call. Reads stay on local JWT checks. ADR `docs/adr/0007-staff-write-session-revocation.md`.
 
 ## Booking policy (tenant default)
 

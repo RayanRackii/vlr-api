@@ -34,4 +34,8 @@
     <ProjectReference Include="..\..\Platform.Api\Platform.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Contracts\current-user-response.openapi.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

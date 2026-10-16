@@ -40,7 +40,7 @@ public sealed class UserDirectoryService(
             {
                 var modules = await LoadActiveModulesAsync(tenantId, cancellationToken);
                 var families = await LoadActiveAssetFamiliesAsync(tenantId, cancellationToken);
-                var trial = await LoadTrialFlagsAsync(tenantId, cancellationToken);
+                var adminSession = await LoadTenantSessionAsync(tenantId, cancellationToken);
                 var supabaseAuthId = principal.FindFirst("sub")?.Value
                     ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -54,7 +54,7 @@ public sealed class UserDirectoryService(
                             item => item.SupabaseAuthId == supabaseAuthId && item.IsActive,
                             cancellationToken);
 
-                    if (membership is not null)
+                    if (membership is not null && membership.TenantId == tenantId)
                     {
                         var permissions = await permissionResolver.GetEffectivePermissionsAsync(
                             tenantId,
@@ -69,9 +69,11 @@ public sealed class UserDirectoryService(
                             tenantId,
                             modules,
                             families,
-                            trial,
+                            adminSession.Trial,
                             ToRoleDtos(membership.UserRoles),
-                            WithPortalCustomersRead(permissions));
+                            WithPortalCustomersRead(permissions),
+                            adminSession.TradeName,
+                            adminSession.LegalName);
                     }
                 }
 
@@ -87,9 +89,11 @@ public sealed class UserDirectoryService(
                     tenantId,
                     modules,
                     families,
-                    trial,
+                    adminSession.Trial,
                     [],
-                    WithPortalCustomersRead(wildcard));
+                    WithPortalCustomersRead(wildcard),
+                    adminSession.TradeName,
+                    adminSession.LegalName);
             }
 
             return CreateCurrentUser(
@@ -102,7 +106,9 @@ public sealed class UserDirectoryService(
                 [],
                 TrialFlags.Empty,
                 [],
-                []);
+                [],
+                null,
+                null);
         }
 
         var scopedTenantId = tenantProvider.TenantId
@@ -121,10 +127,15 @@ public sealed class UserDirectoryService(
                 cancellationToken)
             ?? throw new KeyNotFoundException("The authenticated user profile was not found.");
 
+        if (user.TenantId != scopedTenantId)
+        {
+            throw new KeyNotFoundException("The authenticated user profile was not found.");
+        }
+
         var role = ResolveApplicationRole(user.UserRoles.Select(userRole => userRole.Role.Name));
         var activeModules = await LoadActiveModulesAsync(scopedTenantId, cancellationToken);
         var activeFamilies = await LoadActiveAssetFamiliesAsync(scopedTenantId, cancellationToken);
-        var trialFlags = await LoadTrialFlagsAsync(scopedTenantId, cancellationToken);
+        var session = await LoadTenantSessionAsync(scopedTenantId, cancellationToken);
         var effective = await permissionResolver.GetEffectivePermissionsAsync(
             scopedTenantId,
             user.Id,
@@ -138,9 +149,11 @@ public sealed class UserDirectoryService(
             scopedTenantId,
             activeModules,
             activeFamilies,
-            trialFlags,
+            session.Trial,
             ToRoleDtos(user.UserRoles),
-            effective.OrderBy(key => key).ToList());
+            effective.OrderBy(key => key).ToList(),
+            session.TradeName,
+            session.LegalName);
     }
 
     public async Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
@@ -443,7 +456,7 @@ public sealed class UserDirectoryService(
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<TrialFlags> LoadTrialFlagsAsync(
+    private async Task<TenantSession> LoadTenantSessionAsync(
         Guid tenantId,
         CancellationToken cancellationToken)
     {
@@ -451,17 +464,30 @@ public sealed class UserDirectoryService(
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
 
-        if (tenant is null)
+        if (tenant is null || tenant.Id != tenantId)
         {
-            return TrialFlags.Empty;
+            return TenantSession.Empty;
         }
 
-        return new TrialFlags(
-            tenant.IsTrial,
-            tenant.TrialEndsAt,
-            tenant.TrialPurgeAt,
-            tenant.IsTrialReadOnly(DateTimeOffset.UtcNow),
-            tenant.NotificationsEmailOnly);
+        return new TenantSession(
+            new TrialFlags(
+                tenant.IsTrial,
+                tenant.TrialEndsAt,
+                tenant.TrialPurgeAt,
+                tenant.IsTrialReadOnly(DateTimeOffset.UtcNow),
+                tenant.NotificationsEmailOnly),
+            BlankToNull(tenant.TradeName),
+            BlankToNull(tenant.LegalName));
+    }
+
+    private static string? BlankToNull(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
     }
 
     private static CurrentUserResponse CreateCurrentUser(
@@ -474,7 +500,9 @@ public sealed class UserDirectoryService(
         IReadOnlyList<string> activeAssetFamilies,
         TrialFlags trial,
         IReadOnlyList<CurrentUserRoleDto> roles,
-        IReadOnlyList<string> permissions) =>
+        IReadOnlyList<string> permissions,
+        string? tenantTradeName,
+        string? tenantLegalName) =>
         new(
             id,
             fullName,
@@ -489,7 +517,9 @@ public sealed class UserDirectoryService(
             trial.IsTrialReadOnly,
             trial.NotificationsEmailOnly,
             roles,
-            permissions);
+            permissions,
+            tenantTradeName,
+            tenantLegalName);
 
     private static IReadOnlyList<string> WithPortalCustomersRead(IEnumerable<string> permissions)
     {
@@ -575,5 +605,13 @@ public sealed class UserDirectoryService(
         bool NotificationsEmailOnly)
     {
         public static TrialFlags Empty { get; } = new(false, null, null, false, false);
+    }
+
+    private readonly record struct TenantSession(
+        TrialFlags Trial,
+        string? TradeName,
+        string? LegalName)
+    {
+        public static TenantSession Empty { get; } = new(TrialFlags.Empty, null, null);
     }
 }
