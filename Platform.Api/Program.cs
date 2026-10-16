@@ -20,6 +20,7 @@ using Platform.Api.Modules.Users;
 using Platform.Api.Modules.Webhooks;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Notifications;
+using Platform.Api.Serialization;
 using Platform.Api.Services.Trial;
 using Platform.Api.Storage;
 using Microsoft.Extensions.Options;
@@ -98,7 +99,7 @@ try
                 new System.Text.Json.Serialization.JsonStringEnumConverter());
         });
     builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen();
+    builder.Services.AddSwaggerGen(JsonOptionalOpenApi.Configure);
 
     var allowedOrigins = ResolveCorsAllowedOrigins(builder.Configuration);
 

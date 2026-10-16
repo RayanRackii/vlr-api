@@ -703,6 +703,52 @@ public sealed class BookingPolicyTests
         Assert.Empty(unknownDay.Slots);
     }
 
+    [Fact]
+    public async Task Public_day_without_ids_hides_persisted_slots_of_inactive_or_non_rentable_resources()
+    {
+        var now = new DateTimeOffset(2026, 10, 16, 15, 0, 0, TimeSpan.Zero);
+        var today = BookingHorizon.CivilToday(now, TenantBookingClock.Resolve(null));
+        var date = today.AddDays(1);
+        Assert.True(BookingHorizon.IsBeyond(date, today, 0));
+        Assert.False(BookingHorizon.IsBeyond(date, today, 30));
+
+        await using var harness = await BookingPolicyHarness.CreateAsync(today, now);
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MaxAdvanceBookingDays = 30 },
+            CancellationToken.None);
+
+        var primary = await harness.Db.RentalAssets
+            .Include(rental => rental.Asset)
+            .SingleAsync(rental => rental.AssetId == harness.AssetId);
+        var secondary = await harness.Db.RentalAssets
+            .SingleAsync(rental => rental.AssetId == harness.SecondAssetId);
+        primary.MaxAdvanceBookingDays = 0;
+        primary.IsActive = false;
+        await harness.Db.SaveChangesAsync();
+
+        var hiddenSlot = await harness.SeedSlotAsync(date, Ten, Eleven);
+
+        var day = await harness.Schedule.GetDayAsync(
+            date, rentalAssetId: null, customerFacing: true, CancellationToken.None);
+        Assert.DoesNotContain(day.Slots, slot => slot.Id == hiddenSlot);
+        Assert.DoesNotContain(day.Slots, slot => slot.RentalAssetId == primary.Id);
+        Assert.Contains(day.Slots, slot => slot.RentalAssetId == secondary.Id);
+
+        var adminDay = await harness.Schedule.GetDayAsync(
+            date, rentalAssetId: null, customerFacing: false, CancellationToken.None);
+        Assert.Contains(adminDay.Slots, slot => slot.Id == hiddenSlot);
+
+        primary.IsActive = true;
+        primary.Asset.IsRentable = false;
+        await harness.Db.SaveChangesAsync();
+
+        var nonRentableDay = await harness.Schedule.GetDayAsync(
+            date, rentalAssetId: null, customerFacing: true, CancellationToken.None);
+        Assert.DoesNotContain(nonRentableDay.Slots, slot => slot.Id == hiddenSlot);
+        Assert.DoesNotContain(nonRentableDay.Slots, slot => slot.RentalAssetId == primary.Id);
+        Assert.Contains(nonRentableDay.Slots, slot => slot.RentalAssetId == secondary.Id);
+    }
+
     private static readonly JsonSerializerOptions ApiJson = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
