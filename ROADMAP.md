@@ -188,6 +188,7 @@ Spec: [`docs/plans/active/2026-08-27-tenant-rbac-v1.md`](./docs/plans/active/202
 - [ ] Aplicar migration `AddTenantRbacV1` via workflow `database-migrations` (`target=development`, `mode=list` then `apply`). Não aplicar da máquina de implementação.
 - [ ] Aplicar migration `AddCoreCustomersReadPermission` (`core.customers.read`, módulo core, `module_key` nulo) via workflow. Não aplicar da máquina. Não grantar a role até gate explícito. Atribuir um role que carrega `core.customers.read` exige a própria chave ou o wildcard Admin (`PUT /api/users/{id}/roles` → 403 `PRIVILEGE_ESCALATION_BLOCKED` caso contrário). `GET /api/users` sem tenant responde 403 (`FORBIDDEN`), não 401. `GET /api/users` paginado segue com API #99 e Web #94 no mesmo release.
 - [x] UI Pessoas e acesso no `vlr-web` (merged `develop`)
+- [x] #191: `GET /api/users/me` inclui `tenantTradeName` e `tenantLegalName` (nullable), lidos só do tenant do chamador. Super-admin sem tenant: os dois campos null. Nome em branco vira null. Sem migration. PR aberto para os 2 reviews de segurança; não mergear antes disso. O header no `vlr-web` consome esses campos.
 
 ## 5.2. Remote EF migrations — FEITO (código)
 
@@ -241,6 +242,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-16 | **Feature (API, sem merge):** #191. `GET /api/users/me` passa a devolver `tenantTradeName` e `tenantLegalName`, nullable, só do tenant já resolvido para o chamador. Super-admin sem tenant recebe os dois null. Nome só com espaço vira null. Contrato aditivo; clientes atuais seguem. Sem migration. PR fica aberto para os 2 reviews de segurança. Header no `vlr-web` é o follow-up. |
 | 2026-10-16 | **Fix (API, sem merge):** #194, #195, #196, #199. O probe GoTrue do write de staff guarda o resultado 2s por `session_id` (não pelo token), com teto de 1024 e uma ida ao Auth por rajada da mesma sessão. 401 só para `session_not_found` e `session_expired`. Falha de gateway, 3xx, 429 e 5xx viram 500 com o corpo genérico do handler, sem token, apikey, e-mail ou session id no log. Sem migration, sem deploy, sem pager. |
 | 2026-10-16 | **Fix (API, sem merge):** o processo não sobe se `FLY_APP_NAME` está definido e o header do rate limit não é `Fly-Client-IP`, nem se `RAILWAY_ENVIRONMENT` ou `RAILWAY_PROJECT_ID` está definido e o header é `Fly-Client-IP`. Sem esses sinais, o padrão `X-Real-IP` permanece. O start registra só o nome do header escolhido. Contadores por IP continuam em memória neste processo (follow-up Low, ADR 0008). Sem migration. |
 | 2026-10-16 | **Fix (API, sem merge):** o rate limit por IP lê só o header de `RateLimit:ClientIpHeader`. Padrão `X-Real-IP` (Railway igual a hoje). `Fly-Client-IP` é o outro valor da lista, para a borda da Fly em gru, onde `X-Real-IP` do cliente não é confiável. `X-Forwarded-For` e `CF-Connecting-IP` continuam de fora. Nome fora da lista impede o start. Header ausente ou malformado cai em `RemoteIpAddress`; lixo não abre bucket novo. Sem migration. ADR 0008. |

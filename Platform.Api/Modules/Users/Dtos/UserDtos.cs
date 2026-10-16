@@ -18,6 +18,11 @@ public sealed record CurrentUserRoleDto(
     string Name,
     bool IsSystemRole);
 
+/// <summary>
+/// B2B session profile from <c>GET /api/users/me</c>.
+/// TenantTradeName and TenantLegalName are the caller's own tenant, or null when
+/// that caller has no tenant. Blank stored names are returned as null.
+/// </summary>
 public sealed record CurrentUserResponse(
     Guid? Id,
     string FullName,
@@ -32,7 +37,9 @@ public sealed record CurrentUserResponse(
     bool IsTrialReadOnly,
     bool NotificationsEmailOnly,
     IReadOnlyList<CurrentUserRoleDto> Roles,
-    IReadOnlyList<string> Permissions);
+    IReadOnlyList<string> Permissions,
+    string? TenantTradeName = null,
+    string? TenantLegalName = null);
 
 public sealed record TechnicianUserResponse(
     Guid Id,
