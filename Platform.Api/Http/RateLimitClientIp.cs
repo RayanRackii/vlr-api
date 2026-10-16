@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Platform.Api.Http;
 
@@ -7,33 +9,31 @@ namespace Platform.Api.Http;
 /// Partition key for the public per-IP rate limits (#109).
 /// </summary>
 /// <remarks>
-/// Railway's edge overwrites <c>X-Real-IP</c> and <c>X-Forwarded-For</c>. The hop
-/// count is not fixed, and Railway does not publish proxy ranges, so this process
-/// does not copy forwarding headers onto <see cref="ConnectionInfo.RemoteIpAddress"/>.
-/// <c>X-Forwarded-For</c> and <c>CF-Connecting-IP</c> are never read.
+/// The only header read is <see cref="RateLimitOptions.ClientIpHeader"/>
+/// (ADR 0006 and ADR 0008). The default is <c>X-Real-IP</c>. <c>Fly-Client-IP</c>
+/// is the other allowed name. <c>X-Forwarded-For</c>, <c>CF-Connecting-IP</c>, and
+/// any other header are never read. A configured name outside that pair is not
+/// read either.
 /// <para>
-/// Public ingress uses <c>X-Real-IP</c> when that header has exactly one value and
-/// the value is one IP address. The stored key is the canonical address: an IPv6
-/// scope id is dropped, and an IPv4-mapped IPv6 address is stored as IPv4, so
-/// alternate spellings of the same address share one bucket.
-/// </para>
-/// <para>
-/// A missing or malformed header — the usual case for a private-network call that
-/// never crossed the edge — falls back to <see cref="ConnectionInfo.RemoteIpAddress"/>.
-/// The raw header text is not the key. Rotating garbage, a list, or an extra header
-/// value stays on that socket address and cannot open a new bucket. When the socket
-/// address is missing too, the result is null; the gates then share one
-/// <c>unknown</c> bucket and still count the attempt.
-/// </para>
-/// <para>
-/// A caller who can reach the process without the edge can still present any single
-/// well-formed <c>X-Real-IP</c> and choose a bucket. That is the residual risk of
-/// trusting the header the edge overwrites on public ingress.
+/// One trimmed IPv4 or IPv6 value is stored as the canonical address: an IPv6
+/// scope id is dropped, and an IPv4-mapped IPv6 address is stored as IPv4.
+/// A missing or malformed value uses <see cref="ConnectionInfo.RemoteIpAddress"/>,
+/// also canonical, which is how a private-network call that never crossed the
+/// edge is keyed. The raw header text is not the key. When the socket address
+/// is missing too, the result is null and the gates share one <c>unknown</c> bucket.
 /// </para>
 /// </remarks>
 internal static class RateLimitClientIp
 {
-    internal const string HeaderName = "X-Real-IP";
+    internal const string DefaultHeaderName = "X-Real-IP";
+
+    internal const string FlyClientIpHeaderName = "Fly-Client-IP";
+
+    internal static readonly string[] AllowedHeaderNames =
+    [
+        DefaultHeaderName,
+        FlyClientIpHeaderName,
+    ];
 
     public static string? From(HttpContext? httpContext)
     {
@@ -42,18 +42,47 @@ internal static class RateLimitClientIp
             return null;
         }
 
-        if (TryCanonicalRealIp(httpContext, out var realIp))
+        if (TrySelectHeaderName(ConfiguredHeader(httpContext), out var headerName)
+            && TryCanonical(httpContext, headerName, out var canonical))
         {
-            return realIp;
+            return canonical;
         }
 
         return Canonical(httpContext.Connection.RemoteIpAddress);
     }
 
-    private static bool TryCanonicalRealIp(HttpContext httpContext, out string canonical)
+    internal static bool TrySelectHeaderName(string? configured, out string headerName)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            headerName = DefaultHeaderName;
+            return true;
+        }
+
+        var trimmed = configured.Trim();
+        foreach (var allowed in AllowedHeaderNames)
+        {
+            if (string.Equals(trimmed, allowed, StringComparison.OrdinalIgnoreCase))
+            {
+                headerName = allowed;
+                return true;
+            }
+        }
+
+        headerName = string.Empty;
+        return false;
+    }
+
+    private static string? ConfiguredHeader(HttpContext httpContext)
+    {
+        var options = httpContext.RequestServices?.GetService<IOptions<RateLimitOptions>>();
+        return options?.Value.ClientIpHeader;
+    }
+
+    private static bool TryCanonical(HttpContext httpContext, string headerName, out string canonical)
     {
         canonical = string.Empty;
-        var values = httpContext.Request.Headers[HeaderName];
+        var values = httpContext.Request.Headers[headerName];
         if (values.Count != 1)
         {
             return false;

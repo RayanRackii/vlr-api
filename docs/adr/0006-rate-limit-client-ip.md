@@ -4,6 +4,8 @@ Public per-IP limits (staff password recovery, B2C verification and password res
 
 **Status:** accepted (2026-10-15)
 
+**Update (2026-10-16):** ADR 0008 selects the header with `RateLimit:ClientIpHeader`. The default is still `X-Real-IP`. Parsing, canonical form, and the socket-address fallback below are unchanged.
+
 **Human decision:** Rayan, from Railway's edge behavior documented in October 2026. The edge overwrites `X-Forwarded-For` and `X-Real-IP`. The number of hops is not fixed. Railway does not publish proxy CIDRs. `X-Real-IP` is the documented client-IP header.
 
 ## Decision
@@ -25,7 +27,7 @@ Public per-IP limits (staff password recovery, B2C verification and password res
 
 - On public ingress the edge overwrites `X-Real-IP`, so the client cannot choose the key.
 - A caller who reaches the process without that edge can still send any single well-formed `X-Real-IP` and pick a bucket. That residual risk is accepted. There is no proxy list to distinguish that path from public ingress, and treating a private `RemoteIpAddress` as "ignore the header" would collapse every public request onto the edge's socket address.
-- No migration, no environment variable, no proxy configuration.
+- No migration and no proxy configuration. Leaving `RateLimit:ClientIpHeader` unset keeps this `X-Real-IP` behavior (ADR 0008).
 
 ## Implementation
 
