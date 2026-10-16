@@ -507,6 +507,109 @@ public sealed class RateLimitClientIpTests
         Assert.Equal("203.0.113.5", RateLimitClientIp.From(railwayContext));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("X-Real-IP")]
+    public async Task Fly_without_fly_client_ip_does_not_start(string? clientIpHeader)
+    {
+        var ex = await AssertStartFails(
+            clientIpHeader,
+            new Dictionary<string, string?> { ["FLY_APP_NAME"] = "rolvix" });
+        Assert.Contains("Fly", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("FLY_APP_NAME", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("X-Real-IP", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Fly-Client-IP", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Fly_with_fly_client_ip_starts_and_ignores_spoofed_real_ip()
+    {
+        using var host = await StartHostAsync(
+            "fly-client-ip",
+            new Dictionary<string, string?> { ["FLY_APP_NAME"] = "rolvix" });
+        var context = Request(
+            realIp: "203.0.113.5",
+            forwardedFor: "198.51.100.8",
+            connectingIp: "198.51.100.9",
+            remote: "172.16.0.8",
+            flyClientIp: "2001:db8::8");
+        context.RequestServices = host.Services;
+        Assert.Equal("2001:db8::8", RateLimitClientIp.From(context));
+    }
+
+    [Theory]
+    [InlineData("RAILWAY_ENVIRONMENT", "production")]
+    [InlineData("RAILWAY_PROJECT_ID", "project")]
+    public async Task Railway_with_fly_client_ip_does_not_start(string variable, string value)
+    {
+        var ex = await AssertStartFails(
+            "fly-client-ip",
+            new Dictionary<string, string?> { [variable] = value });
+        Assert.Contains("Railway", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(variable, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Fly-Client-IP", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("X-Real-IP", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("RAILWAY_ENVIRONMENT")]
+    [InlineData("RAILWAY_PROJECT_ID")]
+    public async Task Railway_with_the_default_header_starts_and_ignores_spoofed_fly_ip(string variable)
+    {
+        using var host = await StartHostAsync(
+            null,
+            new Dictionary<string, string?> { [variable] = "production" });
+        var context = Request(
+            realIp: "203.0.113.5",
+            forwardedFor: "198.51.100.8",
+            connectingIp: "198.51.100.9",
+            remote: "10.0.0.8",
+            flyClientIp: "2001:db8::8");
+        context.RequestServices = host.Services;
+        Assert.Equal("203.0.113.5", RateLimitClientIp.From(context));
+    }
+
+    [Theory]
+    [InlineData(null, "203.0.113.5")]
+    [InlineData("Fly-Client-IP", "2001:db8::7")]
+    public async Task No_platform_env_keeps_the_configured_header(string? clientIpHeader, string expected)
+    {
+        using var host = await StartHostAsync(
+            clientIpHeader,
+            new Dictionary<string, string?>
+            {
+                ["FLY_APP_NAME"] = "   ",
+                ["RAILWAY_ENVIRONMENT"] = "",
+                ["RAILWAY_PROJECT_ID"] = null,
+            });
+        var context = Request(
+            realIp: "203.0.113.5",
+            forwardedFor: "198.51.100.8",
+            connectingIp: "198.51.100.9",
+            remote: "10.0.0.4",
+            flyClientIp: "2001:db8::7");
+        context.RequestServices = host.Services;
+        Assert.Equal(expected, RateLimitClientIp.From(context));
+    }
+
+    [Theory]
+    [InlineData(null, "Fly")]
+    [InlineData("X-Real-IP", "Fly")]
+    [InlineData("Fly-Client-IP", "Railway")]
+    public async Task Both_platform_signals_fail_startup(string? clientIpHeader, string mismatchedPlatform)
+    {
+        var ex = await AssertStartFails(
+            clientIpHeader,
+            new Dictionary<string, string?>
+            {
+                ["FLY_APP_NAME"] = "rolvix",
+                ["RAILWAY_ENVIRONMENT"] = "production",
+            });
+        Assert.Contains($"{mismatchedPlatform} is detected", ex.Message, StringComparison.Ordinal);
+    }
+
     private static string? Read(DefaultHttpContext context, string configuredHeader)
     {
         var services = new ServiceCollection();
@@ -516,27 +619,53 @@ public sealed class RateLimitClientIpTests
         return RateLimitClientIp.From(context);
     }
 
-    private static HostApplicationBuilder HostBuilder(string? clientIpHeader)
+    private static HostApplicationBuilder HostBuilder(
+        string? clientIpHeader,
+        IReadOnlyDictionary<string, string?>? platform = null)
     {
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         {
             EnvironmentName = Environments.Development,
             ApplicationName = "rate-limit-client-ip-tests",
         });
-        if (clientIpHeader is not null)
+        var values = new Dictionary<string, string?>
         {
-            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            ["FLY_APP_NAME"] = "",
+            ["RAILWAY_ENVIRONMENT"] = "",
+            ["RAILWAY_PROJECT_ID"] = "",
+        };
+        values[$"{RateLimitOptions.SectionName}:ClientIpHeader"] = clientIpHeader ?? "";
+
+        if (platform is not null)
+        {
+            foreach (var pair in platform)
             {
-                [$"{RateLimitOptions.SectionName}:ClientIpHeader"] = clientIpHeader,
-            });
+                values[pair.Key] = pair.Value;
+            }
         }
 
+        builder.Configuration.AddInMemoryCollection(values);
         return builder;
     }
 
-    private static async Task<IHost> StartHostAsync(string? clientIpHeader)
+    private static Task<IHost> StartHostAsync(string? clientIpHeader) =>
+        StartHostAsync(clientIpHeader, platform: null);
+
+    private static async Task<OptionsValidationException> AssertStartFails(
+        string? clientIpHeader,
+        IReadOnlyDictionary<string, string?> platform)
     {
-        var builder = HostBuilder(clientIpHeader);
+        var builder = HostBuilder(clientIpHeader, platform);
+        builder.Services.AddRateLimitClientIp(builder.Configuration);
+        using var host = builder.Build();
+        return await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
+    }
+
+    private static async Task<IHost> StartHostAsync(
+        string? clientIpHeader,
+        IReadOnlyDictionary<string, string?>? platform)
+    {
+        var builder = HostBuilder(clientIpHeader, platform);
         builder.Services.AddRateLimitClientIp(builder.Configuration);
         var host = builder.Build();
         try

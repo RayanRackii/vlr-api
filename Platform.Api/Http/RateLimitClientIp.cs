@@ -27,10 +27,12 @@ internal static class RateLimitClientIp
 {
     internal const string DefaultHeaderName = "X-Real-IP";
 
+    internal const string FlyClientIpHeaderName = "Fly-Client-IP";
+
     internal static readonly string[] AllowedHeaderNames =
     [
         DefaultHeaderName,
-        "Fly-Client-IP",
+        FlyClientIpHeaderName,
     ];
 
     public static string? From(HttpContext? httpContext)
