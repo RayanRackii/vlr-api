@@ -458,16 +458,24 @@ public sealed class ScheduleService(
         var tenantId = EnsureTenant();
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
-        var ids = ResolveRentableIds(rentalAssetId, rentalAssetIds);
+        var requestedIds = ResolveRentableIds(rentalAssetId, rentalAssetIds);
+        var ids = requestedIds;
         if (customerFacing)
         {
             ids = await BookingHorizon.ScopeForPublicDayAsync(
                 dbContext,
                 tenantId,
                 date,
-                ids,
+                requestedIds,
                 timeProvider,
                 cancellationToken);
+
+            // An empty id list means every rentable only when the caller did not
+            // ask for any. A missing or inactive id must stay an empty day.
+            if (requestedIds.Count > 0 && ids.Count == 0)
+            {
+                return new DayScheduleResponseDto(date, []);
+            }
         }
 
         var persistedEntities = await LoadPersistedSlotEntitiesAsync(
@@ -1072,6 +1080,14 @@ public sealed class ScheduleService(
                 dbContext,
                 tenantId,
                 slotKey.RentalAssetId,
+                cancellationToken);
+
+            await BookingHorizon.EnsureRentalAssetAsync(
+                dbContext,
+                tenantId,
+                slotKey.RentalAssetId,
+                slotKey.Date,
+                timeProvider,
                 cancellationToken);
 
             var slot = await dbContext.Slots

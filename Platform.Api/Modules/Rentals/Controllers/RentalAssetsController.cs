@@ -142,7 +142,11 @@ public sealed class RentalAssetsController(
     {
         try
         {
-            BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
+            if (request.MaxAdvanceBookingDays.IsSpecified)
+            {
+                BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
+            }
+
             await assetRegistry.UpdateRentableAsync(id, request, cancellationToken);
             var rental = await rentalAssetService.SetMaxAdvanceBookingDaysAsync(
                 id,

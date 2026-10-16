@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Serialization;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
@@ -208,6 +211,69 @@ public sealed class BookingPolicyTests
         Assert.Equal("Same note", clearedLimit.CancellationPolicyText);
         Assert.Null(clearedLimit.MaxActiveReservationsPerCustomerPerDay);
         Assert.Null(clearedLimit.MaxAdvanceBookingDays);
+    }
+
+    [Fact]
+    public async Task Omitted_horizon_keeps_the_stored_value_and_explicit_null_clears_it()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+
+        var stored = await harness.Policies.UpsertAsync(
+            DeserializePolicy("""{"cancellationPolicyText":"Note","maxAdvanceBookingDays":365}"""),
+            CancellationToken.None);
+        Assert.Equal(365, stored.MaxAdvanceBookingDays);
+
+        var omitted = DeserializePolicy("""{"cancellationPolicyText":"Still here"}""");
+        Assert.False(omitted.MaxAdvanceBookingDays.IsSpecified);
+        var kept = await harness.Policies.UpsertAsync(omitted, CancellationToken.None);
+        Assert.Equal("Still here", kept.CancellationPolicyText);
+        Assert.Equal(365, kept.MaxAdvanceBookingDays);
+
+        var updated = DeserializePolicy("""{"maxAdvanceBookingDays":30}""");
+        Assert.True(updated.MaxAdvanceBookingDays.IsSpecified);
+        Assert.Equal(30, updated.MaxAdvanceBookingDays.Value);
+        var changed = await harness.Policies.UpsertAsync(updated, CancellationToken.None);
+        Assert.Null(changed.CancellationPolicyText);
+        Assert.Equal(30, changed.MaxAdvanceBookingDays);
+
+        var explicitNull = DeserializePolicy("""{"cancellationPolicyText":"Note","maxAdvanceBookingDays":null}""");
+        Assert.True(explicitNull.MaxAdvanceBookingDays.IsSpecified);
+        Assert.Null(explicitNull.MaxAdvanceBookingDays.Value);
+        var cleared = await harness.Policies.UpsertAsync(explicitNull, CancellationToken.None);
+        Assert.Null(cleared.MaxAdvanceBookingDays);
+
+        var primary = await harness.Db.RentalAssets.SingleAsync(rental => rental.AssetId == harness.AssetId);
+        var assets = new RentalAssetService(harness.Db, harness.TenantProvider);
+        var withOverride = await assets.SetMaxAdvanceBookingDaysAsync(
+            primary.Id,
+            DeserializeRentable(12).MaxAdvanceBookingDays,
+            CancellationToken.None);
+        Assert.Equal(12, withOverride.MaxAdvanceBookingDays);
+        Assert.Equal(12, withOverride.EffectiveMaxAdvanceBookingDays);
+
+        var omittedOverride = DeserializeRentable(null);
+        Assert.False(omittedOverride.MaxAdvanceBookingDays.IsSpecified);
+        var keptOverride = await assets.SetMaxAdvanceBookingDaysAsync(
+            primary.Id,
+            omittedOverride.MaxAdvanceBookingDays,
+            CancellationToken.None);
+        Assert.Equal(12, keptOverride.MaxAdvanceBookingDays);
+
+        var changedOverride = await assets.SetMaxAdvanceBookingDaysAsync(
+            primary.Id,
+            DeserializeRentable(4).MaxAdvanceBookingDays,
+            CancellationToken.None);
+        Assert.Equal(4, changedOverride.MaxAdvanceBookingDays);
+
+        var clearedJson = DeserializeRentable(null, includeHorizon: true);
+        Assert.True(clearedJson.MaxAdvanceBookingDays.IsSpecified);
+        Assert.Null(clearedJson.MaxAdvanceBookingDays.Value);
+        var clearedOverride = await assets.SetMaxAdvanceBookingDaysAsync(
+            primary.Id,
+            clearedJson.MaxAdvanceBookingDays,
+            CancellationToken.None);
+        Assert.Null(clearedOverride.MaxAdvanceBookingDays);
+        Assert.Null(clearedOverride.EffectiveMaxAdvanceBookingDays);
     }
 
     [Fact]
@@ -548,7 +614,9 @@ public sealed class BookingPolicyTests
         Assert.Null(inherited.MaxAdvanceBookingDays);
         Assert.Equal(10, inherited.EffectiveMaxAdvanceBookingDays);
 
-        await harness.Policies.UpsertAsync(new UpsertBookingPolicyRequestDto(), CancellationToken.None);
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MaxAdvanceBookingDays = null },
+            CancellationToken.None);
         var far = await harness.BookAsync(new DateOnly(2099, 12, 31), Ten, Eleven);
         Assert.Equal(
             TenantBookingClock.AtLocal(new DateOnly(2099, 12, 31), Ten, TenantBookingClock.Resolve(null)),
@@ -604,6 +672,59 @@ public sealed class BookingPolicyTests
         await Assert.ThrowsAsync<BookingHorizonExceededException>(() =>
             left.BookAsync(Day.AddDays(1), Ten, Eleven));
         Assert.Equal(0, await left.Db.Reservations.CountAsync());
+    }
+
+    [Fact]
+    public async Task Unknown_or_inactive_resource_past_the_horizon_returns_an_empty_day()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MaxAdvanceBookingDays = 1 },
+            CancellationToken.None);
+
+        var far = new DateOnly(2099, 12, 31);
+        var primary = await harness.Db.RentalAssets.SingleAsync(rental => rental.AssetId == harness.AssetId);
+        var secondary = await harness.Db.RentalAssets.SingleAsync(rental => rental.AssetId == harness.SecondAssetId);
+        await harness.SeedSlotAsync(far, Ten, Eleven);
+        primary.IsActive = false;
+        await harness.Db.SaveChangesAsync();
+
+        var adminDay = await harness.Schedule.GetDayAsync(
+            far, rentalAssetId: null, customerFacing: false, CancellationToken.None);
+        Assert.Contains(adminDay.Slots, slot => slot.RentalAssetId == secondary.Id);
+        Assert.Contains(adminDay.Slots, slot => slot.RentalAssetId == primary.Id);
+
+        var inactiveDay = await harness.Schedule.GetDayAsync(
+            far, primary.Id, customerFacing: true, CancellationToken.None);
+        Assert.Empty(inactiveDay.Slots);
+
+        var unknownDay = await harness.Schedule.GetDayAsync(
+            far, Guid.NewGuid(), customerFacing: true, CancellationToken.None);
+        Assert.Empty(unknownDay.Slots);
+    }
+
+    private static readonly JsonSerializerOptions ApiJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static UpsertBookingPolicyRequestDto DeserializePolicy(string json) =>
+        JsonSerializer.Deserialize<UpsertBookingPolicyRequestDto>(json, ApiJson)
+        ?? throw new InvalidOperationException("Booking policy JSON was empty.");
+
+    private static UpdateRentableRequest DeserializeRentable(int? horizon, bool includeHorizon = false)
+    {
+        var horizonJson = horizon is int days
+            ? $""","maxAdvanceBookingDays":{days}"""
+            : includeHorizon
+                ? ""","maxAdvanceBookingDays":null"""
+                : "";
+        var json = $$"""
+            {"name":"Resource","tag":"R-1","unitId":"00000000-0000-0000-0000-000000000001","categoryId":"00000000-0000-0000-0000-000000000002","familyId":"00000000-0000-0000-0000-000000000003"{{horizonJson}}}
+            """;
+        return JsonSerializer.Deserialize<UpdateRentableRequest>(json, ApiJson)
+            ?? throw new InvalidOperationException("Rentable JSON was empty.");
     }
 
     private sealed class BookingPolicyHarness : IAsyncDisposable

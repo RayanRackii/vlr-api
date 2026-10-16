@@ -201,7 +201,9 @@ public sealed class BookingPolicyAuthorizationTests
             Task.FromResult(new BookingPolicyResponseDto(
                 request.CancellationPolicyText,
                 request.MaxActiveReservationsPerCustomerPerDay,
-                request.MaxAdvanceBookingDays));
+                request.MaxAdvanceBookingDays.IsSpecified
+                    ? request.MaxAdvanceBookingDays.Value
+                    : null));
     }
 
     private sealed class StubTenantProvider : ITenantProvider

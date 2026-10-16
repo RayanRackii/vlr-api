@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -24,16 +25,15 @@ public sealed class BookingPolicyService(
         var tenantId = RequireTenant();
         var text = BookingPolicyText.Sanitize(request.CancellationPolicyText);
         var limit = BookingPolicyText.NormalizeDailyLimit(request.MaxActiveReservationsPerCustomerPerDay);
-        var horizon = BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
 
         try
         {
-            return await SaveAsync(tenantId, text, limit, horizon, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, cancellationToken);
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            return await SaveAsync(tenantId, text, limit, horizon, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, cancellationToken);
         }
     }
 
@@ -41,10 +41,13 @@ public sealed class BookingPolicyService(
         Guid tenantId,
         string? text,
         int? limit,
-        int? horizon,
+        JsonOptional<int> horizon,
         CancellationToken cancellationToken)
     {
         var policy = await FindDefaultAsync(tenantId, tracking: true, cancellationToken);
+        var resolvedHorizon = horizon.IsSpecified
+            ? BookingPolicyText.NormalizeAdvanceDays(horizon.Value)
+            : policy?.MaxAdvanceBookingDays;
         if (policy is null)
         {
             policy = new BookingPolicy
@@ -53,13 +56,13 @@ public sealed class BookingPolicyService(
                 ResourceType = null,
                 CancellationPolicyText = text,
                 MaxActiveReservationsPerCustomerPerDay = limit,
-                MaxAdvanceBookingDays = horizon,
+                MaxAdvanceBookingDays = resolvedHorizon,
             };
             dbContext.BookingPolicies.Add(policy);
         }
         else
         {
-            policy.Replace(text, limit, horizon);
+            policy.Replace(text, limit, resolvedHorizon);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

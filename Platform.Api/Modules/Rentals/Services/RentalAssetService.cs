@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -182,11 +183,13 @@ public sealed class RentalAssetService(
 
     public async Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
         Guid rentalAssetId,
-        int? maxAdvanceBookingDays,
+        JsonOptional<int> maxAdvanceBookingDays,
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        var horizon = BookingPolicyText.NormalizeAdvanceDays(maxAdvanceBookingDays);
+        var horizon = maxAdvanceBookingDays.IsSpecified
+            ? BookingPolicyText.NormalizeAdvanceDays(maxAdvanceBookingDays.Value)
+            : null;
 
         var rental = await dbContext.RentalAssets
             .Include(r => r.Asset)
@@ -196,9 +199,12 @@ public sealed class RentalAssetService(
                 cancellationToken)
             ?? throw new KeyNotFoundException("Rentable was not found.");
 
-        rental.MaxAdvanceBookingDays = horizon;
-        rental.Touch();
-        await dbContext.SaveChangesAsync(cancellationToken);
+        if (maxAdvanceBookingDays.IsSpecified)
+        {
+            rental.MaxAdvanceBookingDays = horizon;
+            rental.Touch();
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
             dbContext, tenantId, cancellationToken);

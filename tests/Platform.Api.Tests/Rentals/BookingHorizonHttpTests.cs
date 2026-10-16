@@ -20,6 +20,7 @@ using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -268,7 +269,7 @@ public sealed class BookingHorizonHttpTests
 
         public Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
             Guid rentalAssetId,
-            int? maxAdvanceBookingDays,
+            JsonOptional<int> maxAdvanceBookingDays,
             CancellationToken cancellationToken) =>
             throw new NotImplementedException();
     }

@@ -30,10 +30,11 @@ public sealed class BookingPolicyController(
     }
 
     /// <summary>
-    /// Replaces the tenant default booking policy. Send
-    /// <c>cancellationPolicyText</c>, <c>maxActiveReservationsPerCustomerPerDay</c>,
-    /// and <c>maxAdvanceBookingDays</c>. An omitted or null property clears that stored value.
-    /// Null <c>maxAdvanceBookingDays</c> means unlimited.
+    /// Replaces the tenant default booking policy.
+    /// Omitted or null <c>cancellationPolicyText</c> and
+    /// <c>maxActiveReservationsPerCustomerPerDay</c> clear those stored values.
+    /// Omitted <c>maxAdvanceBookingDays</c> keeps the stored horizon.
+    /// Explicit null clears it (unlimited).
     /// </summary>
     [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
     [HttpPut]

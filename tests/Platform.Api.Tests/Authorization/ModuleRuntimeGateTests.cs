@@ -34,6 +34,7 @@ using Platform.Api.Modules.Pmoc.Services;
 using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Serialization;
 using Platform.Api.Modules.Users.Controllers;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
@@ -1066,7 +1067,7 @@ public sealed class ModuleRuntimeGateTests
 
         public Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
             Guid rentalAssetId,
-            int? maxAdvanceBookingDays,
+            JsonOptional<int> maxAdvanceBookingDays,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }

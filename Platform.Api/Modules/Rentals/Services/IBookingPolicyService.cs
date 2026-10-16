@@ -7,7 +7,8 @@ public interface IBookingPolicyService
     Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Replaces every policy field. Omitted or null properties clear the stored value.
+    /// Replaces cancellation text and the daily cap. Omitted or null clears those.
+    /// An omitted horizon keeps the stored value; explicit null clears it.
     /// </summary>
     Task<BookingPolicyResponseDto> UpsertAsync(
         UpsertBookingPolicyRequestDto request,

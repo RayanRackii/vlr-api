@@ -98,7 +98,9 @@ internal static class BookingHorizon
     /// <summary>
     /// Resource ids whose start date is still inside the horizon.
     /// An empty <paramref name="requestedIds"/> means every active rentable.
-    /// Throws when every resource in scope is past its horizon.
+    /// Throws when every active resource in scope is past its horizon.
+    /// Requested ids that match no active rentable return an empty set
+    /// (an empty day), never the raw ids.
     /// </summary>
     public static async Task<IReadOnlyList<Guid>> ScopeForPublicDayAsync(
         AppDbContext db,
@@ -127,7 +129,12 @@ internal static class BookingHorizon
 
         if (rows.Count == 0)
         {
-            if (requestedIds.Count == 0 && IsBeyond(date, today, tenantDays))
+            if (requestedIds.Count > 0)
+            {
+                return [];
+            }
+
+            if (IsBeyond(date, today, tenantDays))
             {
                 throw new BookingHorizonExceededException();
             }
