@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Constants;
@@ -151,6 +152,10 @@ public sealed class ScheduleController(
                 cancellationToken,
                 rentalAssetIds));
         }
+        catch (BookingHorizonExceededException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
@@ -246,6 +251,10 @@ public sealed class ScheduleController(
         catch (DailyBookingLimitReachedException ex)
         {
             return Conflict(new { error = ex.Message, code = DailyBookingLimitReachedException.Code });
+        }
+        catch (BookingHorizonExceededException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
         }
         catch (StartInThePastException ex)
         {

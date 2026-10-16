@@ -9,7 +9,12 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
 {
     public void Configure(EntityTypeBuilder<RentalAsset> builder)
     {
-        builder.ToTable("rental_assets", "rentals");
+        builder.ToTable("rental_assets", "rentals", table =>
+        {
+            table.HasCheckConstraint(
+                "ck_rental_assets_advance_days",
+                "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+        });
 
         builder.HasKey(a => a.Id);
 
@@ -56,6 +61,8 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
             .IsRequired();
 
         builder.Property(a => a.QueueOpeningTime);
+
+        builder.Property(a => a.MaxAdvanceBookingDays);
 
         builder.Property(a => a.CreatedAt)
             .IsRequired();

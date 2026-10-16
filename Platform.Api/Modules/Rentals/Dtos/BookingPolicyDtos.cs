@@ -1,17 +1,26 @@
+using System.Text.Json.Serialization;
+using Platform.Api.Serialization;
+
 namespace Platform.Api.Modules.Rentals.Dtos;
 
 public sealed record BookingPolicyResponseDto(
     string? CancellationPolicyText,
-    int? MaxActiveReservationsPerCustomerPerDay);
+    int? MaxActiveReservationsPerCustomerPerDay,
+    int? MaxAdvanceBookingDays);
 
 /// <summary>
-/// Full replacement of the tenant default booking policy.
-/// Send both properties on every request. A property that is omitted or null
-/// clears the stored value. The server does not merge with the previous row.
+/// Replacement of the tenant default booking policy.
+/// <c>cancellationPolicyText</c> and <c>maxActiveReservationsPerCustomerPerDay</c>
+/// are full replace: omitted or null clears the stored value.
+/// <c>maxAdvanceBookingDays</c> is presence-aware: omitted keeps the stored horizon,
+/// explicit null clears it (unlimited).
 /// </summary>
 public sealed record UpsertBookingPolicyRequestDto
 {
     public string? CancellationPolicyText { get; init; }
 
     public int? MaxActiveReservationsPerCustomerPerDay { get; init; }
+
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
 }

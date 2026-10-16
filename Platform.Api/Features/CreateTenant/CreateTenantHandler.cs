@@ -4,6 +4,7 @@ using Npgsql;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -154,6 +155,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
                 request.HeadquartersUnitCode);
 
             _dbContext.Tenants.Add(tenant);
+            _dbContext.BookingPolicies.Add(BookingPolicyDefaults.SuggestedFor(tenant.Id));
             _dbContext.Units.Add(headquartersUnit);
 
             if (request.IsTrial)

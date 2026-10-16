@@ -266,6 +266,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("max_active_reservations_per_customer_per_day");
 
+                    b.Property<int?>("MaxAdvanceBookingDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_advance_booking_days");
+
                     b.Property<string>("ResourceType")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
@@ -294,6 +298,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.ToTable("booking_policies", "rentals", t =>
                         {
+                            t.HasCheckConstraint("ck_booking_policies_advance_days", "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+
                             t.HasCheckConstraint("ck_booking_policies_daily_limit", "max_active_reservations_per_customer_per_day IS NULL OR (max_active_reservations_per_customer_per_day >= 1 AND max_active_reservations_per_customer_per_day <= 100)");
                         });
                 });
@@ -1802,6 +1808,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<int?>("MaxAdvanceBookingDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_advance_booking_days");
+
                     b.Property<TimeOnly?>("OpenTime")
                         .HasColumnType("time without time zone")
                         .HasColumnName("open_time");
@@ -1858,7 +1868,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "IsActive")
                         .HasDatabaseName("ix_rental_assets_tenant_id_is_active");
 
-                    b.ToTable("rental_assets", "rentals");
+                    b.ToTable("rental_assets", "rentals", t =>
+                        {
+                            t.HasCheckConstraint("ck_rental_assets_advance_days", "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+                        });
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.RentalLayout", b =>

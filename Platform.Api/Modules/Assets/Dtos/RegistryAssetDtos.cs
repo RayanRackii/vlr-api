@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Assets.Dtos;
@@ -37,6 +39,11 @@ public sealed record CreateRentableRequest
     public TimeOnly? QueueOpeningTime { get; init; }
 
     public string? Location { get; init; }
+
+    /// <summary>
+    /// Per-resource horizon override on create. Null inherits the tenant booking policy.
+    /// </summary>
+    public int? MaxAdvanceBookingDays { get; init; }
 }
 
 public sealed record UpdateRentableRequest
@@ -62,4 +69,11 @@ public sealed record UpdateRentableRequest
     public TimeOnly? QueueOpeningTime { get; init; }
 
     public string? Location { get; init; }
+
+    /// <summary>
+    /// Per-resource horizon override. Omitted keeps the stored override.
+    /// Explicit null clears it so the resource inherits the tenant policy.
+    /// </summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
 }

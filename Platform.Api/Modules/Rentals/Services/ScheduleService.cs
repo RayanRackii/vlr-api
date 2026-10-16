@@ -455,10 +455,29 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken,
         IReadOnlyCollection<Guid>? rentalAssetIds = null)
     {
-        EnsureTenant();
+        var tenantId = EnsureTenant();
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
-        var ids = ResolveRentableIds(rentalAssetId, rentalAssetIds);
+        var requestedIds = ResolveRentableIds(rentalAssetId, rentalAssetIds);
+        var ids = requestedIds;
+        if (customerFacing)
+        {
+            ids = await BookingHorizon.ScopeForPublicDayAsync(
+                dbContext,
+                tenantId,
+                date,
+                requestedIds,
+                timeProvider,
+                cancellationToken);
+
+            // Scope returns only active rentable ids still inside the horizon.
+            // An empty list is an empty day, including when the caller named no
+            // ids and the only persisted slots belong to inactive resources.
+            if (ids.Count == 0)
+            {
+                return new DayScheduleResponseDto(date, []);
+            }
+        }
 
         var persistedEntities = await LoadPersistedSlotEntitiesAsync(
             date, ids, includeCancelled: !customerFacing, cancellationToken);
@@ -1043,6 +1062,14 @@ public sealed class ScheduleService(
                 TenantBookingClock.AtLocal(slotKey.Date, slotKey.StartTime, zone),
                 timeProvider);
 
+            await BookingHorizon.EnsureRentalAssetAsync(
+                dbContext,
+                tenantId,
+                slotKey.RentalAssetId,
+                slotKey.Date,
+                timeProvider,
+                cancellationToken);
+
             await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
                 dbContext,
                 tenantId,
@@ -1054,6 +1081,14 @@ public sealed class ScheduleService(
                 dbContext,
                 tenantId,
                 slotKey.RentalAssetId,
+                cancellationToken);
+
+            await BookingHorizon.EnsureRentalAssetAsync(
+                dbContext,
+                tenantId,
+                slotKey.RentalAssetId,
+                slotKey.Date,
+                timeProvider,
                 cancellationToken);
 
             var slot = await dbContext.Slots

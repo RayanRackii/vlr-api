@@ -57,6 +57,11 @@ public sealed class TrialOnboardingInviteTests
 
         Assert.Equal(StatusCodes.Status201Created, Status(result));
         var body = Body<CreateTenantResponse>(result);
+        var horizon = await harness.Db.BookingPolicies
+            .IgnoreQueryFilters()
+            .SingleAsync(item => item.TenantId == body.TenantId);
+        Assert.Null(horizon.ResourceType);
+        Assert.Equal(BookingPolicy.SuggestedMaxAdvanceBookingDays, horizon.MaxAdvanceBookingDays);
         Assert.Null(body.AdminUserId);
         Assert.Null(body.SupabaseAuthId);
         Assert.NotNull(body.InviteId);

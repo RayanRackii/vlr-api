@@ -20,6 +20,7 @@ using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -308,6 +309,12 @@ public sealed class PastStartHttpTests
 
         public Task<BulkUpdateRentalSchedulePolicyResponseDto> UpdateSchedulePolicyBulkAsync(
             BulkUpdateRentalSchedulePolicyRequestDto request,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
+            Guid rentalAssetId,
+            JsonOptional<int> maxAdvanceBookingDays,
             CancellationToken cancellationToken) =>
             throw new NotImplementedException();
     }
