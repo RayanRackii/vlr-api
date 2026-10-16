@@ -11,6 +11,11 @@ public interface IUserDirectoryService
         ClaimsPrincipal principal,
         CancellationToken cancellationToken);
 
+    Task<CurrentUserResponse> UpdateCurrentPhoneAsync(
+        ClaimsPrincipal principal,
+        string? phone,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
         CancellationToken cancellationToken);
 

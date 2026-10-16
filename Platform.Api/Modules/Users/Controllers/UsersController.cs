@@ -5,6 +5,7 @@ using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
 using Platform.Core.Domain.Constants;
+using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Users.Controllers;
 
@@ -13,7 +14,8 @@ namespace Platform.Api.Modules.Users.Controllers;
 [Route("api/users")]
 public sealed class UsersController(
     IUserDirectoryService userDirectoryService,
-    IRbacActorAccessor rbacActorAccessor) : ControllerBase
+    IRbacActorAccessor rbacActorAccessor,
+    ITenantProvider tenantProvider) : ControllerBase
 {
     [HttpGet("me")]
     public async Task<ActionResult<CurrentUserResponse>> GetCurrent(
@@ -27,6 +29,54 @@ public sealed class UsersController(
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Replaces the signed-in staff member's own phone. The route and body carry no user id.
+    /// PUT is a staff write, so <c>StaffWriteSessionGuard</c> rejects a revoked or expired session
+    /// the same way it does for every other staff write.
+    /// </summary>
+    [HttpPut("me")]
+    public async Task<ActionResult<CurrentUserResponse>> UpdateCurrentPhone(
+        [FromBody] UpdateCurrentUserPhoneRequest request,
+        CancellationToken cancellationToken)
+    {
+        var missingTenant = DirectoryAuthorization.RequireTenant(this, tenantProvider);
+        if (missingTenant is not null)
+        {
+            return missingTenant;
+        }
+
+        if (request.IsInvalid)
+        {
+            return BadRequest(new { error = "Phone must include DDD and number." });
+        }
+
+        if (!request.IsSpecified)
+        {
+            return BadRequest(new { error = "Phone is required." });
+        }
+
+        try
+        {
+            var user = await userDirectoryService.UpdateCurrentPhoneAsync(
+                User,
+                request.Phone,
+                cancellationToken);
+            return Ok(user);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
         }
     }
 

@@ -7,6 +7,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Notifications;
+using Platform.Api.Services.Brazil;
 using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -73,7 +74,8 @@ public sealed class UserDirectoryService(
                             ToRoleDtos(membership.UserRoles),
                             WithPortalCustomersRead(permissions),
                             adminSession.TradeName,
-                            adminSession.LegalName);
+                            adminSession.LegalName,
+                            membership.Phone);
                     }
                 }
 
@@ -93,7 +95,8 @@ public sealed class UserDirectoryService(
                     [],
                     WithPortalCustomersRead(wildcard),
                     adminSession.TradeName,
-                    adminSession.LegalName);
+                    adminSession.LegalName,
+                    null);
             }
 
             return CreateCurrentUser(
@@ -107,6 +110,7 @@ public sealed class UserDirectoryService(
                 TrialFlags.Empty,
                 [],
                 [],
+                null,
                 null,
                 null);
         }
@@ -153,7 +157,43 @@ public sealed class UserDirectoryService(
             ToRoleDtos(user.UserRoles),
             effective.OrderBy(key => key).ToList(),
             session.TradeName,
-            session.LegalName);
+            session.LegalName,
+            user.Phone);
+    }
+
+    public async Task<CurrentUserResponse> UpdateCurrentPhoneAsync(
+        ClaimsPrincipal principal,
+        string? phone,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = tenantProvider.TenantId
+            ?? throw new UnauthorizedAccessException("Tenant context is required.");
+
+        var normalized = phone is null
+            ? null
+            : BrazilianDocumentValidator.NormalizePhoneBr(phone);
+
+        var authId = principal.FindFirst("sub")?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? throw new UnauthorizedAccessException("The authenticated user identifier is missing.");
+
+        var user = await dbContext.Users
+            .FirstOrDefaultAsync(
+                item => item.SupabaseAuthId == authId
+                    && item.IsActive
+                    && item.TenantId == tenantId,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("The authenticated user profile was not found.");
+
+        if (user.TenantId != tenantId)
+        {
+            throw new KeyNotFoundException("The authenticated user profile was not found.");
+        }
+
+        user.SetPhone(normalized);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return await GetCurrentAsync(principal, cancellationToken);
     }
 
     public async Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
@@ -502,7 +542,8 @@ public sealed class UserDirectoryService(
         IReadOnlyList<CurrentUserRoleDto> roles,
         IReadOnlyList<string> permissions,
         string? tenantTradeName,
-        string? tenantLegalName) =>
+        string? tenantLegalName,
+        string? phone) =>
         new(
             id,
             fullName,
@@ -519,7 +560,8 @@ public sealed class UserDirectoryService(
             roles,
             permissions,
             tenantTradeName,
-            tenantLegalName);
+            tenantLegalName,
+            phone);
 
     private static IReadOnlyList<string> WithPortalCustomersRead(IEnumerable<string> permissions)
     {
