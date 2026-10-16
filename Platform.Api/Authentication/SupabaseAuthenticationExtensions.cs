@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -98,7 +99,8 @@ public static class SupabaseAuthenticationExtensions
             {
                 AllowAutoRedirect = false,
             });
-        services.AddScoped<IGoTrueAccessSessionProbe, GoTrueAccessSessionProbe>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IGoTrueAccessSessionProbe, GoTrueAccessSessionProbe>();
         services.AddScoped<IStaffWriteSessionGuard, StaffWriteSessionGuard>();
 
         services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
