@@ -470,9 +470,10 @@ public sealed class ScheduleService(
                 timeProvider,
                 cancellationToken);
 
-            // An empty id list means every rentable only when the caller did not
-            // ask for any. A missing or inactive id must stay an empty day.
-            if (requestedIds.Count > 0 && ids.Count == 0)
+            // Scope returns only active rentable ids still inside the horizon.
+            // An empty list is an empty day, including when the caller named no
+            // ids and the only persisted slots belong to inactive resources.
+            if (ids.Count == 0)
             {
                 return new DayScheduleResponseDto(date, []);
             }

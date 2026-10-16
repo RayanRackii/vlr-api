@@ -96,11 +96,12 @@ internal static class BookingHorizon
     }
 
     /// <summary>
-    /// Resource ids whose start date is still inside the horizon.
+    /// Active rentable ids whose start date is still inside the horizon.
     /// An empty <paramref name="requestedIds"/> means every active rentable.
+    /// The result is always an explicit id list. An empty list is an empty day,
+    /// never a signal to load every persisted slot in the tenant.
     /// Throws when every active resource in scope is past its horizon.
-    /// Requested ids that match no active rentable return an empty set
-    /// (an empty day), never the raw ids.
+    /// Requested ids that match no active rentable return an empty set.
     /// </summary>
     public static async Task<IReadOnlyList<Guid>> ScopeForPublicDayAsync(
         AppDbContext db,
@@ -129,17 +130,12 @@ internal static class BookingHorizon
 
         if (rows.Count == 0)
         {
-            if (requestedIds.Count > 0)
+            if (requestedIds.Count > 0 || !IsBeyond(date, today, tenantDays))
             {
                 return [];
             }
 
-            if (IsBeyond(date, today, tenantDays))
-            {
-                throw new BookingHorizonExceededException();
-            }
-
-            return requestedIds;
+            throw new BookingHorizonExceededException();
         }
 
         var allowed = rows
@@ -150,11 +146,6 @@ internal static class BookingHorizon
         if (allowed.Count == 0)
         {
             throw new BookingHorizonExceededException();
-        }
-
-        if (requestedIds.Count == 0 && allowed.Count == rows.Count)
-        {
-            return requestedIds;
         }
 
         return allowed;
