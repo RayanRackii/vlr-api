@@ -1378,7 +1378,9 @@ public sealed class ModuleRuntimeGateTests
                     false,
                     false,
                     [],
-                    []));
+                    [],
+                    null,
+                    null));
 
         public Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
             CancellationToken cancellationToken) =>
