@@ -30,6 +30,9 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(320)
             .IsRequired();
 
+        builder.Property(u => u.Phone)
+            .HasMaxLength(32);
+
         builder.Property(u => u.IsActive)
             .HasDefaultValue(true)
             .IsRequired();

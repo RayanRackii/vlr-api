@@ -1387,7 +1387,14 @@ public sealed class ModuleRuntimeGateTests
                     [],
                     [],
                     null,
+                    null,
                     null));
+
+        public Task<CurrentUserResponse> UpdateCurrentPhoneAsync(
+            ClaimsPrincipal principal,
+            string? phone,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
             CancellationToken cancellationToken) =>

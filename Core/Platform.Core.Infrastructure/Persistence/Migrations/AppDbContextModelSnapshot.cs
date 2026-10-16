@@ -2989,6 +2989,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<string>("Phone")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("phone");
+
                     b.Property<string>("SupabaseAuthId")
                         .IsRequired()
                         .HasMaxLength(36)

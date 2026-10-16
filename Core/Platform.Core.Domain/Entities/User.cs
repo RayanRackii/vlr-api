@@ -12,6 +12,12 @@ public class User : Entity, ITenantScoped
 
     public string Email { get; private set; } = null!;
 
+    /// <summary>
+    /// Staff contact number stored as E.164, or null when the person has not set one.
+    /// This is not a customer document and is not an identity key.
+    /// </summary>
+    public string? Phone { get; private set; }
+
     public bool IsActive { get; private set; }
 
     public Tenant Tenant { get; private set; } = null!;
@@ -37,6 +43,12 @@ public class User : Entity, ITenantScoped
     {
         FullName = fullName;
         Email = email;
+        MarkAsUpdated();
+    }
+
+    public void SetPhone(string? phone)
+    {
+        Phone = phone;
         MarkAsUpdated();
     }
 
