@@ -140,24 +140,50 @@ public sealed class ReservationReminderJobTests
         Assert.Equal("cliente@club.test", email.RecipientEmail);
     }
 
-    [Fact]
-    public async Task WhatsApp_channel_off_does_not_publish_reminder()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Active_rentals_module_queues_reminder_email_only_when_the_email_channel_is_on(
+        bool emailOn)
     {
         await using var ctx = await CreateContextAsync();
-        await ctx.Publisher.EnsureReadyAsync(CancellationToken.None);
+        // The other external channel stays on in the negative case so the sweep still
+        // reaches this tenant. Email absence is then the channel flag, not an inactive module.
+        if (emailOn)
+        {
+            await EnableReminderEmailAsync(ctx);
+            await SetReminderChannelAsync(ctx.Harness.Db, NotificationChannel.WhatsApp, isActive: false);
+        }
+        else
+        {
+            await EnableReminderWhatsAppAsync(ctx);
+        }
+
+        await SetReminderChannelAsync(ctx.Harness.Db, NotificationChannel.InApp, isActive: false);
         var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
         await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
 
         await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
         await ProcessQueuedAsync(ctx);
 
-        Assert.Equal(0, ctx.WhatsApp.SendCount);
-        Assert.DoesNotContain(
-            ctx.Harness.Db.NotificationDeliveries,
-            d => d.Channel == NotificationChannel.WhatsApp);
-        Assert.DoesNotContain(
-            ctx.Harness.Db.NotificationDeliveries,
-            d => d.Channel == NotificationChannel.Email);
+        var deliveries = ctx.Harness.Db.NotificationDeliveries.ToList();
+        if (emailOn)
+        {
+            var email = Assert.Single(deliveries);
+            Assert.Equal(NotificationChannel.Email, email.Channel);
+            Assert.Equal(NotificationDeliveryStatus.Sent, email.Status);
+            Assert.Equal(ctx.Harness.TenantId, email.TenantId);
+            Assert.Equal(1, ctx.Email.SendCount);
+            Assert.Equal(0, ctx.WhatsApp.SendCount);
+            return;
+        }
+
+        Assert.DoesNotContain(deliveries, delivery => delivery.Channel == NotificationChannel.Email);
+        var whatsApp = Assert.Single(deliveries);
+        Assert.Equal(NotificationChannel.WhatsApp, whatsApp.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Sent, whatsApp.Status);
+        Assert.Equal(0, ctx.Email.SendCount);
+        Assert.Equal(1, ctx.WhatsApp.SendCount);
     }
 
     [Fact]
