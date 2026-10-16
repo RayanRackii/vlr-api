@@ -33,6 +33,7 @@ public sealed class CurrentUserResponseContractTests
         "permissions",
         "tenantTradeName",
         "tenantLegalName",
+        "phone",
     ];
 
     [Fact]
@@ -63,6 +64,7 @@ public sealed class CurrentUserResponseContractTests
         Assert.Equal(WireProperties, names);
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("tenantTradeName").ValueKind);
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("tenantLegalName").ValueKind);
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("phone").ValueKind);
 
         var named = JsonSerializer.Serialize(
             new CurrentUserResponse(
@@ -81,11 +83,13 @@ public sealed class CurrentUserResponseContractTests
                 [],
                 [],
                 "Estúdio Norte",
-                "Estúdio Norte Ltda"),
+                "Estúdio Norte Ltda",
+                "+5511988887777"),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         using var namedDoc = JsonDocument.Parse(named);
         Assert.Equal("Estúdio Norte", namedDoc.RootElement.GetProperty("tenantTradeName").GetString());
         Assert.Equal("Estúdio Norte Ltda", namedDoc.RootElement.GetProperty("tenantLegalName").GetString());
+        Assert.Equal("+5511988887777", namedDoc.RootElement.GetProperty("phone").GetString());
     }
 
     [Fact]
@@ -127,6 +131,23 @@ public sealed class CurrentUserResponseContractTests
             "#/components/schemas/CurrentUserResponse",
             responseSchema.GetProperty("$ref").GetString());
 
+        Assert.True(mePath.TryGetProperty("put", out var putPath), body);
+        var putResponseSchema = putPath
+            .GetProperty("responses")
+            .GetProperty("200")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema");
+        Assert.Equal(
+            "#/components/schemas/CurrentUserResponse",
+            putResponseSchema.GetProperty("$ref").GetString());
+        var requestSchema = putPath
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema");
+        AssertPhoneRequestSchema(document.RootElement, requestSchema);
+
         var actual = Canonicalize(schema!.Value);
         var snapshotPath = Path.Combine(
             AppContext.BaseDirectory,
@@ -134,6 +155,25 @@ public sealed class CurrentUserResponseContractTests
             "current-user-response.openapi.txt");
         var expected = File.ReadAllText(snapshotPath).Trim();
         Assert.Equal(expected, actual);
+    }
+
+    private static void AssertPhoneRequestSchema(JsonElement document, JsonElement requestSchema)
+    {
+        JsonElement schema = requestSchema;
+        if (requestSchema.TryGetProperty("$ref", out var reference))
+        {
+            var name = reference.GetString()!;
+            const string prefix = "#/components/schemas/";
+            Assert.StartsWith(prefix, name);
+            schema = document
+                .GetProperty("components")
+                .GetProperty("schemas")
+                .GetProperty(name[prefix.Length..]);
+        }
+
+        var phone = schema.GetProperty("properties").GetProperty("phone");
+        Assert.Equal("string", phone.GetProperty("type").GetString());
+        Assert.True(phone.TryGetProperty("nullable", out var nullable) && nullable.GetBoolean());
     }
 
     private static string Canonicalize(JsonElement schema)
