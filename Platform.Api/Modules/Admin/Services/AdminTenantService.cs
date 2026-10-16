@@ -5,6 +5,7 @@ using Npgsql;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Common;
 using Platform.Core.Domain.Constants;
@@ -126,6 +127,7 @@ public sealed class AdminTenantService(
                 welcomeTagline: request.WelcomeTagline);
 
             dbContext.Tenants.Add(tenant);
+            dbContext.BookingPolicies.Add(BookingPolicyDefaults.SuggestedFor(tenant.Id));
 
             dbContext.Units.Add(new Unit(tenant.Id, "Matriz", "HQ"));
 

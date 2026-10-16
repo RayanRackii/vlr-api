@@ -13,6 +13,9 @@ public sealed class BookingPolicyConfiguration : IEntityTypeConfiguration<Bookin
             table.HasCheckConstraint(
                 "ck_booking_policies_daily_limit",
                 "max_active_reservations_per_customer_per_day IS NULL OR (max_active_reservations_per_customer_per_day >= 1 AND max_active_reservations_per_customer_per_day <= 100)");
+            table.HasCheckConstraint(
+                "ck_booking_policies_advance_days",
+                "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
         });
 
         builder.HasKey(policy => policy.Id);
@@ -31,6 +34,8 @@ public sealed class BookingPolicyConfiguration : IEntityTypeConfiguration<Bookin
             .HasMaxLength(BookingPolicy.CancellationPolicyMaxLength);
 
         builder.Property(policy => policy.MaxActiveReservationsPerCustomerPerDay);
+
+        builder.Property(policy => policy.MaxAdvanceBookingDays);
 
         builder.Property(policy => policy.CreatedAt)
             .IsRequired();

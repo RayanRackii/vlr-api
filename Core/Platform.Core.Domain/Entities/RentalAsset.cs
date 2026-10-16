@@ -48,6 +48,12 @@ public class RentalAsset : Entity, ITenantScoped
     /// </summary>
     public TimeOnly? QueueOpeningTime { get; set; }
 
+    /// <summary>
+    /// Optional cap on how many civil days ahead a booking of this resource may
+    /// start. Null inherits the tenant booking policy. The policy null means unlimited.
+    /// </summary>
+    public int? MaxAdvanceBookingDays { get; set; }
+
     public Asset Asset { get; set; } = null!;
 
     private readonly List<RentalPricing> _pricings = [];
