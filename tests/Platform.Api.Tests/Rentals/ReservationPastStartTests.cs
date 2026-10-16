@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Tests.Fakes;
@@ -22,7 +23,7 @@ public sealed class ReservationPastStartTests
         var now = BrazilTimeZone.AtLocal(Today, new TimeOnly(12, 0));
         await using var harness = await BookingHarness.CreateAsync(now);
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<StartInThePastException>(() =>
             harness.CreateAsync(Today.AddDays(-1), Eight, Nine));
 
         Assert.Equal(ReservationBookingRules.PastStartMessage, ex.Message);
@@ -35,7 +36,7 @@ public sealed class ReservationPastStartTests
         var now = BrazilTimeZone.AtLocal(Today, new TimeOnly(10, 0));
         await using var harness = await BookingHarness.CreateAsync(now);
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<StartInThePastException>(() =>
             harness.CreateAsync(Today, Eight, Nine));
 
         Assert.Equal(ReservationBookingRules.PastStartMessage, ex.Message);
@@ -63,7 +64,7 @@ public sealed class ReservationPastStartTests
         Assert.Equal(start, created.StartDateTime);
 
         await using var justAfter = await BookingHarness.CreateAsync(start.AddTicks(1));
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<StartInThePastException>(() =>
             justAfter.CreateAsync(Today, Eight, Nine));
         Assert.Equal(ReservationBookingRules.PastStartMessage, ex.Message);
     }
@@ -117,7 +118,7 @@ public sealed class ReservationPastStartTests
         var start = BrazilTimeZone.AtLocal(Today, Eight);
         await using var past = await BookingHarness.CreateAsync(start.AddMinutes(1));
         var pastSlot = await past.SeedSlotAsync(Today, Eight, Nine);
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var ex = await Assert.ThrowsAsync<StartInThePastException>(() =>
             past.BookAsync(pastSlot.Id));
         Assert.Equal(ReservationBookingRules.PastStartMessage, ex.Message);
         Assert.Equal(0, await past.Db.Reservations.CountAsync());
@@ -149,7 +150,7 @@ public sealed class ReservationPastStartTests
         var created = await harness.CreateAsync(civilDate, new TimeOnly(23, 0), new TimeOnly(23, 30));
         Assert.Equal(now, created.StartDateTime);
 
-        var past = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var past = await Assert.ThrowsAsync<StartInThePastException>(() =>
             harness.CreateAsync(civilDate, new TimeOnly(22, 0), new TimeOnly(23, 0)));
         Assert.Equal(ReservationBookingRules.PastStartMessage, past.Message);
     }
@@ -163,7 +164,7 @@ public sealed class ReservationPastStartTests
 
         await using var harness = await BookingHarness.CreateAsync(now);
 
-        var pastEvening = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var pastEvening = await Assert.ThrowsAsync<StartInThePastException>(() =>
             harness.CreateAsync(new DateOnly(2026, 10, 13), new TimeOnly(22, 0), new TimeOnly(22, 30)));
         Assert.Equal(ReservationBookingRules.PastStartMessage, pastEvening.Message);
 

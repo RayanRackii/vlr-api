@@ -231,6 +231,10 @@ public sealed class ReservationsController(
         {
             return Conflict(new { error = ex.Message, code = DailyBookingLimitReachedException.Code });
         }
+        catch (StartInThePastException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = StartInThePastException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });

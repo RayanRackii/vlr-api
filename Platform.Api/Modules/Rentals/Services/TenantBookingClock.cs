@@ -68,8 +68,21 @@ internal static class TenantBookingClock
             AtLocal(date.AddDays(1), TimeOnly.MinValue, zone));
     }
 
-    private static DateTimeOffset AtLocal(DateOnly date, TimeOnly time, TimeZoneInfo zone)
+    /// <summary>
+    /// Civil <paramref name="date"/> and <paramref name="time"/> in <paramref name="zone"/>
+    /// as a UTC instant. The platform fallback zone uses
+    /// <see cref="BrazilTimeZone.AtLocal"/> so reservation storage and the past-start
+    /// check stay the same instant.
+    /// </summary>
+    public static DateTimeOffset AtLocal(DateOnly date, TimeOnly time, TimeZoneInfo zone)
     {
+        ArgumentNullException.ThrowIfNull(zone);
+        var fallback = BrazilTimeZone.Resolve();
+        if (string.Equals(zone.Id, fallback.Id, StringComparison.Ordinal))
+        {
+            return BrazilTimeZone.AtLocal(date, time);
+        }
+
         var local = date.ToDateTime(time, DateTimeKind.Unspecified);
         var utc = TimeZoneInfo.ConvertTimeToUtc(local, zone);
         return new DateTimeOffset(utc, TimeSpan.Zero);

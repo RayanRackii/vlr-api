@@ -34,7 +34,8 @@ public sealed class ReservationService(
         ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
 
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
-        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime);
+        var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
+        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
 
         var rental = await dbContext.RentalAssets
             .AsNoTracking()
@@ -158,7 +159,8 @@ public sealed class ReservationService(
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
 
-        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime);
+        var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
+        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
         ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
         var hours = (decimal)(end - start).TotalHours;
 
@@ -874,13 +876,19 @@ public sealed class ReservationService(
         }
     }
 
+    private Task<TimeZoneInfo> ResolveBookingZoneAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken) =>
+        TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+
     private static (DateTimeOffset Start, DateTimeOffset End) ToDateTimeRange(
         DateOnly date,
         TimeOnly startTime,
-        TimeOnly endTime)
+        TimeOnly endTime,
+        TimeZoneInfo zone)
     {
-        var start = BrazilTimeZone.AtLocal(date, startTime);
-        var end = BrazilTimeZone.AtLocal(date, endTime);
+        var start = TenantBookingClock.AtLocal(date, startTime, zone);
+        var end = TenantBookingClock.AtLocal(date, endTime, zone);
         return (start, end);
     }
 
