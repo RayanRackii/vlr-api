@@ -50,6 +50,7 @@ public sealed class BookingPolicyTests
 
         Assert.Equal("Bring it back clean.\nalert(1)", saved.CancellationPolicyText);
         Assert.Null(saved.MaxActiveReservationsPerCustomerPerDay);
+        Assert.Null(saved.MaxAdvanceBookingDays);
         Assert.DoesNotContain("court", saved.CancellationPolicyText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("quadra", DailyBookingLimitReachedException.Code, StringComparison.OrdinalIgnoreCase);
     }
@@ -211,6 +212,86 @@ public sealed class BookingPolicyTests
         Assert.Equal("Same note", clearedLimit.CancellationPolicyText);
         Assert.Null(clearedLimit.MaxActiveReservationsPerCustomerPerDay);
         Assert.Null(clearedLimit.MaxAdvanceBookingDays);
+    }
+
+    [Fact]
+    public async Task Tenant_without_a_policy_row_stays_unlimited()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+
+        var read = await harness.Policies.GetAsync(CancellationToken.None);
+        Assert.Null(read.MaxAdvanceBookingDays);
+        Assert.Empty(await harness.Db.BookingPolicies.IgnoreQueryFilters().ToListAsync());
+
+        var booked = await harness.BookAsync(Day.AddDays(8), Ten, Eleven);
+        Assert.NotEqual(Guid.Empty, booked.Id);
+
+        var created = await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto
+            {
+                CancellationPolicyText = "Resource note",
+            },
+            CancellationToken.None);
+        Assert.Null(created.MaxAdvanceBookingDays);
+        var stored = await harness.Db.BookingPolicies.SingleAsync();
+        Assert.Null(stored.MaxAdvanceBookingDays);
+        Assert.Equal("Resource note", stored.CancellationPolicyText);
+    }
+
+    [Fact]
+    public async Task Existing_policy_row_is_not_rewritten_to_seven_days()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        harness.Db.BookingPolicies.Add(new BookingPolicy
+        {
+            TenantId = harness.TenantId,
+            ResourceType = null,
+            MaxAdvanceBookingDays = null,
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var unlimited = await harness.Policies.GetAsync(CancellationToken.None);
+        Assert.Null(unlimited.MaxAdvanceBookingDays);
+
+        var row = await harness.Db.BookingPolicies.SingleAsync();
+        row.MaxAdvanceBookingDays = 365;
+        await harness.Db.SaveChangesAsync();
+
+        var kept = await harness.Policies.GetAsync(CancellationToken.None);
+        Assert.Equal(365, kept.MaxAdvanceBookingDays);
+
+        var omitted = await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { CancellationPolicyText = "Keep the resource note" },
+            CancellationToken.None);
+        Assert.Equal(365, omitted.MaxAdvanceBookingDays);
+        Assert.Equal(365, (await harness.Db.BookingPolicies.SingleAsync()).MaxAdvanceBookingDays);
+    }
+
+    [Fact]
+    public async Task Explicit_null_clears_a_seven_day_horizon_to_unlimited()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        harness.Db.BookingPolicies.Add(new BookingPolicy
+        {
+            TenantId = harness.TenantId,
+            ResourceType = null,
+            MaxAdvanceBookingDays = 7,
+        });
+        await harness.Db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BookingHorizonExceededException>(() =>
+            harness.BookAsync(Day.AddDays(8), Ten, Eleven));
+
+        var cleared = await harness.Policies.UpsertAsync(
+            DeserializePolicy("""{"maxAdvanceBookingDays":null}"""),
+            CancellationToken.None);
+        Assert.Null(cleared.MaxAdvanceBookingDays);
+        Assert.Null((await harness.Db.BookingPolicies.SingleAsync()).MaxAdvanceBookingDays);
+
+        var far = await harness.BookAsync(new DateOnly(2099, 12, 31), Ten, Eleven);
+        Assert.NotEqual(Guid.Empty, far.Id);
+        Assert.DoesNotContain("court", BookingHorizonExceededException.DefaultMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("quadra", BookingHorizonExceededException.DefaultMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

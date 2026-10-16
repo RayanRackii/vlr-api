@@ -41,7 +41,8 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
             .IgnoreQueryFilters()
             .SingleAsync(item => item.TenantId == created.Id);
         Assert.Null(policy.ResourceType);
-        Assert.Equal(BookingPolicy.SuggestedMaxAdvanceBookingDays, policy.MaxAdvanceBookingDays);
+        Assert.Equal(7, policy.MaxAdvanceBookingDays);
+        Assert.Equal(7, BookingPolicy.SuggestedMaxAdvanceBookingDays);
         Assert.Null(policy.MaxActiveReservationsPerCustomerPerDay);
         Assert.Null(policy.CancellationPolicyText);
     }
