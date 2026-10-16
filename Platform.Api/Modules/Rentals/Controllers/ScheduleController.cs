@@ -247,6 +247,10 @@ public sealed class ScheduleController(
         {
             return Conflict(new { error = ex.Message, code = DailyBookingLimitReachedException.Code });
         }
+        catch (StartInThePastException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = StartInThePastException.Code });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });

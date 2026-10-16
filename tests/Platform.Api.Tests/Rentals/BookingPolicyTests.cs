@@ -223,6 +223,13 @@ public sealed class BookingPolicyTests
         Assert.Equal(new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero), utcEnd);
 
         var brazilEvening = BrazilTimeZone.AtLocal(Day, new TimeOnly(22, 0));
+        Assert.Equal(
+            BrazilTimeZone.AtLocal(Day, new TimeOnly(10, 0)),
+            TenantBookingClock.AtLocal(Day, new TimeOnly(10, 0), fallback));
+        var manaus = TenantBookingClock.Resolve("America/Manaus");
+        Assert.NotEqual(
+            BrazilTimeZone.AtLocal(Day, new TimeOnly(10, 0)),
+            TenantBookingClock.AtLocal(Day, new TimeOnly(10, 0), manaus));
         var (brazilStart, brazilEnd) = TenantBookingClock.CivilDay(Day, fallback);
         Assert.InRange(brazilEvening, brazilStart, brazilEnd.AddTicks(-1));
         Assert.True(brazilEvening >= utcEnd);

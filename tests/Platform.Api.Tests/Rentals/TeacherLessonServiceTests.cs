@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Trial;
@@ -89,32 +90,120 @@ public sealed class TeacherLessonServiceTests
     {
         await using var harness = await TeacherLessonHarness.CreateAsync();
 
-        await Assert.ThrowsAsync<ArgumentException>(() => harness.Lessons.CreateAsync(
+        await Assert.ThrowsAsync<StartInThePastException>(() => harness.Lessons.CreateAsync(
             harness.CreateRequest(date: Tuesday.AddDays(-7)), CancellationToken.None));
 
         Assert.Empty(await harness.Db.Slots.ToListAsync());
     }
 
     [Fact]
-    public async Task Create_and_remove_reject_elapsed_interval_today()
+    public async Task Create_rejects_elapsed_interval_today()
     {
         await using var harness = await TeacherLessonHarness.CreateAsync();
         var clock = new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday, new TimeOnly(10, 30)));
         var service = new TeacherLessonService(
             harness.Db, harness.TenantProvider, new FakeTrialGuard(), clock, new TestTeacherLessonScope());
 
-        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(
+        var ex = await Assert.ThrowsAsync<StartInThePastException>(() => service.CreateAsync(
             harness.CreateRequest(), CancellationToken.None));
-        await Assert.ThrowsAsync<ArgumentException>(() => service.RemoveAsync(
+
+        Assert.Equal(TeacherLessonMessages.FutureIntervalsOnly, ex.Message);
+        Assert.Empty(await harness.Db.Slots.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Create_accepts_a_start_equal_to_now_and_rejects_one_tick_earlier()
+    {
+        var start = BrazilTimeZone.AtLocal(Tuesday, Ten);
+        await using var atStart = await TeacherLessonHarness.CreateAsync(
+            timeProvider: new TestTimeProvider(start));
+        var created = await atStart.Lessons.CreateAsync(atStart.CreateRequest(), CancellationToken.None);
+        Assert.Equal(Ten, created.StartTime);
+
+        await using var justAfter = await TeacherLessonHarness.CreateAsync(
+            timeProvider: new TestTimeProvider(start.AddTicks(1)));
+        var ex = await Assert.ThrowsAsync<StartInThePastException>(() =>
+            justAfter.Lessons.CreateAsync(justAfter.CreateRequest(), CancellationToken.None));
+        Assert.Equal(TeacherLessonMessages.FutureIntervalsOnly, ex.Message);
+        Assert.Empty(await justAfter.Db.Slots.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_sao_paulo_past_start_that_is_still_the_utc_date()
+    {
+        // 2026-10-15 02:00Z is 2026-10-14 23:00 in America/Sao_Paulo.
+        var now = new DateTimeOffset(2026, 10, 15, 2, 0, 0, TimeSpan.Zero);
+        var civilDate = new DateOnly(2026, 10, 14);
+        Assert.Equal(DayOfWeek.Wednesday, civilDate.DayOfWeek);
+        Assert.Equal(now, BrazilTimeZone.AtLocal(civilDate, new TimeOnly(23, 0)));
+        Assert.Equal(
+            BrazilTimeZone.AtLocal(civilDate, new TimeOnly(23, 0)),
+            TenantBookingClock.AtLocal(civilDate, new TimeOnly(23, 0), TenantBookingClock.Resolve(null)));
+
+        await using var harness = await TeacherLessonHarness.CreateAsync(
+            templateDay: DayOfWeek.Wednesday,
+            templateStart: new TimeOnly(23, 0),
+            templateEnd: new TimeOnly(23, 30),
+            timeProvider: new TestTimeProvider(now));
+
+        var past = await Assert.ThrowsAsync<StartInThePastException>(() =>
+            harness.Lessons.CreateAsync(
+                new CreateTeacherLessonRequestDto
+                {
+                    RentalAssetId = harness.RentalAssetId,
+                    Date = civilDate,
+                    StartTime = new TimeOnly(22, 0),
+                    EndTime = new TimeOnly(23, 0),
+                },
+                CancellationToken.None));
+        Assert.Equal(TeacherLessonMessages.FutureIntervalsOnly, past.Message);
+        Assert.Empty(await harness.Db.Slots.ToListAsync());
+
+        var created = await harness.Lessons.CreateAsync(
+            new CreateTeacherLessonRequestDto
+            {
+                RentalAssetId = harness.RentalAssetId,
+                Date = civilDate,
+                StartTime = new TimeOnly(23, 0),
+                EndTime = new TimeOnly(23, 30),
+            },
+            CancellationToken.None);
+        Assert.Equal(civilDate, created.Date);
+        Assert.Equal(new TimeOnly(23, 0), created.StartTime);
+    }
+
+    [Fact]
+    public async Task Past_lesson_stays_on_the_day_and_can_be_removed()
+    {
+        await using var harness = await TeacherLessonHarness.CreateAsync();
+        var created = await harness.Lessons.CreateAsync(harness.CreateRequest(), CancellationToken.None);
+
+        var day = await harness.Schedule.GetDayAsync(
+            Tuesday, harness.RentalAssetId, customerFacing: false, CancellationToken.None);
+        var visible = Assert.Single(day.Slots, slot => slot.Id == created.Id);
+        Assert.Equal("lesson", visible.OccupancyKindKey);
+
+        var later = new TeacherLessonService(
+            harness.Db,
+            harness.TenantProvider,
+            new FakeTrialGuard(),
+            new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday, new TimeOnly(12, 0))),
+            new TestTeacherLessonScope());
+        var removed = await later.RemoveAsync(
             new RemoveTeacherLessonRequestDto
             {
                 RentalAssetId = harness.RentalAssetId,
                 Date = Tuesday,
                 StartTime = Ten,
                 EndTime = Eleven,
-            }, CancellationToken.None));
+            },
+            CancellationToken.None);
 
-        Assert.Empty(await harness.Db.Slots.ToListAsync());
+        Assert.Equal("open", removed.OccupancyKindKey);
+        var after = await harness.Schedule.GetDayAsync(
+            Tuesday, harness.RentalAssetId, customerFacing: false, CancellationToken.None);
+        var opened = Assert.Single(after.Slots, slot => slot.Id == created.Id);
+        Assert.Equal("open", opened.OccupancyKindKey);
     }
 
     [Theory]

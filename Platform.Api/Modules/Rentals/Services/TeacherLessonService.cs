@@ -32,7 +32,8 @@ public sealed class TeacherLessonService(
         await EnsureActiveTenantAsync(tenantId, cancellationToken);
         await trialGuard.EnsureWritableAsync(cancellationToken);
         ValidateTimeRange(request.StartTime, request.EndTime);
-        EnsureFutureInterval(request.Date, request.StartTime);
+        await EnsureStartNotInPastAsync(
+            tenantId, request.Date, request.StartTime, cancellationToken);
         var (openKind, lessonKind) = await LoadCanonicalKindsAsync(tenantId, cancellationToken);
         var label = TrimLabel(request.Label);
 
@@ -175,7 +176,6 @@ public sealed class TeacherLessonService(
         EnsurePilotScope(tenantId, request.RentalAssetId);
         await EnsureActiveTenantAsync(tenantId, cancellationToken);
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        EnsureFutureInterval(request.Date, request.StartTime);
         var (openKind, lessonKind) = await LoadCanonicalKindsAsync(tenantId, cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -563,23 +563,19 @@ public sealed class TeacherLessonService(
         return (open, lesson);
     }
 
-    private void EnsureFutureInterval(DateOnly date, TimeOnly startTime)
+    private async Task EnsureStartNotInPastAsync(
+        Guid tenantId,
+        DateOnly date,
+        TimeOnly startTime,
+        CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow();
-        var today = BrazilTimeZone.GetCivilDate(now);
-        if (date < today)
-        {
-            throw new ArgumentException(TeacherLessonMessages.FutureIntervalsOnly);
-        }
-
-        if (date == today)
-        {
-            var localNow = TimeZoneInfo.ConvertTime(now, BrazilTimeZone.Resolve());
-            if (startTime <= TimeOnly.FromDateTime(localNow.DateTime))
-            {
-                throw new ArgumentException(TeacherLessonMessages.FutureIntervalsOnly);
-            }
-        }
+        var zone = await TenantBookingClock.ResolveForTenantAsync(
+            dbContext, tenantId, cancellationToken);
+        var start = TenantBookingClock.AtLocal(date, startTime, zone);
+        ReservationBookingRules.EnsureStartNotBeforeNow(
+            start,
+            timeProvider,
+            TeacherLessonMessages.FutureIntervalsOnly);
     }
 
     private static bool IsSlotStartUniqueViolation(DbUpdateException exception) =>
