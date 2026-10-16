@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Features.CreateTenant;
+using Platform.Api.Http;
 using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
@@ -48,6 +49,7 @@ try
         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
 
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddRateLimitClientIp(builder.Configuration);
     builder.Services.AddScoped<PlatformAdminTenantSession>();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
