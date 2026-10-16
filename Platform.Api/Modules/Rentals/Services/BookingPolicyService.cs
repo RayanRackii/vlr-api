@@ -14,6 +14,7 @@ public sealed class BookingPolicyService(
     public async Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
+        // No row stays unlimited. Do not apply BookingPolicyDefaults here.
         var policy = await FindDefaultAsync(tenantId, tracking: false, cancellationToken);
         return ToDto(policy);
     }
@@ -45,6 +46,7 @@ public sealed class BookingPolicyService(
         CancellationToken cancellationToken)
     {
         var policy = await FindDefaultAsync(tenantId, tracking: true, cancellationToken);
+        // A tenant with no row is not a new tenant. An omitted horizon stays null.
         var resolvedHorizon = horizon.IsSpecified
             ? BookingPolicyText.NormalizeAdvanceDays(horizon.Value)
             : policy?.MaxAdvanceBookingDays;

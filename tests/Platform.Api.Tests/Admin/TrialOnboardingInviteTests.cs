@@ -61,7 +61,8 @@ public sealed class TrialOnboardingInviteTests
             .IgnoreQueryFilters()
             .SingleAsync(item => item.TenantId == body.TenantId);
         Assert.Null(horizon.ResourceType);
-        Assert.Equal(BookingPolicy.SuggestedMaxAdvanceBookingDays, horizon.MaxAdvanceBookingDays);
+        Assert.Equal(7, horizon.MaxAdvanceBookingDays);
+        Assert.Equal(7, BookingPolicy.SuggestedMaxAdvanceBookingDays);
         Assert.Null(body.AdminUserId);
         Assert.Null(body.SupabaseAuthId);
         Assert.NotNull(body.InviteId);
