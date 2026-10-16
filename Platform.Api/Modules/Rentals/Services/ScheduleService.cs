@@ -455,10 +455,20 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken,
         IReadOnlyCollection<Guid>? rentalAssetIds = null)
     {
-        EnsureTenant();
+        var tenantId = EnsureTenant();
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
         var ids = ResolveRentableIds(rentalAssetId, rentalAssetIds);
+        if (customerFacing)
+        {
+            ids = await BookingHorizon.ScopeForPublicDayAsync(
+                dbContext,
+                tenantId,
+                date,
+                ids,
+                timeProvider,
+                cancellationToken);
+        }
 
         var persistedEntities = await LoadPersistedSlotEntitiesAsync(
             date, ids, includeCancelled: !customerFacing, cancellationToken);
@@ -1042,6 +1052,14 @@ public sealed class ScheduleService(
             ReservationBookingRules.EnsureStartNotBeforeNow(
                 TenantBookingClock.AtLocal(slotKey.Date, slotKey.StartTime, zone),
                 timeProvider);
+
+            await BookingHorizon.EnsureRentalAssetAsync(
+                dbContext,
+                tenantId,
+                slotKey.RentalAssetId,
+                slotKey.Date,
+                timeProvider,
+                cancellationToken);
 
             await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
                 dbContext,

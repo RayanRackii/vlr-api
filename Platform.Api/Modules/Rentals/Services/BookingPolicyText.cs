@@ -65,6 +65,23 @@ internal static partial class BookingPolicyText
         return limit;
     }
 
+    public static int? NormalizeAdvanceDays(int? days)
+    {
+        if (days is null)
+        {
+            return null;
+        }
+
+        if (days is < BookingPolicy.MinAdvanceBookingDays
+            or > BookingPolicy.MaxAdvanceBookingDaysUpperBound)
+        {
+            throw new ArgumentException(
+                $"Advance booking horizon must be an integer from {BookingPolicy.MinAdvanceBookingDays} to {BookingPolicy.MaxAdvanceBookingDaysUpperBound}, or null for unlimited.");
+        }
+
+        return days;
+    }
+
     [GeneratedRegex("<[^>]*>", RegexOptions.CultureInvariant)]
     private static partial Regex Tags();
 }

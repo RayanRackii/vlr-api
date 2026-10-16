@@ -16,4 +16,9 @@ public interface IRentalAssetService
     Task<BulkUpdateRentalSchedulePolicyResponseDto> UpdateSchedulePolicyBulkAsync(
         BulkUpdateRentalSchedulePolicyRequestDto request,
         CancellationToken cancellationToken);
+
+    Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
+        Guid rentalAssetId,
+        int? maxAdvanceBookingDays,
+        CancellationToken cancellationToken);
 }

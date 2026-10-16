@@ -193,14 +193,15 @@ public sealed class BookingPolicyAuthorizationTests
     private sealed class StubBookingPolicyService : IBookingPolicyService
     {
         public Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new BookingPolicyResponseDto("Plain note", null));
+            Task.FromResult(new BookingPolicyResponseDto("Plain note", null, null));
 
         public Task<BookingPolicyResponseDto> UpsertAsync(
             UpsertBookingPolicyRequestDto request,
             CancellationToken cancellationToken) =>
             Task.FromResult(new BookingPolicyResponseDto(
                 request.CancellationPolicyText,
-                request.MaxActiveReservationsPerCustomerPerDay));
+                request.MaxActiveReservationsPerCustomerPerDay,
+                request.MaxAdvanceBookingDays));
     }
 
     private sealed class StubTenantProvider : ITenantProvider

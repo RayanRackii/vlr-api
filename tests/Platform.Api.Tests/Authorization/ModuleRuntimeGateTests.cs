@@ -1063,6 +1063,12 @@ public sealed class ModuleRuntimeGateTests
             BulkUpdateRentalSchedulePolicyRequestDto request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
+            Guid rentalAssetId,
+            int? maxAdvanceBookingDays,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubReservationQueueService : IReservationQueueService

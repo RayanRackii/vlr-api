@@ -64,6 +64,14 @@ public sealed class ReservationService(
                 Reason: ReservationBookingRules.PastStartMessage);
         }
 
+        var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
+        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
+            dbContext, tenantId, cancellationToken);
+        BookingHorizon.Ensure(
+            request.Date,
+            today,
+            BookingHorizon.Effective(rental.MaxAdvanceBookingDays, tenantHorizon));
+
         var reservedQuantity = await GetReservedQuantityAsync(
             tenantId,
             rental.Id,
@@ -162,6 +170,9 @@ public sealed class ReservationService(
         var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
         var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
         ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
+        var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
+        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
+            dbContext, tenantId, cancellationToken);
         var hours = (decimal)(end - start).TotalHours;
 
         var whatsAppSnapshot = string.IsNullOrWhiteSpace(customer.Phone)
@@ -174,6 +185,15 @@ public sealed class ReservationService(
 
         try
         {
+            await BookingHorizon.EnsureAssetsAsync(
+                dbContext,
+                tenantId,
+                request.Items.Select(item => item.AssetId).ToList(),
+                request.Date,
+                today,
+                tenantHorizon,
+                cancellationToken);
+
             await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
                 dbContext,
                 tenantId,

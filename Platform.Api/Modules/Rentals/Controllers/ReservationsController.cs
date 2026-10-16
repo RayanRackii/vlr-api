@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Constants;
@@ -33,6 +34,10 @@ public sealed class ReservationsController(
             await BindPublicTenantIfNeededAsync(tenantSubdomain, cancellationToken);
             var result = await reservationService.CheckAvailabilityAsync(request, cancellationToken);
             return Ok(result);
+        }
+        catch (BookingHorizonExceededException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
         }
         catch (ArgumentException ex)
         {
@@ -230,6 +235,10 @@ public sealed class ReservationsController(
         catch (DailyBookingLimitReachedException ex)
         {
             return Conflict(new { error = ex.Message, code = DailyBookingLimitReachedException.Code });
+        }
+        catch (BookingHorizonExceededException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
         }
         catch (StartInThePastException ex)
         {

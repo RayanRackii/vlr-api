@@ -17,6 +17,13 @@ public class BookingPolicy : Entity, ITenantScoped
 
     public const int MaxDailyActiveReservations = 100;
 
+    /// <summary>Stored on new tenants. Null on a policy still means unlimited.</summary>
+    public const int SuggestedMaxAdvanceBookingDays = 365;
+
+    public const int MinAdvanceBookingDays = 0;
+
+    public const int MaxAdvanceBookingDaysUpperBound = 3650;
+
     public required Guid TenantId { get; set; }
 
     /// <summary>
@@ -35,10 +42,21 @@ public class BookingPolicy : Entity, ITenantScoped
     /// </summary>
     public int? MaxActiveReservationsPerCustomerPerDay { get; set; }
 
-    public void Replace(string? cancellationPolicyText, int? maxActiveReservationsPerCustomerPerDay)
+    /// <summary>
+    /// Maximum civil days between today and the booking start, in the tenant
+    /// timezone. Null means unlimited. A per-resource value on
+    /// <see cref="RentalAsset.MaxAdvanceBookingDays"/> wins when it is set.
+    /// </summary>
+    public int? MaxAdvanceBookingDays { get; set; }
+
+    public void Replace(
+        string? cancellationPolicyText,
+        int? maxActiveReservationsPerCustomerPerDay,
+        int? maxAdvanceBookingDays)
     {
         CancellationPolicyText = cancellationPolicyText;
         MaxActiveReservationsPerCustomerPerDay = maxActiveReservationsPerCustomerPerDay;
+        MaxAdvanceBookingDays = maxAdvanceBookingDays;
         MarkAsUpdated();
     }
 }

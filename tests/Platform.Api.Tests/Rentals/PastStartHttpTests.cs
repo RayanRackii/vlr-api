@@ -310,6 +310,12 @@ public sealed class PastStartHttpTests
             BulkUpdateRentalSchedulePolicyRequestDto request,
             CancellationToken cancellationToken) =>
             throw new NotImplementedException();
+
+        public Task<RentalAssetResponse> SetMaxAdvanceBookingDaysAsync(
+            Guid rentalAssetId,
+            int? maxAdvanceBookingDays,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 
     private sealed class SingleControllerFeatureProvider(Type controllerType) : ControllerFeatureProvider

@@ -24,15 +24,16 @@ public sealed class BookingPolicyService(
         var tenantId = RequireTenant();
         var text = BookingPolicyText.Sanitize(request.CancellationPolicyText);
         var limit = BookingPolicyText.NormalizeDailyLimit(request.MaxActiveReservationsPerCustomerPerDay);
+        var horizon = BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
 
         try
         {
-            return await SaveAsync(tenantId, text, limit, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, horizon, cancellationToken);
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            return await SaveAsync(tenantId, text, limit, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, horizon, cancellationToken);
         }
     }
 
@@ -40,6 +41,7 @@ public sealed class BookingPolicyService(
         Guid tenantId,
         string? text,
         int? limit,
+        int? horizon,
         CancellationToken cancellationToken)
     {
         var policy = await FindDefaultAsync(tenantId, tracking: true, cancellationToken);
@@ -51,12 +53,13 @@ public sealed class BookingPolicyService(
                 ResourceType = null,
                 CancellationPolicyText = text,
                 MaxActiveReservationsPerCustomerPerDay = limit,
+                MaxAdvanceBookingDays = horizon,
             };
             dbContext.BookingPolicies.Add(policy);
         }
         else
         {
-            policy.Replace(text, limit);
+            policy.Replace(text, limit, horizon);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -91,7 +94,8 @@ public sealed class BookingPolicyService(
     private static BookingPolicyResponseDto ToDto(BookingPolicy? policy) =>
         new(
             policy?.CancellationPolicyText,
-            policy?.MaxActiveReservationsPerCustomerPerDay);
+            policy?.MaxActiveReservationsPerCustomerPerDay,
+            policy?.MaxAdvanceBookingDays);
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgres

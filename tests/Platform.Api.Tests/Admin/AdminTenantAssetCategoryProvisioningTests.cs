@@ -29,6 +29,24 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
     }
 
     [Fact]
+    public async Task Create_stores_the_suggested_booking_horizon()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("horizon-club", [PlatformModules.Rentals], [AssetFamilyKeys.Spaces]),
+            CancellationToken.None);
+
+        var policy = await harness.Db.BookingPolicies
+            .IgnoreQueryFilters()
+            .SingleAsync(item => item.TenantId == created.Id);
+        Assert.Null(policy.ResourceType);
+        Assert.Equal(BookingPolicy.SuggestedMaxAdvanceBookingDays, policy.MaxAdvanceBookingDays);
+        Assert.Null(policy.MaxActiveReservationsPerCustomerPerDay);
+        Assert.Null(policy.CancellationPolicyText);
+    }
+
+    [Fact]
     public async Task Create_electrical_seeds_Quadro_eletrico()
     {
         await using var harness = await Harness.CreateAsync();

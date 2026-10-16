@@ -37,6 +37,12 @@ public sealed record CreateRentableRequest
     public TimeOnly? QueueOpeningTime { get; init; }
 
     public string? Location { get; init; }
+
+    /// <summary>
+    /// Per-resource horizon override. Null inherits the tenant booking policy.
+    /// Omitted on create or update clears any stored override.
+    /// </summary>
+    public int? MaxAdvanceBookingDays { get; init; }
 }
 
 public sealed record UpdateRentableRequest
@@ -62,4 +68,10 @@ public sealed record UpdateRentableRequest
     public TimeOnly? QueueOpeningTime { get; init; }
 
     public string? Location { get; init; }
+
+    /// <summary>
+    /// Per-resource horizon override. Null inherits the tenant booking policy.
+    /// Omitted clears any stored override.
+    /// </summary>
+    public int? MaxAdvanceBookingDays { get; init; }
 }
