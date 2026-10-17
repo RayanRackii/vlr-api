@@ -25,10 +25,6 @@ public sealed class DashboardService(
         var civilToday = BrazilTimeZone.GetCivilDate(utcNow);
         var monthStart = new DateOnly(civilToday.Year, civilToday.Month, 1);
         var nextMonthStart = monthStart.AddMonths(1);
-        var utcMonthStart = new DateOnly(utcNow.Year, utcNow.Month, 1);
-        var utcNextMonthStart = utcMonthStart.AddMonths(1);
-        var monthStartDto = new DateTimeOffset(utcMonthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-        var nextMonthStartDto = new DateTimeOffset(utcNextMonthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var confirmationWindowStart = todayStart.AddDays(-6);
 
         var moduleNames = await dbContext.TenantModules
@@ -84,8 +80,8 @@ public sealed class DashboardService(
                 todayStart,
                 tomorrowStart,
                 confirmationWindowStart,
-                monthStartDto,
-                nextMonthStartDto,
+                monthStart,
+                nextMonthStart,
                 cancellationToken);
         }
 
@@ -247,10 +243,12 @@ public sealed class DashboardService(
         DateTimeOffset todayStart,
         DateTimeOffset tomorrowStart,
         DateTimeOffset confirmationWindowStart,
-        DateTimeOffset monthStart,
-        DateTimeOffset nextMonthStart,
+        DateOnly civilMonthStart,
+        DateOnly civilNextMonthStart,
         CancellationToken cancellationToken)
     {
+        var monthStart = BrazilTimeZone.StartOfCivilDay(civilMonthStart);
+        var nextMonthStart = BrazilTimeZone.StartOfCivilDay(civilNextMonthStart);
         var reservationsToday = dbContext.Reservations
             .Where(r => r.StartDateTime >= todayStart && r.StartDateTime < tomorrowStart);
 

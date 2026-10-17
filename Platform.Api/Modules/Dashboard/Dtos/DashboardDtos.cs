@@ -46,6 +46,11 @@ public sealed record MaintenanceMetricsDto(
     int AssetsInMaintenance,
     int OpenWorkOrders);
 
+/// <summary>
+/// Rentals dashboard counts. <see cref="ReservedRevenueThisMonth"/> sums
+/// PendingDeposit and Confirmed reservations whose start falls in the current
+/// America/Sao_Paulo civil month.
+/// </summary>
 public sealed record RentalsMetricsDto(
     int ReservationsTodayPendingDeposit,
     int ReservationsTodayConfirmed,
