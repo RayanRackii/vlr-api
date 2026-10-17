@@ -66,8 +66,8 @@ These are future product possibilities, not unfinished Phase 3 work: per-plan as
 - `POST /api/work-orders/from-plan` and `GET /api/work-orders?maintenancePlanId=`. Authenticated from-plan with no tenant context is 403 `FORBIDDEN`; unauthenticated is 401
 - `POST /api/work-orders` with `maintenancePlanId` uses the same active-plan, asset-eligibility, and duplicate checks as from-plan (`409 DUPLICATE_WORK_ORDER`). Client-supplied tasks are kept.
 - Closed orders (`Completed` or `Canceled`) reject task writes with `409 WORK_ORDER_CLOSED`. `Completed` cannot return to `Pending` or `InProgress` (`409 WORK_ORDER_REOPEN_NOT_ALLOWED`). `POST /api/work-orders/{id}/cancel` (`os.work_orders.execute` or `os.work_orders.create`) is the exit from `Completed`; it clears `CompletedDate`. Canceled orders stay out of coverage.
-- Task values: `400 INVALID_TASK_VALUE` plus `reason`. Completion with unfilled mandatory tasks: `400 MANDATORY_TASKS_INCOMPLETE` plus `tasks` (`id`, `title`). A checkbox is filled only when the stored value is `true`.
-- `PUT /api/work-orders/{id}/assignee` requires `os.work_orders.assign`. The assignee must have `os.work_orders.execute`. Null clears the assignee.
+- Task values: `400 INVALID_TASK_VALUE` plus `reason`. Completion with unfilled mandatory tasks: `400 MANDATORY_TASKS_INCOMPLETE` plus `tasks` (`id`, `title`). A checkbox is filled only when the stored value is `true`. An `Image` task does not block completion until a work-order upload exists.
+- `PUT /api/work-orders/{id}/assignee` requires `os.work_orders.assign`. The assignee must have `os.work_orders.execute`. Null clears the assignee. `Completed` and `Canceled` return `409 WORK_ORDER_CLOSED`. `TenantAccessBootstrapper` adds `os.work_orders.assign` to existing Admin and SuperAdmin roles and does not remove other grants. There is no system Manager role.
 - Delete of a plan that already has a work order: 409 `PLAN_IN_USE`
 - Seed template id `6f1c2a0e-4b9d-4f3a-9c7e-1d2a3b4c5d6e`
 

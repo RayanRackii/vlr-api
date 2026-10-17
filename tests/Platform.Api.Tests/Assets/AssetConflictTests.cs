@@ -46,7 +46,7 @@ public sealed class AssetConflictTests
                     UnitId = harness.UnitId,
                     CategoryId = harness.CategoryId,
                     FamilyId = harness.FamilyId,
-                    BaseLocationName = "Quadra",
+                    BaseLocationName = "Site",
                     BaseTag = "Q-",
                     StartNumber = 1,
                     EndNumber = 2,
@@ -91,10 +91,10 @@ public sealed class AssetConflictTests
         var categories = new AssetCategoryService(harness.Db, harness.TenantProvider);
         var controller = new AssetCategoriesController(categories);
         var planned = await categories.CreateAsync(
-            new CreateAssetCategoryRequest { Name = "Com plano" },
+            new CreateAssetCategoryRequest { Name = "With plan" },
             CancellationToken.None);
         var used = await categories.CreateAsync(
-            new CreateAssetCategoryRequest { Name = "Com OS" },
+            new CreateAssetCategoryRequest { Name = "With orders" },
             CancellationToken.None);
         await categories.DeleteAsync(planned.Id, CancellationToken.None);
         await categories.DeleteAsync(used.Id, CancellationToken.None);
@@ -103,7 +103,7 @@ public sealed class AssetConflictTests
         {
             TenantId = harness.TenantProvider.TenantId!.Value,
             UnitId = harness.UnitId,
-            Name = "Mensal",
+            Name = "Monthly",
             IntervalDays = 30,
             FirstDueDate = new DateOnly(2026, 10, 1),
             AssetCategoryId = planned.Id,
@@ -145,13 +145,13 @@ public sealed class AssetConflictTests
         var blockedCategory = new AssetCategory
         {
             TenantId = tenantId,
-            Name = "Bloqueada",
+            Name = "Blocked",
             ScheduledDeletionAt = expired,
         };
         var cleanCategory = new AssetCategory
         {
             TenantId = tenantId,
-            Name = "Limpa",
+            Name = "Clean",
             ScheduledDeletionAt = expired,
         };
         harness.Db.AssetCategories.AddRange(blockedCategory, cleanCategory);
@@ -163,7 +163,7 @@ public sealed class AssetConflictTests
             UnitId = harness.UnitId,
             CategoryId = blockedCategory.Id,
             FamilyId = harness.FamilyId,
-            Name = "Com OS",
+            Name = "Linked",
             Tag = "RET-1",
             Status = AssetStatus.Active,
             ScheduledDeletionAt = expired,
@@ -174,7 +174,7 @@ public sealed class AssetConflictTests
             UnitId = harness.UnitId,
             CategoryId = harness.CategoryId,
             FamilyId = harness.FamilyId,
-            Name = "Livre",
+            Name = "Free",
             Tag = "RET-2",
             Status = AssetStatus.Active,
             ScheduledDeletionAt = expired,
@@ -184,7 +184,7 @@ public sealed class AssetConflictTests
         {
             TenantId = tenantId,
             UnitId = harness.UnitId,
-            Name = "Plano",
+            Name = "Plan",
             IntervalDays = 30,
             FirstDueDate = new DateOnly(2026, 10, 1),
             AssetCategoryId = blockedCategory.Id,

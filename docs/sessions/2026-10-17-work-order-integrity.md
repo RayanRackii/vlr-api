@@ -13,3 +13,11 @@ A duplicate asset tag is 409 `ASSET_TAG_DUPLICATE`. Permanent delete of an asset
 `assets.inMaintenance` remains the count of assets whose status is `Maintenance`. `workOrders.totalThisMonth` uses the America/Sao_Paulo civil month of `ScheduledDate`. The work-order list is not month-filtered. A customer-visible PNG over 5 MB returns 400 `FILE_TOO_LARGE` (the portal limit is 25 MB, so 6 MB is not 413). Other upload failures use `FILE_TYPE_NOT_ALLOWED` and `FILE_CONTENT_MISMATCH`.
 
 No migration.
+
+## Review follow-up
+
+A mandatory `Image` task does not block completion. There is no work-order upload, so `IsFilled` treats `Image` as filled until that upload exists. No upload endpoint was added.
+
+`UpdateAssigneeAsync` locks the row, reloads it, and returns `409 WORK_ORDER_CLOSED` for `Completed` and `Canceled` orders. The assignee is left unchanged.
+
+`os.work_orders.assign` is already in the permission catalog and is not explicit-grant-only. `TenantAccessBootstrapper.EnsureAsync` adds it to existing Admin and SuperAdmin roles without removing grants those roles already have. User, Technician, and custom roles (including a role named Manager) do not receive it. There is no system role named Manager. No new migration.

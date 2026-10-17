@@ -55,7 +55,7 @@ public sealed class WorkOrderIntegrityTests
     {
         await using var harness = await WorkOrderRbacHarness.CreateAsync();
         var number = AddTask(harness, harness.AddWorkOrder(harness.Executor.Id), TaskInputType.Number, """{"min":0,"max":10}""", true);
-        var choice = AddTask(harness, harness.AddWorkOrder(harness.Executor.Id), TaskInputType.SingleChoice, """{"options":["Íntegro","Danificado"]}""", true);
+        var choice = AddTask(harness, harness.AddWorkOrder(harness.Executor.Id), TaskInputType.SingleChoice, """{"options":["Ok","Damaged"]}""", true);
         var checkbox = AddTask(harness, harness.AddWorkOrder(harness.Executor.Id), TaskInputType.Checkbox, null, true);
         var text = AddTask(harness, harness.AddWorkOrder(harness.Executor.Id), TaskInputType.Text, """{"maxLength":3}""", true);
         await harness.Db.SaveChangesAsync();
@@ -64,7 +64,7 @@ public sealed class WorkOrderIntegrityTests
         var range = await Assert.ThrowsAsync<InvalidTaskValueException>(() =>
             Update(harness, number, "11"));
         var option = await Assert.ThrowsAsync<InvalidTaskValueException>(() =>
-            Update(harness, choice, "Outro"));
+            Update(harness, choice, "Other"));
         var box = await Assert.ThrowsAsync<InvalidTaskValueException>(() =>
             Update(harness, checkbox, "maybe"));
         var length = await Assert.ThrowsAsync<InvalidTaskValueException>(() =>
@@ -84,8 +84,8 @@ public sealed class WorkOrderIntegrityTests
     {
         await using var harness = await WorkOrderRbacHarness.CreateAsync();
         var order = harness.AddWorkOrder(harness.Executor.Id);
-        var required = AddTask(harness, order, TaskInputType.Checkbox, null, isMandatory: true, title: "Filtro");
-        var optional = AddTask(harness, order, TaskInputType.Checkbox, null, isMandatory: false, title: "Opcional");
+        var required = AddTask(harness, order, TaskInputType.Checkbox, null, isMandatory: true, title: "Required");
+        var optional = AddTask(harness, order, TaskInputType.Checkbox, null, isMandatory: false, title: "Optional");
         await harness.Db.SaveChangesAsync();
         harness.SetUser(harness.Executor);
         await Update(harness, required, "false");
@@ -100,7 +100,7 @@ public sealed class WorkOrderIntegrityTests
         Assert.Equal("MANDATORY_TASKS_INCOMPLETE", missing.Code);
         var listed = Assert.Single(missing.Tasks);
         Assert.Equal(required.Id, listed.Id);
-        Assert.Equal("Filtro", listed.Title);
+        Assert.Equal("Required", listed.Title);
         Assert.Equal(WorkOrderStatus.Pending, (await harness.Db.WorkOrders.SingleAsync(item => item.Id == order.Id)).Status);
     }
 
@@ -122,6 +122,25 @@ public sealed class WorkOrderIntegrityTests
         Assert.NotNull(completed);
         Assert.Equal(WorkOrderStatus.Completed, completed.Status);
         Assert.Equal("false", completed.Tasks.Single().Value);
+    }
+
+    [Fact]
+    public async Task Mandatory_image_does_not_block_completion()
+    {
+        await using var harness = await WorkOrderRbacHarness.CreateAsync();
+        var order = harness.AddWorkOrder(harness.Executor.Id);
+        AddTask(harness, order, TaskInputType.Image, null, isMandatory: true, title: "Attachment");
+        await harness.Db.SaveChangesAsync();
+        harness.SetUser(harness.Executor);
+
+        var completed = await harness.Service.UpdateStatusAsync(
+            order.Id,
+            new UpdateWorkOrderStatusRequest { Status = WorkOrderStatus.Completed },
+            CancellationToken.None);
+
+        Assert.NotNull(completed);
+        Assert.Equal(WorkOrderStatus.Completed, completed.Status);
+        Assert.Null(completed.Tasks.Single().Value);
     }
 
     [Fact]
@@ -195,14 +214,47 @@ public sealed class WorkOrderIntegrityTests
     }
 
     [Fact]
+    public async Task Assignee_change_on_completed_or_canceled_order_is_rejected()
+    {
+        await using var harness = await WorkOrderRbacHarness.CreateAsync();
+        var completed = harness.AddWorkOrder(harness.Executor.Id);
+        completed.Status = WorkOrderStatus.Completed;
+        completed.CompletedDate = DateTimeOffset.Parse("2026-10-03T12:00:00Z");
+        var canceled = harness.AddWorkOrder(harness.Executor.Id);
+        canceled.Status = WorkOrderStatus.Canceled;
+        await harness.Db.SaveChangesAsync();
+        harness.SetUser(harness.Creator);
+        var controller = new WorkOrdersController(harness.Service, null!, null!);
+
+        var closed = await Assert.ThrowsAsync<WorkOrderClosedException>(() =>
+            harness.Service.UpdateAssigneeAsync(completed.Id, null, CancellationToken.None));
+        var alsoClosed = await controller.UpdateAssignee(
+            canceled.Id,
+            new UpdateWorkOrderAssigneeRequest { AssignedUserId = null },
+            CancellationToken.None);
+
+        Assert.Equal(WorkOrderErrorCodes.Closed, closed.Code);
+        var conflict = Assert.IsType<ConflictObjectResult>(alsoClosed.Result);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(conflict.Value));
+        Assert.Equal("WORK_ORDER_CLOSED", doc.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            harness.Executor.Id,
+            (await harness.Db.WorkOrders.SingleAsync(item => item.Id == completed.Id)).AssignedUserId);
+        Assert.Equal(
+            harness.Executor.Id,
+            (await harness.Db.WorkOrders.SingleAsync(item => item.Id == canceled.Id)).AssignedUserId);
+        Assert.NotNull((await harness.Db.WorkOrders.SingleAsync(item => item.Id == completed.Id)).CompletedDate);
+    }
+
+    [Fact]
     public async Task Create_with_plan_matches_from_plan_checks_and_duplicate_is_409()
     {
         await using var harness = await WorkOrderRbacHarness.CreateAsync();
         var unit = await harness.Db.Units.SingleAsync();
         var category = await harness.Db.AssetCategories.SingleAsync();
         var asset = await harness.Db.Assets.SingleAsync();
-        var inactive = Plan(harness, unit.Id, category.Id, "Inativo", isActive: false);
-        var active = Plan(harness, unit.Id, category.Id, "Ativo", isActive: true);
+        var inactive = Plan(harness, unit.Id, category.Id, "Inactive", isActive: false);
+        var active = Plan(harness, unit.Id, category.Id, "Active", isActive: true);
         harness.Db.MaintenancePlans.AddRange(inactive, active);
         await harness.Db.SaveChangesAsync();
         harness.SetUser(harness.Creator);
@@ -243,7 +295,7 @@ public sealed class WorkOrderIntegrityTests
         var unit = await harness.Db.Units.SingleAsync();
         var category = await harness.Db.AssetCategories.SingleAsync();
         var asset = await harness.Db.Assets.SingleAsync();
-        var plan = Plan(harness, unit.Id, category.Id, "Cobertura", isActive: true);
+        var plan = Plan(harness, unit.Id, category.Id, "Coverage", isActive: true);
         plan.FirstDueDate = new DateOnly(2026, 10, 1);
         harness.Db.MaintenancePlans.Add(plan);
         var order = harness.AddWorkOrder(harness.Executor.Id);
@@ -305,7 +357,7 @@ public sealed class WorkOrderIntegrityTests
         TaskInputType inputType,
         string? configuration,
         bool isMandatory,
-        string title = "Tarefa")
+        string title = "Task")
     {
         var task = new WorkOrderTask
         {
@@ -349,7 +401,7 @@ public sealed class WorkOrderIntegrityTests
             [
                 new CreateWorkOrderTaskDto
                 {
-                    Title = "Inspeção",
+                    Title = "Check",
                     InputType = TaskInputType.Text,
                     Order = 1,
                     IsMandatory = false,

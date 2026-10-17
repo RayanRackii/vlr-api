@@ -52,50 +52,55 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
             WHERE id = {seed.WorkOrderId}
             """);
 
+        await writer.Database.OpenConnectionAsync();
+        var writerConnection = writer.Database.GetDbConnection();
+        await using var pidCommand = writerConnection.CreateCommand();
+        pidCommand.CommandText = "SELECT pg_backend_pid()";
+        var backendPid = Convert.ToInt32(await pidCommand.ExecuteScalarAsync());
+
         var update = CreateService(writer, tenantProvider).UpdateTaskValueAsync(
             seed.WorkOrderId,
             seed.TaskId,
             new UpdateWorkOrderTaskValueRequest { Value = "queued" },
             CancellationToken.None);
 
-        var waiting = false;
-        var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (DateTime.UtcNow < deadline)
+        var committed = false;
+        try
         {
-            if (update.IsCompleted)
-            {
-                break;
-            }
+            var waiting = await WaitForPostgresLockWaitAsync(factory, tenantProvider, backendPid);
+            Assert.True(waiting, "The task-value write did not wait on the work-order row lock.");
+            Assert.False(
+                update.IsCompleted,
+                "The task-value write finished before the row lock was released.");
 
-            await using var probe = factory.Create(tenantProvider);
-            var blocked = await probe.Database.SqlQueryRaw<int>(
-                """
-                SELECT COUNT(*)::int AS "Value"
-                FROM pg_locks l
-                JOIN pg_class c ON c.oid = l.relation
-                WHERE NOT l.granted AND c.relname = 'work_orders'
-                """).SingleAsync();
-            if (blocked > 0)
-            {
-                waiting = true;
-                break;
-            }
+            await transaction.CommitAsync();
+            committed = true;
 
-            await Task.Delay(50);
+            var rejected = await Assert.ThrowsAsync<WorkOrderClosedException>(() => update);
+            Assert.Equal(WorkOrderErrorCodes.Closed, rejected.Code);
+
+            await using var verify = factory.Create(tenantProvider);
+            var value = await verify.WorkOrderTasks
+                .Where(task => task.Id == seed.TaskId)
+                .Select(task => task.Value)
+                .SingleAsync();
+            Assert.Null(value);
         }
-
-        Assert.True(waiting, "The task-value write did not wait on the work-order row lock.");
-        await transaction.CommitAsync();
-
-        var rejected = await Assert.ThrowsAsync<WorkOrderClosedException>(() => update);
-        Assert.Equal(WorkOrderErrorCodes.Closed, rejected.Code);
-
-        await using var verify = factory.Create(tenantProvider);
-        var value = await verify.WorkOrderTasks
-            .Where(task => task.Id == seed.TaskId)
-            .Select(task => task.Value)
-            .SingleAsync();
-        Assert.Null(value);
+        finally
+        {
+            if (!committed)
+            {
+                await transaction.RollbackAsync();
+                try
+                {
+                    await update.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch
+                {
+                    // Keep the assertion that failed while the writer was blocked.
+                }
+            }
+        }
     }
 
     [DockerFact]
@@ -115,7 +120,7 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
             [
                 new CreateWorkOrderTaskDto
                 {
-                    Title = "Inspeção",
+                    Title = "Check",
                     InputType = TaskInputType.Text,
                     Order = 1,
                     IsMandatory = false,
@@ -135,6 +140,41 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
         Assert.Equal(
             1,
             await verify.WorkOrders.CountAsync(workOrder => workOrder.MaintenancePlanId == seed.PlanId));
+    }
+
+    private static async Task<bool> WaitForPostgresLockWaitAsync(
+        PostgresAppDbFactory factory,
+        FakeTenantProvider tenantProvider,
+        int backendPid)
+    {
+        await using var observer = factory.Create(tenantProvider);
+        await observer.Database.OpenConnectionAsync();
+        var connection = observer.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT wait_event_type = 'Lock'
+            FROM pg_stat_activity
+            WHERE pid = @pid
+              AND query ILIKE '%FOR UPDATE%'
+            """;
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "pid";
+        parameter.Value = backendPid;
+        command.Parameters.Add(parameter);
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            var result = await command.ExecuteScalarAsync();
+            if (result is true)
+            {
+                return true;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return false;
     }
 
     private PostgresAppDbFactory RequireFactory()
@@ -160,12 +200,12 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
     {
         await using var db = factory.Create(tenantProvider);
         var tenant = new Tenant(
-            "Lock Club",
+            "Lock Tenant",
             Random.Shared.NextInt64(10_000_000_000_000, 99_999_999_999_999).ToString(),
             subdomain: $"os-{Guid.NewGuid():N}"[..16]);
         tenantProvider.TenantId = tenant.Id;
-        var unit = new Unit(tenant.Id, "Matriz");
-        var category = new AssetCategory { TenantId = tenant.Id, Name = "Quadras" };
+        var unit = new Unit(tenant.Id, "Main");
+        var category = new AssetCategory { TenantId = tenant.Id, Name = "Assets" };
         var family = new AssetFamily
         {
             Key = $"spaces-{Guid.NewGuid():N}"[..32],
@@ -181,7 +221,7 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
         {
             TenantId = tenant.Id,
             UnitId = unit.Id,
-            Name = "Plano",
+            Name = "Plan",
             IntervalDays = 30,
             FirstDueDate = new DateOnly(2026, 10, 1),
             AssetCategoryId = category.Id,
@@ -193,7 +233,7 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
             UnitId = unit.Id,
             CategoryId = category.Id,
             FamilyId = family.Id,
-            Name = "Quadra",
+            Name = "Asset",
             Tag = $"Q-{Guid.NewGuid():N}"[..12],
             Status = AssetStatus.Active,
         };
@@ -212,7 +252,7 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
         {
             TenantId = tenant.Id,
             WorkOrderId = workOrder.Id,
-            Title = "Medição",
+            Title = "Reading",
             InputType = TaskInputType.Text,
             IsMandatory = false,
             Order = 1,
@@ -229,14 +269,14 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
     {
         var http = new FakeHttpContextAccessor();
         var identity = new ClaimsIdentity(
-            [new Claim("email", "ops@club.test"), new Claim("sub", "admin-sub")],
+            [new Claim("email", "ops@tenant.test"), new Claim("sub", "admin-sub")],
             authenticationType: "Test");
         http.HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
         var resolver = TestPermissionResolvers.Create(db, tenantProvider);
         var users = new UserDirectoryService(
             db,
             tenantProvider,
-            new FakePlatformAdminChecker("ops@club.test"),
+            new FakePlatformAdminChecker("ops@tenant.test"),
             resolver,
             new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance),
             new FakeTrialGuard(),

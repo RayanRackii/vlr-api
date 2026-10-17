@@ -11,6 +11,12 @@ internal static class WorkOrderTaskValues
 
     public static bool IsFilled(WorkOrderTask task)
     {
+        // There is no work-order image upload. A mandatory image must not block completion.
+        if (task.InputType == TaskInputType.Image)
+        {
+            return true;
+        }
+
         if (task.InputType == TaskInputType.Checkbox)
         {
             return string.Equals(task.Value, "true", StringComparison.Ordinal);

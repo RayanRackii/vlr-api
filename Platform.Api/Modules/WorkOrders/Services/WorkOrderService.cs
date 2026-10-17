@@ -330,18 +330,18 @@ public sealed class WorkOrderService(
             return null;
         }
 
-        var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
-            dbContext,
-            permissionResolver,
-            tenantId,
-            assignedUserId,
-            cancellationToken);
-
         await InTransactionAsync(
             async () =>
             {
                 await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, workOrder.Id, cancellationToken);
                 await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
+                EnsureMutable(workOrder);
+                var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
+                    dbContext,
+                    permissionResolver,
+                    tenantId,
+                    assignedUserId,
+                    cancellationToken);
                 workOrder.AssignedUserId = assignedUser?.Id;
                 workOrder.AssignedUser = assignedUser;
                 workOrder.Touch();

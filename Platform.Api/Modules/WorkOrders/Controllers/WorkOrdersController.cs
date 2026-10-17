@@ -185,7 +185,8 @@ public sealed class WorkOrdersController(
     /// Reassigns the work order. Requires <c>os.work_orders.assign</c>.
     /// The assignee must be an active user of this tenant with
     /// <c>os.work_orders.execute</c>. Null clears the assignee. The caller is
-    /// not limited to orders already assigned to them.
+    /// not limited to orders already assigned to them. A completed or canceled
+    /// order returns 409 <c>WORK_ORDER_CLOSED</c>.
     /// </summary>
     [HttpPut("{id:guid}/assignee")]
     [RequirePermission(Permissions.Os.WorkOrdersAssign)]
@@ -206,6 +207,10 @@ public sealed class WorkOrdersController(
             }
 
             return Ok(workOrder);
+        }
+        catch (WorkOrderClosedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ex.Code });
         }
         catch (AssigneeCannotExecuteException ex)
         {

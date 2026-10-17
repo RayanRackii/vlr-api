@@ -85,6 +85,52 @@ public sealed class TenantRbacAccessTests
     }
 
     [Fact]
+    public async Task EnsureAsync_adds_work_order_assign_to_existing_admin_and_super_admin()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        var kept = await harness.Db.Permissions.SingleAsync(
+            item => item.Key == Permissions.Core.CustomersRead);
+        var admin = new Role(harness.Tenant.Id, SystemRoles.Admin, "Admin (system)", isSystemRole: true);
+        var superAdmin = new Role(harness.Tenant.Id, SystemRoles.SuperAdmin, "SuperAdmin (system)", isSystemRole: true);
+        var user = new Role(harness.Tenant.Id, SystemRoles.User, "User (system)", isSystemRole: true);
+        var technician = new Role(harness.Tenant.Id, SystemRoles.Technician, "Technician (system)", isSystemRole: true);
+        var manager = new Role(harness.Tenant.Id, "Manager");
+        harness.Db.Roles.AddRange(admin, superAdmin, user, technician, manager);
+        harness.Db.RolePermissions.AddRange(
+            new RolePermission(admin.Id, kept.Id),
+            new RolePermission(superAdmin.Id, kept.Id),
+            new RolePermission(manager.Id, kept.Id));
+        await harness.Db.SaveChangesAsync();
+
+        await new TenantAccessBootstrapper(harness.Db).EnsureAsync(harness.Tenant.Id);
+
+        Assert.Contains(Permissions.Os.WorkOrdersAssign, PermissionCatalog.AllKeys);
+        Assert.DoesNotContain(Permissions.Os.WorkOrdersAssign, PermissionCatalog.ExplicitGrantOnlyKeys);
+        Assert.DoesNotContain(Permissions.Os.WorkOrdersAssign, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Os.WorkOrdersAssign, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.True(await HasPermissionAsync(harness, admin.Id, Permissions.Os.WorkOrdersAssign));
+        Assert.True(await HasPermissionAsync(harness, superAdmin.Id, Permissions.Os.WorkOrdersAssign));
+        Assert.True(await HasPermissionAsync(harness, admin.Id, Permissions.Core.CustomersRead));
+        Assert.True(await HasPermissionAsync(harness, superAdmin.Id, Permissions.Core.CustomersRead));
+        Assert.True(await HasPermissionAsync(harness, manager.Id, Permissions.Core.CustomersRead));
+        Assert.False(await HasPermissionAsync(harness, user.Id, Permissions.Os.WorkOrdersAssign));
+        Assert.False(await HasPermissionAsync(harness, technician.Id, Permissions.Os.WorkOrdersAssign));
+        Assert.False(await HasPermissionAsync(harness, manager.Id, Permissions.Os.WorkOrdersAssign));
+        Assert.True(await HasPermissionAsync(harness, user.Id, Permissions.Os.WorkOrdersExecute));
+        Assert.True(await HasPermissionAsync(harness, technician.Id, Permissions.Os.WorkOrdersExecute));
+    }
+
+    private static async Task<bool> HasPermissionAsync(RbacAccessHarness harness, Guid roleId, string key)
+    {
+        var permissionId = await harness.Db.Permissions
+            .Where(permission => permission.Key == key)
+            .Select(permission => permission.Id)
+            .SingleAsync();
+        return await harness.Db.RolePermissions.AnyAsync(item =>
+            item.RoleId == roleId && item.PermissionId == permissionId);
+    }
+
+    [Fact]
     public async Task Non_admin_cannot_persist_inactive_module_keys_on_a_custom_role()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
