@@ -13,6 +13,11 @@ public sealed record AssetFamilyCountDto(
     string Label,
     int Count);
 
+/// <summary>
+/// Inventory counts. Present only when the inventory module is active.
+/// <see cref="InMaintenance"/> counts assets whose status is Maintenance.
+/// It does not count RequiresMaintenance or open work orders.
+/// </summary>
 public sealed record AssetMetricsDto(
     int Total,
     int Active,
@@ -20,6 +25,11 @@ public sealed record AssetMetricsDto(
     int Inactive,
     IReadOnlyList<AssetFamilyCountDto> ByFamily);
 
+/// <summary>
+/// Work orders whose ScheduledDate falls in the current America/Sao_Paulo civil month.
+/// Every status is included, and the status counts sum to <see cref="TotalThisMonth"/>.
+/// GET /api/work-orders is not filtered by month, so its length can be higher.
+/// </summary>
 public sealed record WorkOrderMetricsDto(
     int TotalThisMonth,
     int Pending,

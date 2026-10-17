@@ -285,6 +285,15 @@ public sealed class WorkOrderFromPlanAuthorizationTests
             UpdateWorkOrderStatusRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<WorkOrderResponse?> CancelAsync(Guid id, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<WorkOrderResponse?> UpdateAssigneeAsync(
+            Guid id,
+            Guid? assignedUserId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class UnusedAssetRegistry : IAssetRegistry

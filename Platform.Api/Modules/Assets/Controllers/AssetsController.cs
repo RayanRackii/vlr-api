@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Core.Domain.Constants;
@@ -47,6 +48,10 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
             var asset = await assetService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = asset.Id }, asset);
         }
+        catch (AssetTagDuplicateException ex)
+        {
+            return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
@@ -63,6 +68,10 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
         {
             var result = await assetService.BulkCreateAsync(request, cancellationToken);
             return Ok(result);
+        }
+        catch (AssetTagDuplicateException ex)
+        {
+            return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
         }
         catch (ArgumentException ex)
         {
@@ -96,6 +105,10 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
 
             return Ok(asset);
         }
+        catch (AssetTagDuplicateException ex)
+        {
+            return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
@@ -108,18 +121,25 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
         Guid id,
         CancellationToken cancellationToken)
     {
-        var result = await assetService.DeleteAsync(id, cancellationToken);
-
-        if (result is null)
+        try
         {
-            return NotFound();
-        }
+            var result = await assetService.DeleteAsync(id, cancellationToken);
 
-        if (result.PermanentlyDeleted)
+            if (result is null)
+            {
+                return NotFound();
+            }
+
+            if (result.PermanentlyDeleted)
+            {
+                return NoContent();
+            }
+
+            return Ok(result);
+        }
+        catch (AssetInUseException ex)
         {
-            return NoContent();
+            return Conflict(new { error = ex.Message, code = AssetInUseException.Code });
         }
-
-        return Ok(result);
     }
 }

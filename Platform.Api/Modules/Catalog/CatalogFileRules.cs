@@ -45,19 +45,25 @@ public static class CatalogFileRules
         var extension = Path.GetExtension(fileName);
         if (string.IsNullOrWhiteSpace(extension))
         {
-            throw new ArgumentException("File extension is required.");
+            throw new CatalogFileValidationException(
+                CatalogFileValidationException.TypeNotAllowed,
+                "File extension is required.");
         }
 
         if (visibility == CatalogFileVisibility.CustomerVisible)
         {
             if (sizeBytes <= 0 || sizeBytes > CustomerVisibleMaxBytes)
             {
-                throw new ArgumentException("Customer-visible images must be between 1 byte and 5 MB.");
+                throw new CatalogFileValidationException(
+                    CatalogFileValidationException.TooLarge,
+                    "Customer-visible images must be between 1 byte and 5 MB.");
             }
 
             if (!CustomerVisibleExtensions.Contains(extension) || !CustomerVisibleMimeTypes.Contains(contentType))
             {
-                throw new ArgumentException("Customer-visible files must be jpeg, png, or webp.");
+                throw new CatalogFileValidationException(
+                    CatalogFileValidationException.TypeNotAllowed,
+                    "Customer-visible files must be jpeg, png, or webp.");
             }
 
             EnsureImageMagic(extension, header);
@@ -66,12 +72,16 @@ public static class CatalogFileRules
 
         if (sizeBytes <= 0 || sizeBytes > InternalB2BMaxBytes)
         {
-            throw new ArgumentException("Internal files must be between 1 byte and 25 MB.");
+            throw new CatalogFileValidationException(
+                CatalogFileValidationException.TooLarge,
+                "Internal files must be between 1 byte and 25 MB.");
         }
 
         if (!InternalExtensions.Contains(extension) || !InternalMimeTypes.Contains(contentType))
         {
-            throw new ArgumentException("Internal files must be pdf, stl, step, stp, or dxf.");
+            throw new CatalogFileValidationException(
+                CatalogFileValidationException.TypeNotAllowed,
+                "Internal files must be pdf, stl, step, stp, or dxf.");
         }
 
         if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
@@ -84,14 +94,14 @@ public static class CatalogFileRules
     {
         if (header.Length < 12)
         {
-            throw new ArgumentException("File content does not match the declared image type.");
+            throw ContentMismatch("File content does not match the declared image type.");
         }
 
         if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase))
         {
             if (header[0] != 0x89 || header[1] != 0x50 || header[2] != 0x4E || header[3] != 0x47)
             {
-                throw new ArgumentException("File content does not match the declared image type.");
+                throw ContentMismatch("File content does not match the declared image type.");
             }
 
             return;
@@ -102,7 +112,7 @@ public static class CatalogFileRules
         {
             if (header[0] != 0xFF || header[1] != 0xD8 || header[2] != 0xFF)
             {
-                throw new ArgumentException("File content does not match the declared image type.");
+                throw ContentMismatch("File content does not match the declared image type.");
             }
 
             return;
@@ -112,7 +122,7 @@ public static class CatalogFileRules
         if (header[0] != (byte)'R' || header[1] != (byte)'I' || header[2] != (byte)'F' || header[3] != (byte)'F'
             || header[8] != (byte)'W' || header[9] != (byte)'E' || header[10] != (byte)'B' || header[11] != (byte)'P')
         {
-            throw new ArgumentException("File content does not match the declared image type.");
+            throw ContentMismatch("File content does not match the declared image type.");
         }
     }
 
@@ -124,7 +134,7 @@ public static class CatalogFileRules
             || header[2] != (byte)'D'
             || header[3] != (byte)'F')
         {
-            throw new ArgumentException("File content does not match the declared PDF type.");
+            throw ContentMismatch("File content does not match the declared PDF type.");
         }
     }
 
@@ -134,16 +144,42 @@ public static class CatalogFileRules
         long sizeBytes,
         ReadOnlySpan<byte> header)
     {
-        try
+        if (LooksLikeCustomerImage(fileName, contentType))
         {
             Validate(CatalogFileVisibility.CustomerVisible, fileName, contentType, sizeBytes, header);
+            return;
         }
-        catch (ArgumentException)
-        {
-            Validate(CatalogFileVisibility.InternalB2B, fileName, contentType, sizeBytes, header);
-        }
+
+        Validate(CatalogFileVisibility.InternalB2B, fileName, contentType, sizeBytes, header);
     }
+
+    private static bool LooksLikeCustomerImage(string fileName, string contentType)
+    {
+        var extension = Path.GetExtension(fileName);
+        return CustomerVisibleExtensions.Contains(extension)
+            && CustomerVisibleMimeTypes.Contains(contentType);
+    }
+
+    private static CatalogFileValidationException ContentMismatch(string message) =>
+        new(CatalogFileValidationException.ContentMismatch, message);
 
     public static string StorageKey(Guid tenantId, Guid ownerId, Guid fileId) =>
         $"{tenantId:N}/{ownerId:N}/{fileId:N}";
+}
+
+public sealed class CatalogFileValidationException : ArgumentException
+{
+    public const string TooLarge = "FILE_TOO_LARGE";
+
+    public const string TypeNotAllowed = "FILE_TYPE_NOT_ALLOWED";
+
+    public const string ContentMismatch = "FILE_CONTENT_MISMATCH";
+
+    public CatalogFileValidationException(string code, string message)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    public string Code { get; }
 }

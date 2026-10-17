@@ -3,27 +3,32 @@ using Platform.Api.Modules.Dashboard.Dtos;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
+using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Dashboard.Services;
 
 public sealed class DashboardService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IDashboardService
+    ITenantProvider tenantProvider,
+    TimeProvider timeProvider) : IDashboardService
 {
     public async Task<DashboardMetricsDto> GetMetricsAsync(CancellationToken cancellationToken)
     {
         EnsureTenantContext();
 
-        var utcNow = DateTimeOffset.UtcNow;
+        var utcNow = timeProvider.GetUtcNow();
         var today = DateOnly.FromDateTime(utcNow.UtcDateTime);
         var todayStart = new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var tomorrowStart = todayStart.AddDays(1);
         var last7Start = todayStart.AddDays(-6);
         var last30Start = todayStart.AddDays(-29);
-        var monthStart = new DateOnly(utcNow.Year, utcNow.Month, 1);
+        var civilToday = BrazilTimeZone.GetCivilDate(utcNow);
+        var monthStart = new DateOnly(civilToday.Year, civilToday.Month, 1);
         var nextMonthStart = monthStart.AddMonths(1);
-        var monthStartDto = new DateTimeOffset(monthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-        var nextMonthStartDto = new DateTimeOffset(nextMonthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var utcMonthStart = new DateOnly(utcNow.Year, utcNow.Month, 1);
+        var utcNextMonthStart = utcMonthStart.AddMonths(1);
+        var monthStartDto = new DateTimeOffset(utcMonthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var nextMonthStartDto = new DateTimeOffset(utcNextMonthStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var confirmationWindowStart = todayStart.AddDays(-6);
 
         var moduleNames = await dbContext.TenantModules

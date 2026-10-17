@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Storage;
@@ -125,6 +126,10 @@ public sealed class CatalogProductsController(ICatalogProductService productServ
                 visibility,
                 cancellationToken);
             return Ok(dto);
+        }
+        catch (CatalogFileValidationException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = ex.Code });
         }
         catch (ArgumentException ex)
         {

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.Rentals.Dtos;
@@ -63,6 +64,10 @@ public sealed class RentalAssetsController(
                 cancellationToken);
 
             return CreatedAtAction(nameof(GetByAssetId), new { assetId = asset.Id }, rental);
+        }
+        catch (AssetTagDuplicateException ex)
+        {
+            return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
         }
         catch (ArgumentException ex)
         {
@@ -154,6 +159,10 @@ public sealed class RentalAssetsController(
                 cancellationToken);
 
             return Ok(rental);
+        }
+        catch (AssetTagDuplicateException ex)
+        {
+            return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
         }
         catch (KeyNotFoundException ex)
         {

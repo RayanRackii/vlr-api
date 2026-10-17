@@ -66,6 +66,14 @@ public sealed class WorkOrdersController(
             var workOrder = await workOrderService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = workOrder.Id }, workOrder);
         }
+        catch (DuplicateWorkOrderException ex)
+        {
+            return Conflict(new { error = ex.Message, code = DuplicateWorkOrderException.Code });
+        }
+        catch (AssigneeCannotExecuteException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssigneeCannotExecuteException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -96,6 +104,10 @@ public sealed class WorkOrdersController(
         catch (DuplicateWorkOrderException ex)
         {
             return Conflict(new { error = ex.Message, code = DuplicateWorkOrderException.Code });
+        }
+        catch (AssigneeCannotExecuteException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssigneeCannotExecuteException.Code });
         }
         catch (ArgumentException ex)
         {
@@ -130,9 +142,83 @@ public sealed class WorkOrdersController(
 
             return Ok(workOrder);
         }
-        catch (InvalidOperationException ex)
+        catch (WorkOrderClosedException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return Conflict(new { error = ex.Message, code = ex.Code });
+        }
+        catch (InvalidTaskValueException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = ex.Code, reason = ex.Reason });
+        }
+    }
+
+    /// <summary>
+    /// Cancels the work order. Callers need <c>os.work_orders.execute</c> or
+    /// <c>os.work_orders.create</c>. Clears CompletedDate. A completed order can
+    /// be canceled and cannot return to Pending or InProgress. Execute-only
+    /// callers can cancel only orders assigned to them. Canceled orders are
+    /// ignored by maintenance-plan coverage.
+    /// </summary>
+    [HttpPost("{id:guid}/cancel")]
+    [RequireAnyPermission(Permissions.Os.WorkOrdersExecute, Permissions.Os.WorkOrdersCreate)]
+    public async Task<ActionResult<WorkOrderResponse>> Cancel(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var workOrder = await workOrderService.CancelAsync(id, cancellationToken);
+            if (workOrder is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(workOrder);
+        }
+        catch (WorkOrderClosedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ex.Code });
+        }
+    }
+
+    /// <summary>
+    /// Reassigns the work order. Requires <c>os.work_orders.assign</c>.
+    /// The assignee must be an active user of this tenant with
+    /// <c>os.work_orders.execute</c>. Null clears the assignee. The caller is
+    /// not limited to orders already assigned to them. A completed or canceled
+    /// order returns 409 <c>WORK_ORDER_CLOSED</c>.
+    /// </summary>
+    [HttpPut("{id:guid}/assignee")]
+    [RequirePermission(Permissions.Os.WorkOrdersAssign)]
+    public async Task<ActionResult<WorkOrderResponse>> UpdateAssignee(
+        Guid id,
+        [FromBody] UpdateWorkOrderAssigneeRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var workOrder = await workOrderService.UpdateAssigneeAsync(
+                id,
+                request.AssignedUserId,
+                cancellationToken);
+            if (workOrder is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(workOrder);
+        }
+        catch (WorkOrderClosedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ex.Code });
+        }
+        catch (AssigneeCannotExecuteException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssigneeCannotExecuteException.Code });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
         }
     }
 
@@ -156,6 +242,23 @@ public sealed class WorkOrdersController(
             }
 
             return Ok(workOrder);
+        }
+        catch (MandatoryTasksIncompleteException ex)
+        {
+            return BadRequest(new
+            {
+                error = ex.Message,
+                code = ex.Code,
+                tasks = ex.Tasks,
+            });
+        }
+        catch (WorkOrderClosedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ex.Code });
+        }
+        catch (WorkOrderReopenNotAllowedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ex.Code });
         }
         catch (ArgumentException ex)
         {

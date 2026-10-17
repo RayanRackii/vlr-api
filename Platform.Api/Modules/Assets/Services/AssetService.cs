@@ -60,6 +60,8 @@ public sealed class AssetService(
         var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
             family.FieldSchemaJson,
             request.Attributes);
+        var tag = request.Tag.Trim();
+        await EnsureTagAvailableAsync(tag, excludeAssetId: null, cancellationToken);
 
         var asset = new Asset
         {
@@ -68,7 +70,7 @@ public sealed class AssetService(
             CategoryId = request.CategoryId,
             FamilyId = family.Id,
             Name = request.Name.Trim(),
-            Tag = request.Tag.Trim(),
+            Tag = tag,
             Location = NormalizeOptional(request.Location),
             SerialNumber = NormalizeOptional(request.SerialNumber),
             InstallationDate = request.InstallationDate,
@@ -88,7 +90,7 @@ public sealed class AssetService(
             request.QueueEnabled,
             request.QueueOpeningTime);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesProtectingTagAsync(cancellationToken);
 
         return ToResponse(asset);
     }
@@ -122,12 +124,14 @@ public sealed class AssetService(
         var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
             family.FieldSchemaJson,
             request.Attributes);
+        var tag = request.Tag.Trim();
+        await EnsureTagAvailableAsync(tag, asset.Id, cancellationToken);
 
         asset.UnitId = request.UnitId;
         asset.CategoryId = request.CategoryId;
         asset.FamilyId = family.Id;
         asset.Name = request.Name.Trim();
-        asset.Tag = request.Tag.Trim();
+        asset.Tag = tag;
         asset.Location = NormalizeOptional(request.Location);
         asset.SerialNumber = NormalizeOptional(request.SerialNumber);
         asset.InstallationDate = request.InstallationDate;
@@ -146,7 +150,7 @@ public sealed class AssetService(
             request.QueueEnabled,
             request.QueueOpeningTime);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesProtectingTagAsync(cancellationToken);
 
         return ToResponse(asset);
     }
@@ -176,8 +180,28 @@ public sealed class AssetService(
                 Asset: ToResponse(asset));
         }
 
+        if (await dbContext.WorkOrders.AnyAsync(workOrder => workOrder.AssetId == id, cancellationToken))
+        {
+            throw new AssetInUseException();
+        }
+
         dbContext.Assets.Remove(asset);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (AssetPersistenceConflicts.IsForeignKeyViolation(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+            var referencedByWorkOrders = await dbContext.WorkOrders
+                .AnyAsync(workOrder => workOrder.AssetId == id, cancellationToken);
+            if (referencedByWorkOrders || AssetPersistenceConflicts.IsWorkOrderAssetForeignKey(ex))
+            {
+                throw new AssetInUseException();
+            }
+
+            throw;
+        }
 
         return new DeleteAssetResult(
             PermanentlyDeleted: true,
@@ -219,7 +243,7 @@ public sealed class AssetService(
 
         if (existingTags.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw new AssetTagDuplicateException(
                 $"One or more tags already exist: {string.Join(", ", existingTags)}");
         }
 
@@ -255,7 +279,7 @@ public sealed class AssetService(
         }
 
         await dbContext.Assets.AddRangeAsync(assets, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveChangesProtectingTagAsync(cancellationToken);
 
         var responses = assets
             .OrderBy(a => a.Tag)
@@ -424,6 +448,36 @@ public sealed class AssetService(
         if (rentalType == RentalAssetType.Location && totalQuantity != 1)
         {
             throw new ArgumentException("Location rentals must have TotalQuantity equal to 1.");
+        }
+    }
+
+    private async Task EnsureTagAvailableAsync(
+        string tag,
+        Guid? excludeAssetId,
+        CancellationToken cancellationToken)
+    {
+        var duplicate = await dbContext.Assets
+            .AsNoTracking()
+            .AnyAsync(
+                asset => asset.Tag == tag && (excludeAssetId == null || asset.Id != excludeAssetId),
+                cancellationToken);
+
+        if (duplicate)
+        {
+            throw new AssetTagDuplicateException();
+        }
+    }
+
+    private async Task SaveChangesProtectingTagAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (AssetPersistenceConflicts.IsTagUniqueViolation(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+            throw new AssetTagDuplicateException();
         }
     }
 

@@ -199,7 +199,7 @@ public sealed class PmocDueCalculatorTests
     public void Status_completed_path_always_assigns_completed_date()
     {
         var source = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Modules", "WorkOrders", "Services", "WorkOrderService.cs")));
-        Assert.Contains("if (request.Status == WorkOrderStatus.Completed)", source, StringComparison.Ordinal);
+        Assert.Contains("if (nextStatus == WorkOrderStatus.Completed)", source, StringComparison.Ordinal);
         Assert.Contains("workOrder.CompletedDate = DateTimeOffset.UtcNow;", source, StringComparison.Ordinal);
         Assert.DoesNotContain("CompletedDate = workOrder.ScheduledDate", source, StringComparison.Ordinal);
     }

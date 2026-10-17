@@ -143,12 +143,33 @@ public sealed class AssetCategoryService(
 
         if (hasMaintenancePlans)
         {
-            throw new InvalidOperationException(
+            throw new CategoryInUseException(
                 "Cannot permanently delete an asset category that is referenced by maintenance plans.");
         }
 
+        var assetIds = category.Assets.Select(asset => asset.Id).ToList();
+        var hasWorkOrders = assetIds.Count > 0
+            && await dbContext.WorkOrders.AnyAsync(
+                workOrder => assetIds.Contains(workOrder.AssetId),
+                cancellationToken);
+
+        if (hasWorkOrders)
+        {
+            throw new CategoryInUseException(
+                "Cannot permanently delete an asset category while its assets are referenced by work orders.");
+        }
+
         dbContext.AssetCategories.Remove(category);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (AssetPersistenceConflicts.IsForeignKeyViolation(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+            throw new CategoryInUseException(
+                "Cannot permanently delete an asset category that is referenced by maintenance plans or work orders.");
+        }
 
         return new DeleteAssetCategoryResult(
             PermanentlyDeleted: true,
