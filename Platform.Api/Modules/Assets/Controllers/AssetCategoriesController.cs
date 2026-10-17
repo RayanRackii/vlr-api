@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Core.Domain.Constants;
@@ -85,6 +86,10 @@ public sealed class AssetCategoriesController(
             }
 
             return Ok(result);
+        }
+        catch (CategoryInUseException ex)
+        {
+            return Conflict(new { error = ex.Message, code = CategoryInUseException.Code });
         }
         catch (InvalidOperationException ex)
         {

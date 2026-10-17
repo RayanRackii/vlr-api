@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Storage;
@@ -129,6 +130,10 @@ public sealed class CatalogPortalController(
                 uploads,
                 cancellationToken);
             return Ok(created);
+        }
+        catch (CatalogFileValidationException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = ex.Code });
         }
         catch (ArgumentException ex)
         {
