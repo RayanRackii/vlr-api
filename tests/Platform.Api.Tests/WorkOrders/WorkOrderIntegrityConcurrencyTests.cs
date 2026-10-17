@@ -104,6 +104,48 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
     }
 
     [DockerFact]
+    public async Task Completion_and_task_value_serialize_so_a_late_value_cannot_land_on_a_closed_order()
+    {
+        var factory = RequireFactory();
+        var tenantProvider = new FakeTenantProvider();
+        var seed = await SeedAsync(factory, tenantProvider);
+
+        await using var statusDb = factory.Create(tenantProvider);
+        await using var valueDb = factory.Create(tenantProvider);
+        var status = CreateService(statusDb, tenantProvider).UpdateStatusAsync(
+            seed.WorkOrderId,
+            new UpdateWorkOrderStatusRequest { Status = WorkOrderStatus.Completed },
+            CancellationToken.None);
+        var value = CreateService(valueDb, tenantProvider).UpdateTaskValueAsync(
+            seed.WorkOrderId,
+            seed.TaskId,
+            new UpdateWorkOrderTaskValueRequest { Value = "queued" },
+            CancellationToken.None);
+
+        var statusError = await ObserveAsync(status);
+        var valueError = await ObserveAsync(value);
+
+        await using var verify = factory.Create(tenantProvider);
+        var stored = await verify.WorkOrders
+            .Include(workOrder => workOrder.Tasks)
+            .SingleAsync(workOrder => workOrder.Id == seed.WorkOrderId);
+
+        Assert.Equal(WorkOrderStatus.Completed, stored.Status);
+        Assert.Null(statusError);
+
+        var taskValue = stored.Tasks.Single().Value;
+        if (valueError is null)
+        {
+            Assert.Equal("queued", taskValue);
+            return;
+        }
+
+        var closed = Assert.IsType<WorkOrderClosedException>(valueError);
+        Assert.Equal(WorkOrderErrorCodes.Closed, closed.Code);
+        Assert.Null(taskValue);
+    }
+
+    [DockerFact]
     public async Task Two_creates_for_the_same_plan_asset_and_date_leave_one_row()
     {
         var factory = RequireFactory();

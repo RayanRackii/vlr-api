@@ -21,3 +21,13 @@ A mandatory `Image` task does not block completion. There is no work-order uploa
 `UpdateAssigneeAsync` locks the row, reloads it, and returns `409 WORK_ORDER_CLOSED` for `Completed` and `Canceled` orders. The assignee is left unchanged.
 
 `os.work_orders.assign` is already in the permission catalog and is not explicit-grant-only. `TenantAccessBootstrapper.EnsureAsync` adds it to existing Admin and SuperAdmin roles without removing grants those roles already have. User, Technician, and custom roles (including a role named Manager) do not receive it. There is no system role named Manager. No new migration.
+
+## Closed-order write ordering
+
+DEV `67ce7e5` saved an offline text value on work order `0d8c9364` after the operator had completed it in another tab. The value row was updated about 1.6s before `completed_date`. Status and the task write both read the order before taking `FOR UPDATE`, so the task transaction could commit while completion was still outside the lock.
+
+`UpdateTaskValue`, `UpdateStatus`, and `Cancel` now take the `os.work_orders` row lock as the first statement in the transaction, then load the caller and reload the order. `UpdateAssignee` does the same and still does not apply the assigned-only filter. A value that acquires the lock and commits while the order is open stays on the order when completion runs next. A value that waits on a completion or cancel already holding the lock reloads `Completed` or `Canceled` and returns 409 `WORK_ORDER_CLOSED`.
+
+vlr-web `develop` has one task-value write: `PATCH /api/work-orders/{id}/tasks/{taskId}` with `{ value }`. `updateTaskValue` and `processSyncQueue` in `src/lib/offlineSync.ts` both call it. There is no bulk or batch task route.
+
+The second `DELETE /api/assets/{id}` (the permanent one, after `ScheduledDeletionAt` is set) returns 409 `ASSET_IN_USE` when any work order references the asset. The first delete still schedules removal and returns 200. There is no bulk asset delete. The second category delete returns 409 `CATEGORY_IN_USE` when a plan or a work order still references it. No API change was required on those delete paths.

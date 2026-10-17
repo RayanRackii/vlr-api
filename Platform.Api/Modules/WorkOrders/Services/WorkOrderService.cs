@@ -193,122 +193,79 @@ public sealed class WorkOrderService(
         return await InTransactionAsync(InsertAsync, cancellationToken);
     }
 
-    public async Task<WorkOrderResponse?> UpdateTaskValueAsync(
+    public Task<WorkOrderResponse?> UpdateTaskValueAsync(
         Guid workOrderId,
         Guid taskId,
         UpdateWorkOrderTaskValueRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-        var currentUser = await GetCurrentUserAsync(cancellationToken);
-
-        var query = dbContext.WorkOrders
-            .Include(w => w.Asset)
-            .Include(w => w.AssignedUser)
-            .Include(w => w.Tasks)
-            .AsQueryable();
-
-        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
-        {
-            query = query.Where(w => w.AssignedUserId == currentUser.Id);
-        }
-
-        var workOrder = await query
-            .FirstOrDefaultAsync(w => w.Id == workOrderId, cancellationToken);
-
-        if (workOrder is null)
-        {
-            return null;
-        }
-
-        WorkOrderResponse? response = null;
-        await InTransactionAsync(
+        var tenantId = EnsureTenantContext();
+        return InTransactionAsync(
             async () =>
             {
-                await LockPlanAndWorkOrderAsync(workOrder, cancellationToken);
-                await ReloadWorkOrderAsync(workOrder, cancellationToken);
-                EnsureMutable(workOrder);
+                var workOrder = await LockAndLoadAsync(tenantId, workOrderId, cancellationToken);
+                if (workOrder is null)
+                {
+                    return null;
+                }
 
+                EnsureMutable(workOrder);
                 var task = workOrder.Tasks.FirstOrDefault(t => t.Id == taskId);
                 if (task is null)
                 {
-                    return;
+                    return null;
                 }
 
                 task.Value = WorkOrderTaskValues.Normalize(task, request.Value);
                 task.Touch();
                 workOrder.Touch();
                 await dbContext.SaveChangesAsync(cancellationToken);
-                response = WorkOrderResponseMapper.ToResponse(workOrder);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
             },
             cancellationToken);
-
-        return response;
     }
 
-    public async Task<WorkOrderResponse?> UpdateStatusAsync(
+    public Task<WorkOrderResponse?> UpdateStatusAsync(
         Guid id,
         UpdateWorkOrderStatusRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-        var currentUser = await GetCurrentUserAsync(cancellationToken);
-
-        var query = dbContext.WorkOrders
-            .Include(w => w.Asset)
-            .Include(w => w.AssignedUser)
-            .Include(w => w.Tasks)
-            .AsQueryable();
-
-        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
-        {
-            query = query.Where(w => w.AssignedUserId == currentUser.Id);
-        }
-
-        var workOrder = await query
-            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
-
-        if (workOrder is null)
-        {
-            return null;
-        }
-
-        await InTransactionAsync(
+        var tenantId = EnsureTenantContext();
+        return InTransactionAsync(
             async () =>
             {
-                await LockPlanAndWorkOrderAsync(workOrder, cancellationToken);
-                await ReloadWorkOrderAsync(workOrder, cancellationToken);
+                var workOrder = await LockAndLoadAsync(tenantId, id, cancellationToken);
+                if (workOrder is null)
+                {
+                    return null;
+                }
+
                 ApplyStatusChange(workOrder, request.Status);
                 await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
             },
             cancellationToken);
-
-        return WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
-    public async Task<WorkOrderResponse?> CancelAsync(
+    public Task<WorkOrderResponse?> CancelAsync(
         Guid id,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-        var currentUser = await GetCurrentUserAsync(cancellationToken);
-        var workOrder = await FindMutableWorkOrderAsync(id, currentUser, cancellationToken);
-        if (workOrder is null)
-        {
-            return null;
-        }
-
-        await InTransactionAsync(
+        var tenantId = EnsureTenantContext();
+        return InTransactionAsync(
             async () =>
             {
-                await LockPlanAndWorkOrderAsync(workOrder, cancellationToken);
-                await ReloadWorkOrderAsync(workOrder, cancellationToken);
+                var workOrder = await LockAndLoadAsync(tenantId, id, cancellationToken);
+                if (workOrder is null)
+                {
+                    return null;
+                }
+
                 ApplyStatusChange(workOrder, WorkOrderStatus.Canceled);
                 await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
             },
             cancellationToken);
-
-        return WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
     public async Task<WorkOrderResponse?> UpdateAssigneeAsync(
@@ -317,23 +274,22 @@ public sealed class WorkOrderService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        _ = await GetCurrentUserAsync(cancellationToken);
-
-        var workOrder = await dbContext.WorkOrders
-            .Include(w => w.Asset)
-            .Include(w => w.AssignedUser)
-            .Include(w => w.Tasks)
-            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
-
-        if (workOrder is null)
-        {
-            return null;
-        }
-
-        await InTransactionAsync(
+        return await InTransactionAsync(
             async () =>
             {
-                await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, workOrder.Id, cancellationToken);
+                await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, id, cancellationToken);
+                _ = await GetCurrentUserAsync(cancellationToken);
+                var workOrder = await dbContext.WorkOrders
+                    .Include(w => w.Asset)
+                    .Include(w => w.AssignedUser)
+                    .Include(w => w.Tasks)
+                    .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+
+                if (workOrder is null)
+                {
+                    return null;
+                }
+
                 await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
                 EnsureMutable(workOrder);
                 var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
@@ -346,10 +302,9 @@ public sealed class WorkOrderService(
                 workOrder.AssignedUser = assignedUser;
                 workOrder.Touch();
                 await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
             },
             cancellationToken);
-
-        return WorkOrderResponseMapper.ToResponse(workOrder);
     }
 
     private static void ApplyStatusChange(WorkOrder workOrder, WorkOrderStatus nextStatus)
@@ -390,11 +345,14 @@ public sealed class WorkOrderService(
         workOrder.Touch();
     }
 
-    private async Task<WorkOrder?> FindMutableWorkOrderAsync(
+    private async Task<WorkOrder?> LockAndLoadAsync(
+        Guid tenantId,
         Guid id,
-        Platform.Api.Modules.Users.Dtos.CurrentUserResponse currentUser,
         CancellationToken cancellationToken)
     {
+        await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, id, cancellationToken);
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
+
         var query = dbContext.WorkOrders
             .Include(w => w.Asset)
             .Include(w => w.AssignedUser)
@@ -406,13 +364,12 @@ public sealed class WorkOrderService(
             query = query.Where(w => w.AssignedUserId == currentUser.Id);
         }
 
-        return await query.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
-    }
+        var workOrder = await query.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+        if (workOrder is null)
+        {
+            return null;
+        }
 
-    private async Task LockPlanAndWorkOrderAsync(
-        WorkOrder workOrder,
-        CancellationToken cancellationToken)
-    {
         if (workOrder.MaintenancePlanId is Guid planId)
         {
             await PmocPlanAssetLock.AcquireAsync(
@@ -422,8 +379,8 @@ public sealed class WorkOrderService(
                 cancellationToken);
         }
 
-        var tenantId = workOrder.TenantId;
-        await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, workOrder.Id, cancellationToken);
+        await ReloadWorkOrderAsync(workOrder, cancellationToken);
+        return workOrder;
     }
 
     private async Task ReloadWorkOrderAsync(WorkOrder workOrder, CancellationToken cancellationToken)
