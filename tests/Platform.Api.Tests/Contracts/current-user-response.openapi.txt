@@ -14,3 +14,4 @@ roles:array;nullable;items=#/components/schemas/CurrentUserRoleDto
 permissions:array;nullable;items=string
 tenantTradeName:string;nullable
 tenantLegalName:string;nullable
+phone:string;nullable

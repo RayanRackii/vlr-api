@@ -53,6 +53,11 @@ public sealed record UpdateWorkOrderStatusRequest
     public required WorkOrderStatus Status { get; init; }
 }
 
+public sealed record UpdateWorkOrderAssigneeRequest
+{
+    public Guid? AssignedUserId { get; init; }
+}
+
 public sealed record WorkOrderAssetResponse(
     Guid Id,
     Guid UnitId,

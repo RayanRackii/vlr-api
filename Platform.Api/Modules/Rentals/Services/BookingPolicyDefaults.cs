@@ -3,8 +3,9 @@ using Platform.Core.Domain.Entities;
 namespace Platform.Api.Modules.Rentals.Services;
 
 /// <summary>
-/// Suggested horizon for a tenant that does not exist yet. Existing tenants
-/// keep a null horizon (unlimited) until an admin sets one.
+/// Horizon stored for a tenant at provisioning. Call this only while creating
+/// the tenant. A later read, and the first save for a tenant that has no row,
+/// leave the horizon unlimited unless the request sets one.
 /// </summary>
 internal static class BookingPolicyDefaults
 {

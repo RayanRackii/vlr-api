@@ -1258,6 +1258,15 @@ public sealed class ModuleRuntimeGateTests
             UpdateWorkOrderStatusRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<WorkOrderResponse?> CancelAsync(Guid id, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<WorkOrderResponse?> UpdateAssigneeAsync(
+            Guid id,
+            Guid? assignedUserId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubCatalogPortalService : ICatalogPortalService
@@ -1387,7 +1396,14 @@ public sealed class ModuleRuntimeGateTests
                     [],
                     [],
                     null,
+                    null,
                     null));
+
+        public Task<CurrentUserResponse> UpdateCurrentPhoneAsync(
+            ClaimsPrincipal principal,
+            string? phone,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task<IReadOnlyList<TechnicianUserResponse>> ListTechniciansAsync(
             CancellationToken cancellationToken) =>

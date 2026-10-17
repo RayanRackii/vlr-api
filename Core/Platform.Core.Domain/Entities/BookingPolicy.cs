@@ -17,8 +17,11 @@ public class BookingPolicy : Entity, ITenantScoped
 
     public const int MaxDailyActiveReservations = 100;
 
-    /// <summary>Stored on new tenants. Null on a policy still means unlimited.</summary>
-    public const int SuggestedMaxAdvanceBookingDays = 365;
+    /// <summary>
+    /// Written only when a tenant is provisioned. A missing policy row and an
+    /// explicit null stay unlimited. Reads never apply this value.
+    /// </summary>
+    public const int SuggestedMaxAdvanceBookingDays = 7;
 
     public const int MinAdvanceBookingDays = 0;
 

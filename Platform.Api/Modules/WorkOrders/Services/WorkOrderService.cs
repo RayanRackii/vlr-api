@@ -92,14 +92,23 @@ public sealed class WorkOrderService(
 
         var asset = await assetRegistry.RequireAssetAsync(request.AssetId, cancellationToken);
 
-        string? sourcePlanName = null;
+        MaintenancePlan? plan = null;
         if (request.MaintenancePlanId is Guid planId)
         {
-            var plan = await dbContext.MaintenancePlans
+            plan = await dbContext.MaintenancePlans
                 .FirstOrDefaultAsync(p => p.Id == planId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Maintenance plan '{planId}' was not found.");
 
-            sourcePlanName = plan.Name;
+            if (!plan.IsActive)
+            {
+                throw new ArgumentException("Maintenance plan is not active.");
+            }
+
+            if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId))
+            {
+                throw new ArgumentException(
+                    $"Asset '{asset.Id}' is not eligible for this maintenance plan.");
+            }
         }
 
         var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
@@ -111,20 +120,41 @@ public sealed class WorkOrderService(
 
         ValidateTasks(request.Tasks);
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        try
+        async Task<WorkOrderResponse> InsertAsync()
         {
+            if (plan is not null)
+            {
+                await PmocPlanAssetLock.AcquireAsync(
+                    dbContext,
+                    plan.Id,
+                    asset.Id,
+                    cancellationToken);
+
+                var duplicate = await dbContext.WorkOrders.AnyAsync(
+                    workOrder =>
+                        workOrder.TenantId == plan.TenantId
+                        && workOrder.AssetId == asset.Id
+                        && workOrder.MaintenancePlanId == plan.Id
+                        && workOrder.ScheduledDate == request.ScheduledDate
+                        && workOrder.Status != WorkOrderStatus.Canceled,
+                    cancellationToken);
+
+                if (duplicate)
+                {
+                    throw new DuplicateWorkOrderException();
+                }
+            }
+
             var workOrder = new WorkOrder
             {
                 TenantId = tenantId,
                 AssetId = asset.Id,
-                MaintenancePlanId = request.MaintenancePlanId,
+                MaintenancePlanId = plan?.Id,
                 AssignedUserId = assignedUser?.Id,
                 Status = WorkOrderStatus.Pending,
                 ScheduledDate = request.ScheduledDate,
                 Notes = NormalizeOptional(request.Notes),
-                SourcePlanName = sourcePlanName,
+                SourcePlanName = plan?.Name,
             };
 
             foreach (var taskDto in request.Tasks.OrderBy(t => t.Order))
@@ -144,76 +174,183 @@ public sealed class WorkOrderService(
             }
 
             dbContext.WorkOrders.Add(workOrder);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (
+                plan is not null && WorkOrderGenerationService.IsPmocPeriodUniqueViolation(ex))
+            {
+                dbContext.ChangeTracker.Clear();
+                throw new DuplicateWorkOrderException();
+            }
 
             workOrder.Asset = asset;
             workOrder.AssignedUser = assignedUser;
             return WorkOrderResponseMapper.ToResponse(workOrder);
         }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+
+        return await InTransactionAsync(InsertAsync, cancellationToken);
     }
 
-    public async Task<WorkOrderResponse?> UpdateTaskValueAsync(
+    public Task<WorkOrderResponse?> UpdateTaskValueAsync(
         Guid workOrderId,
         Guid taskId,
         UpdateWorkOrderTaskValueRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-        var currentUser = await GetCurrentUserAsync(cancellationToken);
+        var tenantId = EnsureTenantContext();
+        return InTransactionAsync(
+            async () =>
+            {
+                var workOrder = await LockAndLoadAsync(tenantId, workOrderId, cancellationToken);
+                if (workOrder is null)
+                {
+                    return null;
+                }
 
-        var query = dbContext.WorkOrders
-            .Include(w => w.Asset)
-            .Include(w => w.AssignedUser)
-            .Include(w => w.Tasks)
-            .AsQueryable();
+                EnsureMutable(workOrder);
+                var task = workOrder.Tasks.FirstOrDefault(t => t.Id == taskId);
+                if (task is null)
+                {
+                    return null;
+                }
 
-        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
-        {
-            query = query.Where(w => w.AssignedUserId == currentUser.Id);
-        }
-
-        var workOrder = await query
-            .FirstOrDefaultAsync(w => w.Id == workOrderId, cancellationToken);
-
-        if (workOrder is null)
-        {
-            return null;
-        }
-
-        if (workOrder.Status is WorkOrderStatus.Completed or WorkOrderStatus.Canceled)
-        {
-            throw new InvalidOperationException(
-                $"Cannot update tasks on a work order with status '{workOrder.Status}'.");
-        }
-
-        var task = workOrder.Tasks.FirstOrDefault(t => t.Id == taskId);
-
-        if (task is null)
-        {
-            return null;
-        }
-
-        task.Value = NormalizeOptional(request.Value);
-        task.Touch();
-        workOrder.Touch();
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return WorkOrderResponseMapper.ToResponse(workOrder);
+                task.Value = WorkOrderTaskValues.Normalize(task, request.Value);
+                task.Touch();
+                workOrder.Touch();
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
+            },
+            cancellationToken);
     }
 
-    public async Task<WorkOrderResponse?> UpdateStatusAsync(
+    public Task<WorkOrderResponse?> UpdateStatusAsync(
         Guid id,
         UpdateWorkOrderStatusRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
+        return InTransactionAsync(
+            async () =>
+            {
+                var workOrder = await LockAndLoadAsync(tenantId, id, cancellationToken);
+                if (workOrder is null)
+                {
+                    return null;
+                }
+
+                ApplyStatusChange(workOrder, request.Status);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
+            },
+            cancellationToken);
+    }
+
+    public Task<WorkOrderResponse?> CancelAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+        return InTransactionAsync(
+            async () =>
+            {
+                var workOrder = await LockAndLoadAsync(tenantId, id, cancellationToken);
+                if (workOrder is null)
+                {
+                    return null;
+                }
+
+                ApplyStatusChange(workOrder, WorkOrderStatus.Canceled);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
+            },
+            cancellationToken);
+    }
+
+    public async Task<WorkOrderResponse?> UpdateAssigneeAsync(
+        Guid id,
+        Guid? assignedUserId,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+        return await InTransactionAsync(
+            async () =>
+            {
+                await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, id, cancellationToken);
+                _ = await GetCurrentUserAsync(cancellationToken);
+                var workOrder = await dbContext.WorkOrders
+                    .Include(w => w.Asset)
+                    .Include(w => w.AssignedUser)
+                    .Include(w => w.Tasks)
+                    .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+
+                if (workOrder is null)
+                {
+                    return null;
+                }
+
+                await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
+                EnsureMutable(workOrder);
+                var assignedUser = await WorkOrderAssigneeGuard.ResolveOptionalAsync(
+                    dbContext,
+                    permissionResolver,
+                    tenantId,
+                    assignedUserId,
+                    cancellationToken);
+                workOrder.AssignedUserId = assignedUser?.Id;
+                workOrder.AssignedUser = assignedUser;
+                workOrder.Touch();
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return WorkOrderResponseMapper.ToResponse(workOrder);
+            },
+            cancellationToken);
+    }
+
+    private static void ApplyStatusChange(WorkOrder workOrder, WorkOrderStatus nextStatus)
+    {
+        if (workOrder.Status == WorkOrderStatus.Canceled)
+        {
+            throw new WorkOrderClosedException();
+        }
+
+        if (workOrder.Status == WorkOrderStatus.Completed
+            && nextStatus is WorkOrderStatus.Pending or WorkOrderStatus.InProgress)
+        {
+            throw new WorkOrderReopenNotAllowedException();
+        }
+
+        if (nextStatus == WorkOrderStatus.Completed)
+        {
+            var missing = workOrder.Tasks
+                .Where(task => task.IsMandatory && !WorkOrderTaskValues.IsFilled(task))
+                .OrderBy(task => task.Order)
+                .ThenBy(task => task.Id)
+                .Select(task => new IncompleteWorkOrderTask(task.Id, task.Title))
+                .ToList();
+
+            if (missing.Count > 0)
+            {
+                throw new MandatoryTasksIncompleteException(missing);
+            }
+
+            workOrder.CompletedDate = DateTimeOffset.UtcNow;
+        }
+        else if (nextStatus is WorkOrderStatus.Pending or WorkOrderStatus.InProgress or WorkOrderStatus.Canceled)
+        {
+            workOrder.CompletedDate = null;
+        }
+
+        workOrder.Status = nextStatus;
+        workOrder.Touch();
+    }
+
+    private async Task<WorkOrder?> LockAndLoadAsync(
+        Guid tenantId,
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, id, cancellationToken);
         var currentUser = await GetCurrentUserAsync(cancellationToken);
 
         var query = dbContext.WorkOrders
@@ -227,9 +364,7 @@ public sealed class WorkOrderService(
             query = query.Where(w => w.AssignedUserId == currentUser.Id);
         }
 
-        var workOrder = await query
-            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
-
+        var workOrder = await query.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
         if (workOrder is null)
         {
             return null;
@@ -237,65 +372,62 @@ public sealed class WorkOrderService(
 
         if (workOrder.MaintenancePlanId is Guid planId)
         {
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                await PmocPlanAssetLock.AcquireAsync(
-                    dbContext,
-                    planId,
-                    workOrder.AssetId,
-                    cancellationToken);
-                await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
-                ApplyStatusChange(workOrder, request);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
-            catch
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
-            }
-        }
-        else
-        {
-            ApplyStatusChange(workOrder, request);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await PmocPlanAssetLock.AcquireAsync(
+                dbContext,
+                planId,
+                workOrder.AssetId,
+                cancellationToken);
         }
 
-        return WorkOrderResponseMapper.ToResponse(workOrder);
+        await ReloadWorkOrderAsync(workOrder, cancellationToken);
+        return workOrder;
     }
 
-    private static void ApplyStatusChange(WorkOrder workOrder, UpdateWorkOrderStatusRequest request)
+    private async Task ReloadWorkOrderAsync(WorkOrder workOrder, CancellationToken cancellationToken)
     {
-        if (workOrder.Status == WorkOrderStatus.Canceled)
+        await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
+        foreach (var task in workOrder.Tasks.ToList())
         {
-            throw new InvalidOperationException("Cannot change status of a canceled work order.");
+            await dbContext.Entry(task).ReloadAsync(cancellationToken);
         }
+    }
 
-        if (request.Status == WorkOrderStatus.Completed)
+    private static void EnsureMutable(WorkOrder workOrder)
+    {
+        if (workOrder.Status is WorkOrderStatus.Completed or WorkOrderStatus.Canceled)
         {
-            var missingMandatory = workOrder.Tasks
-                .Where(task => task.IsMandatory && string.IsNullOrWhiteSpace(task.Value))
-                .OrderBy(task => task.Order)
-                .Select(task => task.Title)
-                .ToList();
+            throw new WorkOrderClosedException();
+        }
+    }
 
-            if (missingMandatory.Count > 0)
+    private Task InTransactionAsync(Func<Task> action, CancellationToken cancellationToken) =>
+        InTransactionAsync(
+            async () =>
             {
-                throw new ArgumentException(
-                    $"Mandatory tasks are incomplete: {string.Join(", ", missingMandatory)}.");
-            }
+                await action();
+                return 0;
+            },
+            cancellationToken);
 
-            workOrder.CompletedDate = DateTimeOffset.UtcNow;
-        }
-
-        if (request.Status is WorkOrderStatus.Pending or WorkOrderStatus.InProgress)
+    private async Task<T> InTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational())
         {
-            workOrder.CompletedDate = null;
+            return await action();
         }
 
-        workOrder.Status = request.Status;
-        workOrder.Touch();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var result = await action();
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     private Guid EnsureTenantContext()

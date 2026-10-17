@@ -475,7 +475,7 @@ public sealed class WorkOrderGenerationServiceTests
             CancellationToken.None);
         Assert.Null(omitted.AssignedUserId);
 
-        var denied = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var denied = await Assert.ThrowsAsync<AssigneeCannotExecuteException>(() =>
             generator.GenerateAsync(
                 new GenerateWorkOrderCommand(plan.Id, asset.Id, scheduled.AddDays(1), reader.Id),
                 CancellationToken.None));
