@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.WorkOrders;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -37,8 +38,7 @@ internal static class WorkOrderAssigneeGuard
 
         if (!canExecute)
         {
-            throw new ArgumentException(
-                $"Assigned user '{userId}' cannot execute work orders.");
+            throw new AssigneeCannotExecuteException(userId);
         }
 
         return assignedUser;

@@ -97,8 +97,15 @@ public sealed class UsersController(
         return Ok(users);
     }
 
+    /// <summary>
+    /// Active users who can execute work orders. Callable with
+    /// <c>core.users.read</c>, <c>os.work_orders.create</c>, or <c>os.work_orders.assign</c>.
+    /// </summary>
     [HttpGet("technicians")]
-    [RequirePermission(Permissions.Core.UsersRead)]
+    [RequireAnyPermission(
+        Permissions.Core.UsersRead,
+        Permissions.Os.WorkOrdersCreate,
+        Permissions.Os.WorkOrdersAssign)]
     public async Task<ActionResult<IReadOnlyList<TechnicianUserResponse>>> ListTechnicians(
         CancellationToken cancellationToken)
     {

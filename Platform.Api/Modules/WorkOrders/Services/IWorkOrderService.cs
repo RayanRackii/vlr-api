@@ -25,4 +25,11 @@ public interface IWorkOrderService
         Guid id,
         UpdateWorkOrderStatusRequest request,
         CancellationToken cancellationToken);
+
+    Task<WorkOrderResponse?> CancelAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<WorkOrderResponse?> UpdateAssigneeAsync(
+        Guid id,
+        Guid? assignedUserId,
+        CancellationToken cancellationToken);
 }
