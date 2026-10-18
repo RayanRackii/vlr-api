@@ -48,6 +48,15 @@ public sealed record UpdateWorkOrderTaskValueRequest
     public string? Value { get; init; }
 }
 
+public sealed record WorkOrderTaskFileResponse(
+    Guid Id,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string Value);
+
+public sealed record WorkOrderTaskFileUrlResponse(string Url, bool IsPublic);
+
 public sealed record UpdateWorkOrderStatusRequest
 {
     public required WorkOrderStatus Status { get; init; }

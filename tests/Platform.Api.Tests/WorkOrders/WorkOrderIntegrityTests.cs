@@ -125,22 +125,25 @@ public sealed class WorkOrderIntegrityTests
     }
 
     [Fact]
-    public async Task Mandatory_image_does_not_block_completion()
+    public async Task Mandatory_image_without_stored_file_blocks_completion()
     {
         await using var harness = await WorkOrderRbacHarness.CreateAsync();
         var order = harness.AddWorkOrder(harness.Executor.Id);
-        AddTask(harness, order, TaskInputType.Image, null, isMandatory: true, title: "Attachment");
+        var photo = AddTask(harness, order, TaskInputType.Image, null, isMandatory: true, title: "Attachment");
         await harness.Db.SaveChangesAsync();
         harness.SetUser(harness.Executor);
 
-        var completed = await harness.Service.UpdateStatusAsync(
-            order.Id,
-            new UpdateWorkOrderStatusRequest { Status = WorkOrderStatus.Completed },
-            CancellationToken.None);
+        var missing = await Assert.ThrowsAsync<MandatoryTasksIncompleteException>(() =>
+            harness.Service.UpdateStatusAsync(
+                order.Id,
+                new UpdateWorkOrderStatusRequest { Status = WorkOrderStatus.Completed },
+                CancellationToken.None));
 
-        Assert.NotNull(completed);
-        Assert.Equal(WorkOrderStatus.Completed, completed.Status);
-        Assert.Null(completed.Tasks.Single().Value);
+        Assert.Equal("MANDATORY_TASKS_INCOMPLETE", missing.Code);
+        var listed = Assert.Single(missing.Tasks);
+        Assert.Equal(photo.Id, listed.Id);
+        Assert.Equal("Attachment", listed.Title);
+        Assert.Equal(WorkOrderStatus.Pending, (await harness.Db.WorkOrders.SingleAsync(item => item.Id == order.Id)).Status);
     }
 
     [Fact]
