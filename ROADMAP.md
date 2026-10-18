@@ -224,6 +224,7 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
 - [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
 - [x] B2C portal: explicit 403 when `catalog` module inactive via canonical `[RequireActiveModule]` (Wave 5).
+- [x] Portal B2C lê os próprios product requests: `GET /api/catalog/portal/product-requests` (paginado, mais novo primeiro, só o customer autenticado no tenant do JWT) e `GET /api/catalog/portal/product-requests/{id}` (404 para outro customer ou outro tenant). Resposta: `status`, `description`, `quantity`, `createdAt` e URL assinada em `files[].url` quando há arquivo. Sem migration.
 
 ## Dívidas técnicas conhecidas
 
@@ -249,6 +250,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-18 | **Feature (API, sem merge):** portal B2C lista e abre o próprio product request. `GET /api/catalog/portal/product-requests` é paginado (`page` 1, `pageSize` 20, máx. 50), mais novo primeiro (`createdAt`, depois `id`). `GET /api/catalog/portal/product-requests/{id}` devolve 404 sem corpo para outro customer ou outro tenant; a lista desses casos vem vazia. Campos: `status`, `description`, `quantity`, `createdAt` e `files[].url` assinada quando existe arquivo. Sem migration. |
 | 2026-10-17 | **Fix (API, sem merge):** comentário de `PmocPlanAssetLock` descreve a ordem real (OS existente: linha, depois advisory; geração e create com plano: advisory primeiro e insert de OS nova; automático também locka plano e ativo). Não há ciclo porque quem cria não espera linha de OS existente e quem edita OS existente não locka plano nem ativo. `rentals.reservedRevenueThisMonth` usa o mês civil `America/Sao_Paulo`, o mesmo de `workOrders.totalThisMonth` e do PMOC. Sem migration. |
 | 2026-10-17 | **Fix (API, sem merge):** QA no DEV (`67ce7e5`) gravou o valor offline numa OS já concluída porque o `FOR UPDATE` vinha depois da leitura. Task, status, cancel e assignee agora lockam a linha de `os.work_orders` como primeiro comando da transação e releem antes de decidir. O único PATCH de valor no vlr-web (`updateTaskValue` e `offlineSync`) é `/api/work-orders/{id}/tasks/{taskId}`. Valor que entra no lock antes da conclusão é mantido. O segundo delete de ativo com OS já devolve 409 `ASSET_IN_USE`; não há outro delete nem bulk. Categoria permanente com OS devolve 409 `CATEGORY_IN_USE`. Sem migration. |
 | 2026-10-17 | **Fix (API, sem merge):** follow-up da review de integridade de OS. Task `Image` não entra em `MANDATORY_TASKS_INCOMPLETE` até existir upload de OS. Assignee de OS concluída ou cancelada é 409 `WORK_ORDER_CLOSED`. `os.work_orders.assign` continua fora de `ExplicitGrantOnlyKeys`: `EnsureAsync` acrescenta a chave em Admin e SuperAdmin já existentes e preserva grants anteriores. Não há role de sistema Manager. Sem migration e sem endpoint de upload. |

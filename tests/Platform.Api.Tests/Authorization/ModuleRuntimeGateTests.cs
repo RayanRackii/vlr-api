@@ -1311,6 +1311,19 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<PagedResult<PortalProductRequestResponse>> ListOwnProductRequestsAsync(
+            Guid customerId,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PortalProductRequestResponse?> GetOwnProductRequestAsync(
+            Guid customerId,
+            Guid requestId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<CatalogFileUrlResponse> GetOwnProductRequestFileUrlAsync(
             Guid customerId,
             Guid requestId,
