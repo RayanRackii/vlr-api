@@ -16,8 +16,13 @@ public sealed class RecordingPasswordAuthAdmin : ISupabaseAuthAdminClient
     private readonly List<(string Email, string Password, string UserId)> _created = [];
     private readonly List<(string UserId, string Password)> _passwordsSet = [];
     private readonly List<(string UserId, Guid TenantId)> _metadataUpdates = [];
+    private readonly List<string> _deleted = [];
 
     public string NextUserId { get; set; } = Guid.NewGuid().ToString();
+
+    public Func<CancellationToken, Task>? AfterMetadataUpdate { get; set; }
+
+    public IReadOnlyList<string> Deleted => _deleted;
 
     public IReadOnlyList<(string Email, string Password, string UserId)> Created => _created;
 
@@ -73,14 +78,17 @@ public sealed class RecordingPasswordAuthAdmin : ISupabaseAuthAdminClient
         CancellationToken cancellationToken = default) =>
         Task.FromResult(_hashByAuthId.ContainsKey(supabaseUserId));
 
-    public Task UpdateUserAppMetadataAsync(
+    public async Task UpdateUserAppMetadataAsync(
         string supabaseUserId,
         Guid tenantId,
         CancellationToken cancellationToken = default)
     {
         _tenantByAuthId[supabaseUserId] = tenantId;
         _metadataUpdates.Add((supabaseUserId, tenantId));
-        return Task.CompletedTask;
+        if (AfterMetadataUpdate is not null)
+        {
+            await AfterMetadataUpdate(cancellationToken);
+        }
     }
 
     public Task ClearUserTenantAppMetadataAsync(
@@ -110,8 +118,14 @@ public sealed class RecordingPasswordAuthAdmin : ISupabaseAuthAdminClient
         string supabaseUserId,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        _deleted.Add(supabaseUserId);
         _hashByAuthId.Remove(supabaseUserId);
         _tenantByAuthId.Remove(supabaseUserId);
+        foreach (var email in _authIdByEmail.Where(item => item.Value == supabaseUserId).Select(item => item.Key).ToList())
+        {
+            _authIdByEmail.Remove(email);
+        }
         return Task.CompletedTask;
     }
 

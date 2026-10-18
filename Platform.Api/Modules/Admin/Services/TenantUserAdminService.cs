@@ -2,6 +2,7 @@ using System.Net.Mail;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Notifications;
@@ -339,7 +340,11 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken,
         ClaimsPrincipal? actor = null)
     {
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         var invite = await LoadPendingInviteAsync(request.Token, cancellationToken);
+        await LockInviteAsync(invite, cancellationToken);
         var existingAuthId = await ResolveExistingAuthIdAsync(invite.Email, cancellationToken);
         if (existingAuthId is not null)
         {
@@ -348,6 +353,10 @@ public sealed class TenantUserAdminService(
                 invite,
                 existingAuthId,
                 cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
             return linked;
         }
 
@@ -358,7 +367,34 @@ public sealed class TenantUserAdminService(
                 $"Password must be at least {MinimumPasswordLength} characters.");
         }
 
-        return await CreateNewAccountAsync(invite, password, cancellationToken);
+        return await CreateNewAccountAsync(invite, password, transaction, cancellationToken);
+    }
+
+    private async Task LockInviteAsync(UserInvite invite, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) != true)
+        {
+            return;
+        }
+
+        var key = $"staff-invite:{invite.Email}";
+        const long seed = 0;
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({key}, {seed}))",
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            SELECT id FROM core.user_invites
+            WHERE id = {invite.Id} AND tenant_id = {invite.TenantId}
+            FOR UPDATE
+            """,
+            cancellationToken);
+        await dbContext.Entry(invite).ReloadAsync(cancellationToken);
+        if (dbContext.Entry(invite).State == EntityState.Detached)
+        {
+            throw new KeyNotFoundException("Invite was not found or is invalid.");
+        }
+        EnsurePendingInvite(invite);
     }
 
     private async Task<UserInvite> LoadPendingInviteAsync(
@@ -379,6 +415,12 @@ public sealed class TenantUserAdminService(
             .FirstOrDefaultAsync(item => item.Token == normalized, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found or is invalid.");
 
+        EnsurePendingInvite(invite);
+        return invite;
+    }
+
+    private static void EnsurePendingInvite(UserInvite invite)
+    {
         if (invite.RevokedAt is not null)
         {
             throw new InvalidOperationException("Invite was revoked.");
@@ -393,8 +435,6 @@ public sealed class TenantUserAdminService(
         {
             throw new InvalidOperationException("Invite has expired.");
         }
-
-        return invite;
     }
 
     /// <summary>
@@ -550,15 +590,15 @@ public sealed class TenantUserAdminService(
     private async Task<AcceptInviteResponseDto> CreateNewAccountAsync(
         UserInvite invite,
         string password,
+        IDbContextTransaction? transaction,
         CancellationToken cancellationToken)
     {
         string? supabaseUserId = null;
         var createdAuthUser = false;
-        var useTransaction = dbContext.Database.IsRelational();
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        if (useTransaction)
+        const string savepoint = "before_auth_provisioning";
+        if (transaction is not null)
         {
-            transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await transaction.CreateSavepointAsync(savepoint, cancellationToken);
         }
 
         try
@@ -603,31 +643,44 @@ public sealed class TenantUserAdminService(
         }
         catch
         {
-            if (transaction is not null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-            }
-
             if (createdAuthUser && !string.IsNullOrWhiteSpace(supabaseUserId))
             {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 try
                 {
-                    await supabaseAuthAdminClient.DeleteUserAsync(supabaseUserId, cancellationToken);
+                    if (transaction is not null)
+                    {
+                        await transaction.RollbackToSavepointAsync(savepoint, cleanup.Token);
+                    }
+
+                    var normalizedAuthId = supabaseUserId.ToLowerInvariant();
+                    var hasMembership = await dbContext.Users
+                        .IgnoreQueryFilters()
+                        .AsNoTracking()
+                        .AnyAsync(user => user.SupabaseAuthId.ToLower() == normalizedAuthId, cleanup.Token);
+                    if (hasMembership)
+                    {
+                        logger.LogWarning(
+                            "Preserving Auth user {AuthUserId} after failed invite {InviteId}: a membership exists.",
+                            supabaseUserId,
+                            invite.Id);
+                    }
+                    else
+                    {
+                        await supabaseAuthAdminClient.DeleteUserAsync(supabaseUserId, cleanup.Token);
+                    }
                 }
-                catch (SupabaseAuthAdminException)
+                catch (Exception ex)
                 {
-                    // best-effort compensation
+                    logger.LogWarning(
+                        ex,
+                        "Could not safely compensate Auth user {AuthUserId} after failed invite {InviteId}; recovery is required.",
+                        supabaseUserId,
+                        invite.Id);
                 }
             }
 
             throw;
-        }
-        finally
-        {
-            if (transaction is not null)
-            {
-                await transaction.DisposeAsync();
-            }
         }
     }
 

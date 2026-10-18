@@ -15,7 +15,7 @@ using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Tests.Admin;
 
-public sealed class ExistingAccountInviteTests
+public sealed class ExistingAccountInviteTests(PostgresContainerFixture postgres) : IClassFixture<PostgresContainerFixture>
 {
     private const string OriginalPassword = "original-password-1";
     private const string AttackerPassword = "attacker-password-1";
@@ -271,6 +271,174 @@ public sealed class ExistingAccountInviteTests
         Assert.Empty(harness.Auth.MetadataUpdates);
     }
 
+    [DockerFact]
+    public Task New_account_and_existing_account_accepts_of_the_same_token_are_serialized() =>
+        AssertConcurrentAcceptsAsync(sameToken: true);
+
+    [DockerFact]
+    public Task Accepts_of_different_invites_for_the_same_email_are_serialized() =>
+        AssertConcurrentAcceptsAsync(sameToken: false);
+
+    [DockerFact]
+    public async Task Failed_provisioning_preserves_an_auth_user_with_an_inactive_membership_in_another_tenant()
+    {
+        var factory = postgres.Factory ?? throw new InvalidOperationException("PostgreSQL is required.");
+        await using var harness = await InviteHarness.CreateAsync(withVictim: false, factory: factory);
+        var failure = new InvalidOperationException("Provisioning failed after another membership was linked.");
+        harness.Auth.AfterMetadataUpdate = async cancellationToken =>
+        {
+            await using var linked = factory.Create(new FakeTenantProvider { TenantId = harness.Home.Id });
+            var membership = new User(harness.Home.Id, harness.Auth.NextUserId, "Linked", harness.Invite.Email);
+            membership.Deactivate();
+            linked.Users.Add(membership);
+            await linked.SaveChangesAsync(cancellationToken);
+            throw failure;
+        };
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.AcceptAsync(harness.Invite.Token, OriginalPassword));
+
+        Assert.Same(failure, thrown);
+        Assert.True(await harness.Auth.UserExistsAsync(harness.Auth.NextUserId));
+        Assert.Empty(harness.Auth.Deleted);
+        await using var verify = factory.Create(new FakeTenantProvider());
+        Assert.Equal(1, await verify.Users.CountAsync(user => user.SupabaseAuthId == harness.Auth.NextUserId));
+        Assert.Equal(0, await verify.Users.CountAsync(user => user.TenantId == harness.Inviter.Id));
+        Assert.Null((await verify.UserInvites.SingleAsync(invite => invite.Id == harness.Invite.Id)).AcceptedAt);
+    }
+
+    [DockerFact]
+    public async Task Failed_provisioning_without_memberships_cleans_up_and_leaves_the_token_reusable()
+    {
+        var factory = postgres.Factory ?? throw new InvalidOperationException("PostgreSQL is required.");
+        await using var harness = await InviteHarness.CreateAsync(withVictim: false, factory: factory);
+        using var cancellation = new CancellationTokenSource();
+        harness.Auth.AfterMetadataUpdate = cancellationToken =>
+        {
+            cancellation.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => harness.Service.AcceptInviteAsync(
+            new AcceptInviteRequestDto { Token = harness.Invite.Token, Password = OriginalPassword },
+            cancellation.Token));
+
+        Assert.Equal([harness.Auth.NextUserId], harness.Auth.Deleted);
+        Assert.False(await harness.Auth.UserExistsAsync(harness.Auth.NextUserId));
+        await using var retry = factory.Create(harness.TenantProvider);
+        Assert.Null((await retry.UserInvites.SingleAsync(invite => invite.Id == harness.Invite.Id)).AcceptedAt);
+        harness.Auth.AfterMetadataUpdate = null;
+        var accepted = await CreateService(retry, harness.Auth).AcceptInviteAsync(
+            new AcceptInviteRequestDto { Token = harness.Invite.Token, Password = OriginalPassword },
+            CancellationToken.None);
+        Assert.False(accepted.ExistingAccount);
+        Assert.True(await harness.Auth.UserExistsAsync(harness.Auth.NextUserId));
+    }
+
+    private async Task AssertConcurrentAcceptsAsync(bool sameToken)
+    {
+        var factory = postgres.Factory ?? throw new InvalidOperationException("PostgreSQL is required.");
+        await using var harness = await InviteHarness.CreateAsync(withVictim: false, factory: factory);
+        var secondToken = harness.Invite.Token;
+        if (!sameToken)
+        {
+            var secondInvite = new UserInvite(
+                harness.Home.Id, harness.Invite.Email, "Second membership", SystemRoles.Admin,
+                Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow.AddDays(1));
+            harness.Db.UserInvites.Add(secondInvite);
+            harness.Db.UserInviteRoles.Add(new UserInviteRole(secondInvite.Id, harness.HomeRole.Id));
+            await harness.Db.SaveChangesAsync();
+            secondToken = secondInvite.Token;
+        }
+
+        var created = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        harness.Auth.AfterMetadataUpdate = async cancellationToken =>
+        {
+            created.SetResult();
+            await resume.Task.WaitAsync(cancellationToken);
+        };
+        var first = harness.AcceptAsync(harness.Invite.Token, OriginalPassword);
+        Task<AcceptInviteResponseDto>? second = null;
+        await using var secondDb = factory.Create(harness.TenantProvider);
+        try
+        {
+            await created.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await secondDb.Database.OpenConnectionAsync();
+            await using var command = secondDb.Database.GetDbConnection().CreateCommand();
+            command.CommandText = "SELECT pg_backend_pid()";
+            var backendPid = Convert.ToInt32(await command.ExecuteScalarAsync());
+            second = CreateService(secondDb, harness.Auth).AcceptInviteAsync(
+                new AcceptInviteRequestDto { Token = secondToken },
+                CancellationToken.None,
+                Staff(harness.Invite.Email, harness.Auth.NextUserId, harness.Inviter.Id));
+
+            Assert.True(await WaitForAcceptLockAsync(factory, backendPid, second),
+                "The second accept did not wait for provisioning to finish.");
+            resume.SetResult();
+            var accepted = await first.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.False(accepted.ExistingAccount);
+            if (sameToken)
+            {
+                var rejected = await Assert.ThrowsAsync<InvalidOperationException>(() => second);
+                Assert.Equal("Invite was already accepted.", rejected.Message);
+            }
+            else
+            {
+                Assert.True((await second.WaitAsync(TimeSpan.FromSeconds(10))).ExistingAccount);
+            }
+
+            Assert.True(await harness.Auth.UserExistsAsync(harness.Auth.NextUserId));
+            Assert.Empty(harness.Auth.Deleted);
+            Assert.Empty(harness.Auth.PasswordsSet);
+            Assert.Single(harness.Auth.Created);
+            Assert.Single(harness.Auth.MetadataUpdates);
+            await using var verify = factory.Create(new FakeTenantProvider());
+            Assert.Equal(sameToken ? 1 : 2,
+                await verify.Users.CountAsync(user => user.SupabaseAuthId == harness.Auth.NextUserId));
+            Assert.Equal(accepted.UserId,
+                (await verify.UserInvites.SingleAsync(invite => invite.Id == harness.Invite.Id)).CreatedUserId);
+        }
+        finally
+        {
+            resume.TrySetResult();
+            await Record.ExceptionAsync(async () => await first.WaitAsync(TimeSpan.FromSeconds(10)));
+            if (second is not null)
+            {
+                await Record.ExceptionAsync(async () => await second.WaitAsync(TimeSpan.FromSeconds(10)));
+            }
+        }
+    }
+
+    private static async Task<bool> WaitForAcceptLockAsync(PostgresAppDbFactory factory, int backendPid, Task accept)
+    {
+        await using var observer = factory.Create(new FakeTenantProvider());
+        await observer.Database.OpenConnectionAsync();
+        await using var command = observer.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = @pid";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "pid";
+        parameter.Value = backendPid;
+        command.Parameters.Add(parameter);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline && !accept.IsCompleted)
+        {
+            if (await command.ExecuteScalarAsync() is true)
+            {
+                return true;
+            }
+            await Task.Delay(25);
+        }
+        return false;
+    }
+
+    private static TenantUserAdminService CreateService(AppDbContext db, RecordingPasswordAuthAdmin auth) =>
+        new(
+            db, auth, new NotificationQueue(), new ConfigurationBuilder().Build(),
+            new FakeHostEnvironment(), new FakeTrialGuard(), new FakePlatformAdminChecker(),
+            NullLogger<TenantUserAdminService>.Instance);
+
     private static ClaimsPrincipal Staff(string email, string authId, Guid tokenTenant) =>
         new(new ClaimsIdentity(
             [
@@ -363,24 +531,29 @@ public sealed class ExistingAccountInviteTests
 
         public static async Task<InviteHarness> CreateAsync(
             bool withVictim = true,
-            bool registerAuthEmail = true)
+            bool registerAuthEmail = true,
+            PostgresAppDbFactory? factory = null)
         {
-            var home = new Tenant("Home Club", "11111111000191", tradeName: "Home");
-            var inviter = new Tenant("Inviter Club", "22222222000191", tradeName: "Inviter");
+            var home = new Tenant("Home Club",
+                factory is null ? "11111111000191" : Random.Shared.NextInt64(10_000_000_000_000, 99_999_999_999_999).ToString(),
+                tradeName: "Home");
+            var inviter = new Tenant("Inviter Club",
+                factory is null ? "22222222000191" : Random.Shared.NextInt64(10_000_000_000_000, 99_999_999_999_999).ToString(),
+                tradeName: "Inviter");
             var tenantProvider = new FakeTenantProvider { TenantId = inviter.Id };
-            var db = InMemoryAppDb.Create(tenantProvider);
+            var db = factory?.Create(tenantProvider) ?? InMemoryAppDb.Create(tenantProvider);
             var homeRole = new Role(home.Id, SystemRoles.Admin, "Admin", isSystemRole: true);
             var invitedRole = new Role(inviter.Id, SystemRoles.Technician, "Technician", isSystemRole: true);
             const string victimEmail = "victim@club.test";
             var victimAuthId = Guid.NewGuid().ToString();
             var victim = new User(home.Id, victimAuthId, "Ada Victim", victimEmail);
-            var inviteEmail = withVictim ? victimEmail : "new@club.test";
+            var inviteEmail = withVictim ? victimEmail : factory is null ? "new@club.test" : $"new-{Guid.NewGuid():N}@club.test";
             var invite = new UserInvite(
                 inviter.Id,
                 inviteEmail,
                 "Invited Name",
                 SystemRoles.Technician,
-                withVictim ? "existing-token" : "new-user-token",
+                factory is not null ? Guid.NewGuid().ToString("N") : withVictim ? "existing-token" : "new-user-token",
                 DateTimeOffset.UtcNow.AddDays(2));
 
             db.Tenants.AddRange(home, inviter);
@@ -405,15 +578,7 @@ public sealed class ExistingAccountInviteTests
                 }
             }
 
-            var service = new TenantUserAdminService(
-                db,
-                auth,
-                new NotificationQueue(),
-                new ConfigurationBuilder().Build(),
-                new FakeHostEnvironment(),
-                new FakeTrialGuard(),
-                new FakePlatformAdminChecker(),
-                NullLogger<TenantUserAdminService>.Instance);
+            var service = CreateService(db, auth);
 
             return new InviteHarness(
                 db,
