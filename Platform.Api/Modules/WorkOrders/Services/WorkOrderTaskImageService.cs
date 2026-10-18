@@ -60,19 +60,19 @@ public sealed class WorkOrderTaskImageService(
             accessibleTask.Id,
             Guid.NewGuid());
         var bucket = storageOptions.Value.PrivateBucket;
-        await using (var payload = new MemoryStream(bytes, writable: false))
-        {
-            await storageProvider.UploadAsync(
-                bucket,
-                storageKey,
-                payload,
-                mediaType,
-                cancellationToken);
-        }
-
         UploadOutcome outcome;
         try
         {
+            await using (var payload = new MemoryStream(bytes, writable: false))
+            {
+                await storageProvider.UploadAsync(
+                    bucket,
+                    storageKey,
+                    payload,
+                    mediaType,
+                    cancellationToken);
+            }
+
             outcome = await InTransactionAsync(
                 () => SwapStoredFileAsync(
                     tenantId,
@@ -87,13 +87,13 @@ public sealed class WorkOrderTaskImageService(
         }
         catch
         {
-            await TryDeleteAsync(bucket, storageKey, cancellationToken);
+            await TryDeleteAsync(bucket, storageKey);
             throw;
         }
 
         if (outcome.Response is null)
         {
-            await TryDeleteAsync(bucket, storageKey, cancellationToken);
+            await TryDeleteAsync(bucket, storageKey);
             return null;
         }
 
@@ -101,7 +101,7 @@ public sealed class WorkOrderTaskImageService(
             && !string.Equals(outcome.PreviousKey, storageKey, StringComparison.Ordinal)
             && WorkOrderImageRules.IsKeyForTask(outcome.PreviousKey, tenantId, workOrderId, taskId))
         {
-            await TryDeleteAsync(bucket, outcome.PreviousKey, cancellationToken);
+            await TryDeleteAsync(bucket, outcome.PreviousKey);
         }
 
         return outcome.Response;
@@ -228,17 +228,18 @@ public sealed class WorkOrderTaskImageService(
         return new WorkOrderTaskFileUrlResponse(url, IsPublic: false);
     }
 
-    private async Task TryDeleteAsync(string bucket, string key, CancellationToken cancellationToken)
+    private async Task TryDeleteAsync(string bucket, string key)
     {
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         try
         {
-            await storageProvider.DeleteAsync(bucket, key, cancellationToken);
+            await storageProvider.DeleteAsync(bucket, key, cleanup.Token);
         }
         catch (Exception ex)
         {
             logger.LogWarning(
                 ex,
-                "Failed to delete replaced work order image {Bucket}/{Key}",
+                "Failed to clean up work order image {Bucket}/{Key}; storage cleanup must be retried.",
                 bucket,
                 key);
         }

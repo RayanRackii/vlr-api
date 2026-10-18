@@ -97,6 +97,50 @@ public sealed class WorkOrderTaskImageTests
     }
 
     [Fact]
+    public async Task Cancellation_after_upload_still_deletes_the_new_object()
+    {
+        var scenario = await SeedAsync();
+        using var scope = StartHost(scenario.DatabaseName);
+        using var cancellation = new CancellationTokenSource();
+        scope.Storage.AfterUpload = cancellation.Cancel;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            UploadAsExecutorAsync(scope, scenario, cancellation.Token));
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Single(scope.Storage.Deletes);
+        Assert.Empty(scope.Storage.Uploads);
+        await using var verify = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = scenario.TenantId },
+            scenario.DatabaseName);
+        Assert.Empty(await verify.WorkOrderTaskFiles.ToListAsync());
+        Assert.Null((await verify.WorkOrderTasks.SingleAsync(task => task.Id == scenario.TaskId)).Value);
+    }
+
+    [Fact]
+    public async Task Upload_failure_after_storing_the_object_attempts_to_delete_its_key()
+    {
+        var scenario = await SeedAsync();
+        using var scope = StartHost(scenario.DatabaseName);
+        var failure = new HttpRequestException("Upload acknowledgement lost.");
+        scope.Storage.AfterUpload = () => throw failure;
+
+        var thrown = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            UploadAsExecutorAsync(scope, scenario, CancellationToken.None));
+
+        Assert.Same(failure, thrown);
+        var deleted = Assert.Single(scope.Storage.Deletes);
+        Assert.Equal("catalog-private", deleted.Bucket);
+        Assert.True(WorkOrderImageRules.IsKeyForTask(
+            deleted.Key, scenario.TenantId, scenario.WorkOrderId, scenario.TaskId));
+        Assert.Empty(scope.Storage.Uploads);
+        await using var verify = InMemoryAppDb.Create(
+            new FakeTenantProvider { TenantId = scenario.TenantId },
+            scenario.DatabaseName);
+        Assert.Empty(await verify.WorkOrderTaskFiles.ToListAsync());
+    }
+
+    [Fact]
     public async Task Upload_rejects_a_content_type_that_is_not_an_image()
     {
         var scenario = await SeedAsync();
@@ -591,6 +635,35 @@ public sealed class WorkOrderTaskImageTests
             scenario.TaskId));
     }
 
+    private static async Task UploadAsExecutorAsync(
+        HostScope scope,
+        Scenario scenario,
+        CancellationToken cancellationToken)
+    {
+        using var services = scope.Host.Services.CreateScope();
+        var accessor = services.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+        var previousContext = accessor.HttpContext;
+        accessor.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim("sub", scenario.Executor),
+                    new Claim("app_metadata", $$"""{"tenant_id":"{{scenario.TenantId}}"}"""),
+                ],
+                "Test")),
+        };
+        try
+        {
+            await using var content = new MemoryStream(Jpeg(24));
+            await services.ServiceProvider.GetRequiredService<IWorkOrderTaskImageService>()
+                .UploadAsync(scenario.WorkOrderId, scenario.TaskId, "court.jpg", "image/jpeg", content, cancellationToken);
+        }
+        finally
+        {
+            accessor.HttpContext = previousContext;
+        }
+    }
+
     private static byte[] Jpeg(int size)
     {
         var bytes = new byte[size];
@@ -966,6 +1039,8 @@ public sealed class WorkOrderTaskImageTests
 
     private sealed class RecordingStorageProvider : IStorageProvider
     {
+        public Action? AfterUpload { get; set; }
+
         public List<StoredObject> Uploads { get; } = [];
 
         public List<DeletedObject> Deletes { get; } = [];
@@ -977,9 +1052,11 @@ public sealed class WorkOrderTaskImageTests
             string contentType,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             using var buffer = new MemoryStream();
             stream.CopyTo(buffer);
             Uploads.Add(new StoredObject(bucket, key, buffer.ToArray(), contentType));
+            AfterUpload?.Invoke();
             return Task.CompletedTask;
         }
 
@@ -995,6 +1072,7 @@ public sealed class WorkOrderTaskImageTests
 
         public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Deletes.Add(new DeletedObject(bucket, key));
             Uploads.RemoveAll(item => item.Bucket == bucket && item.Key == key);
             return Task.CompletedTask;
