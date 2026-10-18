@@ -86,6 +86,39 @@ public sealed class DashboardMetricsDefinitionTests
         Assert.Equal(1, metrics.WorkOrders.Pending);
     }
 
+    [Fact]
+    public async Task Utc_october_first_at_02_is_still_september_in_brazil_for_rentals_revenue()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = harness.TenantProvider.TenantId!.Value;
+        harness.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        var customer = new Customer
+        {
+            TenantId = tenantId,
+            Name = "Socio",
+        };
+        harness.Db.Customers.Add(customer);
+        AddReservation(
+            harness,
+            customer.Id,
+            BrazilTimeZone.AtLocal(new DateOnly(2026, 9, 30), new TimeOnly(20, 0)),
+            ReservationStatus.Confirmed,
+            80m);
+        AddReservation(
+            harness,
+            customer.Id,
+            BrazilTimeZone.AtLocal(new DateOnly(2026, 10, 1), new TimeOnly(10, 0)),
+            ReservationStatus.Confirmed,
+            25m);
+        await harness.Db.SaveChangesAsync();
+
+        var metrics = await CreateService(harness, new DateTimeOffset(2026, 10, 1, 2, 0, 0, TimeSpan.Zero))
+            .GetMetricsAsync(CancellationToken.None);
+
+        Assert.NotNull(metrics.Rentals);
+        Assert.Equal(80m, metrics.Rentals.ReservedRevenueThisMonth);
+    }
+
     private static DashboardService CreateService(BulkCreateAssetsHarness harness, DateTimeOffset utcNow) =>
         new(harness.Db, harness.TenantProvider, new TestTimeProvider(utcNow));
 
@@ -122,6 +155,28 @@ public sealed class DashboardMetricsDefinitionTests
             AssetId = assetId,
             Status = status,
             ScheduledDate = scheduledDate,
+        });
+    }
+
+    private static void AddReservation(
+        BulkCreateAssetsHarness harness,
+        Guid customerId,
+        DateTimeOffset start,
+        ReservationStatus status,
+        decimal totalAmount)
+    {
+        harness.Db.Reservations.Add(new Reservation
+        {
+            TenantId = harness.TenantProvider.TenantId!.Value,
+            UnitId = harness.UnitId,
+            CustomerId = customerId,
+            CustomerName = "Socio",
+            CustomerWhatsApp = "11999999999",
+            StartDateTime = start,
+            EndDateTime = start.AddHours(1),
+            Status = status,
+            TotalAmount = totalAmount,
+            DepositPaid = 0m,
         });
     }
 }

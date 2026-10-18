@@ -4,10 +4,15 @@ using Platform.Core.Infrastructure.Persistence;
 namespace Platform.Api.Jobs;
 
 /// <summary>
-/// Serializes PMOC automatic generation with completion and plan scheduling edits.
-/// Lock order, never reversed: advisory(plan, asset) → plan row → asset row → work order write.
+/// Serializes PMOC generation with edits to an existing plan-linked work order.
+/// Existing-order writes (<c>LockAndLoadAsync</c>) lock that work-order row, then
+/// take the plan/asset advisory lock. Create-with-plan and manual generation take
+/// the advisory first and insert a new order. Automatic generation takes the
+/// advisory, then the plan row, then the asset row, and inserts a new order.
+/// Plan header updates lock only the plan row.
+/// Those orders do not cycle: a creator never waits on an existing work-order row,
+/// and an existing-order write never locks the plan or asset row.
 /// Plan and asset <c>FOR UPDATE</c> statements also require the owning tenant id.
-/// Manual generation takes only the advisory lock. Plan header updates take only the plan row.
 /// </summary>
 public static class PmocPlanAssetLock
 {
