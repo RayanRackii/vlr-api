@@ -140,3 +140,24 @@ public sealed record InviteTenantMemberResponse(
     DateTimeOffset ExpiresAt);
 
 public sealed record AssignUserRolesRequest(IReadOnlyList<Guid> RoleIds);
+
+public sealed record StaffTenantMembershipDto(
+    Guid TenantId,
+    string LegalName,
+    string? TradeName,
+    string? Subdomain);
+
+public sealed record StaffTenantMembershipListResponse(
+    Guid? AccessTokenTenantId,
+    Guid? AuthMetadataTenantId,
+    bool SessionRefreshRequired,
+    IReadOnlyList<StaffTenantMembershipDto> Memberships);
+
+public sealed record SelectStaffTenantRequest(Guid TenantId);
+
+public sealed record SelectStaffTenantResponse(
+    Guid TenantId,
+    string LegalName,
+    string? TradeName,
+    string? Subdomain,
+    bool SessionRefreshRequired);

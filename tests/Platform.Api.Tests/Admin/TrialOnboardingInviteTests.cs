@@ -758,9 +758,15 @@ public sealed class TrialOnboardingInviteTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<InvitePreviewResponseDto> PreviewInviteAsync(
+            string token,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<AcceptInviteResponseDto> AcceptInviteAsync(
             AcceptInviteRequestDto request,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            System.Security.Claims.ClaimsPrincipal? actor = null) =>
             throw new NotSupportedException();
     }
 

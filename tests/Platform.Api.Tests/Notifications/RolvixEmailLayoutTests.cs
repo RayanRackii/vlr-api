@@ -39,7 +39,8 @@ public sealed class RolvixEmailLayoutTests
             "Ana",
             RolvixEmailLayout.InviteBody(inviteUrl, "Clube"));
 
-        Assert.Contains("Definir senha", html, StringComparison.Ordinal);
+        Assert.Contains("Aceitar convite", html, StringComparison.Ordinal);
+        Assert.Contains("não altera senha", html, StringComparison.Ordinal);
         Assert.Contains($"href=\"{WebUtility.HtmlEncode(inviteUrl)}\"", html, StringComparison.Ordinal);
     }
 

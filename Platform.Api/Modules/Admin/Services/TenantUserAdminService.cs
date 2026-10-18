@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authentication;
@@ -39,9 +40,18 @@ public interface ITenantUserAdminService
         PromoteTenantUserRequestDto request,
         CancellationToken cancellationToken);
 
+    Task<InvitePreviewResponseDto> PreviewInviteAsync(
+        string token,
+        CancellationToken cancellationToken);
+
+    /// <param name="actor">
+    /// Staff session, when the caller sent a bearer token. Required to link an email
+    /// that already has an account. Anonymous callers still activate a new account.
+    /// </param>
     Task<AcceptInviteResponseDto> AcceptInviteAsync(
         AcceptInviteRequestDto request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        ClaimsPrincipal? actor = null);
 }
 
 public sealed class TenantUserAdminService(
@@ -303,26 +313,70 @@ public sealed class TenantUserAdminService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<AcceptInviteResponseDto> AcceptInviteAsync(
-        AcceptInviteRequestDto request,
+    public async Task<InvitePreviewResponseDto> PreviewInviteAsync(
+        string token,
         CancellationToken cancellationToken)
     {
-        var token = request.Token.Trim();
-        if (token.Length == 0)
+        var invite = await LoadPendingInviteAsync(token, cancellationToken);
+        var existingAuthId = await ResolveExistingAuthIdAsync(invite.Email, cancellationToken);
+        var tenantName = await dbContext.Tenants
+            .AsNoTracking()
+            .Where(tenant => tenant.Id == invite.TenantId)
+            .Select(tenant => tenant.TradeName ?? tenant.LegalName)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new InvitePreviewResponseDto(
+            invite.Email,
+            invite.FullName,
+            invite.TenantId,
+            tenantName ?? string.Empty,
+            ExistingAccount: existingAuthId is not null,
+            invite.ExpiresAt);
+    }
+
+    public async Task<AcceptInviteResponseDto> AcceptInviteAsync(
+        AcceptInviteRequestDto request,
+        CancellationToken cancellationToken,
+        ClaimsPrincipal? actor = null)
+    {
+        var invite = await LoadPendingInviteAsync(request.Token, cancellationToken);
+        var existingAuthId = await ResolveExistingAuthIdAsync(invite.Email, cancellationToken);
+        if (existingAuthId is not null)
         {
-            throw new ArgumentException("Token is required.");
+            EnsureExistingAccountActor(actor, invite.Email, existingAuthId);
+            var linked = await LinkExistingMembershipAsync(
+                invite,
+                existingAuthId,
+                cancellationToken);
+            return linked;
         }
 
-        if (string.IsNullOrWhiteSpace(request.Password)
-            || request.Password.Length < MinimumPasswordLength)
+        var password = request.Password ?? string.Empty;
+        if (password.Length < MinimumPasswordLength)
         {
             throw new ArgumentException(
                 $"Password must be at least {MinimumPasswordLength} characters.");
         }
 
+        return await CreateNewAccountAsync(invite, password, cancellationToken);
+    }
+
+    private async Task<UserInvite> LoadPendingInviteAsync(
+        string? token,
+        CancellationToken cancellationToken)
+    {
+        var normalized = token?.Trim() ?? string.Empty;
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException("Token is required.");
+        }
+
+        // The token is the lookup key. A tenant filter on the request must not hide it
+        // or make an existing account in another tenant look new.
         var invite = await dbContext.UserInvites
+            .IgnoreQueryFilters()
             .Include(item => item.InviteRoles)
-            .FirstOrDefaultAsync(i => i.Token == token, cancellationToken)
+            .FirstOrDefaultAsync(item => item.Token == normalized, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found or is invalid.");
 
         if (invite.RevokedAt is not null)
@@ -340,6 +394,164 @@ public sealed class TenantUserAdminService(
             throw new InvalidOperationException("Invite has expired.");
         }
 
+        return invite;
+    }
+
+    /// <summary>
+    /// Auth id of an account that already owns this email, or null when the email is new.
+    /// Local memberships are read across tenants. A disagreement fails closed.
+    /// </summary>
+    private async Task<string?> ResolveExistingAuthIdAsync(
+        string email,
+        CancellationToken cancellationToken)
+    {
+        var authId = await supabaseAuthAdminClient.FindUserIdByEmailAsync(
+            email,
+            cancellationToken);
+
+        var localIds = await dbContext.Users
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(user => user.Email.ToLower() == email)
+            .Select(user => user.SupabaseAuthId)
+            .ToListAsync(cancellationToken);
+
+        var distinctLocal = localIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (distinctLocal.Count > 1)
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.IdentityConflict,
+                StatusCodes.Status409Conflict);
+        }
+
+        var localId = distinctLocal.Count == 1 ? distinctLocal[0] : null;
+        if (!string.IsNullOrWhiteSpace(authId)
+            && localId is not null
+            && !string.Equals(localId, authId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.IdentityConflict,
+                StatusCodes.Status409Conflict);
+        }
+
+        if (!string.IsNullOrWhiteSpace(authId))
+        {
+            return authId.Trim();
+        }
+
+        return localId;
+    }
+
+    private static void EnsureExistingAccountActor(
+        ClaimsPrincipal? actor,
+        string email,
+        string authId)
+    {
+        if (actor?.Identity?.IsAuthenticated != true || CustomerClaimTypes.IsCustomer(actor))
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.ExistingAccountSignInRequired,
+                StatusCodes.Status409Conflict);
+        }
+
+        var actorEmail = actor.FindFirst("email")?.Value
+            ?? actor.FindFirst(ClaimTypes.Email)?.Value;
+        var actorSub = actor.FindFirst("sub")?.Value
+            ?? actor.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        var emailMatches = !string.IsNullOrWhiteSpace(actorEmail)
+            && string.Equals(actorEmail.Trim(), email, StringComparison.OrdinalIgnoreCase);
+        var subMatches = !string.IsNullOrWhiteSpace(actorSub)
+            && string.Equals(actorSub.Trim(), authId, StringComparison.OrdinalIgnoreCase);
+
+        if (!emailMatches || !subMatches)
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.AccountMismatch,
+                StatusCodes.Status403Forbidden);
+        }
+    }
+
+    /// <summary>
+    /// Links the inviting tenant only. Must not call <c>SetUserPassword</c>,
+    /// <c>CreateUser</c>, or <c>UpdateUserAppMetadata</c>: the Auth password and the
+    /// caller's current tenant stay as they were.
+    /// </summary>
+    private async Task<AcceptInviteResponseDto> LinkExistingMembershipAsync(
+        UserInvite invite,
+        string supabaseUserId,
+        CancellationToken cancellationToken)
+    {
+        var roleIds = await ResolveInviteRoleIdsAsync(invite, cancellationToken);
+        var user = await dbContext.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                item => item.TenantId == invite.TenantId && item.Email.ToLower() == invite.Email,
+                cancellationToken);
+
+        if (user is not null
+            && !string.Equals(user.SupabaseAuthId, supabaseUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.IdentityConflict,
+                StatusCodes.Status409Conflict);
+        }
+
+        if (user is not null && !user.IsActive)
+        {
+            throw new InvalidOperationException(
+                "A user with this email already exists for the tenant.");
+        }
+
+        if (user is null)
+        {
+            user = new User(
+                invite.TenantId,
+                supabaseUserId,
+                invite.FullName,
+                invite.Email);
+            dbContext.Users.Add(user);
+        }
+
+        foreach (var roleId in roleIds)
+        {
+            var hasRole = await dbContext.UserRoles
+                .IgnoreQueryFilters()
+                .AnyAsync(
+                    userRole => userRole.UserId == user.Id && userRole.RoleId == roleId,
+                    cancellationToken);
+            if (!hasRole)
+            {
+                dbContext.UserRoles.Add(new UserRole(user.Id, roleId));
+            }
+        }
+
+        invite.MarkAccepted(user.Id);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation(
+            "RBAC invitation linked an existing account. TenantId={TenantId} InviteId={InviteId} UserId={UserId}",
+            invite.TenantId,
+            invite.Id,
+            user.Id);
+
+        return new AcceptInviteResponseDto(
+            user.Id,
+            invite.TenantId,
+            invite.Email,
+            ExistingAccount: true);
+    }
+
+    private async Task<AcceptInviteResponseDto> CreateNewAccountAsync(
+        UserInvite invite,
+        string password,
+        CancellationToken cancellationToken)
+    {
         string? supabaseUserId = null;
         var createdAuthUser = false;
         var useTransaction = dbContext.Database.IsRelational();
@@ -351,90 +563,30 @@ public sealed class TenantUserAdminService(
 
         try
         {
-            supabaseUserId = await supabaseAuthAdminClient.FindUserIdByEmailAsync(
+            supabaseUserId = await supabaseAuthAdminClient.CreateUserAsync(
                 invite.Email,
+                password,
                 cancellationToken);
-
-            if (string.IsNullOrWhiteSpace(supabaseUserId))
-            {
-                supabaseUserId = await supabaseAuthAdminClient.CreateUserAsync(
-                    invite.Email,
-                    request.Password,
-                    cancellationToken);
-                createdAuthUser = true;
-            }
-            else
-            {
-                await supabaseAuthAdminClient.SetUserPasswordAsync(
-                    supabaseUserId,
-                    request.Password,
-                    cancellationToken);
-            }
+            createdAuthUser = true;
 
             await supabaseAuthAdminClient.UpdateUserAppMetadataAsync(
                 supabaseUserId,
                 invite.TenantId,
                 cancellationToken);
 
-            var roleIdsToAssign = invite.InviteRoles.Count > 0
-                ? invite.InviteRoles.Select(item => item.RoleId).Distinct().ToList()
-                : [];
-
-            if (roleIdsToAssign.Count == 0)
+            var roleIds = await ResolveInviteRoleIdsAsync(invite, cancellationToken);
+            var user = new User(
+                invite.TenantId,
+                supabaseUserId,
+                invite.FullName,
+                invite.Email);
+            dbContext.Users.Add(user);
+            foreach (var roleId in roleIds)
             {
-                var ensured = await EnsureRoleAsync(invite.TenantId, invite.RoleName, cancellationToken);
-                roleIdsToAssign.Add(ensured.Id);
-            }
-
-            var user = await dbContext.Users
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(
-                    u => u.TenantId == invite.TenantId
-                        && (u.SupabaseAuthId == supabaseUserId || u.Email == invite.Email),
-                    cancellationToken);
-
-            if (user is null)
-            {
-                user = new User(
-                    invite.TenantId,
-                    supabaseUserId,
-                    invite.FullName,
-                    invite.Email);
-                dbContext.Users.Add(user);
-                foreach (var roleId in roleIdsToAssign)
-                {
-                    dbContext.UserRoles.Add(new UserRole(user.Id, roleId));
-                }
-            }
-            else
-            {
-                user.UpdateProfile(invite.FullName, invite.Email);
-                if (!string.Equals(user.SupabaseAuthId, supabaseUserId, StringComparison.Ordinal))
-                {
-                    user.LinkSupabaseAuthId(supabaseUserId);
-                }
-
-                if (!user.IsActive)
-                {
-                    user.Activate();
-                }
-
-                foreach (var roleId in roleIdsToAssign)
-                {
-                    var hasRole = await dbContext.UserRoles
-                        .AnyAsync(
-                            ur => ur.UserId == user.Id && ur.RoleId == roleId,
-                            cancellationToken);
-
-                    if (!hasRole)
-                    {
-                        dbContext.UserRoles.Add(new UserRole(user.Id, roleId));
-                    }
-                }
+                dbContext.UserRoles.Add(new UserRole(user.Id, roleId));
             }
 
             invite.MarkAccepted(user.Id);
-
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
@@ -479,6 +631,32 @@ public sealed class TenantUserAdminService(
         }
     }
 
+    private async Task<List<Guid>> ResolveInviteRoleIdsAsync(
+        UserInvite invite,
+        CancellationToken cancellationToken)
+    {
+        var requested = invite.InviteRoles
+            .Select(item => item.RoleId)
+            .Distinct()
+            .ToList();
+
+        var roleIds = requested.Count == 0
+            ? []
+            : await dbContext.Roles
+                .IgnoreQueryFilters()
+                .Where(role => requested.Contains(role.Id) && role.TenantId == invite.TenantId)
+                .Select(role => role.Id)
+                .ToListAsync(cancellationToken);
+
+        if (roleIds.Count == 0)
+        {
+            var ensured = await EnsureRoleAsync(invite.TenantId, invite.RoleName, cancellationToken);
+            roleIds.Add(ensured.Id);
+        }
+
+        return roleIds;
+    }
+
     private async Task EnsureTenantExistsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
         var exists = await dbContext.Tenants.AsNoTracking()
@@ -513,6 +691,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken)
     {
         var existing = await dbContext.Roles
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(
                 r => r.TenantId == tenantId && r.Name.ToLower() == roleName.ToLower(),
                 cancellationToken);

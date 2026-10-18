@@ -123,6 +123,25 @@ public sealed class AdminTenantUsersController(
 public sealed class InvitesController(ITenantUserAdminService tenantUserAdminService) : ControllerBase
 {
     [AllowAnonymous]
+    [HttpPost("preview")]
+    public async Task<ActionResult<InvitePreviewResponseDto>> Preview(
+        [FromBody] InvitePreviewRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await tenantUserAdminService.PreviewInviteAsync(
+                request.Token,
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or ArgumentException or InvalidOperationException or InviteAcceptanceException or SupabaseAuthAdminException)
+        {
+            return InviteError(ex);
+        }
+    }
+
+    [AllowAnonymous]
     [HttpPost("accept")]
     public async Task<ActionResult<AcceptInviteResponseDto>> Accept(
         [FromBody] AcceptInviteRequestDto request,
@@ -130,29 +149,51 @@ public sealed class InvitesController(ITenantUserAdminService tenantUserAdminSer
     {
         try
         {
-            var result = await tenantUserAdminService.AcceptInviteAsync(request, cancellationToken);
+            var actor = User?.Identity?.IsAuthenticated == true ? User : null;
+            var result = await tenantUserAdminService.AcceptInviteAsync(
+                request,
+                cancellationToken,
+                actor);
             return Ok(result);
         }
-        catch (KeyNotFoundException ex)
+        catch (Exception ex) when (ex is KeyNotFoundException or ArgumentException or InvalidOperationException or InviteAcceptanceException or SupabaseAuthAdminException)
+        {
+            return InviteError(ex);
+        }
+    }
+
+    private ActionResult InviteError(Exception ex)
+    {
+        if (ex is InviteAcceptanceException acceptance)
+        {
+            return StatusCode(acceptance.StatusCode, new { error = acceptance.Code });
+        }
+
+        if (ex is KeyNotFoundException)
         {
             return NotFound(new { error = ex.Message });
         }
-        catch (ArgumentException ex)
+
+        if (ex is ArgumentException)
         {
             return BadRequest(new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+
+        if (ex is InvalidOperationException)
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (SupabaseAuthAdminException ex)
+
+        if (ex is SupabaseAuthAdminException admin)
         {
-            if (ex.StatusCode is 409 or 422)
+            if (admin.StatusCode is 409 or 422)
             {
-                return Conflict(new { error = ex.Message });
+                return Conflict(new { error = admin.Message });
             }
 
-            return StatusCode(StatusCodes.Status502BadGateway, new { error = ex.Message });
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = admin.Message });
         }
+
+        throw new InvalidOperationException("Unexpected invite error.", ex);
     }
 }
