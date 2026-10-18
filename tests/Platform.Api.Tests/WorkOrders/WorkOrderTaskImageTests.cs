@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -307,6 +308,289 @@ public sealed class WorkOrderTaskImageTests
             completedDoc.RootElement.GetProperty("tasks").EnumerateArray().Single().GetProperty("value").GetString());
     }
 
+    [Fact]
+    public async Task Upload_on_a_closed_order_is_conflict_and_deletes_only_the_new_object()
+    {
+        var scenario = await SeedAsync();
+        using var scope = StartHost(scenario.DatabaseName);
+
+        var uploaded = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(24),
+            "image/jpeg",
+            "court.jpg");
+        Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+        var kept = Assert.Single(scope.Storage.Uploads);
+
+        var completed = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/status",
+            scenario.Executor,
+            scenario.TenantId,
+            """{"status":"Completed"}""");
+        Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+
+        var rejected = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(40),
+            "image/jpeg",
+            "later.jpg");
+
+        Assert.Equal(HttpStatusCode.Conflict, rejected.StatusCode);
+        Assert.Equal(WorkOrderErrorCodes.Closed, rejected.ErrorCode);
+        var remaining = Assert.Single(scope.Storage.Uploads);
+        Assert.Equal(kept.Key, remaining.Key);
+        var deleted = Assert.Single(scope.Storage.Deletes);
+        Assert.NotEqual(kept.Key, deleted.Key);
+        Assert.StartsWith(
+            $"{scenario.TenantId:N}/work-orders/{scenario.WorkOrderId:N}/tasks/{scenario.TaskId:N}/",
+            deleted.Key,
+            StringComparison.Ordinal);
+
+        var order = await SendAsync(
+            scope.Host,
+            HttpMethod.Get,
+            $"/api/work-orders/{scenario.WorkOrderId}",
+            scenario.Executor,
+            scenario.TenantId);
+        Assert.Equal(HttpStatusCode.OK, order.StatusCode);
+        using (var orderDoc = JsonDocument.Parse(await order.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(
+                uploaded.Value,
+                orderDoc.RootElement.GetProperty("tasks").EnumerateArray().Single().GetProperty("value").GetString());
+        }
+
+        var url = await SendAsync(
+            scope.Host,
+            HttpMethod.Get,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}/files/{uploaded.Id}/url",
+            scenario.Executor,
+            scenario.TenantId);
+        Assert.Equal(HttpStatusCode.OK, url.StatusCode);
+        using var urlDoc = JsonDocument.Parse(await url.Content.ReadAsStringAsync());
+        Assert.Contains(kept.Key, urlDoc.RootElement.GetProperty("url").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Clearing_the_photo_answer_keeps_the_stored_object()
+    {
+        var scenario = await SeedAsync();
+        using var scope = StartHost(scenario.DatabaseName);
+        var uploaded = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(24),
+            "image/jpeg",
+            "court.jpg");
+        Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+
+        var cleared = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}",
+            scenario.Executor,
+            scenario.TenantId,
+            """{"value":null}""");
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+
+        var order = await SendAsync(
+            scope.Host,
+            HttpMethod.Get,
+            $"/api/work-orders/{scenario.WorkOrderId}",
+            scenario.Executor,
+            scenario.TenantId);
+        Assert.Equal(HttpStatusCode.OK, order.StatusCode);
+        using (var orderDoc = JsonDocument.Parse(await order.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(
+                JsonValueKind.Null,
+                orderDoc.RootElement.GetProperty("tasks").EnumerateArray().Single().GetProperty("value").ValueKind);
+        }
+
+        var blocked = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/status",
+            scenario.Executor,
+            scenario.TenantId,
+            """{"status":"Completed"}""");
+        Assert.Equal(HttpStatusCode.BadRequest, blocked.StatusCode);
+        using (var blockedDoc = JsonDocument.Parse(await blocked.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(WorkOrderErrorCodes.MandatoryTasksIncomplete, blockedDoc.RootElement.GetProperty("code").GetString());
+        }
+
+        var url = await SendAsync(
+            scope.Host,
+            HttpMethod.Get,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}/files/{uploaded.Id}/url",
+            scenario.Executor,
+            scenario.TenantId);
+        Assert.Equal(HttpStatusCode.OK, url.StatusCode);
+        Assert.Empty(scope.Storage.Deletes);
+        Assert.Single(scope.Storage.Uploads);
+    }
+
+    [Fact]
+    public async Task Patch_rejects_a_file_id_that_belongs_to_another_task()
+    {
+        var scenario = await SeedAsync(secondImageTask: true);
+        Assert.NotNull(scenario.SecondTaskId);
+        using var scope = StartHost(scenario.DatabaseName);
+        var uploaded = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(24),
+            "image/jpeg",
+            "court.jpg");
+        Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+
+        var rejected = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.SecondTaskId}",
+            scenario.Executor,
+            scenario.TenantId,
+            $$"""{"value":"{{uploaded.Value}}"}""");
+
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        using var rejectedDoc = JsonDocument.Parse(await rejected.Content.ReadAsStringAsync());
+        Assert.Equal(WorkOrderErrorCodes.InvalidTaskValue, rejectedDoc.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            InvalidTaskValueException.InvalidImageReference,
+            rejectedDoc.RootElement.GetProperty("reason").GetString());
+
+        var order = await SendAsync(
+            scope.Host,
+            HttpMethod.Get,
+            $"/api/work-orders/{scenario.WorkOrderId}",
+            scenario.Executor,
+            scenario.TenantId);
+        Assert.Equal(HttpStatusCode.OK, order.StatusCode);
+        using var orderDoc = JsonDocument.Parse(await order.Content.ReadAsStringAsync());
+        var tasks = orderDoc.RootElement.GetProperty("tasks").EnumerateArray().ToList();
+        var first = tasks.Single(task => task.GetProperty("id").GetGuid() == scenario.TaskId);
+        var second = tasks.Single(task => task.GetProperty("id").GetGuid() == scenario.SecondTaskId);
+        Assert.Equal(uploaded.Value, first.GetProperty("value").GetString());
+        Assert.Equal(JsonValueKind.Null, second.GetProperty("value").ValueKind);
+    }
+
+    [Fact]
+    public async Task Upload_and_retrieval_are_forbidden_when_the_os_module_is_inactive()
+    {
+        var scenario = await SeedAsync(moduleActive: false);
+        using var scope = StartHost(scenario.DatabaseName, allowlistedExecute: true);
+
+        var upload = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(16),
+            "image/jpeg",
+            "court.jpg");
+        var url = await SendAsync(
+            scope.Host,
+            HttpMethod.Get,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}/files/{Guid.NewGuid()}/url",
+            scenario.Executor,
+            scenario.TenantId);
+
+        Assert.Equal(HttpStatusCode.Forbidden, upload.StatusCode);
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, upload.Error);
+        Assert.Equal(HttpStatusCode.Forbidden, url.StatusCode);
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, await ReadErrorAsync(url));
+        Assert.Empty(scope.Storage.Uploads);
+    }
+
+    [Fact]
+    public async Task Replace_keeps_the_file_id_and_deletes_the_previous_task_object()
+    {
+        var scenario = await SeedAsync();
+        using var scope = StartHost(scenario.DatabaseName);
+
+        var first = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(24),
+            "image/jpeg",
+            "court.jpg");
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var previous = Assert.Single(scope.Storage.Uploads);
+
+        var second = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(32),
+            "image/jpeg",
+            "court-2.jpg");
+
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal(second.Id.ToString("D"), second.Value);
+        var kept = Assert.Single(scope.Storage.Uploads);
+        Assert.NotEqual(previous.Key, kept.Key);
+        var deleted = Assert.Single(scope.Storage.Deletes);
+        Assert.Equal(previous.Key, deleted.Key);
+        Assert.Equal("catalog-private", deleted.Bucket);
+    }
+
+    [Fact]
+    public async Task Replace_does_not_delete_a_storage_key_outside_the_task()
+    {
+        var scenario = await SeedAsync();
+        var fileId = await AttachForeignKeyAsync(scenario);
+        using var scope = StartHost(scenario.DatabaseName);
+
+        var uploaded = await PostFileAsync(
+            scope.Host,
+            scenario.Executor,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId,
+            Jpeg(24),
+            "image/jpeg",
+            "court.jpg");
+
+        Assert.Equal(HttpStatusCode.Created, uploaded.StatusCode);
+        Assert.Equal(fileId, uploaded.Id);
+        Assert.Empty(scope.Storage.Deletes);
+        var stored = Assert.Single(scope.Storage.Uploads);
+        Assert.True(WorkOrderImageRules.IsKeyForTask(
+            stored.Key,
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId));
+        Assert.False(WorkOrderImageRules.IsKeyForTask(
+            "catalog/other",
+            scenario.TenantId,
+            scenario.WorkOrderId,
+            scenario.TaskId));
+    }
+
     private static byte[] Jpeg(int size)
     {
         var bytes = new byte[size];
@@ -373,7 +657,7 @@ public sealed class WorkOrderTaskImageTests
         return doc.RootElement.GetProperty("error").GetString();
     }
 
-    private static async Task<Scenario> SeedAsync()
+    private static async Task<Scenario> SeedAsync(bool secondImageTask = false, bool moduleActive = true)
     {
         var databaseName = $"wo-image-{Guid.NewGuid():N}";
         var tenant = new Tenant("Image Club", "44444444000191", subdomain: "image-club");
@@ -381,7 +665,7 @@ public sealed class WorkOrderTaskImageTests
         var provider = new FakeTenantProvider { TenantId = tenant.Id };
         await using var db = InMemoryAppDb.Create(provider, databaseName);
         db.Tenants.AddRange(tenant, other);
-        db.TenantModules.Add(new TenantModule(tenant.Id, PlatformModules.WorkOrders, isActive: true));
+        db.TenantModules.Add(new TenantModule(tenant.Id, PlatformModules.WorkOrders, moduleActive));
         db.TenantModules.Add(new TenantModule(other.Id, PlatformModules.WorkOrders, isActive: true));
 
         var execute = new Permission(
@@ -461,6 +745,22 @@ public sealed class WorkOrderTaskImageTests
             Order = 1,
         };
         order.AddTask(task);
+        Guid? secondTaskId = null;
+        if (secondImageTask)
+        {
+            var second = new WorkOrderTask
+            {
+                TenantId = tenant.Id,
+                WorkOrderId = order.Id,
+                Title = "Foto do vestiário",
+                InputType = TaskInputType.Image,
+                IsMandatory = true,
+                Order = 2,
+            };
+            order.AddTask(second);
+            secondTaskId = second.Id;
+        }
+
         db.WorkOrders.Add(order);
         await db.SaveChangesAsync();
 
@@ -473,10 +773,32 @@ public sealed class WorkOrderTaskImageTests
             executor,
             reader,
             stranger,
-            otherExecutor);
+            otherExecutor,
+            secondTaskId);
     }
 
-    private static HostScope StartHost(string databaseName)
+    private static async Task<Guid> AttachForeignKeyAsync(Scenario scenario)
+    {
+        var provider = new FakeTenantProvider { TenantId = scenario.TenantId };
+        await using var db = InMemoryAppDb.Create(provider, scenario.DatabaseName);
+        var file = new WorkOrderTaskFile
+        {
+            TenantId = scenario.TenantId,
+            WorkOrderId = scenario.WorkOrderId,
+            WorkOrderTaskId = scenario.TaskId,
+            StorageKey = "catalog/other",
+            FileName = "other.jpg",
+            ContentType = "image/jpeg",
+            SizeBytes = 3,
+        };
+        db.WorkOrderTaskFiles.Add(file);
+        var task = await db.WorkOrderTasks.SingleAsync(item => item.Id == scenario.TaskId);
+        task.Value = file.Id.ToString("D");
+        await db.SaveChangesAsync();
+        return file.Id;
+    }
+
+    private static HostScope StartHost(string databaseName, bool allowlistedExecute = false)
     {
         var storage = new RecordingStorageProvider();
         var host = new HostBuilder()
@@ -497,7 +819,15 @@ public sealed class WorkOrderTaskImageTests
                         InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), databaseName));
                     services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
                     services.AddScoped<IPermissionResolver, PermissionResolver>();
-                    services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+                    if (allowlistedExecute)
+                    {
+                        services.AddSingleton<IAuthorizationHandler>(
+                            new AllowlistedPermissionHandler([Permissions.Os.WorkOrdersExecute]));
+                    }
+                    else
+                    {
+                        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+                    }
                     services.AddScoped<IRbacGrantGuard>(sp => new RbacGrantGuard(
                         sp.GetRequiredService<AppDbContext>(),
                         sp.GetRequiredService<IPermissionResolver>(),
@@ -576,7 +906,8 @@ public sealed class WorkOrderTaskImageTests
         string Executor,
         string Reader,
         string Stranger,
-        string OtherExecutor);
+        string OtherExecutor,
+        Guid? SecondTaskId = null);
 
     private sealed class HostScope(IHost host, RecordingStorageProvider storage) : IDisposable
     {
@@ -637,6 +968,8 @@ public sealed class WorkOrderTaskImageTests
     {
         public List<StoredObject> Uploads { get; } = [];
 
+        public List<DeletedObject> Deletes { get; } = [];
+
         public Task UploadAsync(
             string bucket,
             string key,
@@ -660,11 +993,33 @@ public sealed class WorkOrderTaskImageTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult($"https://storage.test/{bucket}/{key}?exp={(int)ttl.TotalSeconds}");
 
-        public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default)
+        {
+            Deletes.Add(new DeletedObject(bucket, key));
+            Uploads.RemoveAll(item => item.Bucket == bucket && item.Key == key);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed record StoredObject(string Bucket, string Key, byte[] Content, string ContentType);
+
+    private sealed record DeletedObject(string Bucket, string Key);
+
+    private sealed class AllowlistedPermissionHandler(IReadOnlyCollection<string> allowedKeys)
+        : AuthorizationHandler<PermissionRequirement>
+    {
+        protected override Task HandleRequirementAsync(
+            AuthorizationHandlerContext context,
+            PermissionRequirement requirement)
+        {
+            if (allowedKeys.Contains(requirement.PermissionKey))
+            {
+                context.Succeed(requirement);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class SelectedControllers(params Type[] controllerTypes) : ControllerFeatureProvider
     {

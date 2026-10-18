@@ -6,6 +6,6 @@ The task `value` becomes the id of `os.work_order_task_files`. `GET /api/work-or
 
 Oversize is 400 `FILE_TOO_LARGE`. A disallowed media type is 400 `FILE_TYPE_NOT_ALLOWED`. Declared type that does not match the bytes is 400 `FILE_CONTENT_MISMATCH`. A closed order is 409 `WORK_ORDER_CLOSED`. Patching an id that is not a file of that task is 400 `INVALID_TASK_VALUE` with reason `INVALID_IMAGE_REFERENCE`. Completion of a required photo without that id is 400 `MANDATORY_TASKS_INCOMPLETE`.
 
-Replacing the photo keeps the same file id and removes the previous object after the database commit. Clearing `value` does not delete the blob. Migration `20261018163615_AddWorkOrderTaskFiles` is included and not applied.
+Replacing the photo keeps the same file id and the one-row-per-task unique index. The new object is written under a fresh key before `SELECT … FOR UPDATE`. The lock only swaps that row. After commit, the previous object is deleted when `IsKeyForTask` accepts its key. A lost race, a save failure, or a closed order (`409 WORK_ORDER_CLOSED`) deletes only the new object. Clearing `value` does not delete the blob. A file id from another task is `400 INVALID_IMAGE_REFERENCE`. An inactive `os` module is `403` with `Module is not active for this tenant.` on both routes. Migration `20261018163615_AddWorkOrderTaskFiles` is included and not applied.
 
 vlr-web still shows that image upload is unsupported. It should post the file, then treat `value` as the file id when it loads or completes the order.

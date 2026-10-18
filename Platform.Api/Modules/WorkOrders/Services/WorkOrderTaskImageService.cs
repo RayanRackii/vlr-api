@@ -30,116 +30,161 @@ public sealed class WorkOrderTaskImageService(
     {
         ArgumentNullException.ThrowIfNull(content);
         var tenantId = WorkOrderExecution.RequireTenant(tenantProvider);
-        var outcome = await InTransactionAsync(
-            async () =>
-            {
-                var workOrder = await WorkOrderExecution.LockAndLoadAsync(
-                    dbContext,
-                    tenantProvider,
-                    httpContextAccessor,
-                    userDirectoryService,
-                    permissionResolver,
-                    tenantId,
-                    workOrderId,
-                    cancellationToken);
-                if (workOrder is null)
-                {
-                    return UploadOutcome.Missing;
-                }
+        var bytes = await ReadLimitedAsync(content, cancellationToken);
+        var mediaType = WorkOrderImageRules.Validate(contentType, bytes.Length, bytes);
 
-                WorkOrderExecution.EnsureMutable(workOrder);
-                var task = workOrder.Tasks.FirstOrDefault(item => item.Id == taskId);
-                if (task is null)
-                {
-                    return UploadOutcome.Missing;
-                }
-
-                if (task.InputType != TaskInputType.Image)
-                {
-                    throw new InvalidTaskValueException(
-                        InvalidTaskValueException.NotAnImageTask,
-                        "Only image tasks accept a photo.");
-                }
-
-                var bytes = await ReadLimitedAsync(content, cancellationToken);
-                var mediaType = WorkOrderImageRules.Validate(contentType, bytes.Length, bytes);
-                var existing = await dbContext.WorkOrderTaskFiles
-                    .FirstOrDefaultAsync(file => file.WorkOrderTaskId == task.Id, cancellationToken);
-                var previousKey = existing?.StorageKey;
-                var objectId = Guid.NewGuid();
-                var storageKey = WorkOrderImageRules.StorageKey(tenantId, workOrder.Id, task.Id, objectId);
-                var bucket = storageOptions.Value.PrivateBucket;
-
-                await using (var payload = new MemoryStream(bytes, writable: false))
-                {
-                    await storageProvider.UploadAsync(
-                        bucket,
-                        storageKey,
-                        payload,
-                        mediaType,
-                        cancellationToken);
-                }
-
-                try
-                {
-                    var file = existing ?? new WorkOrderTaskFile
-                    {
-                        TenantId = tenantId,
-                        WorkOrderId = workOrder.Id,
-                        WorkOrderTaskId = task.Id,
-                        StorageKey = storageKey,
-                        FileName = WorkOrderImageRules.SanitizeFileName(fileName),
-                        ContentType = mediaType,
-                        SizeBytes = bytes.Length,
-                    };
-
-                    if (existing is null)
-                    {
-                        dbContext.WorkOrderTaskFiles.Add(file);
-                    }
-                    else
-                    {
-                        existing.StorageKey = storageKey;
-                        existing.FileName = WorkOrderImageRules.SanitizeFileName(fileName);
-                        existing.ContentType = mediaType;
-                        existing.SizeBytes = bytes.Length;
-                        existing.Touch();
-                    }
-
-                    task.Value = file.Id.ToString("D");
-                    task.Touch();
-                    workOrder.Touch();
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                    return new UploadOutcome(
-                        new WorkOrderTaskFileResponse(
-                            file.Id,
-                            file.FileName,
-                            file.ContentType,
-                            file.SizeBytes,
-                            task.Value),
-                        previousKey,
-                        storageKey);
-                }
-                catch
-                {
-                    await TryDeleteAsync(bucket, storageKey, cancellationToken);
-                    throw;
-                }
-            },
+        var accessible = await WorkOrderExecution.LoadAccessibleAsync(
+            dbContext,
+            tenantProvider,
+            httpContextAccessor,
+            userDirectoryService,
+            permissionResolver,
+            workOrderId,
             cancellationToken);
-
-        if (outcome.Response is null)
+        var accessibleTask = accessible?.Tasks.FirstOrDefault(item => item.Id == taskId);
+        if (accessible is null || accessibleTask is null)
         {
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(outcome.PreviousKey)
-            && !string.Equals(outcome.PreviousKey, outcome.UploadedKey, StringComparison.Ordinal))
+        if (accessibleTask.InputType != TaskInputType.Image)
         {
-            await TryDeleteAsync(storageOptions.Value.PrivateBucket, outcome.PreviousKey, cancellationToken);
+            throw new InvalidTaskValueException(
+                InvalidTaskValueException.NotAnImageTask,
+                "Only image tasks accept a photo.");
+        }
+
+        var storageKey = WorkOrderImageRules.StorageKey(
+            tenantId,
+            accessible.Id,
+            accessibleTask.Id,
+            Guid.NewGuid());
+        var bucket = storageOptions.Value.PrivateBucket;
+        await using (var payload = new MemoryStream(bytes, writable: false))
+        {
+            await storageProvider.UploadAsync(
+                bucket,
+                storageKey,
+                payload,
+                mediaType,
+                cancellationToken);
+        }
+
+        UploadOutcome outcome;
+        try
+        {
+            outcome = await InTransactionAsync(
+                () => SwapStoredFileAsync(
+                    tenantId,
+                    workOrderId,
+                    taskId,
+                    fileName,
+                    mediaType,
+                    bytes.Length,
+                    storageKey,
+                    cancellationToken),
+                cancellationToken);
+        }
+        catch
+        {
+            await TryDeleteAsync(bucket, storageKey, cancellationToken);
+            throw;
+        }
+
+        if (outcome.Response is null)
+        {
+            await TryDeleteAsync(bucket, storageKey, cancellationToken);
+            return null;
+        }
+
+        if (outcome.PreviousKey is not null
+            && !string.Equals(outcome.PreviousKey, storageKey, StringComparison.Ordinal)
+            && WorkOrderImageRules.IsKeyForTask(outcome.PreviousKey, tenantId, workOrderId, taskId))
+        {
+            await TryDeleteAsync(bucket, outcome.PreviousKey, cancellationToken);
         }
 
         return outcome.Response;
+    }
+
+    private async Task<UploadOutcome> SwapStoredFileAsync(
+        Guid tenantId,
+        Guid workOrderId,
+        Guid taskId,
+        string? fileName,
+        string mediaType,
+        long sizeBytes,
+        string storageKey,
+        CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderExecution.LockAndLoadAsync(
+            dbContext,
+            tenantProvider,
+            httpContextAccessor,
+            userDirectoryService,
+            permissionResolver,
+            tenantId,
+            workOrderId,
+            cancellationToken);
+        if (workOrder is null)
+        {
+            return UploadOutcome.Missing;
+        }
+
+        WorkOrderExecution.EnsureMutable(workOrder);
+        var task = workOrder.Tasks.FirstOrDefault(item => item.Id == taskId);
+        if (task is null)
+        {
+            return UploadOutcome.Missing;
+        }
+
+        if (task.InputType != TaskInputType.Image)
+        {
+            throw new InvalidTaskValueException(
+                InvalidTaskValueException.NotAnImageTask,
+                "Only image tasks accept a photo.");
+        }
+
+        var existing = await dbContext.WorkOrderTaskFiles
+            .FirstOrDefaultAsync(file => file.WorkOrderTaskId == task.Id, cancellationToken);
+        var previousKey = existing?.StorageKey;
+        var safeName = WorkOrderImageRules.SanitizeFileName(fileName);
+        var file = existing ?? new WorkOrderTaskFile
+        {
+            TenantId = tenantId,
+            WorkOrderId = workOrder.Id,
+            WorkOrderTaskId = task.Id,
+            StorageKey = storageKey,
+            FileName = safeName,
+            ContentType = mediaType,
+            SizeBytes = sizeBytes,
+        };
+
+        if (existing is null)
+        {
+            dbContext.WorkOrderTaskFiles.Add(file);
+        }
+        else
+        {
+            existing.StorageKey = storageKey;
+            existing.FileName = safeName;
+            existing.ContentType = mediaType;
+            existing.SizeBytes = sizeBytes;
+            existing.Touch();
+        }
+
+        task.Value = file.Id.ToString("D");
+        task.Touch();
+        workOrder.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new UploadOutcome(
+            new WorkOrderTaskFileResponse(
+                file.Id,
+                file.FileName,
+                file.ContentType,
+                file.SizeBytes,
+                task.Value!),
+            previousKey);
     }
 
     public async Task<WorkOrderTaskFileUrlResponse?> GetUrlAsync(
@@ -245,11 +290,8 @@ public sealed class WorkOrderTaskImageService(
         }
     }
 
-    private sealed record UploadOutcome(
-        WorkOrderTaskFileResponse? Response,
-        string? PreviousKey,
-        string? UploadedKey)
+    private sealed record UploadOutcome(WorkOrderTaskFileResponse? Response, string? PreviousKey)
     {
-        public static UploadOutcome Missing { get; } = new(null, null, null);
+        public static UploadOutcome Missing { get; } = new(null, null);
     }
 }
