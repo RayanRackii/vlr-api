@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Platform.Api.Common;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Storage;
@@ -43,6 +44,17 @@ public interface ICatalogPortalService
         Guid customerId,
         CreateProductRequestDto request,
         IReadOnlyList<PortalUpload> files,
+        CancellationToken cancellationToken);
+
+    Task<PagedResult<PortalProductRequestResponse>> ListOwnProductRequestsAsync(
+        Guid customerId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken);
+
+    Task<PortalProductRequestResponse?> GetOwnProductRequestAsync(
+        Guid customerId,
+        Guid requestId,
         CancellationToken cancellationToken);
 
     Task<CatalogFileUrlResponse> GetOwnProductRequestFileUrlAsync(
@@ -341,6 +353,61 @@ public sealed class CatalogPortalService(
         return CatalogOrderService.MapProductRequest(productRequest);
     }
 
+    public async Task<PagedResult<PortalProductRequestResponse>> ListOwnProductRequestsAsync(
+        Guid customerId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenant();
+        ValidatePage(page, pageSize);
+
+        var filtered = dbContext.ProductRequests
+            .AsNoTracking()
+            .Where(request => request.CustomerId == customerId);
+
+        var total = await filtered.CountAsync(cancellationToken);
+        var skip = (page - 1L) * pageSize;
+        if (skip >= total)
+        {
+            return new PagedResult<PortalProductRequestResponse>([], page, pageSize, total);
+        }
+
+        var requests = await filtered
+            .Include(request => request.Files)
+            .OrderByDescending(request => request.CreatedAt)
+            .ThenByDescending(request => request.Id)
+            .Skip((int)skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = new List<PortalProductRequestResponse>(requests.Count);
+        foreach (var request in requests)
+        {
+            items.Add(await MapPortalProductRequestAsync(request, cancellationToken));
+        }
+
+        return new PagedResult<PortalProductRequestResponse>(items, page, pageSize, total);
+    }
+
+    public async Task<PortalProductRequestResponse?> GetOwnProductRequestAsync(
+        Guid customerId,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenant();
+        var request = await dbContext.ProductRequests
+            .AsNoTracking()
+            .Include(row => row.Files)
+            .FirstOrDefaultAsync(
+                row => row.Id == requestId && row.CustomerId == customerId,
+                cancellationToken);
+
+        return request is null
+            ? null
+            : await MapPortalProductRequestAsync(request, cancellationToken);
+    }
+
     public async Task<CatalogFileUrlResponse> GetOwnProductRequestFileUrlAsync(
         Guid customerId,
         Guid requestId,
@@ -398,6 +465,44 @@ public sealed class CatalogPortalService(
 
         sequence.LastNumber++;
         return sequence.LastNumber;
+    }
+
+    private async Task<PortalProductRequestResponse> MapPortalProductRequestAsync(
+        ProductRequest request,
+        CancellationToken cancellationToken)
+    {
+        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var files = new List<PortalProductRequestFileDto>(request.Files.Count);
+        foreach (var file in request.Files)
+        {
+            var url = await storageProvider.CreateSignedUrlAsync(
+                storageOptions.Value.PrivateBucket,
+                file.StorageKey,
+                ttl,
+                cancellationToken);
+            files.Add(new PortalProductRequestFileDto(file.Id, file.FileName, url));
+        }
+
+        return new PortalProductRequestResponse(
+            request.Id,
+            request.Status,
+            request.Description,
+            request.Quantity,
+            request.CreatedAt,
+            files);
+    }
+
+    private static void ValidatePage(int page, int pageSize)
+    {
+        if (page < 1)
+        {
+            throw new ArgumentException("Page must be at least 1.");
+        }
+
+        if (pageSize < 1 || pageSize > DirectoryPage.MaxPageSize)
+        {
+            throw new ArgumentException($"Page size must be between 1 and {DirectoryPage.MaxPageSize}.");
+        }
     }
 
     private PortalProductResponse MapPortalProduct(CatalogProduct product)
