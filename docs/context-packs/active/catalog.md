@@ -53,6 +53,8 @@ Notifications: generic Notification + Delivery + Attempt. Outbox = Delivery(Queu
 
 See spec HTTP tables: `/api/catalog/*` B2B; `/api/catalog/portal/*` B2C.
 
+B2C product-request reads (2026-10-18): `GET /api/catalog/portal/product-requests` (paged, newest first, authenticated customer only) and `GET /api/catalog/portal/product-requests/{id}` (404 for another customer or tenant). Response fields: `status`, `description`, `quantity`, `createdAt`, and a signed `files[].url` when a file is attached.
+
 ## Important implementation seams
 
 - `Platform.Api/Modules/Catalog/`
