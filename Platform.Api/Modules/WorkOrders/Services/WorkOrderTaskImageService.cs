@@ -60,6 +60,7 @@ public sealed class WorkOrderTaskImageService(
             accessibleTask.Id,
             Guid.NewGuid());
         var bucket = storageOptions.Value.PrivateBucket;
+        var commitStarted = false;
         UploadOutcome outcome;
         try
         {
@@ -83,11 +84,24 @@ public sealed class WorkOrderTaskImageService(
                     bytes.Length,
                     storageKey,
                     cancellationToken),
+                () => commitStarted = true,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            await TryDeleteAsync(bucket, storageKey);
+            if (commitStarted)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Work order image commit outcome is uncertain for {Bucket}/{Key}; object preserved for reconciliation.",
+                    bucket,
+                    storageKey);
+            }
+            else
+            {
+                await TryDeleteAsync(bucket, storageKey);
+            }
+
             throw;
         }
 
@@ -270,7 +284,10 @@ public sealed class WorkOrderTaskImageService(
         return buffer.ToArray();
     }
 
-    private async Task<T> InTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+    private async Task<T> InTransactionAsync<T>(
+        Func<Task<T>> action,
+        Action onCommitStarting,
+        CancellationToken cancellationToken)
     {
         if (!dbContext.Database.IsRelational())
         {
@@ -278,17 +295,20 @@ public sealed class WorkOrderTaskImageService(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        T result;
         try
         {
-            var result = await action();
-            await transaction.CommitAsync(cancellationToken);
-            return result;
+            result = await action();
         }
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+
+        onCommitStarting();
+        await transaction.CommitAsync(cancellationToken);
+        return result;
     }
 
     private sealed record UploadOutcome(WorkOrderTaskFileResponse? Response, string? PreviousKey)
