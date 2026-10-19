@@ -8,6 +8,7 @@ public static class UsersModuleExtensions
     public static IServiceCollection AddUsersModule(this IServiceCollection services)
     {
         services.AddScoped<IUserDirectoryService, UserDirectoryService>();
+        services.AddScoped<IStaffTenantMembershipService, StaffTenantMembershipService>();
         services.AddScoped<ITenantCustomerDirectory, TenantCustomerDirectory>();
         return services;
     }

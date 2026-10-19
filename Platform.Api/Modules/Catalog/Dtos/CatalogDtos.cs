@@ -118,6 +118,19 @@ public sealed record ProductRequestResponse(
     DateTimeOffset CreatedAt,
     IReadOnlyList<ProductRequestFileDto> Files);
 
+public sealed record PortalProductRequestFileDto(
+    Guid Id,
+    string FileName,
+    string Url);
+
+public sealed record PortalProductRequestResponse(
+    Guid Id,
+    ProductRequestStatus Status,
+    string Description,
+    int Quantity,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<PortalProductRequestFileDto> Files);
+
 public sealed record PortalProductFileDto(
     Guid Id,
     string FileName,

@@ -297,9 +297,13 @@ Query filters: products name/code/active; orders number/status/customer/from/to;
 | GET | `/api/catalog/portal/orders/{id}` |
 | POST | `/api/catalog/portal/orders/{id}/cancel` (no reason required for Customer) |
 | POST | `/api/catalog/portal/product-requests` multipart or JSON + separate file posts |
+| GET | `/api/catalog/portal/product-requests?page=&pageSize=` own customer, newest first, paged |
+| GET | `/api/catalog/portal/product-requests/{id}` own only; other customer or tenant → 404 |
 | GET | `/api/catalog/portal/product-requests/{id}/files/{fileId}/url` own only |
 
 Portal product DTO: customer-visible files only, public image URLs, never InternalB2B, never storageKey.
+
+Portal product-request read (`PortalProductRequestResponse`): `id`, `status`, `description`, `quantity`, `createdAt`, `files`. Each file is `id`, `fileName`, `url`. `files` is empty when the request has no attachment; `url` is a signed private-bucket URL (same TTL as the file URL endpoint), never a storage key and never a public URL. List body is `{ items, page, pageSize, total }`. `page` defaults to 1 (minimum 1). `pageSize` defaults to 20 and must be 1–50. Order is `createdAt` descending, then `id` descending. The list and the detail include only the authenticated customer's rows in the JWT tenant (global query filter plus `CustomerId`). Another customer in the same tenant, or any customer in another tenant, gets an empty page on the list and 404 with no body on the detail. `page` past the end is 200 with `items: []` and the real `total`. Invalid `page` or `pageSize` is 400 `{ "error" }`. POST still returns `ProductRequestResponse` (no signed URL). Generic for every tenant.
 
 Create order: ignore client prices; re-load active products; snapshot; allocate number under lock; status Requested; history; notifications.
 

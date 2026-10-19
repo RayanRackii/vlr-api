@@ -68,16 +68,21 @@ public sealed class PermissionTenantConventionTests
         Endpoint<RentalLayoutsController>(nameof(RentalLayoutsController.ListPublic)),
         Endpoint<BookingPolicyController>(nameof(BookingPolicyController.GetPublic)),
         Endpoint<ModuleMenuItemsController>(nameof(ModuleMenuItemsController.GetPublicMenu)),
+        Endpoint<InvitesController>(nameof(InvitesController.Preview)),
         Endpoint<InvitesController>(nameof(InvitesController.Accept)),
     };
 
     /// <summary>
-    /// Not public. Super-Admin with no tenant still calls this route and must get a
-    /// tenant-less profile. <c>[RequirePermission]</c> would 403 that call.
+    /// Not public. Super-Admin with no tenant still calls <c>GET /api/users/me</c>.
+    /// <c>[RequirePermission]</c> would 403 that call. Membership list and select
+    /// sit here too: they authorize the Auth user, not a permission in the token's
+    /// current tenant, so a stale tenant claim cannot block the picker.
     /// </summary>
     private static readonly HashSet<string> PlatformIdentityActions = new(StringComparer.Ordinal)
     {
         Endpoint<UsersController>(nameof(UsersController.GetCurrent)),
+        Endpoint<StaffTenantMembershipsController>(nameof(StaffTenantMembershipsController.ListMemberships)),
+        Endpoint<StaffTenantMembershipsController>(nameof(StaffTenantMembershipsController.SelectMembership)),
     };
 
     [Fact]

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
@@ -138,6 +139,73 @@ public sealed class CatalogPortalController(
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
+        }
+    }
+
+    [HttpGet("product-requests")]
+    public async Task<ActionResult<PagedResult<PortalProductRequestResponse>>> ListProductRequests(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = DirectoryPage.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return Ok(await portalService.ListOwnProductRequestsAsync(
+                ResolveCustomerId(),
+                page,
+                pageSize,
+                cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
+        }
+    }
+
+    [HttpGet("product-requests/{id:guid}")]
+    public async Task<ActionResult<PortalProductRequestResponse>> GetProductRequest(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var request = await portalService.GetOwnProductRequestAsync(
+                ResolveCustomerId(),
+                id,
+                cancellationToken);
+            return request is null ? NotFound() : Ok(request);
         }
         catch (UnauthorizedAccessException ex)
         {

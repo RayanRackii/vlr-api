@@ -9,12 +9,15 @@ internal static class WorkOrderTaskValues
 {
     public const int MaxStoredLength = 8000;
 
-    public static bool IsFilled(WorkOrderTask task)
+    public static bool IsFilled(
+        WorkOrderTask task,
+        IReadOnlySet<(Guid TaskId, Guid FileId)>? storedImages = null)
     {
-        // There is no work-order image upload. A mandatory image must not block completion.
         if (task.InputType == TaskInputType.Image)
         {
-            return true;
+            return Guid.TryParse(task.Value, out var fileId)
+                && storedImages is not null
+                && storedImages.Contains((task.Id, fileId));
         }
 
         if (task.InputType == TaskInputType.Checkbox)
@@ -39,11 +42,23 @@ internal static class WorkOrderTaskValues
             TaskInputType.Number => NormalizeNumber(value, task.Configuration),
             TaskInputType.SingleChoice => NormalizeChoice(value, task.Configuration),
             TaskInputType.Text => NormalizeText(value, task.Configuration),
-            TaskInputType.Image => NormalizeBoundedText(value, MaxStoredLength),
+            TaskInputType.Image => NormalizeImageReference(value),
             _ => throw new InvalidTaskValueException(
                 InvalidTaskValueException.InvalidConfiguration,
                 "Work order task input type is not supported."),
         };
+    }
+
+    private static string NormalizeImageReference(string value)
+    {
+        if (!Guid.TryParse(value, out var fileId))
+        {
+            throw new InvalidTaskValueException(
+                InvalidTaskValueException.InvalidImageReference,
+                "Image values must be a stored file reference.");
+        }
+
+        return fileId.ToString("D");
     }
 
     private static string NormalizeCheckbox(string value)
