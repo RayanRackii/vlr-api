@@ -79,6 +79,8 @@ public class AppDbContext : DbContext
 
     public DbSet<WorkOrderTask> WorkOrderTasks => Set<WorkOrderTask>();
 
+    public DbSet<WorkOrderTaskFile> WorkOrderTaskFiles => Set<WorkOrderTaskFile>();
+
     public DbSet<GlobalMaintenanceTemplate> GlobalMaintenanceTemplates =>
         Set<GlobalMaintenanceTemplate>();
 

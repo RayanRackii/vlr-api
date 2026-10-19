@@ -25,7 +25,7 @@ public class WorkOrderTask : Entity, ITenantScoped
     public required int Order { get; set; }
 
     /// <summary>
-    /// Technician response (text, number, choice, or image reference).
+    /// Technician response. Text, number, choice, or the id of a <see cref="WorkOrderTaskFile"/>.
     /// </summary>
     public string? Value { get; set; }
 

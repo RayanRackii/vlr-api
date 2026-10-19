@@ -3296,6 +3296,68 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("work_order_tasks", "os");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrderTaskFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("storage_key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_order_id");
+
+                    b.Property<Guid>("WorkOrderTaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_order_task_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_work_order_task_files");
+
+                    b.HasIndex("WorkOrderTaskId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_work_order_task_files_work_order_task_id");
+
+                    b.HasIndex("TenantId", "StorageKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_work_order_task_files_tenant_id_storage_key");
+
+                    b.ToTable("work_order_task_files", "os");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Asset", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.AssetCategory", "Category")
@@ -3913,6 +3975,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("PlanTask");
 
                     b.Navigation("WorkOrder");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrderTaskFile", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.WorkOrderTask", null)
+                        .WithMany()
+                        .HasForeignKey("WorkOrderTaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_work_order_task_files_work_order_tasks_work_order_task_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Asset", b =>

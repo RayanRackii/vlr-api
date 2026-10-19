@@ -54,6 +54,10 @@ public sealed class InvalidTaskValueException : WorkOrderRuleException
 
     public const string InvalidConfiguration = "INVALID_CONFIGURATION";
 
+    public const string InvalidImageReference = "INVALID_IMAGE_REFERENCE";
+
+    public const string NotAnImageTask = "NOT_AN_IMAGE_TASK";
+
     public InvalidTaskValueException(string reason, string message)
         : base(WorkOrderErrorCodes.InvalidTaskValue, message)
     {

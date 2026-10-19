@@ -6,7 +6,6 @@ using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.Assets.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
-using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -216,7 +215,24 @@ public sealed class WorkOrderService(
                     return null;
                 }
 
-                task.Value = WorkOrderTaskValues.Normalize(task, request.Value);
+                var normalized = WorkOrderTaskValues.Normalize(task, request.Value);
+                if (task.InputType == TaskInputType.Image && normalized is not null)
+                {
+                    var fileId = Guid.Parse(normalized);
+                    var stored = await dbContext.WorkOrderTaskFiles.AnyAsync(
+                        file => file.Id == fileId
+                            && file.WorkOrderId == workOrder.Id
+                            && file.WorkOrderTaskId == task.Id,
+                        cancellationToken);
+                    if (!stored)
+                    {
+                        throw new InvalidTaskValueException(
+                            InvalidTaskValueException.InvalidImageReference,
+                            "Image values must be a stored file reference for this task.");
+                    }
+                }
+
+                task.Value = normalized;
                 task.Touch();
                 workOrder.Touch();
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -240,7 +256,13 @@ public sealed class WorkOrderService(
                     return null;
                 }
 
-                ApplyStatusChange(workOrder, request.Status);
+                IReadOnlySet<(Guid TaskId, Guid FileId)>? storedImages = null;
+                if (request.Status == WorkOrderStatus.Completed)
+                {
+                    storedImages = await LoadStoredImagesAsync(workOrder.Id, cancellationToken);
+                }
+
+                ApplyStatusChange(workOrder, request.Status, storedImages);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return WorkOrderResponseMapper.ToResponse(workOrder);
             },
@@ -307,7 +329,23 @@ public sealed class WorkOrderService(
             cancellationToken);
     }
 
-    private static void ApplyStatusChange(WorkOrder workOrder, WorkOrderStatus nextStatus)
+    private async Task<IReadOnlySet<(Guid TaskId, Guid FileId)>> LoadStoredImagesAsync(
+        Guid workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.WorkOrderTaskFiles
+            .AsNoTracking()
+            .Where(file => file.WorkOrderId == workOrderId)
+            .Select(file => new { file.WorkOrderTaskId, file.Id })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(row => (row.WorkOrderTaskId, row.Id)).ToHashSet();
+    }
+
+    private static void ApplyStatusChange(
+        WorkOrder workOrder,
+        WorkOrderStatus nextStatus,
+        IReadOnlySet<(Guid TaskId, Guid FileId)>? storedImages = null)
     {
         if (workOrder.Status == WorkOrderStatus.Canceled)
         {
@@ -323,7 +361,7 @@ public sealed class WorkOrderService(
         if (nextStatus == WorkOrderStatus.Completed)
         {
             var missing = workOrder.Tasks
-                .Where(task => task.IsMandatory && !WorkOrderTaskValues.IsFilled(task))
+                .Where(task => task.IsMandatory && !WorkOrderTaskValues.IsFilled(task, storedImages))
                 .OrderBy(task => task.Order)
                 .ThenBy(task => task.Id)
                 .Select(task => new IncompleteWorkOrderTask(task.Id, task.Title))
@@ -345,60 +383,22 @@ public sealed class WorkOrderService(
         workOrder.Touch();
     }
 
-    private async Task<WorkOrder?> LockAndLoadAsync(
+    private Task<WorkOrder?> LockAndLoadAsync(
         Guid tenantId,
         Guid id,
-        CancellationToken cancellationToken)
-    {
-        await WorkOrderRowLock.AcquireAsync(dbContext, tenantId, id, cancellationToken);
-        var currentUser = await GetCurrentUserAsync(cancellationToken);
+        CancellationToken cancellationToken) =>
+        WorkOrderExecution.LockAndLoadAsync(
+            dbContext,
+            tenantProvider,
+            httpContextAccessor,
+            userDirectoryService,
+            permissionResolver,
+            tenantId,
+            id,
+            cancellationToken);
 
-        var query = dbContext.WorkOrders
-            .Include(w => w.Asset)
-            .Include(w => w.AssignedUser)
-            .Include(w => w.Tasks)
-            .AsQueryable();
-
-        if (await RestrictToAssignedAsync(currentUser, cancellationToken))
-        {
-            query = query.Where(w => w.AssignedUserId == currentUser.Id);
-        }
-
-        var workOrder = await query.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
-        if (workOrder is null)
-        {
-            return null;
-        }
-
-        if (workOrder.MaintenancePlanId is Guid planId)
-        {
-            await PmocPlanAssetLock.AcquireAsync(
-                dbContext,
-                planId,
-                workOrder.AssetId,
-                cancellationToken);
-        }
-
-        await ReloadWorkOrderAsync(workOrder, cancellationToken);
-        return workOrder;
-    }
-
-    private async Task ReloadWorkOrderAsync(WorkOrder workOrder, CancellationToken cancellationToken)
-    {
-        await dbContext.Entry(workOrder).ReloadAsync(cancellationToken);
-        foreach (var task in workOrder.Tasks.ToList())
-        {
-            await dbContext.Entry(task).ReloadAsync(cancellationToken);
-        }
-    }
-
-    private static void EnsureMutable(WorkOrder workOrder)
-    {
-        if (workOrder.Status is WorkOrderStatus.Completed or WorkOrderStatus.Canceled)
-        {
-            throw new WorkOrderClosedException();
-        }
-    }
+    private static void EnsureMutable(WorkOrder workOrder) =>
+        WorkOrderExecution.EnsureMutable(workOrder);
 
     private Task InTransactionAsync(Func<Task> action, CancellationToken cancellationToken) =>
         InTransactionAsync(
@@ -430,51 +430,23 @@ public sealed class WorkOrderService(
         }
     }
 
-    private Guid EnsureTenantContext()
-    {
-        return tenantProvider.TenantId
-            ?? throw new UnauthorizedAccessException("Tenant context is required.");
-    }
+    private Guid EnsureTenantContext() => WorkOrderExecution.RequireTenant(tenantProvider);
 
-    private async Task<bool> RestrictToAssignedAsync(
+    private Task<bool> RestrictToAssignedAsync(
         CurrentUserResponse currentUser,
-        CancellationToken cancellationToken)
-    {
-        if (currentUser.Id is not Guid userId || tenantProvider.TenantId is not Guid tenantId)
-        {
-            return false;
-        }
-
-        if (await permissionResolver.HasPermissionAsync(
-                tenantId,
-                userId,
-                Permissions.Os.WorkOrdersCreate,
-                cancellationToken))
-        {
-            return false;
-        }
-
-        if (currentUser.Roles.Any(role =>
-                role.IsSystemRole && PermissionResolver.IsAdminOrSuperAdminName(role.Name)))
-        {
-            return false;
-        }
-
-        return await permissionResolver.HasPermissionAsync(
-            tenantId,
-            userId,
-            Permissions.Os.WorkOrdersExecute,
+        CancellationToken cancellationToken) =>
+        WorkOrderExecution.RestrictToAssignedAsync(
+            permissionResolver,
+            tenantProvider,
+            currentUser,
             cancellationToken);
-    }
 
     private Task<CurrentUserResponse> GetCurrentUserAsync(
-        CancellationToken cancellationToken)
-    {
-        var principal = httpContextAccessor.HttpContext?.User
-            ?? throw new UnauthorizedAccessException("Authenticated user context is required.");
-
-        return userDirectoryService.GetCurrentAsync(principal, cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        WorkOrderExecution.GetCurrentUserAsync(
+            httpContextAccessor,
+            userDirectoryService,
+            cancellationToken);
 
     private static void ValidateTasks(IReadOnlyList<CreateWorkOrderTaskDto> tasks)
     {

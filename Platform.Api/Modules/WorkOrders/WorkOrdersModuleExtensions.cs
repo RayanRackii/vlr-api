@@ -8,6 +8,7 @@ public static class WorkOrdersModuleExtensions
     {
         services.AddScoped<IWorkOrderService, WorkOrderService>();
         services.AddScoped<IWorkOrderGenerationService, WorkOrderGenerationService>();
+        services.AddScoped<IWorkOrderTaskImageService, WorkOrderTaskImageService>();
 
         return services;
     }
