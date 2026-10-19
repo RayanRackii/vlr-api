@@ -61,6 +61,7 @@ public sealed class WorkOrderTaskImageService(
             Guid.NewGuid());
         var bucket = storageOptions.Value.PrivateBucket;
         var commitStarted = false;
+        string? previousKey = null;
         UploadOutcome outcome;
         try
         {
@@ -84,7 +85,11 @@ public sealed class WorkOrderTaskImageService(
                     bytes.Length,
                     storageKey,
                     cancellationToken),
-                () => commitStarted = true,
+                result =>
+                {
+                    previousKey = result.PreviousKey;
+                    commitStarted = true;
+                },
                 cancellationToken);
         }
         catch (Exception ex)
@@ -93,9 +98,10 @@ public sealed class WorkOrderTaskImageService(
             {
                 logger.LogWarning(
                     ex,
-                    "Work order image commit outcome is uncertain for {Bucket}/{Key}; object preserved for reconciliation.",
+                    "Work order image commit outcome is uncertain for {Bucket}/{Key}; previous key {PreviousKey}; both objects preserved for reconciliation.",
                     bucket,
-                    storageKey);
+                    storageKey,
+                    previousKey);
             }
             else
             {
@@ -286,7 +292,7 @@ public sealed class WorkOrderTaskImageService(
 
     private async Task<T> InTransactionAsync<T>(
         Func<Task<T>> action,
-        Action onCommitStarting,
+        Action<T> onCommitStarting,
         CancellationToken cancellationToken)
     {
         if (!dbContext.Database.IsRelational())
@@ -306,7 +312,7 @@ public sealed class WorkOrderTaskImageService(
             throw;
         }
 
-        onCommitStarting();
+        onCommitStarting(result);
         await transaction.CommitAsync(cancellationToken);
         return result;
     }

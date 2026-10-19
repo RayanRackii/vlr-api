@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Users.Services;
+using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Storage;
@@ -28,10 +29,14 @@ public sealed class WorkOrderTaskImageTransactionTests(PostgresContainerFixture 
         AssertUploadFailureAsync(commitApplied: true);
 
     [DockerFact]
+    public Task Replacement_commit_acknowledgement_failure_preserves_both_blobs_and_logs_both_keys() =>
+        AssertUploadFailureAsync(commitApplied: true, replacing: true);
+
+    [DockerFact]
     public Task Failure_before_commit_rolls_back_and_deletes_the_new_blob() =>
         AssertUploadFailureAsync(commitApplied: false);
 
-    private async Task AssertUploadFailureAsync(bool commitApplied)
+    private async Task AssertUploadFailureAsync(bool commitApplied, bool replacing = false)
     {
         var factory = postgres.Factory
             ?? throw new InvalidOperationException("PostgreSQL fixture was not initialized.");
@@ -78,6 +83,23 @@ public sealed class WorkOrderTaskImageTransactionTests(PostgresContainerFixture 
         };
         order.AddTask(task);
         seed.AddRange(tenant, unit, category, family, asset, order);
+        WorkOrderTaskFile? previousFile = null;
+        if (replacing)
+        {
+            previousFile = new WorkOrderTaskFile
+            {
+                TenantId = tenant.Id,
+                WorkOrderId = order.Id,
+                WorkOrderTaskId = task.Id,
+                StorageKey = WorkOrderImageRules.StorageKey(tenant.Id, order.Id, task.Id, Guid.NewGuid()),
+                FileName = "previous.jpg",
+                ContentType = "image/jpeg",
+                SizeBytes = 4,
+            };
+            task.Value = previousFile.Id.ToString("D");
+            seed.Add(previousFile);
+        }
+
         await seed.SaveChangesAsync();
 
         var failure = new IOException("Database acknowledgement lost.");
@@ -108,6 +130,12 @@ public sealed class WorkOrderTaskImageTransactionTests(PostgresContainerFixture 
             Assert.Contains(storage.UploadedKey, warning, StringComparison.Ordinal);
             Assert.Contains("catalog-private", warning, StringComparison.Ordinal);
             Assert.Contains("reconciliation", warning, StringComparison.Ordinal);
+            if (previousFile is not null)
+            {
+                Assert.Equal(previousFile.Id, storedFile.Id);
+                Assert.NotEqual(previousFile.StorageKey, storedFile.StorageKey);
+                Assert.Contains(previousFile.StorageKey, warning, StringComparison.Ordinal);
+            }
         }
         else
         {
