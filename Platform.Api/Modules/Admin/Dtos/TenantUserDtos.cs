@@ -42,14 +42,32 @@ public sealed record PromoteTenantUserRequestDto
     public required string RoleName { get; init; }
 }
 
+public sealed record InvitePreviewRequestDto
+{
+    public required string Token { get; init; }
+}
+
+public sealed record InvitePreviewResponseDto(
+    string Email,
+    string FullName,
+    Guid TenantId,
+    string TenantName,
+    bool ExistingAccount,
+    DateTimeOffset ExpiresAt);
+
 public sealed record AcceptInviteRequestDto
 {
     public required string Token { get; init; }
 
-    public required string Password { get; init; }
+    /// <summary>
+    /// Required only when the invited email has no staff account yet.
+    /// Ignored when the email already has an account: that path never changes the password.
+    /// </summary>
+    public string? Password { get; init; }
 }
 
 public sealed record AcceptInviteResponseDto(
     Guid UserId,
     Guid TenantId,
-    string Email);
+    string Email,
+    bool ExistingAccount = false);

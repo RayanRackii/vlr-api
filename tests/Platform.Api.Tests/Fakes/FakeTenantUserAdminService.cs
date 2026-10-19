@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
 
@@ -36,8 +37,14 @@ public sealed class FakeTenantUserAdminService : ITenantUserAdminService
         CancellationToken cancellationToken) =>
         throw new NotSupportedException();
 
+    public Task<InvitePreviewResponseDto> PreviewInviteAsync(
+        string token,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
+
     public Task<AcceptInviteResponseDto> AcceptInviteAsync(
         AcceptInviteRequestDto request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        ClaimsPrincipal? actor = null) =>
         throw new NotSupportedException();
 }

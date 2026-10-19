@@ -3,7 +3,9 @@ using Platform.Core.Domain.Common;
 namespace Platform.Core.Domain.Entities;
 
 /// <summary>
-/// Pending B2B user invite. Recipient sets their own password via /invite?token=.
+/// Pending B2B user invite. A new email sets a password via /invite?token=.
+/// An email that already has a staff Auth user must sign in and accept; that path
+/// does not change the password.
 /// </summary>
 public class UserInvite : Entity, ITenantScoped
 {

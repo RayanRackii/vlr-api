@@ -76,7 +76,7 @@ The customer organization that subscribes to and is isolated within the platform
 _Avoid_: Company, account, empresa (in code)
 
 **User**:
-A person who accesses the platform on behalf of a Tenant (B2B). Authentication is handled externally (Supabase Auth); the platform stores the profile and authorization data.
+A person who accesses the platform on behalf of a Tenant (B2B). Authentication is one Supabase Auth user per email, shared by every tenant that person belongs to. The platform stores one membership row per tenant (`core.users`) with that tenant's roles. Staff login does not ask which tenant: Supabase puts a single `app_metadata.tenant_id` on the access token, and the API uses that claim for staff who are not Platform Admins. A person with more than one active membership keeps the tenant already on the token until they choose another (`GET /api/users/me/tenants`, `POST /api/users/me/tenant`). The access token itself changes only after the client refreshes the Supabase session. An invite for an email that already has an Auth user never replaces that password; the person must sign in as that user and accept. A new email still sets a password on the invite link.
 _Avoid_: Employee, account holder
 
 **Customer**:

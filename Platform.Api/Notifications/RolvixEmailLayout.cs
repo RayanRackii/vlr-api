@@ -115,7 +115,7 @@ public static class RolvixEmailLayout
                 <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">Este acesso é o <strong>painel operacional</strong> em <strong>rolvix.com.br</strong> (ativos, agenda, configurações).</td>
               </tr>
               <tr>
-                <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">O site público para clientes é <strong>{EmailHtml.Encode(portalHost)}</strong> — login diferente (não use a senha deste convite lá).</td>
+                <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">O site público para clientes é <strong>{EmailHtml.Encode(portalHost)}</strong> — o login de cliente é outro.</td>
               </tr>
               """;
 
@@ -127,12 +127,12 @@ public static class RolvixEmailLayout
               </tr>
               {portalLine}
               <tr>
-                <td style="padding:0 0 20px;font-size:15px;line-height:1.55;color:#27272a;">Defina sua senha neste link (válido por 7 dias):</td>
+                <td style="padding:0 0 20px;font-size:15px;line-height:1.55;color:#27272a;">Abra o convite neste link (válido por 7 dias). Se você já tem conta no painel, entre com a senha atual — este convite não altera senha. Se ainda não tem, defina uma senha na página.</td>
               </tr>
               <tr>
                 <td style="padding:0 0 8px;">
                   <a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">
-                    Definir senha
+                    Aceitar convite
                   </a>
                 </td>
               </tr>
