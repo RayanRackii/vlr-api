@@ -99,6 +99,10 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         Assert.Equal(1, targetBefore.CatalogOrders);
         Assert.Equal(1, targetBefore.CatalogOrderItems);
         Assert.Equal(1, targetBefore.CatalogOrderHistories);
+        Assert.Equal(3, targetBefore.TaxonomyCategories);
+        Assert.Equal(1, targetBefore.TaxonomyTags);
+        Assert.Equal(1, targetBefore.ProductCategories);
+        Assert.Equal(1, targetBefore.ProductTags);
         Assert.Equal(1, targetBefore.CatalogProducts);
         Assert.Equal(1, targetBefore.CatalogProductFiles);
         Assert.Equal(1, targetBefore.CatalogOrderSequences);
@@ -122,6 +126,10 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         Assert.Equal(0, targetAfter.CatalogOrders);
         Assert.Equal(0, targetAfter.CatalogOrderItems);
         Assert.Equal(0, targetAfter.CatalogOrderHistories);
+        Assert.Equal(0, targetAfter.TaxonomyCategories);
+        Assert.Equal(0, targetAfter.TaxonomyTags);
+        Assert.Equal(0, targetAfter.ProductCategories);
+        Assert.Equal(0, targetAfter.ProductTags);
         Assert.Equal(0, targetAfter.CatalogProducts);
         Assert.Equal(0, targetAfter.CatalogProductFiles);
         Assert.Equal(0, targetAfter.CatalogOrderSequences);
@@ -266,6 +274,14 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
             Visibility = CatalogFileVisibility.CustomerVisible,
         });
         db.CatalogProducts.Add(product);
+        var taxonomyRoot = new TaxonomyCategory { TenantId = tenant.Id, Name = "Root", Slug = "root" };
+        var taxonomyChild = new TaxonomyCategory { TenantId = tenant.Id, Name = "Child", Slug = "child", ParentId = taxonomyRoot.Id };
+        var taxonomyLeaf = new TaxonomyCategory { TenantId = tenant.Id, Name = "Leaf", Slug = "leaf", ParentId = taxonomyChild.Id };
+        var taxonomyTag = new TaxonomyTag { TenantId = tenant.Id, Name = "Tag", NormalizedName = "tag", Slug = "tag" };
+        db.TaxonomyCategories.AddRange(taxonomyRoot, taxonomyChild, taxonomyLeaf);
+        db.TaxonomyTags.Add(taxonomyTag);
+        db.CatalogProductCategories.Add(new() { TenantId = tenant.Id, ProductId = product.Id, CategoryId = taxonomyLeaf.Id });
+        db.CatalogProductTags.Add(new() { TenantId = tenant.Id, ProductId = product.Id, TagId = taxonomyTag.Id });
 
         db.CatalogOrderNumberSequences.Add(new CatalogOrderNumberSequence
         {
@@ -414,6 +430,10 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
                     await verify.CatalogOrders.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
                     await verify.CatalogOrderItems.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
                     await verify.CatalogOrderStatusHistories.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
+                    await verify.TaxonomyCategories.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
+                    await verify.TaxonomyTags.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
+                    await verify.CatalogProductCategories.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
+                    await verify.CatalogProductTags.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
                     await verify.CatalogProducts.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
                     await verify.CatalogProductFiles.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
                     await verify.CatalogOrderNumberSequences.IgnoreQueryFilters().CountAsync(row => row.TenantId == id),
@@ -452,6 +472,10 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         int CatalogOrders,
         int CatalogOrderItems,
         int CatalogOrderHistories,
+        int TaxonomyCategories,
+        int TaxonomyTags,
+        int ProductCategories,
+        int ProductTags,
         int CatalogProducts,
         int CatalogProductFiles,
         int CatalogOrderSequences,

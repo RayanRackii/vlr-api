@@ -1,3 +1,4 @@
+using Platform.Api.Modules.Taxonomy.Dtos;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -18,7 +19,8 @@ public interface ICatalogPortalService
 {
     Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
         string? search,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        TaxonomyFilter? taxonomy = null);
 
     Task<PortalProductResponse?> GetProductAsync(Guid id, CancellationToken cancellationToken);
 
@@ -80,13 +82,15 @@ public sealed class CatalogPortalService(
 {
     public async Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
         string? search,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TaxonomyFilter? taxonomy = null)
     {
         EnsureTenant();
         var products = dbContext.CatalogProducts
             .AsNoTracking()
             .Include(p => p.Files)
             .Where(p => p.IsActive);
+        products = await CatalogTaxonomy.FilterAsync(dbContext, EnsureTenant(), products, taxonomy, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -111,15 +115,16 @@ public sealed class CatalogPortalService(
                 // Keep tenant/active filters and ordering in SQL; no extension installation is required.
                 var candidates = await products.OrderBy(p => p.Name).ToListAsync(cancellationToken);
                 const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
-                return candidates.Where(p =>
+                var matches = candidates.Where(p =>
                         CultureInfo.InvariantCulture.CompareInfo.IndexOf(p.Name, term, options) >= 0
                         || (p.Code != null && CultureInfo.InvariantCulture.CompareInfo.IndexOf(p.Code, term, options) >= 0))
-                    .Select(MapPortalProduct).ToList();
+                    .ToList();
+                return await MapProductsAsync(matches, cancellationToken);
             }
         }
 
         var list = await products.OrderBy(p => p.Name).ToListAsync(cancellationToken);
-        return list.Select(MapPortalProduct).ToList();
+        return await MapProductsAsync(list, cancellationToken);
     }
 
     public async Task<PortalProductResponse?> GetProductAsync(
@@ -130,9 +135,9 @@ public sealed class CatalogPortalService(
         var product = await dbContext.CatalogProducts
             .AsNoTracking()
             .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken);
+            .FirstOrDefaultAsync(p => p.TenantId == tenantProvider.TenantId && p.Id == id && p.IsActive, cancellationToken);
 
-        return product is null ? null : MapPortalProduct(product);
+        return product is null ? null : (await MapProductsAsync([product], cancellationToken))[0];
     }
 
     public async Task<CatalogOrderResponse> CreateOrderAsync(
@@ -568,6 +573,12 @@ public sealed class CatalogPortalService(
         {
             throw new ArgumentException($"Page size must be between 1 and {DirectoryPage.MaxPageSize}.");
         }
+    }
+
+    private async Task<IReadOnlyList<PortalProductResponse>> MapProductsAsync(IReadOnlyList<CatalogProduct> products, CancellationToken ct)
+    {
+        var assignments = await CatalogTaxonomy.LoadAsync(dbContext, EnsureTenant(), products.Select(x => x.Id), ct);
+        return products.Select(p => MapPortalProduct(p) with { Taxonomy = assignments[p.Id] }).ToArray();
     }
 
     private PortalProductResponse MapPortalProduct(CatalogProduct product)

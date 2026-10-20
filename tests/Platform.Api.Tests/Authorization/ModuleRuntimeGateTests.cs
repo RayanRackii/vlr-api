@@ -1273,7 +1273,8 @@ public sealed class ModuleRuntimeGateTests
     {
         public Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
             string? search,
-            CancellationToken cancellationToken) =>
+            CancellationToken cancellationToken,
+            Platform.Api.Modules.Taxonomy.Dtos.TaxonomyFilter? taxonomy = null) =>
             Task.FromResult<IReadOnlyList<PortalProductResponse>>([]);
 
         public Task<PortalProductResponse?> GetProductAsync(
