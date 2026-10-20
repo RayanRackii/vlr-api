@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Common;
@@ -87,8 +88,31 @@ public sealed class CatalogPortalService(
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            products = products.Where(p =>
-                p.Name.Contains(term) || (p.Code != null && p.Code.Contains(term)));
+            var hasUnaccent = dbContext.Database.IsNpgsql()
+                && await dbContext.Database.SqlQueryRaw<bool>(
+                    """
+                    SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'unaccent')
+                        AND to_regprocedure('unaccent(text)') IS NOT NULL AS "Value"
+                    """).SingleAsync(cancellationToken);
+
+            if (hasUnaccent)
+            {
+                var pattern = "%" + term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                products = products.Where(p =>
+                    EF.Functions.ILike(EF.Functions.Unaccent(p.Name), EF.Functions.Unaccent(pattern), "\\")
+                    || (p.Code != null && EF.Functions.ILike(
+                        EF.Functions.Unaccent(p.Code), EF.Functions.Unaccent(pattern), "\\")));
+            }
+            else
+            {
+                // Keep tenant/active filters and ordering in SQL; no extension installation is required.
+                var candidates = await products.OrderBy(p => p.Name).ToListAsync(cancellationToken);
+                const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+                return candidates.Where(p =>
+                        CultureInfo.InvariantCulture.CompareInfo.IndexOf(p.Name, term, options) >= 0
+                        || (p.Code != null && CultureInfo.InvariantCulture.CompareInfo.IndexOf(p.Code, term, options) >= 0))
+                    .Select(MapPortalProduct).ToList();
+            }
         }
 
         var list = await products.OrderBy(p => p.Name).ToListAsync(cancellationToken);
@@ -114,6 +138,7 @@ public sealed class CatalogPortalService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        ValidateCustomerNote(request.CustomerNote);
         if (request.Items is null || request.Items.Count == 0)
         {
             throw new ArgumentException("At least one order item is required.");
@@ -294,6 +319,7 @@ public sealed class CatalogPortalService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        ValidateCustomerNote(request.Note);
         var description = (request.Description ?? string.Empty).Trim();
         if (description.Length == 0)
         {
@@ -488,8 +514,17 @@ public sealed class CatalogPortalService(
             request.Status,
             request.Description,
             request.Quantity,
+            request.Note,
             request.CreatedAt,
             files);
+    }
+
+    private static void ValidateCustomerNote(string? note)
+    {
+        if (note is { Length: > 1000 })
+        {
+            throw new ArgumentException("A observação deve ter no máximo 1000 caracteres.");
+        }
     }
 
     private static void ValidatePage(int page, int pageSize)

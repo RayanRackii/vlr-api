@@ -128,6 +128,7 @@ public sealed record PortalProductRequestResponse(
     ProductRequestStatus Status,
     string Description,
     int Quantity,
+    string? Note,
     DateTimeOffset CreatedAt,
     IReadOnlyList<PortalProductRequestFileDto> Files);
 
