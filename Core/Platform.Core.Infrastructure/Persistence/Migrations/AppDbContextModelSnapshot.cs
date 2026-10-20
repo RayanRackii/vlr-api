@@ -2709,6 +2709,15 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("BookingIdleRedirectPath")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("booking_idle_redirect_path");
+
+                    b.Property<int?>("BookingIdleTimeoutMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("booking_idle_timeout_minutes");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
