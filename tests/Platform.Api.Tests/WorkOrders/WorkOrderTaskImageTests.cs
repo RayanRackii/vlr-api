@@ -536,6 +536,47 @@ public sealed class WorkOrderTaskImageTests
     }
 
     [Fact]
+    public async Task Patch_limits_text_task_values_to_1000_characters_after_trimming()
+    {
+        var scenario = await SeedAsync(taskInputType: TaskInputType.Text, taskConfiguration: "{\"maxLength\":8000}");
+        using var scope = StartHost(scenario.DatabaseName);
+
+        var atLimit = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}",
+            scenario.Executor,
+            scenario.TenantId,
+            JsonSerializer.Serialize(new { value = new string('a', 1000) }));
+        Assert.Equal(HttpStatusCode.OK, atLimit.StatusCode);
+
+        var tooLong = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}",
+            scenario.Executor,
+            scenario.TenantId,
+            JsonSerializer.Serialize(new { value = new string('a', 1001) }));
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        using (var error = JsonDocument.Parse(await tooLong.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(WorkOrderErrorCodes.TaskNoteTooLong, error.RootElement.GetProperty("code").GetString());
+            Assert.Contains("1000", error.RootElement.GetProperty("error").GetString());
+        }
+
+        var trailingSpace = await SendAsync(
+            scope.Host,
+            HttpMethod.Patch,
+            $"/api/work-orders/{scenario.WorkOrderId}/tasks/{scenario.TaskId}",
+            scenario.Executor,
+            scenario.TenantId,
+            JsonSerializer.Serialize(new { value = new string('a', 1000) + " " }));
+        Assert.Equal(HttpStatusCode.OK, trailingSpace.StatusCode);
+        using var response = JsonDocument.Parse(await trailingSpace.Content.ReadAsStringAsync());
+        Assert.Equal(1000, response.RootElement.GetProperty("tasks")[0].GetProperty("value").GetString()?.Length);
+    }
+
+    [Fact]
     public async Task Upload_and_retrieval_are_forbidden_when_the_os_module_is_inactive()
     {
         var scenario = await SeedAsync(moduleActive: false);
@@ -730,7 +771,11 @@ public sealed class WorkOrderTaskImageTests
         return doc.RootElement.GetProperty("error").GetString();
     }
 
-    private static async Task<Scenario> SeedAsync(bool secondImageTask = false, bool moduleActive = true)
+    private static async Task<Scenario> SeedAsync(
+        bool secondImageTask = false,
+        bool moduleActive = true,
+        TaskInputType taskInputType = TaskInputType.Image,
+        string? taskConfiguration = null)
     {
         var databaseName = $"wo-image-{Guid.NewGuid():N}";
         var tenant = new Tenant("Image Club", "44444444000191", subdomain: "image-club");
@@ -813,7 +858,8 @@ public sealed class WorkOrderTaskImageTests
             TenantId = tenant.Id,
             WorkOrderId = order.Id,
             Title = "Foto da quadra",
-            InputType = TaskInputType.Image,
+            InputType = taskInputType,
+            Configuration = taskConfiguration,
             IsMandatory = true,
             Order = 1,
         };

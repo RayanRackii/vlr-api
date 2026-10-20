@@ -8,6 +8,8 @@ public static class WorkOrderErrorCodes
 
     public const string InvalidTaskValue = "INVALID_TASK_VALUE";
 
+    public const string TaskNoteTooLong = "TASK_NOTE_TOO_LONG";
+
     public const string MandatoryTasksIncomplete = "MANDATORY_TASKS_INCOMPLETE";
 
     public const string AssigneeCannotExecute = "ASSIGNEE_CANNOT_EXECUTE";
@@ -58,8 +60,8 @@ public sealed class InvalidTaskValueException : WorkOrderRuleException
 
     public const string NotAnImageTask = "NOT_AN_IMAGE_TASK";
 
-    public InvalidTaskValueException(string reason, string message)
-        : base(WorkOrderErrorCodes.InvalidTaskValue, message)
+    public InvalidTaskValueException(string reason, string message, string? code = null)
+        : base(code ?? WorkOrderErrorCodes.InvalidTaskValue, message)
     {
         Reason = reason;
     }
