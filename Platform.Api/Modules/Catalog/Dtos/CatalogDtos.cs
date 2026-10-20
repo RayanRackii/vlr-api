@@ -1,3 +1,4 @@
+using Platform.Api.Modules.Taxonomy.Dtos;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Catalog.Dtos;
@@ -5,7 +6,8 @@ namespace Platform.Api.Modules.Catalog.Dtos;
 public sealed record CatalogProductListQuery(
     string? Name,
     string? Code,
-    bool? IsActive);
+    bool? IsActive,
+    TaxonomyFilter? Taxonomy = null);
 
 public sealed record CreateCatalogProductRequest
 {
@@ -18,6 +20,8 @@ public sealed record CreateCatalogProductRequest
     public decimal? Price { get; init; }
 
     public string? Currency { get; init; }
+    public TaxonomyAssignmentRequest? Taxonomy { get; init; }
+
 }
 
 public sealed record UpdateCatalogProductRequest
@@ -31,6 +35,8 @@ public sealed record UpdateCatalogProductRequest
     public decimal? Price { get; init; }
 
     public string? Currency { get; init; }
+    public TaxonomyAssignmentRequest? Taxonomy { get; init; }
+
 }
 
 public sealed record CatalogProductFileDto(
@@ -50,7 +56,10 @@ public sealed record CatalogProductResponse(
     string Currency,
     bool IsActive,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<CatalogProductFileDto> Files);
+    IReadOnlyList<CatalogProductFileDto> Files)
+{
+    public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+}
 
 public sealed record CatalogFileUrlResponse(string Url, bool IsPublic);
 
@@ -146,7 +155,10 @@ public sealed record PortalProductResponse(
     string? Description,
     decimal? Price,
     string Currency,
-    IReadOnlyList<PortalProductFileDto> Files);
+    IReadOnlyList<PortalProductFileDto> Files)
+{
+    public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+}
 
 public sealed record CreatePortalOrderItemRequest
 {

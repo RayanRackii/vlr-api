@@ -113,6 +113,11 @@ public class AppDbContext : DbContext
 
     public DbSet<RentalLayoutItem> RentalLayoutItems => Set<RentalLayoutItem>();
 
+    public DbSet<TaxonomyCategory> TaxonomyCategories => Set<TaxonomyCategory>();
+    public DbSet<TaxonomyTag> TaxonomyTags => Set<TaxonomyTag>();
+    public DbSet<CatalogProductCategory> CatalogProductCategories => Set<CatalogProductCategory>();
+    public DbSet<CatalogProductTag> CatalogProductTags => Set<CatalogProductTag>();
+
     // --- Schema: catalog ---
     public DbSet<CatalogPolicy> CatalogPolicies => Set<CatalogPolicy>();
 

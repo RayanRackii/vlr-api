@@ -1,3 +1,5 @@
+using Platform.Api.Modules.Taxonomy.Controllers;
+using Platform.Api.Modules.Taxonomy.Dtos;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog;
@@ -10,6 +12,7 @@ using Platform.Core.Domain.Enums;
 namespace Platform.Api.Modules.Catalog.Controllers;
 
 [ApiController]
+[TaxonomyErrors]
 [RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog/products")]
 public sealed class CatalogProductsController(ICatalogProductService productService) : ControllerBase
@@ -20,10 +23,12 @@ public sealed class CatalogProductsController(ICatalogProductService productServ
         [FromQuery] string? name,
         [FromQuery] string? code,
         [FromQuery] bool? isActive,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] string? category = null,
+        [FromQuery] string? tags = null)
     {
         var products = await productService.ListAsync(
-            new CatalogProductListQuery(name, code, isActive),
+            new CatalogProductListQuery(name, code, isActive, TaxonomyFilter.Parse(category, tags)),
             cancellationToken);
         return Ok(products);
     }

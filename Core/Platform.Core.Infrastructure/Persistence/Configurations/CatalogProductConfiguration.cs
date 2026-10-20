@@ -12,6 +12,7 @@ public sealed class CatalogProductConfiguration : IEntityTypeConfiguration<Catal
         builder.ToTable("catalog_products", "catalog");
 
         builder.HasKey(p => p.Id);
+        builder.HasAlternateKey(p => new { p.TenantId, p.Id });
 
         builder.Property(p => p.Id)
             .ValueGeneratedNever();

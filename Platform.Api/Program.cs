@@ -8,6 +8,7 @@ using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Auth;
 using Platform.Api.Modules.Catalog;
+using Platform.Api.Modules.Taxonomy;
 using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.ModuleMenuItems;
@@ -66,6 +67,7 @@ try
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
     builder.Services.AddCatalogModule();
+    builder.Services.AddTaxonomyModule();
     builder.Services.AddTenantNotificationsModule();
     builder.Services.AddUsersModule();
     builder.Services.AddRolesModule();

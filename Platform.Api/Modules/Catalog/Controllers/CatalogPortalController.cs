@@ -1,3 +1,5 @@
+using Platform.Api.Modules.Taxonomy.Controllers;
+using Platform.Api.Modules.Taxonomy.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
@@ -13,6 +15,7 @@ using Platform.Core.Domain.Exceptions;
 namespace Platform.Api.Modules.Catalog.Controllers;
 
 [ApiController]
+[TaxonomyErrors]
 [Authorize(Policy = "Customer")]
 [RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog/portal")]
@@ -22,9 +25,11 @@ public sealed class CatalogPortalController(
     [HttpGet("products")]
     public async Task<ActionResult<IReadOnlyList<PortalProductResponse>>> ListProducts(
         [FromQuery] string? search,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] string? category = null,
+        [FromQuery] string? tags = null)
     {
-        return Ok(await portalService.ListProductsAsync(search, cancellationToken));
+        return Ok(await portalService.ListProductsAsync(search, cancellationToken, TaxonomyFilter.Parse(category, tags)));
     }
 
     [HttpGet("products/{id:guid}")]
