@@ -40,6 +40,7 @@ public sealed class CatalogPolicyService(AppDbContext dbContext, ITenantProvider
         policy ??= new CatalogPolicy { TenantId = tenantId };
         if (inserted) dbContext.CatalogPolicies.Add(policy);
         Replace(policy, request);
+        MarkFullReplace(policy);
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -51,6 +52,7 @@ public sealed class CatalogPolicyService(AppDbContext dbContext, ITenantProvider
             dbContext.Entry(policy).State = EntityState.Detached;
             policy = await dbContext.CatalogPolicies.SingleAsync(p => p.TenantId == tenantId, cancellationToken);
             Replace(policy, request);
+            MarkFullReplace(policy);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         return Map(policy);
@@ -58,6 +60,15 @@ public sealed class CatalogPolicyService(AppDbContext dbContext, ITenantProvider
 
     private Guid RequireTenant() => tenantProvider.TenantId is Guid id && id != Guid.Empty
         ? id : throw new UnauthorizedAccessException("Tenant context is required.");
+
+    // PUT is a full replacement: write every column so concurrent PUTs cannot merge into a mix no admin sent.
+    private void MarkFullReplace(CatalogPolicy policy)
+    {
+        var entry = dbContext.Entry(policy);
+        if (entry.State is EntityState.Added or EntityState.Detached) return;
+        foreach (var property in entry.Properties)
+            if (!property.Metadata.IsPrimaryKey()) property.IsModified = true;
+    }
 
     private static void Replace(CatalogPolicy policy, UpsertCatalogPolicyRequest request)
     {
