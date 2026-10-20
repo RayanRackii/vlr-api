@@ -26,6 +26,8 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [x] Entidade `TenantModuleMenuItem` + migration `AddTenantModuleMenuItems` (+ seed FICC “Alugar quadra”).
 - [x] `GET /api/public/tenants/{subdomain}/menu`.
 - [x] CRUD tenant `/api/module-menu-items` + platform `/api/admin/tenants/{id}/module-menu-items`.
+- [x] Configuração genérica de inatividade por item de menu: `BookingIdleTimeoutMinutes` nullable (1–120) e `BookingIdleRedirectPath` nullable (path local, até 200 chars). Create/update Super-Admin validam com 400 `{ error }`; DTO compartilhado de leitura/admin e menu público expõe os dois campos em camelCase. Null usa o default do portal; PUT omitido/null limpa. Migration `AddMenuItemBookingIdleTimeout` gerada, **não aplicada**. 21 casos de teste adicionados; validação operacional em `docs/sessions/2026-10-19-booking-idle-timeout.md`.
+- [ ] Validar a suíte com PostgreSQL temporário em ambiente com sockets locais habilitados; aplicar `AddMenuItemBookingIdleTimeout` somente em etapa autorizada. No `vlr-web`, consumir/configurar esses valores no Super-Admin e no controle de inatividade da reserva.
 - [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).
 - [ ] Aplicar migration menu no Railway.
 - [ ] Garantir assets/pricing no FICC para demo.

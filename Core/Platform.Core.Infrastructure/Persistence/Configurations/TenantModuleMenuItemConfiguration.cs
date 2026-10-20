@@ -30,6 +30,11 @@ public sealed class TenantModuleMenuItemConfiguration
         builder.Property(m => m.SortOrder)
             .IsRequired();
 
+        builder.Property(m => m.BookingIdleTimeoutMinutes);
+
+        builder.Property(m => m.BookingIdleRedirectPath)
+            .HasMaxLength(200);
+
         builder.Property(m => m.IsActive)
             .HasDefaultValue(true)
             .IsRequired();

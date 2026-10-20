@@ -84,7 +84,9 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
             request.Label,
             request.SortOrder,
             request.IsActive,
-            request.RentalAssetId);
+            request.RentalAssetId,
+            request.BookingIdleTimeoutMinutes,
+            request.BookingIdleRedirectPath);
 
         dbContext.TenantModuleMenuItems.Add(entity);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -110,7 +112,13 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
             request.RentalAssetId,
             cancellationToken);
 
-        entity.Update(request.Label, request.SortOrder, request.IsActive, request.RentalAssetId);
+        entity.Update(
+            request.Label,
+            request.SortOrder,
+            request.IsActive,
+            request.RentalAssetId,
+            request.BookingIdleTimeoutMinutes,
+            request.BookingIdleRedirectPath);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return await LoadDtoAsync(entity.Id, cancellationToken);
@@ -215,5 +223,7 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
             item.SortOrder,
             item.IsActive,
             item.RentalAssetId,
-            item.RentalAsset?.AssetId);
+            item.RentalAsset?.AssetId,
+            item.BookingIdleTimeoutMinutes,
+            item.BookingIdleRedirectPath);
 }

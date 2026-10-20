@@ -1,0 +1,19 @@
+# Booking idle settings per menu item
+
+Implemented directly with Codex, without agents/skills and without commits, as explicitly requested by Rayan. Working branch: `fix/booking-idle-timeout`. Initial working tree was clean. Git fetch could not write the shared worktree metadata (read-only filesystem); no remote synchronization is claimed.
+
+`TenantModuleMenuItem` now stores nullable `BookingIdleTimeoutMinutes` (1–120) and `BookingIdleRedirectPath` (local path beginning with `/`, not `//`, max 200 characters). Backslashes and control characters are rejected to prevent browser redirect interpretation as an external target. Null leaves selection of the default to the portal. This applies to any bookable space, with no resource-type-specific behavior.
+
+The existing shared create/update DTOs and service persist the settings. The shared read DTO exposes `bookingIdleTimeoutMinutes` and `bookingIdleRedirectPath` in Super-Admin reads/writes and the anonymous portal menu. Existing tenant menu endpoints use the same DTO/service and retain their current permission gates. PUT follows the existing replacement semantics: omitted or explicit null settings reset to null. Invalid settings throw before mutating the entity and are returned by the existing controllers as HTTP 400 `{ "error": "..." }`.
+
+Generated using `dotnet ef migrations add AddMenuItemBookingIdleTimeout --project Core/Platform.Core.Infrastructure --startup-project Platform.Api --no-build`. Migration: `20261020014143_AddMenuItemBookingIdleTimeout.cs`, plus designer and snapshot. Only two nullable columns are added; no default, backfill, existing migration edits, or migration application. No existing database was accessed.
+
+Added `AdminModuleMenuItemsControllerTests`: 13 invalid-setting cases exercise both HTTP create and update and check no mutation, five nullable/boundary domain cases, one in-memory HTTP round-trip case, and two PostgreSQL HTTP round-trip cases covering create/update/list/public reads, the 200-character boundary, explicit null, legacy payloads, and independent settings per item. Total: 21 cases. The targeted tests run with xUnit in-process passed 19, failed 0, skipped the 2 PostgreSQL cases.
+
+Build passed with zero warnings and errors using the cached SDK/packages, single-node MSBuild, and shared compilation disabled. Standard `dotnet test` aborted before executing tests because VSTest cannot create its local TCP socket (`SocketException (13): Permission denied`). A new PostgreSQL cluster was initialized under `/tmp` but could not start because loopback socket creation is blocked (`Operation not permitted`); no migrations were applied. Full PostgreSQL validation remains required in an environment that permits local sockets.
+
+As a supplemental check, a temporary runner under `/tmp` used the existing xUnit framework in-process (no changes to repository test infrastructure). Final full-suite counts: **1384 total, 1304 passed, 0 failed, 80 skipped**. This includes the final 21 new cases. The missing PostgreSQL cases and the standard `dotnet test` run remain unverified; the supplemental run does not replace that requirement. `dotnet ef migrations has-pending-model-changes --no-build` reported no model changes since the generated migration.
+
+Manual verification after authorized schema deployment: POST/PUT `/api/admin/tenants/{tenantId}/module-menu-items` with `bookingIdleTimeoutMinutes: 15` and `bookingIdleRedirectPath: "/spaces"`; verify the fields in the admin list and `GET /api/public/tenants/{subdomain}/menu`. Timeout 0/121, external or protocol-relative redirects, and paths longer than 200 must return 400. Null must round-trip as null.
+
+Next API step: complete the PostgreSQL-backed suite, then handle migration deployment separately when authorized. Next web step: consume/edit these settings and implement the generic booking inactivity flow.

@@ -7,7 +7,9 @@ public sealed record ModuleMenuItemDto(
     int SortOrder,
     bool IsActive,
     Guid? RentalAssetId,
-    Guid? AssetId);
+    Guid? AssetId,
+    int? BookingIdleTimeoutMinutes,
+    string? BookingIdleRedirectPath);
 
 public sealed record UpsertModuleMenuItemRequestDto
 {
@@ -20,6 +22,10 @@ public sealed record UpsertModuleMenuItemRequestDto
     public bool IsActive { get; init; } = true;
 
     public Guid? RentalAssetId { get; init; }
+
+    public int? BookingIdleTimeoutMinutes { get; init; }
+
+    public string? BookingIdleRedirectPath { get; init; }
 }
 
 public sealed record UpdateModuleMenuItemRequestDto
@@ -31,4 +37,8 @@ public sealed record UpdateModuleMenuItemRequestDto
     public bool IsActive { get; init; }
 
     public Guid? RentalAssetId { get; init; }
+
+    public int? BookingIdleTimeoutMinutes { get; init; }
+
+    public string? BookingIdleRedirectPath { get; init; }
 }
