@@ -14,6 +14,8 @@ public static class PermissionCatalog
 {
     public static readonly PermissionDefinition[] All =
     [
+        Define(Permissions.Core.TaxonomyRead, "Read taxonomy", "List shared tenant categories and tags."),
+        Define(Permissions.Core.TaxonomyManage, "Manage taxonomy", "Manage shared tenant categories and tags."),
         Define(Permissions.Core.DashboardRead, "Read dashboard", "View tenant dashboard metrics."),
         Define(Permissions.Core.UsersRead, "Read users", "List tenant users."),
         Define(Permissions.Core.CustomersRead, "Read portal customers", "List portal customers of the current tenant."),

@@ -7,6 +7,8 @@ public static class Permissions
 {
     public static class Core
     {
+        public const string TaxonomyRead = "core.taxonomy.read";
+        public const string TaxonomyManage = "core.taxonomy.manage";
         public const string DashboardRead = "core.dashboard.read";
         public const string UsersRead = "core.users.read";
         public const string CustomersRead = "core.customers.read";

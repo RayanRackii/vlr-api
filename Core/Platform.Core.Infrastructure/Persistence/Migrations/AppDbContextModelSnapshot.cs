@@ -664,6 +664,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_catalog_products");
 
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_catalog_products_tenant_id_id");
+
                     b.HasIndex("TenantId", "Code")
                         .IsUnique()
                         .HasDatabaseName("ix_catalog_products_tenant_id_code")
@@ -676,6 +679,29 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_catalog_products_tenant_id_name");
 
                     b.ToTable("catalog_products", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductCategory", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("category_id");
+
+                    b.HasKey("TenantId", "ProductId", "CategoryId")
+                        .HasName("pk_catalog_product_categories");
+
+                    b.HasIndex("TenantId", "CategoryId", "ProductId")
+                        .HasDatabaseName("ix_catalog_product_categories_tenant_id_category_id_product_id");
+
+                    b.ToTable("catalog_product_categories", "catalog");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductFile", b =>
@@ -742,6 +768,29 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_catalog_product_files_tenant_id_storage_key");
 
                     b.ToTable("catalog_product_files", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductTag", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<Guid>("TagId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tag_id");
+
+                    b.HasKey("TenantId", "ProductId", "TagId")
+                        .HasName("pk_catalog_product_tags");
+
+                    b.HasIndex("TenantId", "TagId", "ProductId")
+                        .HasDatabaseName("ix_catalog_product_tags_tenant_id_tag_id_product_id");
+
+                    b.ToTable("catalog_product_tags", "catalog");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Customer", b =>
@@ -2586,6 +2635,118 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("slots", "rentals");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TaxonomyCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("icon");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parent_id");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("slug");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_taxonomy_categories");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_taxonomy_categories_tenant_id_id");
+
+                    b.HasIndex("TenantId", "ParentId")
+                        .HasDatabaseName("ix_taxonomy_categories_tenant_id_parent_id");
+
+                    b.HasIndex("TenantId", "Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_taxonomy_categories_tenant_id_slug");
+
+                    b.ToTable("taxonomy_categories", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TaxonomyTag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("normalized_name");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("slug");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_taxonomy_tags");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_taxonomy_tags_tenant_id_id");
+
+                    b.HasIndex("TenantId", "NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_taxonomy_tags_tenant_id_normalized_name");
+
+                    b.HasIndex("TenantId", "Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_taxonomy_tags_tenant_id_slug");
+
+                    b.ToTable("taxonomy_tags", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3511,6 +3672,32 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_catalog_policies_tenants_tenant_id");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductCategory", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_categories_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.TaxonomyCategory", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CategoryId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_categories_taxonomy_categories_tenant_id_ca");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_categories_catalog_products_tenant_id_produ");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductFile", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", "Product")
@@ -3521,6 +3708,32 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_catalog_product_files_catalog_products_product_id");
 
                     b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductTag", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_tags_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_tags_catalog_products_tenant_id_product_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.TaxonomyTag", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "TagId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_tags_taxonomy_tags_tenant_id_tag_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.GlobalTemplateTask", b =>
@@ -3862,6 +4075,33 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Reservation");
 
                     b.Navigation("SourceTemplate");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TaxonomyCategory", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_taxonomy_categories_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.TaxonomyCategory", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ParentId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_taxonomy_categories_taxonomy_categories_tenant_id_parent_id");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TaxonomyTag", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_taxonomy_tags_tenants_tenant_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.TenantAssetFamily", b =>

@@ -349,6 +349,9 @@ public sealed class AdminTenantService(
         {
             try
             {
+                if (dbContext.Database.IsNpgsql())
+                    await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT id FROM core.tenants WHERE id = {id} FOR UPDATE", cancellationToken);
                 var tenantExists = await dbContext.Tenants
                     .AnyAsync(t => t.Id == id, cancellationToken);
 
@@ -430,8 +433,19 @@ public sealed class AdminTenantService(
                 await DeleteForTenantAsync(dbContext.CatalogOrderItems, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.CatalogOrderStatusHistories, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.CatalogOrders, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogProductCategories, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogProductTags, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.CatalogProductFiles, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.CatalogProducts, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TaxonomyTags, id, cancellationToken);
+                for (var level = 0; level < 3; level++)
+                {
+                    await dbContext.TaxonomyCategories.IgnoreQueryFilters()
+                        .Where(category => category.TenantId == id
+                            && !dbContext.TaxonomyCategories.IgnoreQueryFilters()
+                                .Any(child => child.TenantId == id && child.ParentId == category.Id))
+                        .ExecuteDeleteAsync(cancellationToken);
+                }
                 await DeleteForTenantAsync(dbContext.CatalogOrderNumberSequences, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.ProductRequestFiles, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.ProductRequests, id, cancellationToken);

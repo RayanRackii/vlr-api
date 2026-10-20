@@ -5,6 +5,13 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 **Foco de produto agora:** portal B2C estável + **agenda por Slot** (API pronta; UI no `vlr-web`).  
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Taxonomy de plataforma + Catalog (2026-10-20)
+
+- [x] Schema/CRUD compartilhado, `core.taxonomy.read/manage`, atribuições tipadas, filtros com descendentes/tags AND e descoberta staff/portal. Spec: [`platform-taxonomy`](docs/plans/active/2026-10-20-platform-taxonomy.md).
+- [x] Migration `AddPlatformTaxonomyAndCatalogAssignments` gerada com designer/snapshot; não aplicada. Build sem warnings; xUnit em processo: 1411 passed / 0 failed / 88 skipped (novos: 50 passed / 7 skipped). [Validação](docs/sessions/2026-10-20-platform-taxonomy.md).
+- [ ] Validar PostgreSQL/Docker e fluxo padrão de testes fora do sandbox; aplicar migration somente pelo workflow DEV autorizado. Entrega API first → Web; PM coordena Git/reviews/gates.
+- [ ] Web: gestão compartilhada, filtros/atribuições no Catalog e espelho do glossário; manter prioridade portal/Slot. Rentals não integrado nesta task.
+
 ## 0. Disciplina
 
 1. Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
@@ -267,6 +274,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-20 | **Código (API, sem commit):** Taxonomy compartilhada (categorias/tags) + atribuições e filtros Catalog, permissões e cleanup tenant. Migration `AddPlatformTaxonomyAndCatalogAssignments` gerada com designer/snapshot, não aplicada; AssetCategory intacta. Build sem warnings; testes PostgreSQL pendentes de Docker e VSTest bloqueado por socket no sandbox. Spec cross-repo `2026-10-20-platform-taxonomy.md`; prioridade portal/Slot mantida. |
 | 2026-10-20 | **Fix (API, sem commit):** Gerar OS do PMOC aceita nova OS no mesmo período quando a anterior está Concluída ou Cancelada. A checagem de duplicidade e o índice parcial consideram somente Pending/InProgress; migration `ExcludeClosedPmocWorkOrdersFromPeriodUnique` criada, não aplicada. Teste de regressão para ambos os estados; execução bloqueada porque `dotnet` não está instalado no ambiente. |
 | 2026-10-20 | **Código (API, sem commit):** CatalogPolicy por tenant; default anterior preservado (pedidos só Requested; solicitações não cancelam), limites de status e texto opcional, endpoints admin/público e cancelamento de solicitação. Migration AddCatalogPolicy gerada e não aplicada. Build e 76 casos focados em processo passaram; suíte VSTest bloqueada por socket. |
 | 2026-10-18 | **Fix local #226:** aceitações serializadas por e-mail com advisory lock transacional e lock/revalidação da linha do convite. Criação e vínculo de conta existente consomem o token na mesma transação. Compensação volta ao savepoint sem liberar os locks, consulta memberships de todos os tenants (inclusive inativas) e só apaga o Auth novo quando não existe vínculo; cancelamento da request não cancela a limpeza. Testes PostgreSQL para accepts concorrentes do mesmo token/e-mail, preservação de vínculo e retry após falha. Sem push ou migration. |

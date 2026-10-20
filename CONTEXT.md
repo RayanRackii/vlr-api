@@ -2,6 +2,10 @@
 
 > **Canônico (repo `vlr-api`).** O frontend (`vlr-web`) mantém um espelho em `CONTEXT.md` — ao mudar glossário ou beachhead, atualize **os dois**.
 
+## Taxonomy compartilhada (2026-10-20)
+
+**Taxonomy** é capability de plataforma por tenant, sem entitlement comercial: categorias hierárquicas (máximo 3 níveis) e tags livres compartilhadas entre consumidores. Catalog é o primeiro consumidor, com joins tipados e independentes de Asset Registry; Rentals fica para outra tarefa. **AssetCategory / ResourceCategory** continua significando o “Tipo” operacional de recursos (PMOC/Rentals), sem alteração nem backfill. Seleção de categoria inclui descendentes; tags usam AND. Spec cross-repo: [`platform-taxonomy`](docs/plans/active/2026-10-20-platform-taxonomy.md). Espelho web a cargo da entrega `vlr-web`; prioridade portal/Slot preservada.
+
 ## 1. Visão Global (O "Hub" Corporativo)
 Você atua como Arquiteto de Software e Desenvolvedor Full-Stack Sênior. O sistema é a plataforma **Rolvix**: um SaaS B2B modular e multi-tenant. Não é software de um nicho só — pense num sistema operacional / Hub corporativo. O Core é agnóstico ao negócio: gerencia Tenants, Users, Units, Roles e Permissions. Sobre o Core, "Módulos" são aplicativos ativáveis por tenant.
 

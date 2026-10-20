@@ -1,3 +1,4 @@
+using Platform.Api.Modules.Taxonomy.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -79,11 +80,13 @@ public sealed class CatalogProductService(
             products = products.Where(p => p.IsActive == active);
         }
 
+        products = await CatalogTaxonomy.FilterAsync(dbContext, EnsureTenant(), products, query.Taxonomy, cancellationToken);
+
         var list = await products
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
 
-        return list.Select(p => Map(p, includeInternal: true)).ToList();
+        return await MapManyAsync(list, cancellationToken);
     }
 
     public async Task<CatalogProductResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -92,9 +95,9 @@ public sealed class CatalogProductService(
         var product = await dbContext.CatalogProducts
             .AsNoTracking()
             .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.TenantId == tenantProvider.TenantId && p.Id == id, cancellationToken);
 
-        return product is null ? null : Map(product, includeInternal: true);
+        return product is null ? null : await MapOneAsync(product, cancellationToken);
     }
 
     public async Task<CatalogProductResponse> CreateAsync(
@@ -102,6 +105,8 @@ public sealed class CatalogProductService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        await using var scope = await TaxonomyMutationScope.BeginAsync(dbContext, tenantId, cancellationToken);
+        await CatalogTaxonomy.ValidateAsync(dbContext, tenantId, request.Taxonomy, cancellationToken);
         var name = NormalizeName(request.Name);
         var code = NormalizeCode(request.Code);
         await EnsureCodeAvailableAsync(code, excludeId: null, cancellationToken);
@@ -118,8 +123,10 @@ public sealed class CatalogProductService(
         };
 
         dbContext.CatalogProducts.Add(product);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return Map(product, includeInternal: true);
+        await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
+        await TaxonomyService.SaveAsync(dbContext, cancellationToken);
+        await scope.CommitAsync(cancellationToken);
+        return await MapOneAsync(product, cancellationToken);
     }
 
     public async Task<CatalogProductResponse?> UpdateAsync(
@@ -127,27 +134,34 @@ public sealed class CatalogProductService(
         UpdateCatalogProductRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenant();
+        var tenantId = EnsureTenant();
+        await using var scope = await TaxonomyMutationScope.BeginAsync(dbContext, tenantId, cancellationToken);
         var product = await dbContext.CatalogProducts
             .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == id, cancellationToken);
 
         if (product is null)
         {
             return null;
         }
 
+        await CatalogTaxonomy.ValidateAsync(dbContext, tenantId, request.Taxonomy, cancellationToken);
+        var name = NormalizeName(request.Name);
+        var price = RoundPrice(request.Price);
+        var currency = NormalizeCurrency(request.Currency);
         var code = NormalizeCode(request.Code);
         await EnsureCodeAvailableAsync(code, product.Id, cancellationToken);
 
-        product.Name = NormalizeName(request.Name);
+        product.Name = name;
         product.Code = code;
         product.Description = NormalizeOptional(request.Description);
-        product.Price = RoundPrice(request.Price);
-        product.Currency = NormalizeCurrency(request.Currency);
+        product.Price = price;
+        product.Currency = currency;
         product.Touch();
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return Map(product, includeInternal: true);
+        await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
+        await TaxonomyService.SaveAsync(dbContext, cancellationToken);
+        await scope.CommitAsync(cancellationToken);
+        return await MapOneAsync(product, cancellationToken);
     }
 
     public async Task<CatalogProductResponse?> DeactivateAsync(Guid id, CancellationToken cancellationToken)
@@ -155,7 +169,7 @@ public sealed class CatalogProductService(
         EnsureTenant();
         var product = await dbContext.CatalogProducts
             .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.TenantId == tenantProvider.TenantId && p.Id == id, cancellationToken);
 
         if (product is null)
         {
@@ -164,7 +178,7 @@ public sealed class CatalogProductService(
 
         product.Deactivate();
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Map(product, includeInternal: true);
+        return await MapOneAsync(product, cancellationToken);
     }
 
     public async Task<CatalogProductResponse?> ActivateAsync(Guid id, CancellationToken cancellationToken)
@@ -172,7 +186,7 @@ public sealed class CatalogProductService(
         EnsureTenant();
         var product = await dbContext.CatalogProducts
             .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.TenantId == tenantProvider.TenantId && p.Id == id, cancellationToken);
 
         if (product is null)
         {
@@ -181,7 +195,7 @@ public sealed class CatalogProductService(
 
         product.Activate();
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Map(product, includeInternal: true);
+        return await MapOneAsync(product, cancellationToken);
     }
 
     public async Task<CatalogProductFileDto> AddFileAsync(
@@ -287,6 +301,15 @@ public sealed class CatalogProductService(
             cancellationToken);
         return new CatalogFileUrlResponse(signed, IsPublic: false);
     }
+
+    private async Task<IReadOnlyList<CatalogProductResponse>> MapManyAsync(IReadOnlyList<CatalogProduct> products, CancellationToken ct)
+    {
+        var assignments = await CatalogTaxonomy.LoadAsync(dbContext, EnsureTenant(), products.Select(x => x.Id), ct);
+        return products.Select(p => Map(p, true) with { Taxonomy = assignments[p.Id] }).ToArray();
+    }
+
+    private async Task<CatalogProductResponse> MapOneAsync(CatalogProduct product, CancellationToken ct) =>
+        (await MapManyAsync([product], ct))[0];
 
     internal CatalogProductResponse Map(CatalogProduct product, bool includeInternal)
     {
