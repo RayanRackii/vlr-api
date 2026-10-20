@@ -116,11 +116,18 @@ public class CatalogOrder : Entity, ITenantScoped
         StampConcurrency();
     }
 
-    public void Cancel(CatalogActorType actor, string? reason, Guid? actorId)
+    public void Cancel(CatalogActorType actor, string? reason, Guid? actorId,
+        CatalogOrderStatus customerCancelableUpToStatus = CatalogOrderStatus.Requested)
     {
         if (actor == CatalogActorType.Customer)
         {
-            EnsureStatus(CatalogOrderStatus.Requested);
+            if (customerCancelableUpToStatus is < CatalogOrderStatus.Requested or > CatalogOrderStatus.Ready
+                || Status is < CatalogOrderStatus.Requested or > CatalogOrderStatus.Ready
+                || Status > customerCancelableUpToStatus)
+            {
+                throw new InvalidCatalogOrderTransitionException(
+                    $"O pedido no status {Status} não permite cancelamento pelo cliente (limite: {customerCancelableUpToStatus}).");
+            }
             Status = CatalogOrderStatus.Cancelled;
             RecordHistory(Status, actor, actorId, reason: null);
             StampConcurrency();

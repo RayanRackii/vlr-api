@@ -217,6 +217,11 @@ Workflow: `.github/workflows/ci.yml`. Dispara em pull request para `develop`/`ma
 
 ## 6. Catalog & Orders v1 — EM ANDAMENTO (código)
 
+- [x] Política de cancelamento por tenant (`CatalogPolicy`, uma linha opcional): `GET/PUT /api/catalog/policy` (`catalog.products.manage`), `GET /api/catalog/portal/policy` público/cliente, enforcement de pedidos e `POST /api/catalog/portal/product-requests/{id}/cancel`. Sem linha = pedido só `Requested`, solicitação desabilitada, texto null (comportamento anterior preservado). Migration `20261020131737_AddCatalogPolicy` gerada pelo EF, **não aplicada**. Contratos e default em [`2026-10-20-catalog-cancellation-policy.md`](./docs/sessions/2026-10-20-catalog-cancellation-policy.md). Sem commit.
+- [ ] Validar suíte completa/PostgreSQL com sockets habilitados; aplicar `AddCatalogPolicy` somente em etapa autorizada de DEV. Build passou; 76 casos focados passaram em processo (incluindo HTTP); `dotnet test` abortou no VSTest por socket negado. `vlr-web`: configurar/consumir política, texto e cancelamento de solicitações no portal.
+
+- [x] Observação do cliente em pedidos/solicitações limitada a 1000 caracteres no servidor (400 `{ error }`); `note` incluído no detalhe e listagem de solicitações do portal. Sem migration (colunas existentes de 2000); testes HTTP de limite, persistência e leitura. Validação local: build `-m:1` passou; 16 casos de observação/leitura passaram por execução direta em processo. `dotnet test` aborta no sandbox por socket negado; suíte completa pendente em ambiente sem essa restrição.
+
 Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/2026-08-28-catalog-orders.md). Branch `feat/catalog-orders`. Pack: [`docs/context-packs/active/catalog.md`](./docs/context-packs/active/catalog.md).
 
 - [x] Module `catalog` + 6 permissions (37→43); Admin wildcard unchanged; DefaultUserKeys unchanged
@@ -227,6 +232,9 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
 - [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
 - [x] B2C portal: explicit 403 when `catalog` module inactive via canonical `[RequireActiveModule]` (Wave 5).
+- [x] Busca de produtos do portal por nome/código ignora caixa e acentos: `ILike` + `unaccent` quando a extensão/função está acessível; fallback em memória após filtros de tenant/ativos. `%`, `_` e `\` literais. Sem migration. Regressões em `CatalogPortalSearchTests` e `CatalogPortalSearchPostgresTests`.
+- [x] Corrigida colisão no dado ativo de `CatalogPortalSearchPostgresTests`: `ZZ-100xx01` substitui `REF-100xx01`, que também casava com `REF`/`réF`. Inativo e outro tenant continuam com termos correspondentes para verificar os filtros de escopo; serviço inalterado.
+- [ ] Validar a busca com PostgreSQL temporário e repetir a suíte completa em ambiente com sockets habilitados. Nesta sessão, build passou com `-m:1 -p:UseSharedCompilation=false -nodeReuse:false`; os 15 casos novos em memória passaram por invocação direta no processo. `dotnet test` abortou antes da execução por `SocketException (13): Permission denied` no VSTest. Sem commit.
 - [x] Portal B2C lê os próprios product requests: `GET /api/catalog/portal/product-requests` (paginado, mais novo primeiro, só o customer autenticado no tenant do JWT) e `GET /api/catalog/portal/product-requests/{id}` (404 para outro customer ou outro tenant). Resposta: `status`, `description`, `quantity`, `createdAt` e URL assinada em `files[].url` quando há arquivo. Sem migration.
 
 ## Dívidas técnicas conhecidas
@@ -258,6 +266,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-20 | **Código (API, sem commit):** CatalogPolicy por tenant; default anterior preservado (pedidos só Requested; solicitações não cancelam), limites de status e texto opcional, endpoints admin/público e cancelamento de solicitação. Migration AddCatalogPolicy gerada e não aplicada. Build e 76 casos focados em processo passaram; suíte VSTest bloqueada por socket. |
 | 2026-10-18 | **Fix local #226:** aceitações serializadas por e-mail com advisory lock transacional e lock/revalidação da linha do convite. Criação e vínculo de conta existente consomem o token na mesma transação. Compensação volta ao savepoint sem liberar os locks, consulta memberships de todos os tenants (inclusive inativas) e só apaga o Auth novo quando não existe vínculo; cancelamento da request não cancela a limpeza. Testes PostgreSQL para accepts concorrentes do mesmo token/e-mail, preservação de vínculo e retry após falha. Sem push ou migration. |
 | 2026-10-18 | **Fix (API, sem merge, alto risco):** convite de staff deixou de redefinir a senha Supabase de um e-mail que já tem conta. Accept anônimo de conta existente não grava membership. O dono entra e aceita; a API só cria a membership no tenant do convite. Conta nova segue definindo senha. Quem tem mais de um tenant escolhe com `GET /api/users/me/tenants` e `POST /api/users/me/tenant` — o login em si não pergunta o tenant. Sem migration. Gate Fable ainda não rodou; não mergear. |
 | 2026-10-18 | **Fix local #225:** warning de commit incerto da substituição registra ambas as chaves e preserva os dois blobs; contexto recebe `PreviousKey` antes do commit. Teste de regressão adicionado; execução completa bloqueada pelo ambiente (sockets/NuGet). Sem push ou migration nova. |

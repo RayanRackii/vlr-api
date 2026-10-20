@@ -1304,6 +1304,10 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<ProductRequestResponse> CancelProductRequestAsync(
+            Guid customerId, Guid requestId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ProductRequestResponse> CreateProductRequestAsync(
             Guid customerId,
             CreateProductRequestDto request,

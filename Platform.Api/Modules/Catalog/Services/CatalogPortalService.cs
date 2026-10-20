@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Common;
@@ -39,6 +40,9 @@ public interface ICatalogPortalService
         Guid customerId,
         Guid orderId,
         CancellationToken cancellationToken);
+
+    Task<ProductRequestResponse> CancelProductRequestAsync(
+        Guid customerId, Guid requestId, CancellationToken cancellationToken);
 
     Task<ProductRequestResponse> CreateProductRequestAsync(
         Guid customerId,
@@ -87,8 +91,31 @@ public sealed class CatalogPortalService(
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
-            products = products.Where(p =>
-                p.Name.Contains(term) || (p.Code != null && p.Code.Contains(term)));
+            var hasUnaccent = dbContext.Database.IsNpgsql()
+                && await dbContext.Database.SqlQueryRaw<bool>(
+                    """
+                    SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'unaccent')
+                        AND to_regprocedure('unaccent(text)') IS NOT NULL AS "Value"
+                    """).SingleAsync(cancellationToken);
+
+            if (hasUnaccent)
+            {
+                var pattern = "%" + term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                products = products.Where(p =>
+                    EF.Functions.ILike(EF.Functions.Unaccent(p.Name), EF.Functions.Unaccent(pattern), "\\")
+                    || (p.Code != null && EF.Functions.ILike(
+                        EF.Functions.Unaccent(p.Code), EF.Functions.Unaccent(pattern), "\\")));
+            }
+            else
+            {
+                // Keep tenant/active filters and ordering in SQL; no extension installation is required.
+                var candidates = await products.OrderBy(p => p.Name).ToListAsync(cancellationToken);
+                const CompareOptions options = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+                return candidates.Where(p =>
+                        CultureInfo.InvariantCulture.CompareInfo.IndexOf(p.Name, term, options) >= 0
+                        || (p.Code != null && CultureInfo.InvariantCulture.CompareInfo.IndexOf(p.Code, term, options) >= 0))
+                    .Select(MapPortalProduct).ToList();
+            }
         }
 
         var list = await products.OrderBy(p => p.Name).ToListAsync(cancellationToken);
@@ -114,6 +141,7 @@ public sealed class CatalogPortalService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        ValidateCustomerNote(request.CustomerNote);
         if (request.Items is null || request.Items.Count == 0)
         {
             throw new ArgumentException("At least one order item is required.");
@@ -273,7 +301,10 @@ public sealed class CatalogPortalService(
             .FirstOrDefaultAsync(o => o.Id == orderId && o.CustomerId == customerId, cancellationToken)
             ?? throw new KeyNotFoundException("Order not found.");
 
-        order.Cancel(CatalogActorType.Customer, reason: null, customerId);
+        var policy = await CatalogPolicyService.ReadAsync(dbContext, EnsureTenant(), cancellationToken);
+        if (!policy.CustomerCanCancelOrders)
+            throw new InvalidCatalogOrderTransitionException("O tenant não permite cancelamento de pedidos pelo cliente.");
+        order.Cancel(CatalogActorType.Customer, reason: null, customerId, policy.OrderCancelableUpToStatus);
 
         try
         {
@@ -287,6 +318,30 @@ public sealed class CatalogPortalService(
         return CatalogOrderService.MapOrder(order);
     }
 
+    public async Task<ProductRequestResponse> CancelProductRequestAsync(
+        Guid customerId, Guid requestId, CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        var request = await dbContext.ProductRequests.Include(r => r.Files)
+            .FirstOrDefaultAsync(r => r.Id == requestId && r.CustomerId == customerId, cancellationToken)
+            ?? throw new KeyNotFoundException("Solicitação não encontrada.");
+        var policy = await CatalogPolicyService.ReadAsync(dbContext, tenantId, cancellationToken);
+        if (!policy.CustomerCanCancelRequests)
+            throw new InvalidCatalogOrderTransitionException("O tenant não permite cancelamento de solicitações pelo cliente.");
+        if (request.Status != ProductRequestStatus.Submitted
+            || policy.RequestCancelableUpToStatus != ProductRequestStatus.Submitted)
+            throw new InvalidCatalogOrderTransitionException(
+                $"A solicitação no status {request.Status} não permite cancelamento pelo cliente.");
+        request.Status = ProductRequestStatus.Cancelled;
+        request.Touch();
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new InvalidCatalogOrderTransitionException("A solicitação foi alterada por outro usuário.");
+        }
+        return CatalogOrderService.MapProductRequest(request);
+    }
+
     public async Task<ProductRequestResponse> CreateProductRequestAsync(
         Guid customerId,
         CreateProductRequestDto request,
@@ -294,6 +349,7 @@ public sealed class CatalogPortalService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
+        ValidateCustomerNote(request.Note);
         var description = (request.Description ?? string.Empty).Trim();
         if (description.Length == 0)
         {
@@ -488,8 +544,17 @@ public sealed class CatalogPortalService(
             request.Status,
             request.Description,
             request.Quantity,
+            request.Note,
             request.CreatedAt,
             files);
+    }
+
+    private static void ValidateCustomerNote(string? note)
+    {
+        if (note is { Length: > 1000 })
+        {
+            throw new ArgumentException("A observação deve ter no máximo 1000 caracteres.");
+        }
     }
 
     private static void ValidatePage(int page, int pageSize)
@@ -528,6 +593,6 @@ public sealed class CatalogPortalService(
     }
 
     private Guid EnsureTenant() =>
-        tenantProvider.TenantId
-        ?? throw new UnauthorizedAccessException("Tenant context is required.");
+        tenantProvider.TenantId is Guid id && id != Guid.Empty
+            ? id : throw new UnauthorizedAccessException("Tenant context is required.");
 }
