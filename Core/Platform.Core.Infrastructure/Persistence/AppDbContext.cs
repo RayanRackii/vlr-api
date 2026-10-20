@@ -114,6 +114,8 @@ public class AppDbContext : DbContext
     public DbSet<RentalLayoutItem> RentalLayoutItems => Set<RentalLayoutItem>();
 
     // --- Schema: catalog ---
+    public DbSet<CatalogPolicy> CatalogPolicies => Set<CatalogPolicy>();
+
     public DbSet<CatalogProduct> CatalogProducts => Set<CatalogProduct>();
 
     public DbSet<CatalogProductFile> CatalogProductFiles => Set<CatalogProductFile>();

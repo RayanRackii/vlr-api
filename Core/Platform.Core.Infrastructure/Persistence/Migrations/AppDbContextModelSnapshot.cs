@@ -552,6 +552,64 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("catalog_order_status_history", "catalog");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogPolicy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CancellationPolicyText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("cancellation_policy_text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("CustomerCanCancelOrders")
+                        .HasColumnType("boolean")
+                        .HasColumnName("customer_can_cancel_orders");
+
+                    b.Property<bool>("CustomerCanCancelRequests")
+                        .HasColumnType("boolean")
+                        .HasColumnName("customer_can_cancel_requests");
+
+                    b.Property<string>("OrderCancelableUpToStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("order_cancelable_up_to_status");
+
+                    b.Property<string>("RequestCancelableUpToStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("request_cancelable_up_to_status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_policies");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_catalog_policies_tenant_id");
+
+                    b.ToTable("catalog_policies", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("ck_catalog_policies_order_status", "order_cancelable_up_to_status IN ('Requested', 'Approved', 'Preparing', 'Ready')");
+
+                            t.HasCheckConstraint("ck_catalog_policies_request_status", "request_cancelable_up_to_status = 'Submitted'");
+                        });
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProduct", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1685,6 +1743,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("quantity");
 
                     b.Property<string>("Status")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(32)
@@ -3440,6 +3499,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_catalog_order_status_history_catalog_orders_order_id");
 
                     b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogPolicy", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_policies_tenants_tenant_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductFile", b =>

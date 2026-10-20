@@ -199,6 +199,28 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Catalog_policy_admin_permission_accepts_manager_and_support_tenant_only()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Catalog, isActive: true));
+        await harness.Db.SaveChangesAsync();
+        var manager = harness.SeedUserWithKeys("policy-manager", Permissions.Catalog.ProductsManage);
+        var orderManager = harness.SeedUserWithKeys("order-manager", Permissions.Catalog.OrdersManage);
+        var policy = PermissionPolicies.Name(Permissions.Catalog.ProductsManage);
+        Assert.True((await harness.Authorization.AuthorizeAsync(AuthenticatedPrincipal(
+            new Claim("sub", manager.SupabaseAuthId), new Claim("email", manager.Email)), policy)).Succeeded);
+        Assert.False((await harness.Authorization.AuthorizeAsync(AuthenticatedPrincipal(
+            new Claim("sub", orderManager.SupabaseAuthId), new Claim("email", orderManager.Email)), policy)).Succeeded);
+        Assert.False((await harness.Authorization.AuthorizeAsync(AuthenticatedPrincipal(
+            new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString())), policy)).Succeeded);
+        var support = AuthenticatedPrincipal(new Claim("email", AdminEmail), new Claim(ClaimTypes.Email, AdminEmail));
+        Assert.True((await harness.Authorization.AuthorizeAsync(support, policy)).Succeeded);
+        harness.TenantProvider.TenantId = null;
+        Assert.False((await harness.Authorization.AuthorizeAsync(support, policy)).Succeeded);
+    }
+
+    [Fact]
     public async Task Catalog_orders_manage_requires_grant_and_active_module()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();

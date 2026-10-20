@@ -41,6 +41,9 @@ public interface ICatalogPortalService
         Guid orderId,
         CancellationToken cancellationToken);
 
+    Task<ProductRequestResponse> CancelProductRequestAsync(
+        Guid customerId, Guid requestId, CancellationToken cancellationToken);
+
     Task<ProductRequestResponse> CreateProductRequestAsync(
         Guid customerId,
         CreateProductRequestDto request,
@@ -298,7 +301,10 @@ public sealed class CatalogPortalService(
             .FirstOrDefaultAsync(o => o.Id == orderId && o.CustomerId == customerId, cancellationToken)
             ?? throw new KeyNotFoundException("Order not found.");
 
-        order.Cancel(CatalogActorType.Customer, reason: null, customerId);
+        var policy = await CatalogPolicyService.ReadAsync(dbContext, EnsureTenant(), cancellationToken);
+        if (!policy.CustomerCanCancelOrders)
+            throw new InvalidCatalogOrderTransitionException("O tenant não permite cancelamento de pedidos pelo cliente.");
+        order.Cancel(CatalogActorType.Customer, reason: null, customerId, policy.OrderCancelableUpToStatus);
 
         try
         {
@@ -310,6 +316,30 @@ public sealed class CatalogPortalService(
         }
 
         return CatalogOrderService.MapOrder(order);
+    }
+
+    public async Task<ProductRequestResponse> CancelProductRequestAsync(
+        Guid customerId, Guid requestId, CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        var request = await dbContext.ProductRequests.Include(r => r.Files)
+            .FirstOrDefaultAsync(r => r.Id == requestId && r.CustomerId == customerId, cancellationToken)
+            ?? throw new KeyNotFoundException("Solicitação não encontrada.");
+        var policy = await CatalogPolicyService.ReadAsync(dbContext, tenantId, cancellationToken);
+        if (!policy.CustomerCanCancelRequests)
+            throw new InvalidCatalogOrderTransitionException("O tenant não permite cancelamento de solicitações pelo cliente.");
+        if (request.Status != ProductRequestStatus.Submitted
+            || policy.RequestCancelableUpToStatus != ProductRequestStatus.Submitted)
+            throw new InvalidCatalogOrderTransitionException(
+                $"A solicitação no status {request.Status} não permite cancelamento pelo cliente.");
+        request.Status = ProductRequestStatus.Cancelled;
+        request.Touch();
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new InvalidCatalogOrderTransitionException("A solicitação foi alterada por outro usuário.");
+        }
+        return CatalogOrderService.MapProductRequest(request);
     }
 
     public async Task<ProductRequestResponse> CreateProductRequestAsync(
@@ -563,6 +593,6 @@ public sealed class CatalogPortalService(
     }
 
     private Guid EnsureTenant() =>
-        tenantProvider.TenantId
-        ?? throw new UnauthorizedAccessException("Tenant context is required.");
+        tenantProvider.TenantId is Guid id && id != Guid.Empty
+            ? id : throw new UnauthorizedAccessException("Tenant context is required.");
 }

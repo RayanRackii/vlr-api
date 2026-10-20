@@ -242,6 +242,79 @@ public sealed class PortalProductRequestReadTests
         }
     }
 
+    [Fact]
+    public async Task Customer_request_cancel_enforces_policy_and_hides_other_owners_over_http()
+    {
+        using var host = await StartHostAsync();
+        var seed = host.Services.GetRequiredService<SeededRequests>();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.Ana));
+        using var denied = await client.PostAsync($"{ListPath}/{seed.NewestId}/cancel", null);
+        Assert.Equal(HttpStatusCode.Conflict, denied.StatusCode);
+        using var deniedBody = JsonDocument.Parse(await denied.Content.ReadAsStringAsync());
+        Assert.Contains("não permite", deniedBody.RootElement.GetProperty("error").GetString());
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.CatalogPolicies.Add(new CatalogPolicy { TenantId = seed.Ana.TenantId, CustomerCanCancelRequests = true });
+            await db.SaveChangesAsync();
+        }
+        using var allowed = await client.PostAsync($"{ListPath}/{seed.NewestId}/cancel", null);
+        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+        using var body = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
+        Assert.Equal("Cancelled", body.RootElement.GetProperty("status").GetString());
+        using var repeated = await client.PostAsync($"{ListPath}/{seed.NewestId}/cancel", null);
+        Assert.Equal(HttpStatusCode.Conflict, repeated.StatusCode);
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.Bruno));
+        using var otherOwner = await client.PostAsync($"{ListPath}/{seed.MiddleId}/cancel", null);
+        Assert.Equal(HttpStatusCode.NotFound, otherOwner.StatusCode);
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.Carla));
+        using var otherTenant = await client.PostAsync($"{ListPath}/{seed.MiddleId}/cancel", null);
+        Assert.Equal(HttpStatusCode.NotFound, otherTenant.StatusCode);
+        client.DefaultRequestHeaders.Authorization = null;
+        using var anonymous = await client.PostAsync($"{ListPath}/{seed.MiddleId}/cancel", null);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+    }
+
+    [Fact]
+    public async Task Portal_policy_requires_customer_and_uses_customer_claim_tenant()
+    {
+        using var host = await StartHostAsync();
+        var seed = host.Services.GetRequiredService<SeededRequests>();
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.CatalogPolicies.Add(new CatalogPolicy { TenantId = seed.Ana.TenantId,
+                CustomerCanCancelOrders = false, CancellationPolicyText = "Tenant A note" });
+            await db.SaveChangesAsync();
+        }
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TenantHeaders.Subdomain, "cluba");
+        using var anonymous = await client.GetAsync("/api/catalog/portal/policy");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Remove(TenantHeaders.Subdomain);
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.Ana));
+        using var response = await client.GetAsync("/api/catalog/portal/policy");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(body.RootElement.GetProperty("canCancelOrders").GetBoolean());
+        Assert.Equal("Tenant A note", body.RootElement.GetProperty("policyText").GetString());
+        Assert.Equal("Requested", body.RootElement.GetProperty("upToStatus").GetProperty("orders").GetString());
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.Carla));
+        using var customerResponse = await client.GetAsync("/api/catalog/portal/policy");
+        Assert.Equal(HttpStatusCode.OK, customerResponse.StatusCode);
+        using var customerBody = JsonDocument.Parse(await customerResponse.Content.ReadAsStringAsync());
+        Assert.True(customerBody.RootElement.GetProperty("canCancelOrders").GetBoolean());
+        Assert.False(customerBody.RootElement.GetProperty("canCancelRequests").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, customerBody.RootElement.GetProperty("policyText").ValueKind);
+    }
+
     private static async Task AssertHiddenAsync(IHost host, Customer customer, SeededRequests seed)
     {
         using var list = await ReadJsonAsync(host, customer, ListPath);
@@ -363,6 +436,8 @@ public sealed class PortalProductRequestReadTests
                     services.AddSingleton<ICatalogNotificationPublisher, NoOpCatalogNotificationPublisher>();
                     services.AddSingleton<INotificationOutboxScheduler, NoOpNotificationOutboxScheduler>();
                     services.AddScoped<ICatalogPortalService, CatalogPortalService>();
+                    services.AddScoped<CatalogPolicyService>();
+                    services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
                     services
                         .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                         .AddPolicyScheme(JwtBearerDefaults.AuthenticationScheme, "JWT scheme router", options =>
@@ -412,7 +487,7 @@ public sealed class PortalProductRequestReadTests
                             manager.ApplicationParts.Add(
                                 new AssemblyPart(typeof(CatalogPortalController).Assembly));
                             manager.FeatureProviders.Add(
-                                new ExplicitControllerFeatureProvider(typeof(CatalogPortalController)));
+                                new ExplicitControllerFeatureProvider(typeof(CatalogPortalController), typeof(CatalogPolicyController)));
                         });
                 });
                 web.Configure(app =>

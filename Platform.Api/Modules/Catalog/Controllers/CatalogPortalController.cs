@@ -94,6 +94,18 @@ public sealed class CatalogPortalController(
         }
     }
 
+    [HttpPost("product-requests/{id:guid}/cancel")]
+    public async Task<ActionResult<ProductRequestResponse>> CancelProductRequest(
+        Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await portalService.CancelProductRequestAsync(ResolveCustomerId(), id, cancellationToken));
+        }
+        catch (InvalidCatalogOrderTransitionException ex) { return Conflict(new { error = ex.Message }); }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
     [HttpPost("product-requests")]
     [RequestSizeLimit(CatalogFileRules.InternalB2BMaxBytes)]
     public async Task<ActionResult<ProductRequestResponse>> CreateProductRequest(
