@@ -3287,7 +3287,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "MaintenancePlanId", "AssetId", "ScheduledDate")
                         .IsUnique()
                         .HasDatabaseName("ux_os_work_orders_pmoc_period")
-                        .HasFilter("maintenance_plan_id IS NOT NULL AND status <> 'Canceled'");
+                        .HasFilter("maintenance_plan_id IS NOT NULL AND status IN ('Pending', 'InProgress')");
 
                     b.ToTable("work_orders", "os");
                 });

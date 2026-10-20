@@ -74,7 +74,7 @@ public sealed class WorkOrderGenerationService(
                     && workOrder.AssetId == asset.Id
                     && workOrder.MaintenancePlanId == plan.Id
                     && workOrder.ScheduledDate == command.ScheduledDate
-                    && workOrder.Status != WorkOrderStatus.Canceled,
+                    && (workOrder.Status == WorkOrderStatus.Pending || workOrder.Status == WorkOrderStatus.InProgress),
                 cancellationToken);
 
             if (duplicate)

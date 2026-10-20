@@ -135,7 +135,7 @@ public sealed class WorkOrderService(
                         && workOrder.AssetId == asset.Id
                         && workOrder.MaintenancePlanId == plan.Id
                         && workOrder.ScheduledDate == request.ScheduledDate
-                        && workOrder.Status != WorkOrderStatus.Canceled,
+                        && (workOrder.Status == WorkOrderStatus.Pending || workOrder.Status == WorkOrderStatus.InProgress),
                     cancellationToken);
 
                 if (duplicate)
