@@ -22,7 +22,7 @@ public sealed class CatalogPortalSearchPostgresTests(PostgresContainerFixture po
         db.Tenants.AddRange(tenant, otherTenant);
         var match = new CatalogProduct { TenantId = tenant.Id, Name = "Café AÇÃO", Code = @"Réf-10%_\01" };
         db.CatalogProducts.AddRange(match,
-            new CatalogProduct { TenantId = tenant.Id, Name = "Sem correspondência", Code = "REF-100xx01" },
+            new CatalogProduct { TenantId = tenant.Id, Name = "Sem correspondência", Code = "ZZ-100xx01" },
             new CatalogProduct { TenantId = tenant.Id, Name = match.Name, Code = match.Code + "-inactive", IsActive = false },
             new CatalogProduct { TenantId = otherTenant.Id, Name = match.Name, Code = match.Code });
         await db.SaveChangesAsync();
