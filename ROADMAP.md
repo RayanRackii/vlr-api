@@ -217,6 +217,8 @@ Workflow: `.github/workflows/ci.yml`. Dispara em pull request para `develop`/`ma
 
 ## 6. Catalog & Orders v1 — EM ANDAMENTO (código)
 
+- [x] Observação do cliente em pedidos/solicitações limitada a 1000 caracteres no servidor (400 `{ error }`); `note` incluído no detalhe e listagem de solicitações do portal. Sem migration (colunas existentes de 2000); testes HTTP de limite, persistência e leitura. Validação local: build `-m:1` passou; 16 casos de observação/leitura passaram por execução direta em processo. `dotnet test` aborta no sandbox por socket negado; suíte completa pendente em ambiente sem essa restrição.
+
 Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/2026-08-28-catalog-orders.md). Branch `feat/catalog-orders`. Pack: [`docs/context-packs/active/catalog.md`](./docs/context-packs/active/catalog.md).
 
 - [x] Module `catalog` + 6 permissions (37→43); Admin wildcard unchanged; DefaultUserKeys unchanged
@@ -227,6 +229,9 @@ Spec: [`docs/plans/active/2026-08-28-catalog-orders.md`](./docs/plans/active/202
 - [x] UI B2B/B2C no `vlr-web` (branch `feat/catalog-orders`)
 - [ ] Aplicar migration Catalog & Orders no DEV (Human Action — **não** nesta implementação)
 - [x] B2C portal: explicit 403 when `catalog` module inactive via canonical `[RequireActiveModule]` (Wave 5).
+- [x] Busca de produtos do portal por nome/código ignora caixa e acentos: `ILike` + `unaccent` quando a extensão/função está acessível; fallback em memória após filtros de tenant/ativos. `%`, `_` e `\` literais. Sem migration. Regressões em `CatalogPortalSearchTests` e `CatalogPortalSearchPostgresTests`.
+- [x] Corrigida colisão no dado ativo de `CatalogPortalSearchPostgresTests`: `ZZ-100xx01` substitui `REF-100xx01`, que também casava com `REF`/`réF`. Inativo e outro tenant continuam com termos correspondentes para verificar os filtros de escopo; serviço inalterado.
+- [ ] Validar a busca com PostgreSQL temporário e repetir a suíte completa em ambiente com sockets habilitados. Nesta sessão, build passou com `-m:1 -p:UseSharedCompilation=false -nodeReuse:false`; os 15 casos novos em memória passaram por invocação direta no processo. `dotnet test` abortou antes da execução por `SocketException (13): Permission denied` no VSTest. Sem commit.
 - [x] Portal B2C lê os próprios product requests: `GET /api/catalog/portal/product-requests` (paginado, mais novo primeiro, só o customer autenticado no tenant do JWT) e `GET /api/catalog/portal/product-requests/{id}` (404 para outro customer ou outro tenant). Resposta: `status`, `description`, `quantity`, `createdAt` e URL assinada em `files[].url` quando há arquivo. Sem migration.
 
 ## Dívidas técnicas conhecidas

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -19,6 +20,7 @@ using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.Catalog.Controllers;
+using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Storage;
@@ -158,6 +160,88 @@ public sealed class PortalProductRequestReadTests
             (await client.GetAsync($"{ListPath}/{seed.NewestId}")).StatusCode);
     }
 
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, "")]
+    [InlineData(false, "   ")]
+    [InlineData(false, " entrega ")]
+    [InlineData(false, 1000)]
+    [InlineData(false, 1001)]
+    [InlineData(true, null)]
+    [InlineData(true, "")]
+    [InlineData(true, "   ")]
+    [InlineData(true, " entrega ")]
+    [InlineData(true, 1000)]
+    [InlineData(true, 1001)]
+    public async Task Customer_note_limit_is_enforced_over_http(bool order, object? input)
+    {
+        var note = input is int length ? new string('a', length) : (string?)input;
+        using var host = await StartHostAsync();
+        var seed = host.Services.GetRequiredService<SeededRequests>();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", IssueCustomerToken(seed.Ana));
+
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var beforeOrders = await db.CatalogOrders.IgnoreQueryFilters().CountAsync();
+        var beforeRequests = await db.ProductRequests.IgnoreQueryFilters().CountAsync();
+        HttpResponseMessage response;
+        if (order)
+        {
+            var product = new CatalogProduct { TenantId = seed.Ana.TenantId, Name = "Item" };
+            db.CatalogProducts.Add(product);
+            await db.SaveChangesAsync();
+            response = await client.PostAsJsonAsync("/api/catalog/portal/orders", new CreatePortalOrderRequest
+            {
+                Items = [new CreatePortalOrderItemRequest { ProductId = product.Id, Quantity = 1 }],
+                CustomerNote = note,
+            });
+        }
+        else
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent("Item solicitado"), "description");
+            form.Add(new StringContent("1"), "quantity");
+            if (note is not null)
+            {
+                form.Add(new StringContent(note), "note");
+            }
+
+            response = await client.PostAsync(ListPath, form);
+        }
+
+        using (response)
+        using (var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            if (note?.Length > 1000)
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+                Assert.Equal("A observação deve ter no máximo 1000 caracteres.",
+                    body.RootElement.GetProperty("error").GetString());
+                Assert.Equal(beforeOrders, await db.CatalogOrders.IgnoreQueryFilters().CountAsync());
+                Assert.Equal(beforeRequests, await db.ProductRequests.IgnoreQueryFilters().CountAsync());
+            }
+            else
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var expected = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+                Assert.Equal(expected, body.RootElement.GetProperty(order ? "customerNote" : "note").GetString());
+                if (order)
+                {
+                    Assert.Equal(expected, (await db.CatalogOrders.IgnoreQueryFilters().SingleAsync()).CustomerNote);
+                }
+                else
+                {
+                    var id = body.RootElement.GetProperty("id").GetGuid();
+                    Assert.Equal(expected, (await db.ProductRequests.IgnoreQueryFilters().SingleAsync(r => r.Id == id)).Note);
+                    using var detail = await ReadJsonAsync(host, seed.Ana, $"{ListPath}/{id}");
+                    Assert.Equal(expected, detail.Document.RootElement.GetProperty("note").GetString());
+                }
+            }
+        }
+    }
+
     private static async Task AssertHiddenAsync(IHost host, Customer customer, SeededRequests seed)
     {
         using var list = await ReadJsonAsync(host, customer, ListPath);
@@ -191,7 +275,8 @@ public sealed class PortalProductRequestReadTests
         Assert.Equal(quantity, item.GetProperty("quantity").GetInt32());
         Assert.Equal(createdAt, item.GetProperty("createdAt").GetDateTimeOffset());
         Assert.False(item.TryGetProperty("customerId", out _));
-        Assert.False(item.TryGetProperty("note", out _));
+        Assert.Equal(description == "Gaskets" ? "Entregar na recepção" : null,
+            item.GetProperty("note").GetString());
         Assert.False(item.TryGetProperty("storageKey", out _));
 
         var files = item.GetProperty("files").EnumerateArray().ToList();
@@ -361,6 +446,7 @@ public sealed class PortalProductRequestReadTests
 
         var newest = Request(tenantA.Id, ana.Id, "Seals", 3);
         var middle = Request(tenantA.Id, ana.Id, "Gaskets", 2);
+        middle.Note = "Entregar na recepção";
         var oldest = Request(tenantA.Id, ana.Id, "Bolts", 1);
         var diegoRequest = Request(tenantB.Id, diego.Id, "Other tenant part", 4);
         var file = new ProductRequestFile
