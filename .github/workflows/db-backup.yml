@@ -1,0 +1,84 @@
+name: db-backup
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 03:00 BRT (UTC-3)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    name: pg_dump / production
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Dump production database
+        env:
+          DB_CONN: ${{ secrets.ConnectionStrings__DefaultConnection }}
+        run: |
+          set -euo pipefail
+          # Parse the Npgsql (key=value) or URI connection string without echoing it.
+          python3 - > "$RUNNER_TEMP/pg.env" <<'PY'
+          import os, shlex, urllib.parse
+          raw = os.environ["DB_CONN"].strip()
+          c = {}
+          if raw.startswith(("postgres://", "postgresql://")):
+              u = urllib.parse.urlparse(raw)
+              c = dict(host=u.hostname, port=str(u.port or 5432),
+                       user=urllib.parse.unquote(u.username or ""),
+                       password=urllib.parse.unquote(u.password or ""),
+                       db=(u.path or "/postgres").lstrip("/") or "postgres")
+          else:
+              kv = {}
+              for part in raw.split(";"):
+                  if "=" in part:
+                      k, v = part.split("=", 1)
+                      kv[k.strip().lower().replace(" ", "")] = v.strip()
+              g = lambda *ks: next((kv[k] for k in ks if k in kv), "")
+              c = dict(host=g("host", "server"), port=g("port") or "5432",
+                       user=g("username", "userid", "user", "uid"),
+                       password=g("password", "pwd"),
+                       db=g("database", "db") or "postgres")
+          # Transaction pooler (6543) can't serve pg_dump; use session mode on the same host.
+          if c["port"] == "6543":
+              c["port"] = "5432"
+          for name, key in [("PGHOST","host"),("PGPORT","port"),("PGUSER","user"),("PGPASSWORD","password"),("PGDATABASE","db")]:
+              print(f"export {name}={shlex.quote(c[key])}")
+          PY
+          echo "::add-mask::$(grep PGPASSWORD "$RUNNER_TEMP/pg.env" | cut -d= -f2-)"
+          . "$RUNNER_TEMP/pg.env"
+          rm -f "$RUNNER_TEMP/pg.env"
+          export PGSSLMODE=require
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          mkdir -p backup
+          /usr/lib/postgresql/17/bin/pg_dump --format=custom --compress=9 --no-owner --no-privileges \
+            --file "backup/rolvix-prod-$stamp.dump"
+          /usr/lib/postgresql/17/bin/pg_restore --list "backup/rolvix-prod-$stamp.dump" | grep -c "TABLE DATA" | xargs echo "table data entries:"
+          ls -l backup
+          size=$(stat -c %s "backup/rolvix-prod-$stamp.dump")
+          test "$size" -gt 0
+          echo "STAMP=$stamp" >> "$GITHUB_ENV"
+
+      - name: Upload dump artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rolvix-prod-db-${{ env.STAMP }}
+          path: backup/*.dump
+          retention-days: 30
+          if-no-files-found: error
+          compression-level: 0
