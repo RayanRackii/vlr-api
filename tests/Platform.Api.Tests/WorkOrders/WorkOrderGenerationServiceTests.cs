@@ -153,6 +153,30 @@ public sealed class WorkOrderGenerationServiceTests
         Assert.Equal(1, await harness.Db.WorkOrders.CountAsync(item => item.Status != WorkOrderStatus.Canceled));
     }
 
+    [Theory]
+    [InlineData(WorkOrderStatus.Completed)]
+    [InlineData(WorkOrderStatus.Canceled)]
+    public async Task From_plan_allows_new_work_order_when_previous_period_order_is_closed(WorkOrderStatus closedStatus)
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var plan = await CreatePlanAsync(harness, "Closed order");
+        var asset = await CreateMatchingAssetAsync(harness);
+        var command = new GenerateWorkOrderCommand(plan.Id, asset.Id, new DateOnly(2026, 9, 18), null);
+        var generator = CreateGenerator(harness);
+
+        var previous = await generator.GenerateAsync(command, CancellationToken.None);
+        var previousEntity = await harness.Db.WorkOrders.SingleAsync(item => item.Id == previous.Id);
+        previousEntity.Status = closedStatus;
+        await harness.Db.SaveChangesAsync();
+        harness.Db.ChangeTracker.Clear();
+
+        var generated = await generator.GenerateAsync(command, CancellationToken.None);
+
+        Assert.NotEqual(previous.Id, generated.Id);
+        Assert.Equal(closedStatus, (await harness.Db.WorkOrders.SingleAsync(item => item.Id == previous.Id)).Status);
+        Assert.Equal(2, await harness.Db.WorkOrders.CountAsync());
+    }
+
     [Fact]
     public async Task Controller_maps_duplicate_to_409()
     {
