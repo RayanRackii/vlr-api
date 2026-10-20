@@ -139,7 +139,7 @@ public sealed class PmocPhase1FoundationTests
             new[] { "TenantId", "MaintenancePlanId", "AssetId", "ScheduledDate" },
             index.Properties.Select(property => property.Name).ToArray());
         Assert.Equal(
-            "maintenance_plan_id IS NOT NULL AND status <> 'Canceled'",
+            "maintenance_plan_id IS NOT NULL AND status IN ('Pending', 'InProgress')",
             index.GetFilter());
     }
 

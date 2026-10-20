@@ -49,7 +49,7 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
 
         builder.HasIndex(w => new { w.TenantId, w.MaintenancePlanId, w.AssetId, w.ScheduledDate })
             .IsUnique()
-            .HasFilter("maintenance_plan_id IS NOT NULL AND status <> 'Canceled'")
+            .HasFilter("maintenance_plan_id IS NOT NULL AND status IN ('Pending', 'InProgress')")
             .HasDatabaseName("ux_os_work_orders_pmoc_period");
 
         builder.HasOne(w => w.Asset)
