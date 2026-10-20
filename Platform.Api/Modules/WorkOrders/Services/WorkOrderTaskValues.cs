@@ -9,6 +9,8 @@ internal static class WorkOrderTaskValues
 {
     public const int MaxStoredLength = 8000;
 
+    public const int MaxTextLength = 1000;
+
     public static bool IsFilled(
         WorkOrderTask task,
         IReadOnlySet<(Guid TaskId, Guid FileId)>? storedImages = null)
@@ -116,7 +118,7 @@ internal static class WorkOrderTaskValues
 
     private static string NormalizeText(string value, string? configuration)
     {
-        var maxLength = ReadMaxLength(configuration);
+        var maxLength = Math.Min(ReadMaxLength(configuration), MaxTextLength);
         return NormalizeBoundedText(value, maxLength);
     }
 
@@ -124,9 +126,13 @@ internal static class WorkOrderTaskValues
     {
         if (value.Length > maxLength)
         {
+            var exceedsTaskNoteLimit = value.Length > MaxTextLength;
             throw new InvalidTaskValueException(
                 InvalidTaskValueException.TextTooLong,
-                "Text value is longer than the allowed length.");
+                exceedsTaskNoteLimit
+                    ? "Work order task text cannot exceed 1000 characters."
+                    : "Text value is longer than the configured length.",
+                exceedsTaskNoteLimit ? WorkOrderErrorCodes.TaskNoteTooLong : null);
         }
 
         return value;
