@@ -33,6 +33,7 @@ public sealed class ProductRequestConfiguration : IEntityTypeConfiguration<Produ
             .HasMaxLength(2000);
 
         builder.Property(r => r.Status)
+            .IsConcurrencyToken()
             .HasConversion<string>()
             .HasMaxLength(32)
             .HasDefaultValue(ProductRequestStatus.Submitted)
