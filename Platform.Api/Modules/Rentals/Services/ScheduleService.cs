@@ -1143,7 +1143,7 @@ public sealed class ScheduleService(
                 slot.EndTime,
                 cancellationToken);
 
-            var subTotal = RoundMoney(unitPrice * hours * quantity);
+            var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
             var whatsApp = string.IsNullOrWhiteSpace(customer.Phone) ? string.Empty : customer.Phone;
 
             var reservation = new Reservation
@@ -1902,13 +1902,12 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken)
     {
         var dayOfWeek = date.DayOfWeek;
-        var pricing = await dbContext.RentalPricings
+        var pricing = await BookingOffer.ForPersistedSlot(dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId
                         && p.DayOfWeek == dayOfWeek
                         && p.StartTime <= startTime
-                        && p.EndTime >= endTime)
-            .OrderByDescending(p => p.StartTime)
+                        && p.EndTime >= endTime))
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new InvalidOperationException(
                 "No pricing covers the requested interval for this rentable.");

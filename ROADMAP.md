@@ -17,6 +17,16 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 - [ ] Web: entrega coordenada de gestão/filtros conforme roadmap do `vlr-web`.
 - [ ] Web: gestão compartilhada, filtros/atribuições no Catalog e espelho do glossário; manter prioridade portal/Slot. Rentals não integrado nesta task.
 
+## Booking UI rollout — etapas 1 + 2, implementação local (2026-10-21)
+
+- [x] Contrato genérico, JSON Schema e fixtures API com compatibilidade legada; BRL, cotação de 60s, quantidade de estoque editável e mapa opcional. [Contrato e testes](docs/contracts/booking/README.md).
+- [x] `GET /api/public/tenants/{subdomain}/availability/days/{date}`: múltiplos recursos, preço/quantidade física, intervalos derivados ocupados e estados Available/Taken/Blocked/Past/OutsideHorizon/Unpriced; leitura sem seed/write, joins tenant-scoped e limites explícitos.
+- [x] Branding público aditivo `newBookingUiEnabled`, por UUID do tenant via configuração `Rentals:BookingUi:EnabledTenantIds`; default off; nenhuma migration.
+- [x] Testes unitários, integração real controller/JWT, negativos e isolamento; prova de oito leituras em PostgreSQL preparada (execução depende de PostgreSQL/Docker).
+- [x] Validação local: build sem warnings/erros; xUnit em processo 1540 total / 1451 passed / 0 failed / 89 skipped (novos: 40 passed / 1 PostgreSQL skipped); reviews Standards/Spec sem findings. VSTest bloqueado por socket do sandbox. [Diário](docs/sessions/2026-10-21-booking-availability.md).
+- [ ] Validação DEV, entrega e ativação por tenant. Git não executado por instrução explícita; não inferir merge ou release deste estado local.
+- [ ] Próxima API: guarda de preço nos POSTs (etapa 4) e leituras privadas paginadas/detalhe/dia (etapa 5). Próxima `vlr-web`: etapa 3 (grade, datas, seleção e validação do schema) atrás da flag; frontend fora deste slice.
+
 ## 0. Disciplina
 
 1. Ao trabalhar neste repo: atualizar este arquivo (checklist + **Histórico** se mudou prioridade/escopo). Não apagar decisões — registre.
@@ -279,6 +289,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-21 | **Implementação local (API, booking rollout 1 + 2):** schema/fixtures/compatibilidade, disponibilidade diária pública com preços, capacidade e estados completos; isolamento tenant e leitura em lote sem writes. Branding expõe flag por tenant, default off, usando configuração existente. Sem migration; endpoints legados preservados. Git proibido pelo usuário nesta task; sem PR/merge/deploy. [Contrato](docs/contracts/booking/README.md), [diário](docs/sessions/2026-10-21-booking-availability.md). |
 | 2026-10-20 | **Código merged (API):** Taxonomy compartilhada (categorias/tags) + atribuições e filtros Catalog, permissões e cleanup tenant. Migration `AddPlatformTaxonomyAndCatalogAssignments` foi gerada e depois aplicada em DEV/PROD; AssetCategory intacta. Build sem warnings; testes PostgreSQL pendentes de Docker e VSTest bloqueado por socket no sandbox. Spec cross-repo `2026-10-20-platform-taxonomy.md`; prioridade portal/Slot mantida. |
 | 2026-10-20 | **Fix (API, sem commit):** Gerar OS do PMOC aceita nova OS no mesmo período quando a anterior está Concluída ou Cancelada. A checagem de duplicidade e o índice parcial consideram somente Pending/InProgress; migration `ExcludeClosedPmocWorkOrdersFromPeriodUnique` criada, não aplicada. Teste de regressão para ambos os estados; execução bloqueada porque `dotnet` não está instalado no ambiente. |
 | 2026-10-20 | **Código merged (API):** CatalogPolicy por tenant; default anterior preservado (pedidos só Requested; solicitações não cancelam), limites de status e texto opcional, endpoints admin/público e cancelamento de solicitação. Migration AddCatalogPolicy gerada e não aplicada. Build e 76 casos focados em processo passaram; suíte VSTest bloqueada por socket. |

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Platform.Api.Modules.Rentals;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Controllers;
 using Platform.Api.Notifications;
@@ -90,7 +92,8 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
         TimeProvider timeProvider,
         IHttpContextAccessor? httpContextAccessor = null,
         OtpHmacEvaluationCounter? hmacEvaluations = null,
-        IPasswordResetEmailQueue? passwordResetEmails = null)
+        IPasswordResetEmailQueue? passwordResetEmails = null,
+        IOptions<BookingUiOptions>? bookingUiOptions = null)
     {
         var codes = new CustomerVerificationCodeService(
             db,
@@ -109,7 +112,8 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
             email,
             passwordResetEmails ?? new InlinePasswordResetEmailQueue(email),
             NullLogger<CustomerAuthService>.Instance,
-            httpContextAccessor);
+            httpContextAccessor,
+            bookingUiOptions);
     }
 
     public static IConfiguration CreateConfig() =>

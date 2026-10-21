@@ -106,7 +106,8 @@ public sealed record TenantBrandingResponseDto(
     string? LogoSvg,
     string? PrimaryColor,
     string? AccentColor,
-    string? WelcomeTagline);
+    string? WelcomeTagline,
+    bool NewBookingUiEnabled = false);
 
 public sealed record CustomerProfileDto(
     Guid Id,
