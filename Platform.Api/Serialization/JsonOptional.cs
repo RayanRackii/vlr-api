@@ -58,3 +58,18 @@ public sealed class JsonOptionalInt32Converter : JsonConverter<JsonOptional<int>
         writer.WriteNumberValue(number);
     }
 }
+
+/// <summary>Distinguishes an omitted visual revision from an explicit null assignment.</summary>
+public sealed class JsonOptionalGuidConverter : JsonConverter<JsonOptional<Guid>>
+{
+    public override bool HandleNull => true;
+
+    public override JsonOptional<Guid> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        JsonOptional<Guid>.Specified(reader.TokenType == JsonTokenType.Null ? null : reader.GetGuid());
+
+    public override void Write(Utf8JsonWriter writer, JsonOptional<Guid> value, JsonSerializerOptions options)
+    {
+        if (value.Value is { } id) writer.WriteStringValue(id);
+        else writer.WriteNullValue();
+    }
+}

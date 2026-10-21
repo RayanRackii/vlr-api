@@ -22,7 +22,7 @@ public sealed class RentalAssetService(
             .AsNoTracking()
             .Include(r => r.Asset)
                 .ThenInclude(a => a.Category)
-            .Where(r => r.IsActive && r.Asset.IsRentable && r.Asset.Status != Platform.Core.Domain.Enums.AssetStatus.Inactive)
+            .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.IsActive && r.Asset.IsRentable && r.Asset.Status != Platform.Core.Domain.Enums.AssetStatus.Inactive)
             .OrderBy(r => r.Asset.Name)
             .ToListAsync(cancellationToken);
 
@@ -42,7 +42,7 @@ public sealed class RentalAssetService(
             .Include(r => r.Asset)
                 .ThenInclude(a => a.Category)
             .FirstOrDefaultAsync(
-                r => r.AssetId == assetId && r.IsActive && r.Asset.IsRentable,
+                r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.AssetId == assetId && r.IsActive && r.Asset.IsRentable,
                 cancellationToken);
 
         return config is null ? null : ToResponse(config, tenantHorizon);
@@ -234,8 +234,8 @@ public sealed class RentalAssetService(
 
     private Guid EnsureTenantContext()
     {
-        return tenantProvider.TenantId
-            ?? throw new UnauthorizedAccessException("Tenant context is required.");
+        return tenantProvider.TenantId is { } id && id != Guid.Empty
+            ? id : throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
     private static RentalAssetResponse ToResponse(RentalAsset rental, int? tenantHorizon) =>
@@ -260,5 +260,7 @@ public sealed class RentalAssetService(
             rental.CreatedAt,
             rental.UpdatedAt,
             rental.MaxAdvanceBookingDays,
-            BookingHorizon.Effective(rental.MaxAdvanceBookingDays, tenantHorizon));
+            BookingHorizon.Effective(rental.MaxAdvanceBookingDays, tenantHorizon),
+            rental.VisualTemplateRevisionId,
+            rental.CapacityPeople);
 }

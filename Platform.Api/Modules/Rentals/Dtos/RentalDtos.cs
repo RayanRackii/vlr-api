@@ -24,7 +24,9 @@ public sealed record RentalAssetResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     int? MaxAdvanceBookingDays,
-    int? EffectiveMaxAdvanceBookingDays);
+    int? EffectiveMaxAdvanceBookingDays,
+    Guid? VisualTemplateRevisionId = null,
+    int? CapacityPeople = null);
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {

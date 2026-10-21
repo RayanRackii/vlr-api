@@ -247,6 +247,78 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("asset_families", "assets");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.BookingMapSettings", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("AvailableColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("available_color");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("DefaultLayoutId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("default_layout_id");
+
+                    b.Property<string>("DefaultView")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("default_view");
+
+                    b.Property<string>("SelectedColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("selected_color");
+
+                    b.Property<bool>("ShowPriceOnBlock")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_price_on_block");
+
+                    b.Property<string>("TakenColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("taken_color");
+
+                    b.Property<string>("TimeFilterMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("time_filter_mode");
+
+                    b.Property<string>("UnavailableColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("unavailable_color");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("TenantId")
+                        .HasName("pk_booking_map_settings");
+
+                    b.HasIndex("TenantId", "DefaultLayoutId")
+                        .HasDatabaseName("ix_booking_map_settings_tenant_id_default_layout_id");
+
+                    b.ToTable("booking_map_settings", "rentals");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.BookingPolicy", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1138,6 +1210,86 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.LayoutDecoration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("GeometryJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("geometry_json");
+
+                    b.Property<double>("HeightPercent")
+                        .HasColumnType("double precision")
+                        .HasColumnName("height_percent");
+
+                    b.Property<string>("IconKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("icon_key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("label");
+
+                    b.Property<Guid>("LayoutId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("layout_id");
+
+                    b.Property<short>("Rotation")
+                        .HasColumnType("smallint")
+                        .HasColumnName("rotation");
+
+                    b.Property<string>("StyleJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("style_json");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<double>("WidthPercent")
+                        .HasColumnType("double precision")
+                        .HasColumnName("width_percent");
+
+                    b.Property<double>("XPercent")
+                        .HasColumnType("double precision")
+                        .HasColumnName("x_percent");
+
+                    b.Property<double>("YPercent")
+                        .HasColumnType("double precision")
+                        .HasColumnName("y_percent");
+
+                    b.Property<int>("ZIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("z_index");
+
+                    b.HasKey("Id")
+                        .HasName("pk_layout_decorations");
+
+                    b.HasIndex("TenantId", "LayoutId", "ZIndex")
+                        .HasDatabaseName("ix_layout_decorations_tenant_id_layout_id_z_index");
+
+                    b.ToTable("layout_decorations", "rentals");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.MaintenancePlan", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1902,6 +2054,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("asset_id");
 
+                    b.Property<int?>("CapacityPeople")
+                        .HasColumnType("integer")
+                        .HasColumnName("capacity_people");
+
                     b.Property<TimeOnly?>("CloseTime")
                         .HasColumnType("time without time zone")
                         .HasColumnName("close_time");
@@ -1966,12 +2122,22 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<Guid?>("VisualTemplateRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visual_template_revision_id");
+
                     b.HasKey("Id")
                         .HasName("pk_rental_assets");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_rental_assets_tenant_id_id");
 
                     b.HasIndex("AssetId")
                         .IsUnique()
                         .HasDatabaseName("ix_rental_assets_asset_id");
+
+                    b.HasIndex("VisualTemplateRevisionId")
+                        .HasDatabaseName("ix_rental_assets_visual_template_revision_id");
 
                     b.HasIndex("TenantId", "IsActive")
                         .HasDatabaseName("ix_rental_assets_tenant_id_is_active");
@@ -1979,6 +2145,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("rental_assets", "rentals", t =>
                         {
                             t.HasCheckConstraint("ck_rental_assets_advance_days", "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+
+                            t.HasCheckConstraint("ck_rental_assets_capacity_people", "capacity_people IS NULL OR (capacity_people > 0 AND capacity_people <= 100000)");
                         });
                 });
 
@@ -2010,6 +2178,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
 
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sort_order");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
@@ -2022,6 +2196,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("version");
+
                     b.Property<double>("WidthPercent")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("double precision")
@@ -2031,11 +2212,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_layouts");
 
-                    b.HasIndex("UnitId")
-                        .HasDatabaseName("ix_layouts_unit_id");
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_rental_layouts_tenant_id_id");
 
-                    b.HasIndex("TenantId", "IsActive")
-                        .HasDatabaseName("ix_layouts_tenant_id_is_active");
+                    b.HasIndex("TenantId", "UnitId")
+                        .HasDatabaseName("ix_layouts_tenant_id_unit_id");
+
+                    b.HasIndex("TenantId", "IsActive", "SortOrder")
+                        .HasDatabaseName("ix_layouts_tenant_id_is_active_sort_order");
 
                     b.ToTable("layouts", "rentals");
                 });
@@ -2058,9 +2242,21 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("layout_id");
 
+                    b.Property<bool>("LockAspectRatio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("lock_aspect_ratio");
+
                     b.Property<Guid>("RentalAssetId")
                         .HasColumnType("uuid")
                         .HasColumnName("rental_asset_id");
+
+                    b.Property<short>("Rotation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("rotation");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
@@ -2089,12 +2285,15 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_layout_items");
 
-                    b.HasIndex("RentalAssetId")
-                        .HasDatabaseName("ix_layout_items_rental_asset_id");
-
                     b.HasIndex("LayoutId", "RentalAssetId")
                         .IsUnique()
                         .HasDatabaseName("ix_layout_items_layout_id_rental_asset_id");
+
+                    b.HasIndex("TenantId", "LayoutId")
+                        .HasDatabaseName("ix_layout_items_tenant_id_layout_id");
+
+                    b.HasIndex("TenantId", "RentalAssetId")
+                        .HasDatabaseName("ix_layout_items_tenant_id_rental_asset_id");
 
                     b.ToTable("layout_items", "rentals");
                 });
@@ -2413,6 +2612,241 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_reservation_queue_tickets_queue_session_id_sequence");
 
                     b.ToTable("reservation_queue_tickets", "rentals");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Facet")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("facet");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<Dictionary<string, string>>("NameI18n")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("name_i18n");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("slug");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_resource_visual_tags");
+
+                    b.HasAlternateKey("Id", "Kind")
+                        .HasName("ak_resource_visual_tags_id_kind");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_visual_tags_slug");
+
+                    b.ToTable("resource_visual_tags", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Dictionary<string, string>>("DescriptionI18n")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("description_i18n");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<Dictionary<string, string>>("NameI18n")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("name_i18n");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("slug");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_resource_visual_templates");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_visual_templates_slug");
+
+                    b.ToTable("resource_visual_templates", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTemplateRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ArtSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("art_sha256");
+
+                    b.Property<decimal>("AspectRatio")
+                        .HasPrecision(12, 6)
+                        .HasColumnType("numeric(12,6)")
+                        .HasColumnName("aspect_ratio");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DefaultColor")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("default_color");
+
+                    b.Property<string>("DefaultIcon")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("default_icon");
+
+                    b.Property<string>("FloorSvg")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("floor_svg");
+
+                    b.Property<string>("LinesSvg")
+                        .HasColumnType("text")
+                        .HasColumnName("lines_svg");
+
+                    b.Property<string>("NetSvg")
+                        .HasColumnType("text")
+                        .HasColumnName("net_svg");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at");
+
+                    b.Property<int>("RevisionNo")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision_no");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<int?>("SuggestedCapacityPeople")
+                        .HasColumnType("integer")
+                        .HasColumnName("suggested_capacity_people");
+
+                    b.Property<int?>("SuggestedSlotMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("suggested_slot_minutes");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.Property<string>("ViewBox")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("view_box");
+
+                    b.HasKey("Id")
+                        .HasName("pk_resource_visual_template_revisions");
+
+                    b.HasIndex("TemplateId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_visual_template_revisions_template_id")
+                        .HasFilter("status = 'Draft'");
+
+                    b.HasIndex("TemplateId", "RevisionNo")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_visual_template_revisions_template_id_revision_no");
+
+                    b.HasIndex("TemplateId", "Status", "RevisionNo")
+                        .HasDatabaseName("ix_resource_visual_template_revisions_template_id_status_revis");
+
+                    b.ToTable("resource_visual_template_revisions", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTemplateTag", b =>
+                {
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.Property<Guid>("TagId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tag_id");
+
+                    b.HasKey("TemplateId", "TagId")
+                        .HasName("pk_resource_visual_template_tags");
+
+                    b.HasIndex("TagId", "TemplateId")
+                        .HasDatabaseName("ix_resource_visual_template_tags_tag_id_template_id");
+
+                    b.ToTable("resource_visual_template_tags", "core");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
@@ -3096,6 +3530,37 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("tenant_registration_fields", "core");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantResourceSegment", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("TagId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tag_id");
+
+                    b.Property<string>("TagKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("tag_kind");
+
+                    b.HasKey("TenantId", "TagId")
+                        .HasName("pk_tenant_resource_segments");
+
+                    b.HasIndex("TagId", "TagKind")
+                        .HasDatabaseName("ix_tenant_resource_segments_tag_id_tag_kind");
+
+                    b.HasIndex("TagId", "TenantId")
+                        .HasDatabaseName("ix_tenant_resource_segments_tag_id_tenant_id");
+
+                    b.ToTable("tenant_resource_segments", "core", t =>
+                        {
+                            t.HasCheckConstraint("ck_tenant_resource_segments_segment", "tag_kind = 'Segment'");
+                        });
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.TrialSignupClaim", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3177,6 +3642,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_units");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_units_tenant_id_id");
 
                     b.HasIndex("TenantId", "Code")
                         .IsUnique()
@@ -3617,6 +4085,23 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Unit");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.BookingMapSettings", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_booking_map_settings_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.RentalLayout", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "DefaultLayoutId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_booking_map_settings_rental_layouts_tenant_id_default_layou");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
@@ -3748,6 +4233,24 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("GlobalMaintenanceTemplate");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.LayoutDecoration", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_decorations_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.RentalLayout", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "LayoutId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_decorations_rental_layouts_tenant_id_layout_id");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.MaintenancePlan", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.AssetCategory", "AssetCategory")
@@ -3856,35 +4359,65 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_rental_assets_assets_asset_id");
 
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_rental_assets_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.ResourceVisualTemplateRevision", null)
+                        .WithMany()
+                        .HasForeignKey("VisualTemplateRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_rental_assets_resource_visual_template_revisions_visual_tem");
+
                     b.Navigation("Asset");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.RentalLayout", b =>
                 {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_layouts_tenants_tenant_id");
+
                     b.HasOne("Platform.Core.Domain.Entities.Unit", "Unit")
                         .WithMany()
-                        .HasForeignKey("UnitId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_layouts_units_unit_id");
+                        .HasForeignKey("TenantId", "UnitId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_layouts_units_tenant_id_unit_id");
 
                     b.Navigation("Unit");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.RentalLayoutItem", b =>
                 {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_items_tenants_tenant_id");
+
                     b.HasOne("Platform.Core.Domain.Entities.RentalLayout", "Layout")
                         .WithMany("Items")
-                        .HasForeignKey("LayoutId")
+                        .HasForeignKey("TenantId", "LayoutId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_layout_items_layouts_layout_id");
+                        .HasConstraintName("fk_layout_items_layouts_tenant_id_layout_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.RentalAsset", "RentalAsset")
                         .WithMany()
-                        .HasForeignKey("RentalAssetId")
+                        .HasForeignKey("TenantId", "RentalAssetId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_layout_items_rental_assets_rental_asset_id");
+                        .HasConstraintName("fk_layout_items_rental_assets_tenant_id_rental_asset_id");
 
                     b.Navigation("Layout");
 
@@ -3984,6 +4517,33 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("QueueSession");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTemplateRevision", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.ResourceVisualTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_visual_template_revisions_resource_visual_template");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTemplateTag", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.ResourceVisualTag", null)
+                        .WithMany()
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_visual_template_tags_resource_visual_tags_tag_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.ResourceVisualTemplate", null)
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_visual_template_tags_resource_visual_templates_tem");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Role", b =>
@@ -4167,6 +4727,24 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_tenant_registration_fields_tenants_tenant_id");
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantResourceSegment", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tenant_resource_segments_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.ResourceVisualTag", null)
+                        .WithMany()
+                        .HasForeignKey("TagId", "TagKind")
+                        .HasPrincipalKey("Id", "Kind")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tenant_resource_segments_resource_visual_tags_tag_id_tag_ki");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Unit", b =>

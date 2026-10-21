@@ -19,6 +19,12 @@ public class AppDbContext : DbContext
     // --- Schema: core ---
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
+    public DbSet<ResourceVisualTemplate> ResourceVisualTemplates => Set<ResourceVisualTemplate>();
+    public DbSet<ResourceVisualTemplateRevision> ResourceVisualTemplateRevisions => Set<ResourceVisualTemplateRevision>();
+    public DbSet<ResourceVisualTag> ResourceVisualTags => Set<ResourceVisualTag>();
+    public DbSet<ResourceVisualTemplateTag> ResourceVisualTemplateTags => Set<ResourceVisualTemplateTag>();
+    public DbSet<TenantResourceSegment> TenantResourceSegments => Set<TenantResourceSegment>();
+
     public DbSet<TenantModule> TenantModules => Set<TenantModule>();
 
     public DbSet<User> Users => Set<User>();
@@ -112,6 +118,8 @@ public class AppDbContext : DbContext
     public DbSet<BookingPolicy> BookingPolicies => Set<BookingPolicy>();
 
     public DbSet<RentalLayoutItem> RentalLayoutItems => Set<RentalLayoutItem>();
+    public DbSet<BookingMapSettings> BookingMapSettings => Set<BookingMapSettings>();
+    public DbSet<LayoutDecoration> LayoutDecorations => Set<LayoutDecoration>();
 
     public DbSet<TaxonomyCategory> TaxonomyCategories => Set<TaxonomyCategory>();
     public DbSet<TaxonomyTag> TaxonomyTags => Set<TaxonomyTag>();
@@ -140,6 +148,18 @@ public class AppDbContext : DbContext
     public DbSet<ProductRequestFile> ProductRequestFiles => Set<ProductRequestFile>();
 
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ResourceVisualRevisionImmutability.Ensure(ChangeTracker);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        ResourceVisualRevisionImmutability.Ensure(ChangeTracker);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

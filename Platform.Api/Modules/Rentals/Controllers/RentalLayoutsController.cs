@@ -42,10 +42,14 @@ public sealed class RentalLayoutsController(
         try
         {
             await publicTenantBinder.BindFromSubdomainAsync(subdomain, cancellationToken);
-            var layouts = (await rentalLayoutService.ListAsync(cancellationToken))
+            var layouts = (await rentalLayoutService.ListLegacyPublicAsync(cancellationToken))
                 .Where(l => l.IsActive)
                 .ToList();
             return Ok(layouts);
+        }
+        catch (BookingMapException ex)
+        {
+            return StatusCode(ex.StatusCode, new { code = ex.Code, error = ex.Message });
         }
         catch (KeyNotFoundException ex)
         {
@@ -64,6 +68,10 @@ public sealed class RentalLayoutsController(
             var created = await rentalLayoutService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
         }
+        catch (BookingMapException ex)
+        {
+            return StatusCode(ex.StatusCode, new { code = ex.Code, error = ex.Message });
+        }
         catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException)
         {
             return BadRequest(new { error = ex.Message });
@@ -80,6 +88,10 @@ public sealed class RentalLayoutsController(
         try
         {
             return Ok(await rentalLayoutService.UpdateAsync(id, request, cancellationToken));
+        }
+        catch (BookingMapException ex)
+        {
+            return StatusCode(ex.StatusCode, new { code = ex.Code, error = ex.Message });
         }
         catch (KeyNotFoundException ex)
         {
@@ -99,6 +111,10 @@ public sealed class RentalLayoutsController(
         {
             await rentalLayoutService.DeleteAsync(id, cancellationToken);
             return NoContent();
+        }
+        catch (BookingMapException ex)
+        {
+            return StatusCode(ex.StatusCode, new { code = ex.Code, error = ex.Message });
         }
         catch (KeyNotFoundException ex)
         {

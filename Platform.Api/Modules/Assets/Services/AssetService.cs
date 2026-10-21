@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Services.Trial;
+using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Modules.ResourceVisuals;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -10,18 +13,20 @@ namespace Platform.Api.Modules.Assets.Services;
 public sealed class AssetService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard) : IAssetService
+    ITrialGuard trialGuard,
+    ILogger<AssetService>? logger = null) : IAssetService
 {
     private const int MaxBulkCreateCount = 1000;
 
     public async Task<IReadOnlyList<AssetResponse>> ListAsync(
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var assets = await dbContext.Assets
             .AsNoTracking()
             .Include(a => a.RentalConfiguration)
+            .Where(a => a.TenantId == tenantId)
             .OrderBy(a => a.Tag)
             .ToListAsync(cancellationToken);
 
@@ -32,12 +37,12 @@ public sealed class AssetService(
         Guid id,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var asset = await dbContext.Assets
             .AsNoTracking()
             .Include(a => a.RentalConfiguration)
-            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId, cancellationToken);
 
         return asset is null ? null : ToResponse(asset);
     }
@@ -48,6 +53,12 @@ public sealed class AssetService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureCanCreateAssetsAsync(1, cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
+        var visual = await ValidateVisualAssignmentAsync(request.IsRentable,
+            JsonOptional<Guid>.Specified(request.VisualTemplateRevisionId), null, cancellationToken);
+        ValidateCapacity(request.CapacityPeople);
+        BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
@@ -89,8 +100,13 @@ public sealed class AssetService(
             request.RequiresDeposit,
             request.QueueEnabled,
             request.QueueOpeningTime);
+        ApplyVisualConfiguration(asset, JsonOptional<Guid>.Specified(request.VisualTemplateRevisionId),
+            request.CapacityPeople is null ? default : JsonOptional<int>.Specified(request.CapacityPeople), request.ConfirmVisualSuggestions,
+            JsonOptional<int>.Specified(request.MaxAdvanceBookingDays), visual);
 
         await SaveChangesProtectingTagAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        AuditVisualAssignment(asset);
 
         return ToResponse(asset);
     }
@@ -102,17 +118,33 @@ public sealed class AssetService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
+        await using var transaction = dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
+        await BookingMapLocks.AcquireAsync(dbContext, tenantId, cancellationToken);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
 
         var asset = await dbContext.Assets
             .Include(a => a.RentalConfiguration)
-            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId, cancellationToken);
 
         if (asset is null)
         {
             return null;
+        }
+
+        var visual = await ValidateVisualAssignmentAsync(request.IsRentable,
+            request.VisualTemplateRevisionId, asset.RentalConfiguration?.VisualTemplateRevisionId, cancellationToken);
+        if (request.CapacityPeople.IsSpecified) ValidateCapacity(request.CapacityPeople.Value);
+        if (request.MaxAdvanceBookingDays.IsSpecified) BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
+        if (asset.UnitId != request.UnitId && asset.RentalConfiguration is { } configuration)
+        {
+            var conflicts = await dbContext.RentalLayoutItems.AsNoTracking().AnyAsync(item =>
+                item.TenantId == tenantId && item.RentalAssetId == configuration.Id
+                && item.Layout.TenantId == tenantId && item.Layout.UnitId != null
+                && item.Layout.UnitId != request.UnitId, cancellationToken);
+            if (conflicts) throw new ResourceVisualException("MAP_INVALID", "The resource belongs to a map scoped to its current unit.");
         }
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
@@ -149,20 +181,24 @@ public sealed class AssetService(
             request.RequiresDeposit,
             request.QueueEnabled,
             request.QueueOpeningTime);
+        ApplyVisualConfiguration(asset, request.VisualTemplateRevisionId, request.CapacityPeople,
+            request.ConfirmVisualSuggestions, request.MaxAdvanceBookingDays, visual);
 
         await SaveChangesProtectingTagAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        AuditVisualAssignment(asset);
 
         return ToResponse(asset);
     }
 
     public async Task<DeleteAssetResult?> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
 
         var asset = await dbContext.Assets
             .Include(a => a.RentalConfiguration)
-            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId, cancellationToken);
 
         if (asset is null)
         {
@@ -180,7 +216,7 @@ public sealed class AssetService(
                 Asset: ToResponse(asset));
         }
 
-        if (await dbContext.WorkOrders.AnyAsync(workOrder => workOrder.AssetId == id, cancellationToken))
+        if (await dbContext.WorkOrders.AnyAsync(workOrder => workOrder.TenantId == tenantId && workOrder.AssetId == id, cancellationToken))
         {
             throw new AssetInUseException();
         }
@@ -194,7 +230,7 @@ public sealed class AssetService(
         {
             dbContext.ChangeTracker.Clear();
             var referencedByWorkOrders = await dbContext.WorkOrders
-                .AnyAsync(workOrder => workOrder.AssetId == id, cancellationToken);
+                .AnyAsync(workOrder => workOrder.TenantId == tenantId && workOrder.AssetId == id, cancellationToken);
             if (referencedByWorkOrders || AssetPersistenceConflicts.IsWorkOrderAssetForeignKey(ex))
             {
                 throw new AssetInUseException();
@@ -237,7 +273,7 @@ public sealed class AssetService(
 
         var existingTags = await dbContext.Assets
             .AsNoTracking()
-            .Where(a => plan.Tags.Contains(a.Tag))
+            .Where(a => a.TenantId == tenantId && plan.Tags.Contains(a.Tag))
             .Select(a => a.Tag)
             .ToListAsync(cancellationToken);
 
@@ -310,6 +346,10 @@ public sealed class AssetService(
                 RequiresDeposit = request.RequiresDeposit,
                 QueueEnabled = request.QueueEnabled,
                 QueueOpeningTime = request.QueueOpeningTime,
+                VisualTemplateRevisionId = request.VisualTemplateRevisionId,
+                CapacityPeople = request.CapacityPeople,
+                ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
+                MaxAdvanceBookingDays = request.MaxAdvanceBookingDays,
             },
             cancellationToken);
     }
@@ -319,11 +359,11 @@ public sealed class AssetService(
         UpdateRentableRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var asset = await dbContext.Assets
             .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId, cancellationToken);
 
         if (asset is null || !asset.IsRentable)
         {
@@ -350,6 +390,10 @@ public sealed class AssetService(
                 RequiresDeposit = request.RequiresDeposit,
                 QueueEnabled = request.QueueEnabled,
                 QueueOpeningTime = request.QueueOpeningTime,
+                VisualTemplateRevisionId = request.VisualTemplateRevisionId,
+                CapacityPeople = request.CapacityPeople,
+                ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
+                MaxAdvanceBookingDays = request.MaxAdvanceBookingDays,
                 Attributes = asset.Attributes,
             },
             cancellationToken);
@@ -357,6 +401,56 @@ public sealed class AssetService(
         return updated
             ?? throw new KeyNotFoundException($"Rentable asset '{id}' was not found.");
     }
+
+    private async Task<ResourceVisualTemplateRevision?> ValidateVisualAssignmentAsync(
+        bool isRentable, JsonOptional<Guid> requested, Guid? existingRevisionId, CancellationToken ct)
+    {
+        var revisionId = requested.IsSpecified ? requested.Value : existingRevisionId;
+        if (!isRentable || revisionId is null) return null;
+        if (revisionId == Guid.Empty)
+            throw new ResourceVisualException("VISUAL_TEMPLATE_INVALID", "A published visual revision is required.");
+        var isNewChoice = requested.IsSpecified && revisionId != existingRevisionId;
+        if (isNewChoice && dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true)
+        {
+            // SHARE conflicts with catalog archival UPDATE, so assignment linearizes while active.
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                SELECT 1 FROM core.resource_visual_templates AS t
+                JOIN core.resource_visual_template_revisions AS r ON r.template_id = t.id
+                WHERE r.id = {revisionId.Value} FOR SHARE OF t
+                """, ct);
+        }
+        var revision = await dbContext.Set<ResourceVisualTemplateRevision>().AsNoTracking()
+            .SingleOrDefaultAsync(r => r.Id == revisionId && r.Status == ResourceVisualRevisionStatus.Published, ct);
+        if (revision is null)
+            throw new ResourceVisualException("VISUAL_TEMPLATE_INVALID", "Visual revision must exist and be published.");
+        if (isNewChoice && !await dbContext.Set<ResourceVisualTemplate>().AsNoTracking()
+            .AnyAsync(t => t.Id == revision.TemplateId && t.IsActive, ct))
+            throw new ResourceVisualException("VISUAL_TEMPLATE_ARCHIVED", "Archived templates cannot be selected.");
+        return revision;
+    }
+
+    private static void ValidateCapacity(int? value)
+    {
+        if (value is <= 0 or > 100000)
+            throw new ResourceVisualException("VISUAL_TEMPLATE_INVALID", "People capacity must be between 1 and 100000.");
+    }
+
+    private static void ApplyVisualConfiguration(Asset asset, JsonOptional<Guid> revision,
+        JsonOptional<int> capacity, bool confirmSuggestions, JsonOptional<int> horizon,
+        ResourceVisualTemplateRevision? selected)
+    {
+        if (!asset.IsRentable || asset.RentalConfiguration is not { } rental) return;
+        if (revision.IsSpecified) rental.VisualTemplateRevisionId = revision.Value;
+        if (capacity.IsSpecified) rental.CapacityPeople = capacity.Value;
+        if (confirmSuggestions && rental.CapacityPeople is null && !capacity.IsSpecified)
+            rental.CapacityPeople = selected?.SuggestedCapacityPeople;
+        if (horizon.IsSpecified) rental.MaxAdvanceBookingDays = horizon.Value;
+        // Duration suggestions are exposed by the picker for explicit schedule configuration.
+    }
+
+    private void AuditVisualAssignment(Asset asset) => logger?.LogInformation(
+        "ResourceVisualAudit Action={Action} TenantId={TenantId} RentalAssetId={RentalAssetId} RevisionId={RevisionId}",
+        "resource.visual.saved", asset.TenantId, asset.RentalConfiguration?.Id, asset.RentalConfiguration?.VisualTemplateRevisionId);
 
     private void SyncRentalConfiguration(
         Asset asset,
@@ -459,7 +553,7 @@ public sealed class AssetService(
         var duplicate = await dbContext.Assets
             .AsNoTracking()
             .AnyAsync(
-                asset => asset.Tag == tag && (excludeAssetId == null || asset.Id != excludeAssetId),
+                asset => asset.TenantId == tenantProvider.TenantId && asset.Tag == tag && (excludeAssetId == null || asset.Id != excludeAssetId),
                 cancellationToken);
 
         if (duplicate)
@@ -485,7 +579,7 @@ public sealed class AssetService(
     {
         var exists = await dbContext.Units
             .AsNoTracking()
-            .AnyAsync(u => u.Id == unitId, cancellationToken);
+            .AnyAsync(u => u.Id == unitId && u.TenantId == tenantProvider.TenantId, cancellationToken);
 
         if (!exists)
         {
@@ -499,7 +593,7 @@ public sealed class AssetService(
     {
         var category = await dbContext.AssetCategories
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == categoryId, cancellationToken);
+            .FirstOrDefaultAsync(c => c.Id == categoryId && c.TenantId == tenantProvider.TenantId, cancellationToken);
 
         if (category is null)
         {
@@ -538,8 +632,8 @@ public sealed class AssetService(
 
     private Guid EnsureTenantContext()
     {
-        return tenantProvider.TenantId
-            ?? throw new UnauthorizedAccessException("Tenant context is required.");
+        return tenantProvider.TenantId is { } id && id != Guid.Empty
+            ? id : throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
     private static BulkCreatePlan ResolveBulkCreatePlan(BulkCreateAssetsRequest request)
@@ -628,7 +722,9 @@ public sealed class AssetService(
                 asset.RentalConfiguration.IsActive,
                 asset.RentalConfiguration.RequiresDeposit,
                 asset.RentalConfiguration.QueueEnabled,
-                asset.RentalConfiguration.QueueOpeningTime);
+                asset.RentalConfiguration.QueueOpeningTime,
+                asset.RentalConfiguration.VisualTemplateRevisionId,
+                asset.RentalConfiguration.CapacityPeople);
         }
 
         return new(

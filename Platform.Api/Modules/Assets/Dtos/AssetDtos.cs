@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Assets.Dtos;
@@ -77,6 +79,15 @@ public sealed record CreateAssetRequest
     /// <summary>Required when <see cref="QueueEnabled"/> is true on a Location.</summary>
     public TimeOnly? QueueOpeningTime { get; init; }
 
+    public int? MaxAdvanceBookingDays { get; init; }
+
+    public Guid? VisualTemplateRevisionId { get; init; }
+
+    public int? CapacityPeople { get; init; }
+
+    /// <summary>Applies suggested capacity only when no capacity has been configured.</summary>
+    public bool ConfirmVisualSuggestions { get; init; }
+
     public Dictionary<string, string?>? Attributes { get; init; }
 }
 
@@ -121,6 +132,20 @@ public sealed record UpdateAssetRequest
     /// <summary>Required when <see cref="QueueEnabled"/> is true on a Location.</summary>
     public TimeOnly? QueueOpeningTime { get; init; }
 
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
+
+    /// <summary>Omitted preserves the fixed revision; explicit null clears it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalGuidConverter))]
+    public JsonOptional<Guid> VisualTemplateRevisionId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CapacityPeople { get; init; }
+
+    public bool ConfirmVisualSuggestions { get; init; }
+
     public Dictionary<string, string?>? Attributes { get; init; }
 }
 
@@ -131,7 +156,9 @@ public sealed record AssetRentalConfigResponse(
     bool IsActive,
     bool RequiresDeposit,
     bool QueueEnabled,
-    TimeOnly? QueueOpeningTime);
+    TimeOnly? QueueOpeningTime,
+    Guid? VisualTemplateRevisionId = null,
+    int? CapacityPeople = null);
 
 public sealed record AssetResponse(
     Guid Id,

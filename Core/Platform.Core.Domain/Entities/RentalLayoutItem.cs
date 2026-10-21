@@ -26,6 +26,10 @@ public class RentalLayoutItem : Entity, ITenantScoped
 
     public required int ZIndex { get; set; }
 
+    public short Rotation { get; set; }
+
+    public bool LockAspectRatio { get; set; } = true;
+
     public RentalLayout Layout { get; set; } = null!;
 
     public RentalAsset RentalAsset { get; set; } = null!;
