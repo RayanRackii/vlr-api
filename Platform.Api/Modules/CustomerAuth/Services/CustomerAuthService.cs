@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
+using Platform.Api.Modules.Rentals;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +29,8 @@ public sealed class CustomerAuthService(
     IEmailProvider emailProvider,
     IPasswordResetEmailQueue passwordResetEmails,
     ILogger<CustomerAuthService> logger,
-    IHttpContextAccessor? httpContextAccessor = null) : ICustomerAuthService
+    IHttpContextAccessor? httpContextAccessor = null,
+    IOptions<BookingUiOptions>? bookingUiOptions = null) : ICustomerAuthService
 {
     private static readonly PasswordHasher<Customer> PasswordHasher = new();
     private const int MinimumPasswordLength = 8;
@@ -433,7 +436,8 @@ public sealed class CustomerAuthService(
             tenant.LogoSvg,
             tenant.PrimaryColor,
             tenant.AccentColor,
-            tenant.WelcomeTagline);
+            tenant.WelcomeTagline,
+            bookingUiOptions?.Value.IsEnabled(tenant.Id) == true);
     }
 
     public async Task<CustomerProfileDto> GetCurrentAsync(

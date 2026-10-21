@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <Content Include="Contracts\current-user-response.openapi.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\contracts\booking\**\*.json" Link="Contracts\booking\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

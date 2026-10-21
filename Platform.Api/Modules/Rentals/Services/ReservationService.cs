@@ -307,7 +307,7 @@ public sealed class ReservationService(
                     request.EndTime,
                     cancellationToken);
 
-                var subTotal = RoundMoney(unitPrice * hours * quantity);
+                var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
                 totalAmount += subTotal;
 
                 var item = new ReservationItem
@@ -852,11 +852,10 @@ public sealed class ReservationService(
     {
         var dayOfWeek = date.DayOfWeek;
 
-        var pricing = await dbContext.RentalPricings
+        var pricing = await BookingOffer.ForDerivedWindow(dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId && p.DayOfWeek == dayOfWeek)
-            .Where(p => p.StartTime <= startTime && p.EndTime >= endTime)
-            .OrderBy(p => p.PricePerHour)
+            .Where(p => p.StartTime <= startTime && p.EndTime >= endTime))
             .FirstOrDefaultAsync(cancellationToken);
 
         if (pricing is null)
