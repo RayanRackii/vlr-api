@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Rentals.Dtos;
@@ -93,6 +94,10 @@ public sealed record CreateReservationRequestDto
     public required TimeOnly EndTime { get; init; }
 
     public required IReadOnlyList<CreateReservationItemRequestDto> Items { get; init; }
+
+    /// <summary>Optional quoted total in BRL; omitted/null keeps legacy booking behavior.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? ExpectedTotalAmount { get; init; }
 }
 
 public sealed record ReservationItemResponseDto(

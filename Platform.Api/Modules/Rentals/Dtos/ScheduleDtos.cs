@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Rentals.Dtos;
@@ -212,6 +213,10 @@ public sealed record BookSlotRequestDto
     public required Guid UnitId { get; init; }
 
     public int Quantity { get; init; } = 1;
+
+    /// <summary>Optional quoted total in BRL; omitted/null keeps legacy booking behavior.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? ExpectedTotalAmount { get; init; }
 }
 
 // --- Layouts ---

@@ -1144,6 +1144,11 @@ public sealed class ScheduleService(
                 cancellationToken);
 
             var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
+            if (request.ExpectedTotalAmount is decimal expected && expected != subTotal)
+            {
+                throw new PriceChangedException(subTotal);
+            }
+
             var whatsApp = string.IsNullOrWhiteSpace(customer.Phone) ? string.Empty : customer.Phone;
 
             var reservation = new Reservation

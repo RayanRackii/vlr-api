@@ -326,6 +326,11 @@ public sealed class ReservationService(
             }
 
             reservation.TotalAmount = RoundMoney(totalAmount);
+            if (request.ExpectedTotalAmount is decimal expected && expected != reservation.TotalAmount)
+            {
+                throw new PriceChangedException(reservation.TotalAmount);
+            }
+
             reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
 
             dbContext.Reservations.Add(reservation);
