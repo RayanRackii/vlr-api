@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-22",
+  "timeZone": "America/Sao_Paulo",
+  "serverNow": "2026-10-21T15:00:00+00:00",
+  "quoteExpiresAt": "2026-10-21T15:01:00+00:00",
+  "currency": "BRL",
+  "resources": [
+    {
+      "rentalAssetId": "00000000-0000-4000-8000-000000000001",
+      "assetId": "00000000-0000-4000-8000-000000000011",
+      "unitId": "00000000-0000-4000-8000-000000000099",
+      "name": "Resource 1",
+      "type": "Good",
+      "totalQuantity": 5,
+      "requiresDeposit": false,
+      "queueEnabled": false,
+      "effectiveMaxAdvanceBookingDays": null,
+      "windows": [
+        {
+          "slotId": null,
+          "startTime": "13:00:00",
+          "endTime": "14:00:00",
+          "isDerived": true,
+          "state": "Available",
+          "reasonCode": null,
+          "availableQuantity": 5,
+          "totalAmount": 20
+        }
+      ]
+    },
+    {
+      "rentalAssetId": "00000000-0000-4000-8000-000000000002",
+      "assetId": "00000000-0000-4000-8000-000000000012",
+      "unitId": "00000000-0000-4000-8000-000000000099",
+      "name": "Resource 2",
+      "type": "Location",
+      "totalQuantity": 1,
+      "requiresDeposit": false,
+      "queueEnabled": true,
+      "effectiveMaxAdvanceBookingDays": 0,
+      "windows": [
+        {
+          "slotId": null,
+          "startTime": "13:00:00",
+          "endTime": "14:00:00",
+          "isDerived": true,
+          "state": "OutsideHorizon",
+          "reasonCode": "booking_horizon_exceeded",
+          "availableQuantity": 1,
+          "totalAmount": 20
+        }
+      ]
+    }
+  ]
+}

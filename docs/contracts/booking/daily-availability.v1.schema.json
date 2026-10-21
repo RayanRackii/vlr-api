@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rolvix.com.br/contracts/booking/daily-availability.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "date",
+    "timeZone",
+    "serverNow",
+    "quoteExpiresAt",
+    "currency",
+    "resources"
+  ],
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "timeZone": {
+      "type": "string",
+      "const": "America/Sao_Paulo"
+    },
+    "serverNow": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "quoteExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "currency": {
+      "type": "string",
+      "const": "BRL"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resource"
+      },
+      "maxItems": 100
+    }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rentalAssetId",
+        "assetId",
+        "unitId",
+        "name",
+        "type",
+        "totalQuantity",
+        "requiresDeposit",
+        "queueEnabled",
+        "effectiveMaxAdvanceBookingDays",
+        "windows"
+      ],
+      "properties": {
+        "rentalAssetId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "assetId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "unitId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Location",
+            "Good"
+          ]
+        },
+        "totalQuantity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requiresDeposit": {
+          "type": "boolean"
+        },
+        "queueEnabled": {
+          "type": "boolean"
+        },
+        "effectiveMaxAdvanceBookingDays": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/window"
+          },
+          "maxItems": 10000
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slotId",
+        "startTime",
+        "endTime",
+        "isDerived",
+        "state",
+        "reasonCode",
+        "availableQuantity",
+        "totalAmount"
+      ],
+      "properties": {
+        "slotId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "startTime": {
+          "type": "string",
+          "pattern": "^\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?$"
+        },
+        "endTime": {
+          "type": "string",
+          "pattern": "^\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,7})?$"
+        },
+        "isDerived": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "Available",
+            "Taken",
+            "Blocked",
+            "Past",
+            "OutsideHorizon",
+            "Unpriced"
+          ]
+        },
+        "reasonCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            null,
+            "START_IN_THE_PAST",
+            "booking_horizon_exceeded",
+            "SCHEDULE_BLOCKED",
+            "INSUFFICIENT_CAPACITY",
+            "PRICE_UNAVAILABLE"
+          ]
+        },
+        "availableQuantity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalAmount": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

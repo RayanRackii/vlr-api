@@ -1,0 +1,31 @@
+{
+  "createReservation": {
+    "unitId": "00000000-0000-4000-8000-000000000099",
+    "date": "2026-10-21",
+    "startTime": "13:00:00",
+    "endTime": "14:00:00",
+    "items": [
+      {
+        "assetId": "00000000-0000-4000-8000-000000000011",
+        "quantity": 2
+      }
+    ]
+  },
+  "bookSlot": {
+    "slotId": "00000000-0000-4000-8000-000000000080",
+    "unitId": "00000000-0000-4000-8000-000000000099",
+    "quantity": 1
+  },
+  "legacyDay": {
+    "date": "2026-10-21",
+    "slots": []
+  },
+  "branding": {
+    "subdomain": "example",
+    "displayName": "Example",
+    "logoSvg": null,
+    "primaryColor": null,
+    "accentColor": null,
+    "welcomeTagline": null
+  }
+}

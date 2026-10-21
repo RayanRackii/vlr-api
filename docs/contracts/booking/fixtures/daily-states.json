@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-21",
+  "timeZone": "America/Sao_Paulo",
+  "serverNow": "2026-10-21T15:00:00+00:00",
+  "quoteExpiresAt": "2026-10-21T15:01:00+00:00",
+  "currency": "BRL",
+  "resources": [
+    {
+      "rentalAssetId": "00000000-0000-4000-8000-000000000001",
+      "assetId": "00000000-0000-4000-8000-000000000011",
+      "unitId": "00000000-0000-4000-8000-000000000099",
+      "name": "Resource 1",
+      "type": "Good",
+      "totalQuantity": 5,
+      "requiresDeposit": false,
+      "queueEnabled": false,
+      "effectiveMaxAdvanceBookingDays": null,
+      "windows": [
+        {
+          "slotId": null,
+          "startTime": "10:00:00",
+          "endTime": "11:00:00",
+          "isDerived": true,
+          "state": "Past",
+          "reasonCode": "START_IN_THE_PAST",
+          "availableQuantity": 5,
+          "totalAmount": 20
+        },
+        {
+          "slotId": null,
+          "startTime": "13:00:00",
+          "endTime": "14:00:00",
+          "isDerived": true,
+          "state": "Available",
+          "reasonCode": null,
+          "availableQuantity": 5,
+          "totalAmount": 0
+        },
+        {
+          "slotId": null,
+          "startTime": "14:00:00",
+          "endTime": "15:00:00",
+          "isDerived": true,
+          "state": "Taken",
+          "reasonCode": "INSUFFICIENT_CAPACITY",
+          "availableQuantity": 0,
+          "totalAmount": 20
+        },
+        {
+          "slotId": "00000000-0000-4000-8000-000000000080",
+          "startTime": "15:00:00",
+          "endTime": "16:00:00",
+          "isDerived": false,
+          "state": "Blocked",
+          "reasonCode": "SCHEDULE_BLOCKED",
+          "availableQuantity": 0,
+          "totalAmount": 20
+        },
+        {
+          "slotId": null,
+          "startTime": "16:00:00",
+          "endTime": "17:00:00",
+          "isDerived": true,
+          "state": "Unpriced",
+          "reasonCode": "PRICE_UNAVAILABLE",
+          "availableQuantity": 5,
+          "totalAmount": null
+        }
+      ]
+    }
+  ]
+}

@@ -65,6 +65,7 @@ public sealed class PermissionTenantConventionTests
         Endpoint<ReservationsController>(nameof(ReservationsController.CheckAvailability)),
         Endpoint<ReservationsController>(nameof(ReservationsController.ListPublicAssets)),
         Endpoint<ScheduleController>(nameof(ScheduleController.GetDayPublic)),
+        Endpoint<DailyAvailabilityController>(nameof(DailyAvailabilityController.GetDay)),
         Endpoint<RentalLayoutsController>(nameof(RentalLayoutsController.ListPublic)),
         Endpoint<BookingPolicyController>(nameof(BookingPolicyController.GetPublic)),
         Endpoint<ModuleMenuItemsController>(nameof(ModuleMenuItemsController.GetPublicMenu)),
