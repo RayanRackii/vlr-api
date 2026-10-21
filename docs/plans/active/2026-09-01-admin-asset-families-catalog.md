@@ -48,4 +48,4 @@ Merge order: **API first**.
 ## Do not
 
 - Weaken tenant isolation or succeed all `RequirePermission` for PlatformAdmin without tenant.
-- Touch Twilio, WhatsApp, Railway, `main`, migrations, PROD.
+- Touch Twilio, WhatsApp, Railway (legado), `main`, migrations, PROD.

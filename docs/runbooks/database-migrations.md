@@ -1,5 +1,7 @@
 # Runbook — Remote EF migrations
 
+Hosting: API on Fly.io (`rolvix-api-prod`), web on Vercel, database/auth on Supabase. Railway-specific deployment references are obsolete; database migration targets remain the Supabase DEV/PROD projects via this workflow.
+
 Manual, fail-closed path to inspect and apply EF Core migrations for `vlr-api`. The API process does **not** migrate on startup. This machine / `railway run` is not the apply path.
 
 ## Identity (public project refs)
@@ -11,9 +13,9 @@ Manual, fail-closed path to inspect and apply EF Core migrations for `vlr-api`. 
 
 The inspector parses `ConnectionStrings__DefaultConnection` (Username `postgres.<ref>` or Host `db.<ref>.supabase.co`) and **exits 1** with `DATABASE_TARGET_MISMATCH` if the detected ref does not match the target. It never prints the connection string, password, or tokens.
 
-Railway environment names are independent of `ASPNETCORE_ENVIRONMENT`. This workflow does **not** use `IHostEnvironment.IsDevelopment()`.
+Railway (legado) environment names are independent of `ASPNETCORE_ENVIRONMENT`. This workflow does **not** use `IHostEnvironment.IsDevelopment()`.
 
-Follow-up (not this workflow): `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway `development` currently runs with `ASPNETCORE_ENVIRONMENT=Production`. Changing that can affect notifications and other host gates, not only RBAC diagnostics.
+Follow-up (not this workflow): `REVIEW_DEV_HOSTING_ENVIRONMENT` — Railway (legado) `development` currently runs with `ASPNETCORE_ENVIRONMENT=Production`. Changing that can affect notifications and other host gates, not only RBAC diagnostics.
 
 ## One-time GitHub setup
 
@@ -22,7 +24,7 @@ Create **GitHub Environments** named exactly:
 - `development`
 - `production`
 
-Do **not** reuse the Railway-plugin environments (`marvelous-reverence / development`). Those are deploy status labels, not this workflow’s secret scope.
+Do **not** reuse the Railway (legado)-plugin environments (`marvelous-reverence / development`). Those are deploy status labels, not this workflow’s secret scope.
 
 On each environment:
 

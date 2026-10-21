@@ -79,7 +79,7 @@ Phase 2 calendar Coverage is historical only. See `docs/plans/active/2026-09-19-
 Not active PMOC work. Do not treat the product as incomplete because of them.
 
 - Platform: `OperationCanceledException` may be logged as 500 while the proxy reports client 499
-- Release process: define a supported Railway traffic block before the next breaking schema cutover. Phase 3 could not set replicas to 0; clearing the region started the Phase 3 deploy and removed the Phase 2 process before the migration finished (~3 minutes). No product defect. See `docs/sessions/2026-09-24-pmoc-os-closeout.md`
+- Release process: define a supported Railway (legado) traffic block before the next breaking schema cutover. Phase 3 could not set replicas to 0; clearing the region started the Phase 3 deploy and removed the Phase 2 process before the migration finished (~3 minutes). No product defect. See `docs/sessions/2026-09-24-pmoc-os-closeout.md`
 - WEB backlog: inactive-plan Gerar OS UX, Novo Plano permission visibility, explicit checklist reorder, expected 409 console noise
 - Tests: WEB Vitest worker-memory history
 - DEV cleanup pending: isolated database `pmoc_phase3_concurrency` (do not drop the shared DEV database)

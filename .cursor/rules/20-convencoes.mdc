@@ -24,5 +24,5 @@ Atue como desenvolvedor .NET 10 sênior. C# moderno: records, pattern matching, 
 
 ## Configuração
 
-- Segredos só via `appsettings.Development.json` (fora do git) ou variáveis de ambiente no Railway (`ConnectionStrings__DefaultConnection`, `Supabase__Url`, `Supabase__JwtSecret`, `Supabase__ServiceRoleKey`, etc.).
+- Segredos só via `appsettings.Development.json` (fora do git) ou variáveis de ambiente na Fly.io (`ConnectionStrings__DefaultConnection`, `Supabase__Url`, `Supabase__JwtSecret`, `Supabase__ServiceRoleKey`, etc.).
 - Nunca comite chaves reais em `appsettings.json`.

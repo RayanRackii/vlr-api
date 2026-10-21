@@ -13,7 +13,7 @@ Customer login issues HS256 JWT (`iss=platform.b2c`, `aud=platform.customer`). A
 - Bind policy `"Customer"` to `CustomerJwt` only (`AddAuthenticationSchemes` + RequireAuthenticatedUser + RequireRole Customer). Do not accept B2B scheme on that policy.
 - All `[Authorize(Policy = "Customer")]` endpoints inherit the scheme via the policy. Anonymous B2C stays anonymous.
 - Tenant isolation unchanged: `tenant_id` / `customer_id` from authenticated Customer JWT.
-- No WEB, no interceptor change, no migration, no Railway/Supabase/Twilio/WhatsApp/main/PROD.
+- No WEB, no interceptor change, no migration, no Railway (legado)/Supabase/Twilio/WhatsApp/main/PROD.
 
 ## Repositories
 
