@@ -50,6 +50,6 @@ Cadastrar `Tenant.Subdomain` **não** entrega a página personalizada sozinha �
 
 ## Ecossistema
 
-- **Este repo (`vlr-api`):** API .NET 10, deploy via Docker no **Railway**.
+- **Este repo (`vlr-api`):** API .NET 10, deploy via Docker na **Fly.io** (app `rolvix-api-prod`).
 - **Banco e Auth:** **Supabase** (Postgres + Supabase Auth para Users B2B).
 - **Frontend (`vlr-web`):** repo Git **separado**, React + Vite, deploy na **Vercel**. Consome esta API via JWT Bearer.

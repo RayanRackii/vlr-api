@@ -52,7 +52,7 @@ Replace the local-RNG OTP + `core.otp_codes` + `NotificationQueue` SMS path for 
 8. **RequestOtp Name-overwrite fix**: `Name` is only set when creating a new Customer.
 9. **`Customer.PhoneVerifiedAt` semantics preserved** — on `approved`, call `MarkPhoneVerified(DateTimeOffset.UtcNow)`.
 10. **Brazilian phones via `BrazilianDocumentValidator.NormalizePhoneBr`** (already returns `+55…`).
-11. **No PROD.** Stop before PROD promotion. DEV smoke only against Railway DEV credentials.
+11. **No PROD.** Stop before PROD promotion. DEV smoke only against Railway (legado) DEV credentials.
 
 ## Invariants that must not break
 
@@ -75,7 +75,7 @@ Replace the local-RNG OTP + `core.otp_codes` + `NotificationQueue` SMS path for 
   - body (form-encoded): `To=+5511999991111&Code=123456`
   - JSON `status`; wrong/expired code typically 404 (Twilio 60200/60202).
 - **Auth**: HTTP Basic, username = `ApiKeySid`, password = `ApiKeySecret`.
-- **Config keys** (Railway DEV already set, never printed): `Twilio__AccountSid`, `Twilio__ApiKeySid`, `Twilio__ApiKeySecret`, `Twilio__VerifyServiceSid`.
+- **Config keys** (Railway (legado) DEV already set, never printed): `Twilio__AccountSid`, `Twilio__ApiKeySid`, `Twilio__ApiKeySecret`, `Twilio__VerifyServiceSid`.
 
 ## Error → HTTP mapping table
 
@@ -157,7 +157,7 @@ Replace the local-RNG OTP + `core.otp_codes` + `NotificationQueue` SMS path for 
 
 - `dotnet test` (unit tests, fake Twilio).
 - `npm run build` on vlr-web.
-- One controlled DEV SMS smoke against Railway DEV after merge to `develop`. No PROD.
+- One controlled DEV SMS smoke against Railway (legado) DEV after merge to `develop`. No PROD.
 
 ## Product-level "how to test"
 

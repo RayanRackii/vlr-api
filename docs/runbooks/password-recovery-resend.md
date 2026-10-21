@@ -1,3 +1,5 @@
+Hosting: API on Fly.io (`rolvix-api-prod`), web on Vercel, database/auth on Supabase. Legacy Railway-specific steps are obsolete; apply current settings to the Fly.io `rolvix-api-prod` app.
+
 # Password recovery (B2B) via Resend
 
 ## Goal
@@ -18,7 +20,7 @@ B2B "Esqueci a senha" must send a **Rolvix-branded** email (same chrome as invit
 
 ## External delivery gate
 
-Credentials alone never enable Resend or Meta. Unset flags are **false in every environment** (including a Railway service whose `ASPNETCORE_ENVIRONMENT` is Production). This is fail-closed everywhere: Production does **not** auto-enable Resend.
+Credentials alone never enable Resend or Meta. Unset flags are **false in every environment** (including a Fly.io service whose `ASPNETCORE_ENVIRONMENT` is Production). This is fail-closed everywhere: Production does **not** auto-enable Resend.
 
 Per channel:
 
@@ -48,7 +50,7 @@ Do not bake `false` into `appsettings.Production.json` for the global flag — t
 
 Startup always logs Information `External email delivery enabled|disabled` and `External WhatsApp delivery enabled|disabled` (no secrets).
 
-WhatsApp operational templates, DEV enablement, blast preflight, and SMS branding: [`whatsapp-notifications.md`](./whatsapp-notifications.md). Do **not** enable WhatsApp on Railway production from this email runbook.
+WhatsApp operational templates, DEV enablement, blast preflight, and SMS branding: [`whatsapp-notifications.md`](./whatsapp-notifications.md). Do **not** enable WhatsApp on Fly.io production from this email runbook.
 
 Startup also logs **Error** (no secret values — not ApiKey, FromEmail, or ServiceRoleKey):
 
@@ -60,11 +62,11 @@ The process still starts. Dev fallbacks are not silent in Production.
 
 Local DEV: leave flags unset to stay on Dev providers. To send WhatsApp only: `AllowExternalWhatsApp=true` and `AllowExternalEmail=false`.
 
-Do **not** set `Notifications__AllowExternalDelivery=true` on Railway unless WhatsApp should also go live.
+Do **not** set `Notifications__AllowExternalDelivery=true` on Fly.io unless WhatsApp should also go live.
 
-## Railway PROD variables (names only)
+## Fly.io PROD variables (names only)
 
-Set on the **production** Railway service (not implied by `ASPNETCORE_ENVIRONMENT`):
+Set on the **production** Fly.io service (not implied by `ASPNETCORE_ENVIRONMENT`):
 
 | Variable | Required | Role |
 |---|---|---|
@@ -83,14 +85,14 @@ Supabase Storage: buckets `catalog-public` (public) and `catalog-private` (priva
 
 After restart, boot log must **not** Error on Dev email/storage for this service. Creating a tenant must **not** log `DEV EMAIL`. File URLs must **not** contain `dev-storage.local`.
 
-This repo cannot write Railway. A human must set the variables above.
+This repo cannot write Fly.io. A human must set the variables above.
 
 ## Ops checklist
 
-- [ ] `Notifications__AllowExternalEmail=true` on Railway **production** (required for invite/recovery; not DEV-only).
-- [ ] `Resend__ApiKey` / `Resend__FromEmail` / `Resend__FromName` set on Railway (same as invites).
-- [ ] **`App__FrontendBaseUrl=https://rolvix.com.br` on Railway** — never `localhost`.
-- [ ] Reuse existing `Supabase__Url` and `Supabase__ServiceRoleKey` on Railway production (catalog files). Do **not** duplicate as `Storage__SupabaseUrl` / `Storage__ServiceRoleKey`.
+- [ ] `Notifications__AllowExternalEmail=true` on Fly.io **production** (required for invite/recovery; not DEV-only).
+- [ ] `Resend__ApiKey` / `Resend__FromEmail` / `Resend__FromName` set on Fly.io (same as invites).
+- [ ] **`App__FrontendBaseUrl=https://rolvix.com.br` on Fly.io** — never `localhost`.
+- [ ] Reuse existing `Supabase__Url` and `Supabase__ServiceRoleKey` on Fly.io production (catalog files). Do **not** duplicate as `Storage__SupabaseUrl` / `Storage__ServiceRoleKey`.
 - [ ] Confirm Supabase Storage buckets `catalog-public` and `catalog-private` exist (public bucket allows read of customer-visible objects).
 - [ ] Confirm boot logs: `External email delivery enabled`; no Error for `DevEmailProvider` / `DevStorageProvider` in Production.
 - [ ] Supabase Auth → URL Configuration:
@@ -106,6 +108,6 @@ This repo cannot write Railway. A human must set the variables above.
 
 - Point Supabase custom SMTP at Resend just for this — templates would still be Supabase Go templates.
 - Call `resetPasswordForEmail` from the client again.
-- Put `localhost` in Railway `App__FrontendBaseUrl`.
+- Put `localhost` in Fly.io `App__FrontendBaseUrl`.
 - Set `Notifications__AllowExternalDelivery=true` unless WhatsApp should also go live.
 - Commit secret values (ApiKey, ServiceRoleKey) in git or `appsettings.json`.

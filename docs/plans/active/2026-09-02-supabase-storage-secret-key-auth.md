@@ -4,7 +4,7 @@ Status: approved
 
 ## Goal / Problem
 
-`SupabaseStorageProvider` sends only `Authorization: Bearer <Supabase:ServiceRoleKey>`. Railway DEV uses opaque `sb_secret_...`. Storage treats it as a JWT → 400 → `EnsureSuccessStatusCode()` → API 500.
+`SupabaseStorageProvider` sends only `Authorization: Bearer <Supabase:ServiceRoleKey>`. Railway (legado) DEV uses opaque `sb_secret_...`. Storage treats it as a JWT → 400 → `EnsureSuccessStatusCode()` → API 500.
 
 ## Confirmed decisions
 
@@ -40,4 +40,4 @@ See user instruction (headers, publishable reject, success, 400 body capture, in
 
 ## Do not
 
-WEB, main, Railway, buckets, Twilio, WhatsApp, migrations, `Storage:UseDev`, `PublicBaseUrl`.
+WEB, main, Railway (legado), buckets, Twilio, WhatsApp, migrations, `Storage:UseDev`, `PublicBaseUrl`.

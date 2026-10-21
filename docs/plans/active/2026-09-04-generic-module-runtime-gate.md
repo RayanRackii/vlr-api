@@ -156,7 +156,7 @@ None.
 - Infer module from route prefix.
 - Cross-request cache for tenant_modules.
 - Keep CatalogModuleGate as a second gate.
-- Touch WEB, main, PROD, Railway, Supabase, tenant_modules data.
+- Touch WEB, main, PROD, Railway (legado), Supabase, tenant_modules data.
 
 ## Documentation
 

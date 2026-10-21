@@ -9,7 +9,7 @@
 6. [`docs/runbooks/`](./docs/runbooks/) — procedimentos (enter órfão, [entrega autônoma](./docs/runbooks/autonomous-delivery.md), [migrations remotas](./docs/runbooks/database-migrations.md), etc.)
 
 ## Repos
-- **Este:** `vlr-api` (.NET 10, Railway).
+- **Este:** `vlr-api` (.NET 10), hospedado na Fly.io (app `rolvix-api-prod`). Banco e Auth: Supabase. API da web: Vercel.
 - **Irmão:** `vlr-web` (React/Vite, Vercel) — tem o próprio `CONTEXT.md` / `ROADMAP.md`.
 - Workspace Cursor pretendido: roots `backend` + `frontend` (dois Git repos, **não** monorepo). O diretório pai no disco não precisa ser workspace root.
 
@@ -65,12 +65,12 @@ O usuário trabalha nos mesmos repos a partir de mais de um computador. Nenhum a
 parent
   ├─ git bootstrap
   ├─ classify risk / Human Decision Gate
-  ├─ architect (se necessário)
+  ├─ Sol (se necessário)
   ├─ implementer
   ├─ build / test
   ├─ reviewer
   ├─ PR
-  ├─ Merge Risk Gate (dossier GLM ± Fable)
+  ├─ Merge Risk Gate (dossier Sol review)
   ├─ approve → merge em develop (quando os gates passarem)
   └─ git checkpoint
 ```
@@ -182,18 +182,18 @@ Detalhe operacional (ferramentas GitHub, merge methods, cleanup): [`docs/runbook
 ### Lifecycle por task independente
 
 1. Session Bootstrap (protocolo multi-machine acima).
-2. Classificar risco (local vs arquitetural; Fable merge gate vs skip).
+2. Classificar risco (local vs arquitetural; revisão profunda merge gate vs skip).
 3. Human Decision Gate, se a incerteza for de produto/domínio/contrato/auth/tenant/dados/PROD.
 4. Criar branch a partir de `origin/develop` (`feat` / `fix` / `refactor` / `test` / `chore`).
 5. Invocar o implementer apropriado (um writer por working tree).
 6. Build/test do que o repo realmente tem.
-7. Reviewer normal (`api-reviewer` neste repo; `web-reviewer` no irmão).
+7. Reviewer normal (modelo Sol neste repo; modelo Sol no irmão).
 8. Corrigir findings; não ignorar em silêncio.
 9. Repetir review até o gate passar.
 10. Commit na feature branch.
 11. Push da feature branch.
 12. Abrir PR para `develop` (automação se disponível).
-13. Merge Risk Gate (dossier GLM; Fable quando obrigatório).
+13. Merge Risk Gate (dossier de análise Sol; revisão profunda quando obrigatório).
 14. Registrar/aplicar aprovação (`AI_APPROVED`) se a plataforma permitir.
 15. Mergear em `develop` **somente** se todos os gates passarem.
 16. `git fetch origin --prune` + `git switch develop` + `git pull --ff-only origin develop`.
@@ -210,25 +210,25 @@ Parent faz `git fetch origin --prune`. Reviewer **não** faz fetch. Diff: `origi
 
 - **Critical = 0, High = 0** para avançar.
 - **Medium:** corrigir **ou** justificar explicitamente como non-blocking/follow-up. Silêncio não conta.
-- Backend: `api-reviewer`. Frontend: `web-reviewer`. Visual, quando for o centro: `ui-implementer` (write) depois `web-reviewer`.
+- Backend: modelo Sol. Frontend: modelo Sol. Visual, quando for o centro: modelo Terra (write) depois modelo Sol.
 
-### MERGE_RISK_GATE (Fable)
+### MERGE_RISK_GATE (revisão profunda)
 
-Fable **não** navega o repositório.
+A revisão profunda **não** navega o repositório.
 
 ```text
-Do not pay Fable to grep. Use Fable to reason.
+Do not pay revisão profunda to grep. Use revisão profunda to reason.
 ```
 
-Antes de qualquer chamada Fable, `rolvix-architect` (GLM) prepara um **Merge Review Dossier** compacto: ~1200 palavras, ≤ 10 arquivos/símbolos. Campos: PR title; purpose; base/head; diff summary; files changed; invariants; contratos FE↔BE; auth/tenant; DB; concorrência; backward compatibility; build/test; reviewer findings; PRs relacionados; riscos; rollback.
+Antes de qualquer chamada revisão profunda, o modelo Sol prepara um **Merge Review Dossier** compacto: ~1200 palavras, ≤ 10 arquivos/símbolos. Campos: PR title; purpose; base/head; diff summary; files changed; invariants; contratos FE↔BE; auth/tenant; DB; concorrência; backward compatibility; build/test; reviewer findings; PRs relacionados; riscos; rollback.
 
-Se faltar contexto, Fable devolve `NEED_MORE_CONTEXT`. GLM coleta **somente** o pedido e atualiza o dossier. Sem crawl.
+Se faltar contexto, o revisor devolve `NEED_MORE_CONTEXT`. Sol coleta **somente** o pedido e atualiza o dossier. Sem crawl.
 
-**Fable obrigatório** (`rolvix-deep-architect`) se o PR tocar: autenticação; autorização; isolamento de tenant; segurança; concorrência; transação/integridade; migration/schema; dados de domínio persistidos; contrato frontend-backend; clients de API compartilhados; roteamento DEV/PROD; integração Railway/Vercel/Supabase; providers de notificação; jobs Hangfire; fronteiras de arquitetura; comportamento cross-repo; refactor de blast radius alto. Também se: confiança do GLM < high; reviewers discordarem; vários PRs relacionados; regressão de impacto amplo.
+**Revisão profunda obrigatória** (modelo Sol; use o agente disponível mais adequado) se o PR tocar: autenticação; autorização; isolamento de tenant; segurança; concorrência; transação/integridade; migration/schema; dados de domínio persistidos; contrato frontend-backend; clients de API compartilhados; roteamento DEV/PROD; integração Fly.io/Vercel/Supabase; providers de notificação; jobs Hangfire; fronteiras de arquitetura; comportamento cross-repo; refactor de blast radius alto. Também se: confiança do Sol < high; reviewers discordarem; vários PRs relacionados; regressão de impacto amplo.
 
-**Fable dispensável** (`FABLE_MERGE_REVIEW_NOT_REQUIRED` + reason) para mudança claramente local (copy/i18n/CSS isolado/rename/dead-code/docs/refactor mecânico) **desde que** reviewers limpos, build/test ok, blast radius baixo.
+**Revisão profunda dispensável** (`FABLE_MERGE_REVIEW_NOT_REQUIRED` + reason) para mudança claramente local (copy/i18n/CSS isolado/rename/dead-code/docs/refactor mecânico) **desde que** reviewers limpos, build/test ok, blast radius baixo.
 
-**Custo:** 1 PR de alto risco → no máximo 1 chamada Fable. `BLOCK_MERGE` → implementer corrige → GLM + reviewer normal verificam. Segunda chamada Fable no **mesmo** PR só se a correção alterou materialmente arquitetura/risco. PRs que interagem (ex.: F-07 + F-09 no mesmo `api.ts`) podem ir numa `INTEGRATION_MERGE_REVIEW`: um dossier GLM cobrindo os PRs relacionados, o mesmo contrato `FABLE_MERGE_REVIEW`, uma chamada.
+**Custo:** 1 PR de alto risco → no máximo 1 chamada revisão profunda. `BLOCK_MERGE` → implementer corrige → Sol + reviewer normal verificam. Segunda chamada revisão profunda no **mesmo** PR só se a correção alterou materialmente arquitetura/risco. PRs que interagem (ex.: F-07 + F-09 no mesmo `api.ts`) podem ir numa `INTEGRATION_MERGE_REVIEW`: um dossier de análise Sol cobrindo os PRs relacionados, o mesmo contrato `FABLE_MERGE_REVIEW`, uma chamada.
 
 Contrato de chamada — pedir exatamente:
 
@@ -252,13 +252,13 @@ ROLLBACK_RISK:
 REQUIRED_ACTIONS_BEFORE_MERGE:
 ```
 
-Arquitetura profunda **fora** deste gate continua: GLM emite `FABLE_ESCALATION_RECOMMENDED` e o parent só chama Fable com autorização **explícita** do usuário nesta conversa. Silêncio não autoriza esse caminho. O Merge Risk Gate, depois desta política vigente, **é** o caminho autorizado para Fable em PRs que batem os critérios acima — o parent não espera um “pode usar Fable” extra por PR.
+Arquitetura profunda **fora** deste gate continua: Sol emite `FABLE_ESCALATION_RECOMMENDED` e o parent só chama revisão profunda com autorização **explícita** do usuário nesta conversa. Silêncio não autoriza esse caminho. O Merge Risk Gate, depois desta política vigente, **é** o caminho autorizado para revisão profunda em PRs que batem os critérios acima — o parent não espera um “pode usar revisão profunda” extra por PR.
 
 ### PR, aprovação e merge
 
 Detectar `gh`, GitHub MCP/plugin ou integração autorizada. Abrir PR automaticamente se autenticado. Se não: `PR_AUTOMATION_UNAVAILABLE` + compare URL + título + body. **Não** parar review só porque `gh` falta.
 
-`AI_APPROVED` somente se: Critical/High = 0; nenhum Medium blocking; veredito Fable/GLM permite merge (`SAFE_TO_MERGE` ou `SAFE_WITH_FOLLOWUP`); testes exigidos passaram; Human Decision Gates resolvidos. `BLOCK_MERGE` impede merge. Se o GitHub bloquear self-approval do autor: `PLATFORM_SELF_APPROVAL_NOT_ALLOWED` — o Merge Risk Gate continua como aprovação técnica interna. Não contornar proteção.
+`AI_APPROVED` somente se: Critical/High = 0; nenhum Medium blocking; veredito revisão profunda/Sol permite merge (`SAFE_TO_MERGE` ou `SAFE_WITH_FOLLOWUP`); testes exigidos passaram; Human Decision Gates resolvidos. `BLOCK_MERGE` impede merge. Se o GitHub bloquear self-approval do autor: `PLATFORM_SELF_APPROVAL_NOT_ALLOWED` — o Merge Risk Gate continua como aprovação técnica interna. Não contornar proteção.
 
 **Merge automático permitido:** feature/fix/refactor/test/chore → `develop`, quando **todos** os gates passarem. **Squash and merge**. Sem force push. Sem reescrever `develop`.
 
@@ -278,23 +278,15 @@ Toda implementação pergunta: *como esta regressão seria detectada automaticam
 
 Arquivos em [`.cursor/agents/`](./.cursor/agents/). São roteadores — não copiam produto, arquitetura, convenções nem o corpo dos skills.
 
-O parent/orchestrator é **Grok 4.7 xhigh**. Dono do [Autonomous Delivery Workflow](#autonomous-delivery-workflow): Git, gates, PR, Merge Risk Gate, merge em `develop`. Subagentes não repetem `git fetch` na mesma tarefa. Não substitua modelos em silêncio. Se o subagent configurado não puder rodar, emita `SUBAGENT_UNAVAILABLE` (agent, modelo esperado, **root esperado**, motivo, ação do usuário) e **pare**. Não simule o papel e não use outro agent/modelo no lugar.
+Roteamento por capacidade: Luna (`gpt-6-luna`) para mudanças pequenas, testes e docs; Terra (`gpt-5.6-terra`) para endpoints e componentes; Sol (`gpt-6.1-sol`) para mudanças complexas/cross-cutting, segurança e reviews. Se um agente ou modelo nomeado estiver indisponível, escolha o próximo modelo adequado à capacidade necessária e prossiga. O parent/orchestrator coordena Git, gates, PR, Merge Risk Gate e merge em `develop`; um writer ativo por working tree.
 
-Architects canônicos deste produto (este repo):
+- Mudança local/trivial: Luna; pule arquitetura.
+- Endpoints/componentes: Terra; peça revisão independente a Sol.
+- Arquitetura, cross-repo, segurança, concorrência, persistência e risco alto: Sol prepara spec/dossier; resolva Human Decision Gate quando aplicável.
+- Merge Risk Gate: Sol faz análise independente com dossier e diff relevante, sem repo-wide exploration. Mantenha os critérios de segurança, auth/tenant, compatibilidade, rollback e aprovação humana/produção abaixo.
+- Frontend visual: Terra implementa; Sol revisa.
 
-1. **rolvix-architect** (`glm-5.2-high`, readonly) — arquitetura do Rolvix (API + web). Investigação focada. Prepara o Merge Review Dossier. Não chama Fable; se arquitetura profunda for excepcional, devolve `FABLE_ESCALATION_RECOMMENDED`.
-2. **rolvix-deep-architect** (`claude-fable-5-thinking-high`, readonly) — (a) arquitetura profunda só após autorização **explícita** do usuário **nesta** conversa + dossier GLM; (b) **Merge Risk Gate** quando esta política o torna obrigatório, com o dossier de merge (sem crawl). Silêncio não autoriza o caminho (a).
-
-Ownership de implementação **neste** repo:
-
-3. **api-implementer** (`grok-4.7-xhigh`, write) — implementação em `vlr-api`. Segue esta Git Work Policy. Não assume o frontend.
-4. **api-reviewer** (`grok-4.7-xhigh`, readonly) — Standards × Spec no diff `origin/develop...HEAD` de `vlr-api`. O parent faz `git fetch --prune origin` **antes**; o reviewer não faz fetch.
-
-Cross-repo: `rolvix-architect` → uma spec → `api-implementer` **e** `web-implementer` / `ui-implementer` (ownership separado por repo) → `api-reviewer` **e** `web-reviewer`. Um architect; dois ownerships de implementação. Um writer ativo por working tree.
-
-Tarefa trivial/localizada neste repo: pular architect. Tarefa arquitetural: `rolvix-architect` → Human Decision Gate e/ou Fable se o usuário autorizar → spec em `docs/plans` → `api-implementer` → `api-reviewer`.
-
-Prompt cache do provider ≠ memória do projeto ≠ context pack. Nenhuma decisão do fluxo depende de cache hit.
+Não permita que indisponibilidade de roteadores interrompa trabalho: use o próximo modelo adequado e mantenha ownership separado entre API e web. Prompt cache do provider ≠ memória do projeto ≠ context pack.
 
 ## Context packs
 

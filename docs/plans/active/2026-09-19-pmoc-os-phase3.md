@@ -16,7 +16,7 @@ H6                                 = NO
 H7                                 = NO
 ```
 
-Slices 1–4 shipped. Migration `20260920002154_ApplyPmocOsPhase3FinalScheduling` is applied on DEV and PROD (pending migrations after PROD apply: 0). API release merge `c837988abfb55255c1c867ca62d9618ec3c6dd18` (PR #90, develop `6f1c19b7028c6b967cf95d344f37bba258334259`, Railway `10d4e1af-02dd-45f3-95f6-3e8977895aba`). WEB release merge `254bd333ef2b2c3b4f798ef6327091f85890fd36` (PR #85, develop `775dd16cbd171086d2a6f6bee659831113e12877`, Vercel `dpl_DCXL6RnwsGwgCYiFi87f7ZaxQ2xa`). Closeout evidence: `docs/sessions/2026-09-24-pmoc-os-closeout.md`.
+Slices 1–4 shipped. Migration `20260920002154_ApplyPmocOsPhase3FinalScheduling` is applied on DEV and PROD (pending migrations after PROD apply: 0). API release merge `c837988abfb55255c1c867ca62d9618ec3c6dd18` (PR #90, develop `6f1c19b7028c6b967cf95d344f37bba258334259`, Railway (legado) `10d4e1af-02dd-45f3-95f6-3e8977895aba`). WEB release merge `254bd333ef2b2c3b4f798ef6327091f85890fd36` (PR #85, develop `775dd16cbd171086d2a6f6bee659831113e12877`, Vercel `dpl_DCXL6RnwsGwgCYiFi87f7ZaxQ2xa`). Closeout evidence: `docs/sessions/2026-09-24-pmoc-os-closeout.md`.
 
 Parent plans:
 
@@ -193,7 +193,7 @@ Sort: Overdue, DueToday, NotDue, then tag, name, AssetId.
 
 Query: plan + currently eligible assets + plan-linked non-Canceled WorkOrders (enough for last Completed + C1). Group/join in memory. No N+1. Do not persist due state. Manual `MaintenancePlanId=null` WOs never affect Coverage.
 
-No new migration. Shared DEV stays on Phase 2: do not apply `20260920002154_ApplyPmocOsPhase3FinalScheduling`; do not deploy Phase 3 API to Railway DEV.
+No new migration. Shared DEV stays on Phase 2: do not apply `20260920002154_ApplyPmocOsPhase3FinalScheduling`; do not deploy Phase 3 API to Railway (legado) DEV.
 
 Slug: `feat/pmoc-os-phase3-coverage-v3`. Squash → `develop`. Do not merge until Fable ALLOW + Human. Do not start Slice 3.
 

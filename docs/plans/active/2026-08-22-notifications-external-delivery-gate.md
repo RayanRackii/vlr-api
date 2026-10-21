@@ -10,7 +10,7 @@ F-05 (closed/approved): a credential being present in DEV must not, by itself, e
 
 1. **DEV + credentials present + flag unset** → no external email/WhatsApp. `DevEmailProvider` / `DevWhatsAppProvider` are used (console log, no HTTP).
 2. **DEV + flag explicitly `true`** → external delivery is deliberately allowed (still requires credentials; if credentials are missing, Dev providers are used regardless).
-3. **PROD + valid existing Railway config + flag unset** → existing `ResendEmailProvider` / `MetaWhatsAppProvider` keep working with no new env var required.
+3. **PROD + valid existing Railway (legado) config + flag unset** → existing `ResendEmailProvider` / `MetaWhatsAppProvider` keep working with no new env var required.
 4. **Any environment + flag explicitly `false`** → Dev providers forced, even if credentials are present.
 5. **Any environment + credentials missing** → Dev providers, regardless of the flag (credentials remain a hard precondition for external HTTP).
 
@@ -22,7 +22,7 @@ F-05 (closed/approved): a credential being present in DEV must not, by itself, e
 
 - `vlr-api/AGENTS.md` — Git Work Policy (branch off `develop`, no `main`/PROD writes), Human Decision Gate (closed for F-05).
 - `vlr-api/.cursor/rules/10-arquitetura.mdc` — Notifications: providers in `Notifications/Providers/`; never send email/WhatsApp synchronously inside an HTTP request.
-- `vlr-api/.cursor/rules/20-convencoes.mdc` — DI via `IServiceCollection` extensions; secrets only via `appsettings.Development.json` (out of git) or Railway env vars.
+- `vlr-api/.cursor/rules/20-convencoes.mdc` — DI via `IServiceCollection` extensions; secrets only via `appsettings.Development.json` (out of git) or Railway (legado) env vars.
 - `docs/runbooks/password-recovery-resend.md` — B2B recovery flow depends on Resend; must document the new flag.
 
 ## Architecture route (optional)
@@ -62,10 +62,10 @@ effectiveAllowExternal =
 - Read `IHostEnvironment` (passed into the extension). `IsDevelopment()` is the only special case; every other environment (`Production`, `Staging`, anything custom) falls through to `true`.
 - Credentials check stays as today: external provider is registered only when `effectiveAllowExternal && credentialsConfigured`. Otherwise the Dev provider is registered.
 
-### 3. Railway "development" service running `ASPNETCORE_ENVIRONMENT=Production`
+### 3. Railway (legado) "development" service running `ASPNETCORE_ENVIRONMENT=Production`
 
-- **Out of scope** to write Railway env from this repo.
-- **Ops note** (in runbook, not code): a Railway service whose environment name is `Development` needs `Notifications__AllowExternalDelivery=true` to send externally. If a non-Production Railway service should stay silent, set `Notifications__AllowExternalDelivery=false`.
+- **Out of scope** to write Railway (legado) env from this repo.
+- **Ops note** (in runbook, not code): a Railway (legado) service whose environment name is `Development` needs `Notifications__AllowExternalDelivery=true` to send externally. If a non-Production Railway (legado) service should stay silent, set `Notifications__AllowExternalDelivery=false`.
 
 ### 4. Test plan at the DI seam
 
@@ -110,7 +110,7 @@ Cases (all assert **registered type**, never call `SendAsync`):
 - Credentials remain a **hard precondition** for external HTTP: `AllowExternalDelivery=true` with missing credentials still yields Dev providers.
 - `appsettings.Production.json` is not modified to set the flag.
 - No migration, no schema change, no FE change, no `main`/PROD deploy, no secret writes.
-- Existing Railway Resend/WhatsApp credentials continue to drive real sends in PROD with zero config change.
+- Existing Railway (legado) Resend/WhatsApp credentials continue to drive real sends in PROD with zero config change.
 
 ## Implementation scope
 

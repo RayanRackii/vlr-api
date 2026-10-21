@@ -50,7 +50,7 @@ Prevent future tenants from claiming infrastructure/platform-reserved first-leve
 - WEB `getHostTenantSubdomain` and `/t/:slug` untouched.
 - Existing tenants remain functional.
 - `{ "error": string }` shape preserved.
-- DNS, Vercel, CORS, Railway, Supabase untouched.
+- DNS, Vercel, CORS, Railway (legado), Supabase untouched.
 
 ## Implementation scope
 

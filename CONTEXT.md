@@ -2,12 +2,15 @@
 
 > **Canônico (repo `vlr-api`).** O frontend (`vlr-web`) mantém um espelho em `CONTEXT.md` — ao mudar glossário ou beachhead, atualize **os dois**.
 
-## Taxonomy compartilhada (2026-10-20)
+## Taxonomy compartilhada (2026-10-20; código merged, validado em DEV e released em PROD em 2026-10-21)
 
 **Taxonomy** é capability de plataforma por tenant, sem entitlement comercial: categorias hierárquicas (máximo 3 níveis) e tags livres compartilhadas entre consumidores. Catalog é o primeiro consumidor, com joins tipados e independentes de Asset Registry; Rentals fica para outra tarefa. **AssetCategory / ResourceCategory** continua significando o “Tipo” operacional de recursos (PMOC/Rentals), sem alteração nem backfill. Seleção de categoria inclui descendentes; tags usam AND. Spec cross-repo: [`platform-taxonomy`](docs/plans/active/2026-10-20-platform-taxonomy.md). Espelho web a cargo da entrega `vlr-web`; prioridade portal/Slot preservada.
 
 ## 1. Visão Global (O "Hub" Corporativo)
 Você atua como Arquiteto de Software e Desenvolvedor Full-Stack Sênior. O sistema é a plataforma **Rolvix**: um SaaS B2B modular e multi-tenant. Não é software de um nicho só — pense num sistema operacional / Hub corporativo. O Core é agnóstico ao negócio: gerencia Tenants, Users, Units, Roles e Permissions. Sobre o Core, "Módulos" são aplicativos ativáveis por tenant.
+
+### Hospedagem
+API: Fly.io (`rolvix-api-prod`). Web: Vercel. Banco e Auth: Supabase. Railway é hospedagem legada e não representa o ambiente atual.
 
 ### Beachhead atual (prioridade de execução)
 A visão de Hub permanece. O primeiro cliente pagante é um **clube** que precisa (1) avisar clientes sobre o estado das quadras e (2) permitir **reserva de horários**. O módulo **Rentals** (`rentals`) é o foco do ciclo atual. Inventário, PMOC e OS já existem como espinha dorsal e continuam no cardápio; não expandir RH, Financeiro, Estoque etc. enquanto o beachhead não estiver operacional.
@@ -322,7 +325,7 @@ Avance de fase só quando a atual estiver estável o bastante para o beachhead. 
 - **React / TypeScript:** Componentes/types `PascalCase`; funções/hooks `camelCase`.
 
 ## 6. Stack Tecnológico e Padrões (Regras Inegociáveis)
-- **Backend (`vlr-api`):** .NET 10, REST. Organização dominante: `Platform.Api/Modules/<Área>/` (Controller + Service + DTOs). Features Minimal API + MediatR só onde já existem (`CreateTenant`, `InviteUser`) — não expandir MediatR sem decisão explícita. Deploy: **Docker no Railway**.
+- **Backend (`vlr-api`):** .NET 10, REST. Organização dominante: `Platform.Api/Modules/<Área>/` (Controller + Service + DTOs). Features Minimal API + MediatR só onde já existem (`CreateTenant`, `InviteUser`) — não expandir MediatR sem decisão explícita. Deploy: **Docker na Fly.io**, app `rolvix-api-prod`.
 - **Frontend (`vlr-web`):** React + Vite, shadcn/ui, TailwindCSS. Deploy: **Vercel**. Consome a API com JWT Bearer (`VITE_API_URL`).
 - **Dados e Auth (PaaS):** **Supabase** = PostgreSQL + Supabase Auth (B2B). Proibido provisionar AWS “pura” (RDS/Cognito/EC2) neste momento. EF Core permanece agnóstico à connection string.
 - **B2C:** Customer registrado por Tenant. **Login: e-mail + senha** (todos os tenants). Ativação por **OTP de e-mail** (`EmailVerifiedAt`; ADR 0005). Celular **não autentica** e não é exigido verificado no cadastro. WhatsApp só para avisos operacionais. Resolução pública por subdomain (`X-Tenant-Subdomain` / host). JWT próprio (`Customer`) após login — não Supabase Auth.

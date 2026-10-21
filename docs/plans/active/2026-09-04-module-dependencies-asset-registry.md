@@ -170,4 +170,4 @@ Generic inactive-module 403, using the same metadata. Catalog B2C gate already e
 - Trial Catalog (HD-7).
 - Optional CatalogProduct ↔ Asset integration.
 - Redefine or delete `maintenance`.
-- Apply unrelated pending Railway migrations.
+- Apply unrelated pending Railway (legado) migrations.

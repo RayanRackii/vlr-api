@@ -131,7 +131,7 @@ CTA visible PendingDeposit/Confirmed future; hidden Completed/Canceled/started; 
 
 ### E2E (Playwright exists — parent correction)
 
-Do **not** claim `TEST_INFRASTRUCTURE_MISSING`. WEB has `e2e/` against Railway DEV + develop Preview.
+Do **not** claim `TEST_INFRASTRUCTURE_MISSING`. WEB has `e2e/` against Railway (legado) DEV + develop Preview.
 
 Required: Customer sees own reservation → cancels → UI Canceled → occupancy bookable again. Ownership of another Customer is API-proven (single E2E Customer identity — do not invent a second browser session unless secrets already provide one). No flaky browser races. DEV only.
 
