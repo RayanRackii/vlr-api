@@ -8,11 +8,19 @@ public sealed class DockerFactAttribute : FactAttribute
 {
     public DockerFactAttribute()
     {
-        if (!DockerEnvironment.IsAvailable && !LocalPostgresEnvironment.IsConfigured)
+        if (!DockerEnvironment.IsAvailable
+            && !LocalPostgresEnvironment.IsConfigured
+            && !PostgresTestsAreRequired)
         {
             Skip = "Docker and an isolated local PostgreSQL test connection are not available; concurrency tests were skipped.";
         }
     }
+
+    private static bool PostgresTestsAreRequired =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("REQUIRE_POSTGRES_TESTS"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 }
 
 internal static class LocalPostgresEnvironment
