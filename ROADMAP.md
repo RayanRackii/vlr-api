@@ -225,7 +225,7 @@ Follow-up: `REVIEW_DEV_HOSTING_ENVIRONMENT` — Fly.io environment `development`
 Workflow: `.github/workflows/ci.yml`. Dispara em pull request para `develop`/`main` e em push nesses branches. Não altera `database-migrations.yml`, secrets nem deploy.
 
 - [x] `dotnet test tests/Platform.Api.Tests` no job `dotnet test`
-- [x] Testes `DockerFact` rodam contra Postgres 16 (`postgres:16-alpine`) via service container e `ROLVIX_TEST_POSTGRES_CONNECTION` em `127.0.0.1`. Sem Docker e sem essa variável, o `DockerFact` continua ignorando a prova em vez de falhar.
+- [x] Testes `DockerFact` rodam contra Postgres 16 (`postgres:16-alpine`) via service container e `ROLVIX_TEST_POSTGRES_CONNECTION` em `127.0.0.1`. CI define `REQUIRE_POSTGRES_TESTS=true`, impedindo skip silencioso quando nem Docker nem a conexão estiverem disponíveis; local continua permitindo skip.
 
 ## 6. Catalog & Orders v1 — EM ANDAMENTO (código)
 
