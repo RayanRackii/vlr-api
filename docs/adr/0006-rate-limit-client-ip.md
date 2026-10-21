@@ -6,7 +6,7 @@ Public per-IP limits (staff password recovery, B2C verification and password res
 
 **Update (2026-10-16):** ADR 0008 selects the header with `RateLimit:ClientIpHeader`. The default is still `X-Real-IP`. Parsing, canonical form, and the socket-address fallback below are unchanged.
 
-**Human decision:** Rayan, from Railway's edge behavior documented in October 2026. The edge overwrites `X-Forwarded-For` and `X-Real-IP`. The number of hops is not fixed. Railway does not publish proxy CIDRs. `X-Real-IP` is the documented client-IP header.
+**Human decision:** Rayan, from Railway (legado)'s edge behavior documented in October 2026. The edge overwrites `X-Forwarded-For` and `X-Real-IP`. The number of hops is not fixed. Railway (legado) does not publish proxy CIDRs. `X-Real-IP` is the documented client-IP header.
 
 ## Decision
 
@@ -20,7 +20,7 @@ Public per-IP limits (staff password recovery, B2C verification and password res
 ## Considered options
 
 - **First `X-Forwarded-For` hop:** rejected. A client can rotate the first hop and open a new bucket (#109).
-- **`ForwardedHeadersMiddleware` with `ForwardLimit = 1` and cleared `KnownProxies`:** rejected. Railway does not publish the proxy CIDRs, and the hop count is not a stable one.
+- **`ForwardedHeadersMiddleware` with `ForwardLimit = 1` and cleared `KnownProxies`:** rejected. Railway (legado) does not publish the proxy CIDRs, and the hop count is not a stable one.
 - **Reject anything but a strictly dotted IPv4 or compressed IPv6:** not required. `IPAddress` already accepts one address, and the canonical text stops spelling variants from becoming extra buckets. A value that does not parse falls back to the socket address.
 
 ## Consequences

@@ -375,7 +375,7 @@ Hangfire: recurring sweep `notification-outbox` (e.g. every minute) plus fire-an
 - Data URL storage for catalog files
 - In-memory queue as catalog notification source of truth
 - `IsDevelopment()` as the AllowExternalDelivery default
-- Apply migration; merge to main; enable external delivery in Railway
+- Apply migration; merge to main; enable external delivery in Railway (legado)
 - Hardcode FICC / motorcycle / 3D-print / Brazil beyond CPF/CNPJ
 
 ## Documentation that may need updating

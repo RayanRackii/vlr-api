@@ -13,7 +13,7 @@ HTML of the invite was **not** the incident cause (email never reached Resend). 
 ## Visible behavior
 
 - Unset notification flags remain fail-closed in every environment (HD-5). Production send requires explicit `Notifications__AllowExternalEmail=true` **and** Resend credentials.
-- F-05 Production+creds+unset → Resend is **not** restored (Railway `development` often has `ASPNETCORE_ENVIRONMENT=Production`).
+- F-05 Production+creds+unset → Resend is **not** restored (Railway (legado) `development` often has `ASPNETCORE_ENVIRONMENT=Production`).
 - Process still starts if Dev providers are selected. Startup emits `LogError` (no secrets) when:
   - host is Production **and** `DevEmailProvider` is selected;
   - email gate is true (`AllowExternalEmail` or global `AllowExternalDelivery`) **and** Resend config is incomplete;
@@ -41,26 +41,26 @@ HTML of the invite was **not** the incident cause (email never reached Resend). 
 ## Execution route
 
 - api-implementer
-- Ops: human sets Railway PROD env vars (this repo cannot write Railway)
+- Ops: human sets Railway (legado) PROD env vars (this repo cannot write Railway (legado))
 
 ## Confirmed decisions
 
-- **D1 A:** Keep explicit email opt-in. Ops sets `Notifications__AllowExternalEmail=true` + Resend on Railway PROD. Do not restore F-05.
+- **D1 A:** Keep explicit email opt-in. Ops sets `Notifications__AllowExternalEmail=true` + Resend on Railway (legado) PROD. Do not restore F-05.
 - **D2 A + hardening:** Do not fail startup on `IsProduction()`. Add `LogError` for the three cases above. No secrets in logs.
 - **D3 A:** No `PublicBaseUrl`. Public/signed URL prefix is the project URL (originally `Storage__SupabaseUrl`). Follow-up unifies that host on `Supabase__Url` / `Supabase__ServiceRoleKey` — see ops table below.
 - **D4:** Small invite/recovery HTML polish + render test if natural. HTML is not the incident cause.
 - **P2:** out of scope (follows this hotfix).
 
-### Proposed (not this PR) — identifying Railway production vs development
+### Proposed (not this PR) — identifying Railway (legado) production vs development
 
 Do **not** implement without a further human decision.
 
 Simple existing signals (no new Rolvix architecture):
 
-1. Railway already injects `RAILWAY_ENVIRONMENT_NAME` (`production` vs `development`). Reading it would distinguish the two services even when both set `ASPNETCORE_ENVIRONMENT=Production`.
+1. Railway (legado) already injects `RAILWAY_ENVIRONMENT_NAME` (`production` vs `development`). Reading it would distinguish the two services even when both set `ASPNETCORE_ENVIRONMENT=Production`.
 2. A single optional `App:DeploymentName` in Rolvix config would be a new key and is **not** in this PR.
 
-This hotfix keeps using `IHostEnvironment.EnvironmentName == Production` only for louder logs, knowing Railway development may also match.
+This hotfix keeps using `IHostEnvironment.EnvironmentName == Production` only for louder logs, knowing Railway (legado) development may also match.
 
 ## Invariants that must not break
 
@@ -82,12 +82,12 @@ This hotfix keeps using `IHostEnvironment.EnvironmentName == Production` only fo
    - New tests assert Error logs for the three cases (captured `ILogger`; start hosted services). Assert log text does not contain ApiKey / ServiceRoleKey values.
    - Storage DI seam tests: creds → `SupabaseStorageProvider`; missing → `DevStorageProvider`.
    - HTML render: Wrap+InviteBody has no `<p`; greeting/company/url encoded; CTA `Definir senha` + encoded href; no `<tr>` whose next element is `<p`.
-5. Docs: runbook — `AllowExternalEmail=true` is a **PROD requirement** for invite/recovery, not “DEV only, optional”. List Railway vars (names only). ROADMAP Histórico.
-6. Optional: catalog pack note that PROD storage/email need explicit Railway config — only if the pack already states the opposite; do not invent pack work.
+5. Docs: runbook — `AllowExternalEmail=true` is a **PROD requirement** for invite/recovery, not “DEV only, optional”. List Railway (legado) vars (names only). ROADMAP Histórico.
+6. Optional: catalog pack note that PROD storage/email need explicit Railway (legado) config — only if the pack already states the opposite; do not invent pack work.
 
-## Railway PROD variables (names only; never commit values)
+## Railway (legado) PROD variables (names only; never commit values)
 
-Set on the **production** Railway service (not implied by `ASPNETCORE_ENVIRONMENT`):
+Set on the **production** Railway (legado) service (not implied by `ASPNETCORE_ENVIRONMENT`):
 
 | Variable | Required | Role |
 |---|---|---|
@@ -125,11 +125,11 @@ DI-seam xUnit (no HTTP, no Docker). Hosted service `StartAsync` to assert log le
 
 - `dotnet test tests/Platform.Api.Tests` (or the new/updated test classes if the full suite is heavy).
 - `dotnet build` clean.
-- No Railway writes from this machine.
+- No Railway (legado) writes from this machine.
 
 ## Product-level "how to test" (post-deploy, human)
 
-1. Restart Railway **production** after env vars.
+1. Restart Railway (legado) **production** after env vars.
 2. Boot: no `DEV EMAIL` provider Error for that service; `External email delivery enabled`; storage not Dev.
 3. Create tenant / invite a real inbox → no `DEV EMAIL` line → email arrives via Resend.
 4. Open `/invite?token=` from the email → set password → login at rolvix.com.br.

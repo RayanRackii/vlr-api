@@ -45,6 +45,7 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       ROLVIX_TEST_POSTGRES_CONNECTION: "Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=rolvix_ci;SSL Mode=Disable"
+      REQUIRE_POSTGRES_TESTS: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

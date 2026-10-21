@@ -55,7 +55,7 @@ API first (permission seed + TZ helper usage + Complete + cancel lock). Then WEB
 
 1. **TIMEZONE T1.** Booking clocks are America/Sao_Paulo. Reuse `BrazilTimeZone.AtLocal` / `Resolve()`. No per-tenant `TimeZoneId` in this wave.
 2. **No blind backfill.** Classify existing rows first. DEV audit (2026-09-05, ref `jzptnjyzijklutinpxag`): **0 reservations, 0 slots**. Nothing to correct on DEV.
-3. **PROD timestamps:** not queried in this spec task (no safe read-only PROD SQL in-session). **PROD_TIMESTAMP_STATE: NOT_VERIFIED.** Any PROD SELECT beyond this, and **any** PROD UPDATE/backfill, needs a **separate Human Gate**. Do not deploy the TZ write-path to Railway production until PROD row count/classification is known (see gates).
+3. **PROD timestamps:** not queried in this spec task (no safe read-only PROD SQL in-session). **PROD_TIMESTAMP_STATE: NOT_VERIFIED.** Any PROD SELECT beyond this, and **any** PROD UPDATE/backfill, needs a **separate Human Gate**. Do not deploy the TZ write-path to Railway (legado) production until PROD row count/classification is known (see gates).
 4. **COMPLETE.** Staff-only. New key `rentals.reservations.complete`. Do not reuse `rentals.reservations.confirm`. Customer cannot mark Completed.
 5. **B2C_CANCEL_LAUNCH_REQUIRED: NO.** Defer Customer self-cancel to Wave 2. Do not add a Customer cancel route in this branch.
 
@@ -176,7 +176,7 @@ WEB: do not invent a second TZ. After T1, ISO instants with real UTC offset disp
 ## Do not
 
 - Blind `UPDATE rentals.reservations` on DEV or PROD.
-- Deploy Phase B to Railway production while `PROD_TIMESTAMP_STATE=NOT_VERIFIED` or while classification is mixed/`OTHER`.
+- Deploy Phase B to Railway (legado) production while `PROD_TIMESTAMP_STATE=NOT_VERIFIED` or while classification is mixed/`OTHER`.
 - Per-tenant timezone.
 - Customer complete or Customer cancel.
 - Reuse confirm permission for Complete.

@@ -45,7 +45,7 @@ Current EF index is **non-unique** `(TenantId, RentalAssetId, DayOfWeek, StartTi
 Add UNIQUE `(TenantId, RentalAssetId, DayOfWeek, StartTime, EndTime, OccupancyKindId)`.
 Keep the existing 4-column index.
 
-This is not a destructive data rewrite. If apply fails on Railway because exact dupes already exist, that is an ops apply failure, not a silent delete. Parent cannot inspect DEV/PROD from this PC.
+This is not a destructive data rewrite. If apply fails on Railway (legado) because exact dupes already exist, that is an ops apply failure, not a silent delete. Parent cannot inspect DEV/PROD from this PC.
 
 ### Write-time rules
 

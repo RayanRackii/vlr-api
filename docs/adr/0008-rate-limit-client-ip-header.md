@@ -1,6 +1,6 @@
 # Configurable rate-limit client IP header
 
-Public per-IP limits still partition on one client address (ADR 0006). Which header carries that address depends on the edge in front of the process. Railway overwrites `X-Real-IP`. Fly.io (region gru) sets `Fly-Client-IP` and does not validate `X-Real-IP`, so a caller on Fly can spoof `X-Real-IP`.
+Public per-IP limits still partition on one client address (ADR 0006). Which header carries that address depends on the edge in front of the process. Railway (legado) overwrites `X-Real-IP`. Fly.io (region gru) sets `Fly-Client-IP` and does not validate `X-Real-IP`, so a caller on Fly can spoof `X-Real-IP`.
 
 **Status:** accepted (2026-10-16)
 
@@ -16,25 +16,25 @@ Public per-IP limits still partition on one client address (ADR 0006). Which hea
 
 ## Threat model
 
-- **Spoofed `X-Real-IP` on Fly.** Keeping ADR 0006's header after the move would let the client choose the bucket. With `Fly-Client-IP` configured, `X-Real-IP` is ignored. Trust in `Fly-Client-IP` assumes the Fly proxy overwrites that header on public ingress, the same kind of assumption ADR 0006 makes about Railway and `X-Real-IP`.
-- **Spoofed `Fly-Client-IP` on Railway.** The default still reads only `X-Real-IP`. A client-supplied `Fly-Client-IP` is not the key.
+- **Spoofed `X-Real-IP` on Fly.** Keeping ADR 0006's header after the move would let the client choose the bucket. With `Fly-Client-IP` configured, `X-Real-IP` is ignored. Trust in `Fly-Client-IP` assumes the Fly proxy overwrites that header on public ingress, the same kind of assumption ADR 0006 makes about Railway (legado) and `X-Real-IP`.
+- **Spoofed `Fly-Client-IP` on Railway (legado).** The default still reads only `X-Real-IP`. A client-supplied `Fly-Client-IP` is not the key.
 - **`X-Forwarded-For` and `CF-Connecting-IP`.** Never read, on either setting. Configuring either name prevents startup.
 - **Missing or malformed selected header.** One bucket per socket address. On public ingress that address is the proxy, so those requests share the proxy's bucket. Rotating garbage, a list, or a repeated header does not open a new bucket. If the socket address is missing too, every such request shares the `unknown` bucket.
 - **Caller that never crossed the edge** (private network, direct bind). That caller can still send one well-formed value of the *selected* header and choose a bucket. Same residual risk as ADR 0006. There is still no proxy CIDR list. Treating a private socket address as "ignore the header" would collapse public ingress.
-- **Fly left on the default, or Railway pointed at `Fly-Client-IP`.** Either mismatch fails process start. A missing option on Fly selects `X-Real-IP` and does not boot. Railway with the option unset still selects `X-Real-IP` and boots.
+- **Fly left on the default, or Railway (legado) pointed at `Fly-Client-IP`.** Either mismatch fails process start. A missing option on Fly selects `X-Real-IP` and does not boot. Railway (legado) with the option unset still selects `X-Real-IP` and boots.
 - **Typo in the option.** The process does not start, and it does not silently trust a different header.
 - **No platform variable.** Local and any host that sets neither signal keep the configured header, including the `X-Real-IP` default. That path can still be wrong if a new edge is reached without one of these variables.
 
 ## Considered options
 
 - **Free-form header name.** Rejected. The deploy could point the limiter at `X-Forwarded-For` and reopen #109.
-- **Detect Railway vs Fly from request headers.** Rejected. A header the client can send is not evidence of which edge terminated the connection.
+- **Detect Railway (legado) vs Fly from request headers.** Rejected. A header the client can send is not evidence of which edge terminated the connection.
 - **Ignore the selected header when `RemoteIpAddress` is private.** Rejected. See decision 5 and ADR 0006.
 
 ## Consequences
 
-- Unset, blank, and `X-Real-IP` behave as ADR 0006 when Railway is detected or when no platform is detected. Railway needs no new variable.
-- Fly (`FLY_APP_NAME`) does not boot until the option is `Fly-Client-IP`. Railway does not boot if the option is `Fly-Client-IP`.
+- Unset, blank, and `X-Real-IP` behave as ADR 0006 when Railway (legado) is detected or when no platform is detected. Railway (legado) needs no new variable.
+- Fly (`FLY_APP_NAME`) does not boot until the option is `Fly-Client-IP`. Railway (legado) does not boot if the option is `Fly-Client-IP`.
 - No migration. Forwarded-headers middleware stays unregistered.
 
 ## Accepted follow-up

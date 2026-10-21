@@ -1,3 +1,5 @@
+Hosting: API on Fly.io (`rolvix-api-prod`), web on Vercel, database/auth on Supabase. Legacy Railway-specific steps are obsolete; apply current settings to the Fly.io app for the target environment.
+
 # WhatsApp notifications (Catalog + Rentals)
 
 Operational runbook. Canonical product copy lives in `CONTEXT.md` and `docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`.
@@ -10,7 +12,7 @@ Operational runbook. Canonical product copy lives in `CONTEXT.md` and `docs/plan
 | SMS (Twilio Verify) | No app branding setting. Operational Catalog SMS remains Dev | Friendly Name must be `Rolvix` (not `ROLVIX PROD`) |
 | WhatsApp (Meta Cloud API) | Templates + durable outbox in code | **External delivery stays disabled** |
 
-Do **not** set `Notifications__AllowExternalWhatsApp=true` on Railway production.
+Do **not** set `Notifications__AllowExternalWhatsApp=true` on Fly.io production.
 Do **not** set `Notifications__AllowExternalDelivery=true` as a shortcut.
 
 ## Approved Meta templates (`pt_BR`, body only, no header/media/buttons)
@@ -79,7 +81,7 @@ Each Hangfire sweep uses a **fresh DI scope per tenant** (`IServiceScopeFactory`
 
 ## DEV enablement (names only — never print values)
 
-On the **development** Railway service only:
+On the **development** Fly.io service only:
 
 - `Notifications__AllowExternalWhatsApp=true`
 - `WhatsApp__AccessToken`
@@ -126,7 +128,7 @@ No PROD send.
 
 ## Do not
 
-- Enable WhatsApp on Railway production in this slice
+- Enable WhatsApp on Fly.io production in this slice
 - Mutate PROD outbox / resend Failed
 - Use `Notifications__AllowExternalDelivery=true` to turn WhatsApp on
 - Invent reminder hours or a new reservation identifier
