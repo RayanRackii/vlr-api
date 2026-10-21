@@ -240,6 +240,10 @@ public sealed class ScheduleController(
             var reservation = await scheduleService.BookSlotAsync(customerId, request, cancellationToken);
             return Ok(reservation);
         }
+        catch (PriceChangedException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PriceChangedException.Code, currentTotalAmount = ex.CurrentTotalAmount });
+        }
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(new { error = ex.Message });

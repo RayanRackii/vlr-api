@@ -1,8 +1,8 @@
-# Booking UI rollout: API contracts, steps 1 and 2
+# Booking UI rollout: API contracts, steps 1, 2 and 4
 
-Implementation in this worktree only; no Git operations, publication or deployment. The canonical proposal is `~/codex-runs/ux-booking-spec.md`. This slice adds a read-only offer projection and the default-off UI rollout flag. Existing booking, schedule, queue and history routes retain their contracts and behavior.
+Implementation in this worktree only; no Git operations, publication or deployment. The canonical proposal is `~/codex-runs/ux-booking-spec.md`. This work adds a read-only offer projection, the default-off UI rollout flag and an optional expected-price guard on the two existing reservation POSTs. Legacy clients keep their behavior when the new field is omitted or null.
 
-Accepted defaults: BRL only, quotes valid for 60 seconds, editable stock quantity starting at one, map optional. The later UI uses “Continue” with contextual explanation and a separate click after queue admission; in-progress reservations belong to Upcoming and canceled reservations sort by usage date. These UI/history decisions do not add runtime flows in this API slice. Expected-price enforcement belongs to rollout step 4; paged history/detail/own-day reads belong to step 5.
+Accepted defaults: BRL only, quotes valid for 60 seconds, editable stock quantity starting at one, map optional. The later UI uses “Continue” with contextual explanation and a separate click after queue admission; in-progress reservations belong to Upcoming and canceled reservations sort by usage date. These UI/history decisions do not add runtime flows in this API slice. Paged history/detail/own-day reads belong to step 5.
 
 ## Daily availability
 
@@ -40,6 +40,31 @@ Public output excludes reservation/customer/contact/internal labels and block ex
 
 Invalid new query values return HTTP 400 `{ error, code: "AVAILABILITY_INVALID_QUERY" }`; scope/window limits use `AVAILABILITY_LIMIT_EXCEEDED`. Existing module-disabled 403 and unresolved-tenant 401 behavior comes from the shared filter/exception pipeline. The endpoint uses no UI-flag gate, allowing API validation before UI enablement.
 
+## Expected-price guard (step 4, API only)
+
+Both existing Customer-authorized POSTs accept optional `expectedTotalAmount: number | null`:
+
+- `POST /api/reservations`: civil date/start/end, `unitId`, `items[].assetId` and quantity; expected amount is the **whole reservation total**, the sum of rounded item subtotals.
+- `POST /api/schedule/slots/book`: `slotId`, `unitId`, quantity; expected amount is the whole slot interval × quantity.
+
+The client copies the selected daily availability window's `totalAmount`, using the same resource, full interval and quantity. For multiple items it sums their rounded totals. The server independently resolves current pricing and capacity within the existing transaction, after the customer lock (when the daily cap applies) and RentalAsset locks. Existing route-specific pricing precedence and two-decimal rounding away from zero are unchanged. A zero quote is valid. Comparison uses exact decimal equality against that rounded server total; the supplied amount is never used as the price or rounded to conceal a mismatch.
+
+If present and different, the POST returns **HTTP 409**:
+
+```json
+{
+  "error": "O preço mudou. Revise antes de continuar.",
+  "code": "PRICE_CHANGED",
+  "currentTotalAmount": 125.00
+}
+```
+
+See [the error schema](price-changed.v1.schema.json). `currentTotalAmount` is BRL for this rollout. A mismatch creates no persisted reservation/items, does not mark a slot Booked, does not publish the reservation notification and does not complete/consume the queue turn. A valid active turn keeps its existing expiry; it is never renewed by a price error. Corrected submission requires an explicit new client action. Capacity/queue/start/horizon/daily-cap validation still applies before price comparison; unavailable or unpriced intervals do not promise a current bookable offer. Existing `QUEUE_*`, `START_IN_THE_PAST`, `booking_horizon_exceeded` and `DAILY_BOOKING_LIMIT_REACHED` responses remain.
+
+Omitted or explicit null skips comparison and preserves legacy behavior, including success status (create 201, slot book 200). Negative or over-precision numeric values cannot match a normal rounded total and return PRICE_CHANGED after the other validations; malformed decimal input returns the existing model-binding 400. No new quote token, server-side expiry field or capacity hold is added: `quoteExpiresAt = serverNow + 60s` tells the UI to refresh; every guarded POST recomputes regardless of quote age. The guard compares prices, not quote authenticity.
+
+Queue join/leave/status keep their existing contract. Joining a per-resource queue has no selected interval or price; the guard runs when its active customer submits either reservation POST. Tenant/customer are resolved through Customer JWT, and existing tenant-scoped unit/resource/slot validation precedes returning any current amount. The optional guard applies independently of the UI rollout flag. No entity, schema change or migration is needed. Rollback of the new UI may omit the field and continue through the existing routes.
+
 ## Tenant flag
 
 The existing `GET /api/public/tenants/{subdomain}/branding` adds `newBookingUiEnabled: boolean`. Legacy fields remain. Missing configuration, an empty allowlist or a tenant not explicitly listed returns false. Matching uses immutable tenant UUIDs, not the caller's subdomain/header/JWT choices.
@@ -60,8 +85,10 @@ Equivalent environment key: `Rentals__BookingUi__EnabledTenantIds__0`. The commi
 
 ## Validation and next steps
 
-Run `dotnet build` and `dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj`; target `DailyAvailability|BookingAvailabilityContract` for the new tests. `DailyAvailabilityQueryTests` additionally uses PostgreSQL/Docker or `ROLVIX_TEST_POSTGRES_CONNECTION` with the repo's isolated loopback database fixture. It proves fixed query count and prohibits writes; it skips where PostgreSQL/Docker is unavailable.
+Run `dotnet build` and `dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj`; target `DailyAvailability|BookingAvailabilityContract|ExpectedPrice` for this rollout. `ExpectedPriceTests` and `ExpectedPriceHttpTests` cover quote/quantity/rounding, zero/null/legacy, mismatch/retry, queue turn preservation and tenant/negative cases through services and real Customer-JWT HTTP requests. `ExpectedPriceConcurrencyTests` uses PostgreSQL to test price updates while booking waits for its lock, queue rollback and competing guarded requests for exclusive capacity, stock and daily cap. PostgreSQL tests (including the fixed-query/no-write availability test) use Docker or `ROLVIX_TEST_POSTGRES_CONNECTION` with the repo's isolated loopback database fixture, and skip where neither is available.
 
 Manual read-only smoke: query the new day route with two resource IDs, quantity and duration; confirm unavailable cells remain, and check branding defaults false. Repeat with a foreign resource/unit ID and a different tenant's valid token/header. Validate DEV before any UI rollout. No migration in this slice.
 
-Next API work: rollout step 4's expected-price guard under existing locks, followed by step 5's paged/detail/own-day reads. Next `vlr-web` work: step 3's schema validation, resource/time table, date strip and reconciled selection behind `newBookingUiEnabled`; no frontend changes in this slice.
+Guarded POST smoke in DEV: quote a window, change its hourly price through staff pricing, submit the original total and verify 409 PRICE_CHANGED/currentTotalAmount without a reservation or completed queue ticket. Review the new amount and submit again explicitly. Repeat with a persisted slot and a derived stock window; omit the field to verify legacy creation. No production write smoke is authorized here.
+
+Next API work: step 5's paged/detail/own-day reads. Next `vlr-web` work: step 4's summary bar/queue/confirmation and sending expectedTotalAmount from the daily quote, behind `newBookingUiEnabled`, building on step 3's grid/date/selection; no frontend changes in this slice.
