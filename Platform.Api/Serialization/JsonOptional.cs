@@ -59,6 +59,27 @@ public sealed class JsonOptionalInt32Converter : JsonConverter<JsonOptional<int>
     }
 }
 
+/// <summary>Distinguishes an omitted boolean from an explicit true or false value.</summary>
+public sealed class JsonOptionalBooleanConverter : JsonConverter<JsonOptional<bool>>
+{
+    public override bool HandleNull => true;
+
+    public override JsonOptional<bool> Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options) =>
+        JsonOptional<bool>.Specified(reader.TokenType == JsonTokenType.Null ? null : reader.GetBoolean());
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        JsonOptional<bool> value,
+        JsonSerializerOptions options)
+    {
+        if (value.Value is { } flag) writer.WriteBooleanValue(flag);
+        else writer.WriteNullValue();
+    }
+}
+
 /// <summary>Distinguishes an omitted visual revision from an explicit null assignment.</summary>
 public sealed class JsonOptionalGuidConverter : JsonConverter<JsonOptional<Guid>>
 {

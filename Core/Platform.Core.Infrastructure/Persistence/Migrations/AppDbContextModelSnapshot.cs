@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Platform.Core.Domain.Entities;
+using Platform.Core.Infrastructure.Persistence.Configurations;
 using Platform.Core.Infrastructure.Persistence;
 
 #nullable disable
@@ -2746,6 +2748,15 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("DefaultAllowedDurationMinutes")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("default_allowed_duration_minutes");
+
+                    b.Property<TimeOnly?>("DefaultCloseTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("default_close_time");
+
                     b.Property<string>("DefaultColor")
                         .IsRequired()
                         .HasMaxLength(7)
@@ -2757,6 +2768,28 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
                         .HasColumnName("default_icon");
+
+                    b.Property<int?>("DefaultMaxAdvanceBookingDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("default_max_advance_booking_days");
+
+                    b.Property<TimeOnly?>("DefaultOpenTime")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("default_open_time");
+
+                    b.Property<List<ResourceVisualDefaultPricing>>("DefaultPricings")
+                        .HasConversion<ResourceVisualDefaultPricingsConverter, ResourceVisualDefaultPricingsComparer>()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("default_pricings");
+
+                    b.Property<bool?>("DefaultRequiresDeposit")
+                        .HasColumnType("boolean")
+                        .HasColumnName("default_requires_deposit");
+
+                    b.Property<string>("DefaultSchedulePolicy")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("default_schedule_policy");
 
                     b.Property<string>("FloorSvg")
                         .IsRequired()

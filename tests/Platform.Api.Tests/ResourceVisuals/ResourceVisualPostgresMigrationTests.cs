@@ -68,7 +68,7 @@ public sealed class ResourceVisualPostgresMigrationTests(PostgresContainerFixtur
             Assert.Equal(new[]
             {
                 "20261021225838_AddResourceVisualCatalog", MapMigration, SeedMigration, LatestMigration,
-            }, await db.Database.GetPendingMigrationsAsync());
+            }, (await db.Database.GetPendingMigrationsAsync()).Take(4));
         }
 
         await MigrateAsync(factory, provider, LatestMigration);

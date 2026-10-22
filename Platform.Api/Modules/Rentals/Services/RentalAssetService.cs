@@ -81,7 +81,7 @@ public sealed class RentalAssetService(
             rental.CloseTime = request.CloseTime;
             rental.AllowedDurationMinutes = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
                 ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-                : request.AllowedDurationMinutes.Trim();
+                : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
             rental.Touch();
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -144,7 +144,7 @@ public sealed class RentalAssetService(
 
             var allowed = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
                 ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-                : request.AllowedDurationMinutes.Trim();
+                : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
 
             foreach (var rental in rentals)
             {

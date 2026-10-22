@@ -1,5 +1,8 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Platform.Core.Domain.Entities;
 
 namespace Platform.Core.Infrastructure.Persistence.Configurations;
@@ -16,6 +19,8 @@ public sealed class ResourceVisualTemplateConfiguration : IEntityTypeConfigurati
 }
 public sealed class ResourceVisualTemplateRevisionConfiguration : IEntityTypeConfiguration<ResourceVisualTemplateRevision>
 {
+    private static readonly JsonSerializerOptions DefaultPricingsJsonOptions = new();
+
     public void Configure(EntityTypeBuilder<ResourceVisualTemplateRevision> b)
     {
         b.ToTable("resource_visual_template_revisions", "core"); b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
@@ -23,10 +28,45 @@ public sealed class ResourceVisualTemplateRevisionConfiguration : IEntityTypeCon
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(16); b.Property(x => x.FloorSvg).IsRequired();
         b.Property(x => x.ViewBox).HasMaxLength(100); b.Property(x => x.AspectRatio).HasPrecision(12, 6);
         b.Property(x => x.DefaultColor).HasMaxLength(7); b.Property(x => x.DefaultIcon).HasMaxLength(80); b.Property(x => x.ArtSha256).HasMaxLength(64);
+        b.Property(x => x.DefaultSchedulePolicy).HasConversion<string>().HasMaxLength(32);
+        b.Property(x => x.DefaultAllowedDurationMinutes).HasMaxLength(128);
+        b.Property(x => x.DefaultPricings)
+            .HasConversion<ResourceVisualDefaultPricingsConverter, ResourceVisualDefaultPricingsComparer>()
+            .HasColumnType("jsonb");
         b.Property(x => x.Version).IsConcurrencyToken();
         b.HasIndex(x => new { x.TemplateId, x.RevisionNo }).IsUnique();
         b.HasIndex(x => x.TemplateId).IsUnique().HasFilter("status = 'Draft'");
         b.HasIndex(x => new { x.TemplateId, x.Status, x.RevisionNo });
+    }
+
+    internal static string? SerializeDefaultPricings(List<ResourceVisualDefaultPricing>? value) =>
+        value is null ? null : JsonSerializer.Serialize(value, DefaultPricingsJsonOptions);
+
+    internal static List<ResourceVisualDefaultPricing>? DeserializeDefaultPricings(string? value) =>
+        value is null ? null : JsonSerializer.Deserialize<List<ResourceVisualDefaultPricing>>(value, DefaultPricingsJsonOptions);
+
+    internal static int GetDefaultPricingsHashCode(List<ResourceVisualDefaultPricing>? value) =>
+        SerializeDefaultPricings(value)?.GetHashCode(StringComparison.Ordinal) ?? 0;
+}
+
+public sealed class ResourceVisualDefaultPricingsConverter : ValueConverter<List<ResourceVisualDefaultPricing>?, string?>
+{
+    public ResourceVisualDefaultPricingsConverter()
+        : base(
+            value => ResourceVisualTemplateRevisionConfiguration.SerializeDefaultPricings(value),
+            value => ResourceVisualTemplateRevisionConfiguration.DeserializeDefaultPricings(value))
+    {
+    }
+}
+
+public sealed class ResourceVisualDefaultPricingsComparer : ValueComparer<List<ResourceVisualDefaultPricing>?>
+{
+    public ResourceVisualDefaultPricingsComparer()
+        : base(
+            (left, right) => ResourceVisualTemplateRevisionConfiguration.SerializeDefaultPricings(left) == ResourceVisualTemplateRevisionConfiguration.SerializeDefaultPricings(right),
+            value => ResourceVisualTemplateRevisionConfiguration.GetDefaultPricingsHashCode(value),
+            value => ResourceVisualTemplateRevisionConfiguration.DeserializeDefaultPricings(ResourceVisualTemplateRevisionConfiguration.SerializeDefaultPricings(value)))
+    {
     }
 }
 public sealed class ResourceVisualTagConfiguration : IEntityTypeConfiguration<ResourceVisualTag>

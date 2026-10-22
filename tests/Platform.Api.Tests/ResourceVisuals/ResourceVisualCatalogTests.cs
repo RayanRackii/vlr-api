@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Modules.ResourceVisuals;
+using Platform.Core.Domain.Enums;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -78,6 +79,23 @@ public sealed class ResourceVisualCatalogTests
         var published = await service.PublishAsync(template.Id, draft.Id, default); Assert.NotNull(published.ArtUrl);
         var error = await Assert.ThrowsAsync<ResourceVisualException>(() => service.SaveRevisionAsync(template.Id, draft.Id, request, default)); Assert.Equal(409, error.Status);
         var second = await service.SaveRevisionAsync(template.Id, null, request, default); Assert.Equal(2, second.RevisionNo); Assert.Equal(published.ArtSha256, (await service.PublishedArtAsync(draft.Id, default))!.ArtSha256);
+    }
+    [Fact]
+    public async Task Open_hours_default_durations_are_validated_and_normalized()
+    {
+        var tenant = new FakeTenantProvider(); await using var db = InMemoryAppDb.Create(tenant); var service = Service(db, tenant);
+        var template = await service.SaveTemplateAsync(null, new("duration-room", new() { ["en"] = "Room" }, [], []), default);
+        var request = new RevisionRequest("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#ABCDEF\"/></svg>", null, null, "0 0 100 100", 1, "#ABCDEF", "square",
+            DefaultSchedulePolicy: SchedulePolicy.OpenHours,
+            DefaultOpenTime: new(8, 0),
+            DefaultCloseTime: new(22, 0),
+            DefaultAllowedDurationMinutes: " 120, 60, 120 ");
+
+        var revision = await service.SaveRevisionAsync(template.Id, null, request, default);
+
+        Assert.Equal("60,120", revision.DefaultAllowedDurationMinutes);
+        var invalid = request with { DefaultAllowedDurationMinutes = "60, nope" };
+        Assert.Equal("VISUAL_TEMPLATE_INVALID", (await Assert.ThrowsAsync<ResourceVisualException>(() => service.SaveRevisionAsync(template.Id, revision.Id, invalid, default))).Code);
     }
     [Fact]
     public async Task Inherited_archived_segment_does_not_break_picker_but_explicit_archived_filter_is_rejected()

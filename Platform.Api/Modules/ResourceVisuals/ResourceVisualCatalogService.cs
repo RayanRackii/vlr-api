@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -24,7 +26,7 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
         var published = await db.Set<ResourceVisualTemplateRevision>().AsNoTracking()
             .Where(x => x.Status == ResourceVisualRevisionStatus.Published && templateIds.Contains(x.TemplateId))
             .Where(x => !db.Set<ResourceVisualTemplateRevision>().Any(later => later.TemplateId == x.TemplateId && later.Status == ResourceVisualRevisionStatus.Published && later.RevisionNo > x.RevisionNo))
-            .Select(x => new RevisionMetadata(x.Id, x.TemplateId, x.RevisionNo, x.Status, x.ViewBox, x.AspectRatio, x.DefaultColor, x.DefaultIcon, x.SuggestedSlotMinutes, x.SuggestedCapacityPeople, x.ArtSha256, x.Version)).ToArrayAsync(ct);
+            .Select(x => new RevisionMetadata(x.Id, x.TemplateId, x.RevisionNo, x.Status, x.ViewBox, x.AspectRatio, x.DefaultColor, x.DefaultIcon, x.SuggestedSlotMinutes, x.SuggestedCapacityPeople, x.DefaultSchedulePolicy, x.DefaultOpenTime, x.DefaultCloseTime, x.DefaultAllowedDurationMinutes, x.DefaultPricings, x.DefaultRequiresDeposit, x.DefaultMaxAdvanceBookingDays, x.ArtSha256, x.Version)).ToArrayAsync(ct);
         var segments = (query.SegmentIds ?? []).Distinct().ToArray();
         if (picker && segments.Length == 0 && !query.AllSegments)
             segments = await db.Set<TenantResourceSegment>().Where(x => x.TenantId == tenant!.Value && db.Set<ResourceVisualTag>().Any(t => t.Id == x.TagId && t.IsActive)).Select(x => x.TagId).ToArrayAsync(ct);
@@ -103,6 +105,15 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
         CheckVersion(request.ExpectedVersion, revision.Version);
         revision.FloorSvg = request.FloorSvg; revision.LinesSvg = request.LinesSvg; revision.NetSvg = request.NetSvg; revision.ViewBox = request.ViewBox; revision.AspectRatio = request.AspectRatio;
         revision.DefaultColor = request.DefaultColor.ToUpperInvariant(); revision.DefaultIcon = request.DefaultIcon; revision.SuggestedSlotMinutes = request.SuggestedSlotMinutes; revision.SuggestedCapacityPeople = request.SuggestedCapacityPeople;
+        revision.DefaultSchedulePolicy = request.DefaultSchedulePolicy;
+        revision.DefaultOpenTime = request.DefaultOpenTime;
+        revision.DefaultCloseTime = request.DefaultCloseTime;
+        revision.DefaultAllowedDurationMinutes = string.IsNullOrWhiteSpace(request.DefaultAllowedDurationMinutes)
+            ? null
+            : RentalAllowedDurations.Normalize(request.DefaultAllowedDurationMinutes);
+        revision.DefaultPricings = request.DefaultPricings?.Select(ToDefaultPricing).ToList();
+        revision.DefaultRequiresDeposit = request.DefaultRequiresDeposit;
+        revision.DefaultMaxAdvanceBookingDays = request.DefaultMaxAdvanceBookingDays;
         if (revisionId != null) { revision.Version++; revision.Touch(); }
         await SaveAsync(ct); Audit("revision.draft.saved", revision.Id); return revision;
     }
@@ -189,6 +200,23 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
     private static void ValidateRevision(RevisionRequest r)
     {
         if (r.AspectRatio is <= 0 or > 100 || !ColorPattern().IsMatch(r.DefaultColor ?? "") || (r.DefaultIcon?.Length ?? 0) > 80 || !SlugPattern().IsMatch(r.DefaultIcon ?? "") || r.SuggestedSlotMinutes is <= 0 or > 1440 || r.SuggestedCapacityPeople is <= 0 or > 100000 || r.ViewBox?.Length > 100) throw Invalid("Invalid visual revision metadata.");
+        if (r.DefaultMaxAdvanceBookingDays is < 0 or > 3650 || r.DefaultAllowedDurationMinutes?.Length > 128)
+            throw Invalid("Invalid visual revision defaults.");
+        if (r.DefaultSchedulePolicy == Platform.Core.Domain.Enums.SchedulePolicy.OpenHours && (r.DefaultOpenTime is null || r.DefaultCloseTime is null || r.DefaultCloseTime <= r.DefaultOpenTime))
+            throw Invalid("OpenHours defaults require an ordered open and close time.");
+        if (r.DefaultSchedulePolicy != Platform.Core.Domain.Enums.SchedulePolicy.OpenHours && (r.DefaultOpenTime is not null || r.DefaultCloseTime is not null || r.DefaultAllowedDurationMinutes is not null))
+            throw Invalid("Hours defaults require the OpenHours schedule policy.");
+        if (!string.IsNullOrWhiteSpace(r.DefaultAllowedDurationMinutes))
+        {
+            try { RentalAllowedDurations.Normalize(r.DefaultAllowedDurationMinutes); }
+            catch (ArgumentException ex) { throw Invalid(ex.Message); }
+        }
+        if (r.DefaultPricings is { Count: > 100 }) throw Invalid("At most 100 pricing defaults are allowed.");
+        if (r.DefaultPricings is not null)
+        {
+            try { TemplateDefaultPricing.Validate(r.DefaultPricings); }
+            catch (ArgumentException ex) { throw Invalid(ex.Message); }
+        }
         try
         {
             ResourceSvgSanitizer.Sanitize(r.FloorSvg, r.ViewBox!);
@@ -197,13 +225,33 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
         }
         catch (ArgumentException ex) { throw new ResourceVisualException("SVG_UNSAFE", ex.Message); }
     }
-    private sealed record RevisionMetadata(Guid Id, Guid TemplateId, int RevisionNo, ResourceVisualRevisionStatus Status, string ViewBox, decimal AspectRatio, string DefaultColor, string DefaultIcon, int? SuggestedSlotMinutes, int? SuggestedCapacityPeople, string ArtSha256, long Version)
+    private static ResourceVisualDefaultPricing ToDefaultPricing(CreateRentalPricingDto value) => new()
     {
-        public VisualRevisionDto ToDto() => new(Id, TemplateId, RevisionNo, Status, ViewBox, AspectRatio, DefaultColor, DefaultIcon, SuggestedSlotMinutes, SuggestedCapacityPeople, ArtSha256, $"/api/public/resource-visual-revisions/{Id}/art.svg?v={ArtSha256}", Version);
+        DayOfWeek = value.DayOfWeek,
+        StartTime = value.StartTime,
+        EndTime = value.EndTime,
+        PricePerHour = value.PricePerHour,
+        RequiresDeposit = value.RequiresDeposit,
+        DepositPercentage = value.DepositPercentage,
+    };
+
+    private static CreateRentalPricingDto ToPricingDto(ResourceVisualDefaultPricing value) => new()
+    {
+        DayOfWeek = value.DayOfWeek,
+        StartTime = value.StartTime,
+        EndTime = value.EndTime,
+        PricePerHour = value.PricePerHour,
+        RequiresDeposit = value.RequiresDeposit,
+        DepositPercentage = value.DepositPercentage,
+    };
+
+    private sealed record RevisionMetadata(Guid Id, Guid TemplateId, int RevisionNo, ResourceVisualRevisionStatus Status, string ViewBox, decimal AspectRatio, string DefaultColor, string DefaultIcon, int? SuggestedSlotMinutes, int? SuggestedCapacityPeople, Platform.Core.Domain.Enums.SchedulePolicy? DefaultSchedulePolicy, TimeOnly? DefaultOpenTime, TimeOnly? DefaultCloseTime, string? DefaultAllowedDurationMinutes, List<ResourceVisualDefaultPricing>? DefaultPricings, bool? DefaultRequiresDeposit, int? DefaultMaxAdvanceBookingDays, string ArtSha256, long Version)
+    {
+        public VisualRevisionDto ToDto() => new(Id, TemplateId, RevisionNo, Status, ViewBox, AspectRatio, DefaultColor, DefaultIcon, SuggestedSlotMinutes, SuggestedCapacityPeople, DefaultSchedulePolicy, DefaultOpenTime, DefaultCloseTime, DefaultAllowedDurationMinutes, DefaultPricings?.Select(ToPricingDto).ToArray(), DefaultRequiresDeposit, DefaultMaxAdvanceBookingDays, ArtSha256, $"/api/public/resource-visual-revisions/{Id}/art.svg?v={ArtSha256}", Version);
     }
     private static VisualTemplateDto ToDto(ResourceVisualTemplate t, IEnumerable<ResourceVisualTag> tags, ResourceVisualTemplateRevision? revision) => new(t.Id, t.Slug, t.NameI18n, t.DescriptionI18n, t.IsActive, t.SortOrder, t.Version, tags.Select(TagDto).ToArray(), revision == null ? null : RevisionDto(revision));
     private static VisualTagDto TagDto(ResourceVisualTag t) => new(t.Id, t.Slug, t.Kind, t.Facet, t.NameI18n, t.IsActive, t.SortOrder);
-    public static VisualRevisionDto RevisionDto(ResourceVisualTemplateRevision r) => new(r.Id, r.TemplateId, r.RevisionNo, r.Status, r.ViewBox, r.AspectRatio, r.DefaultColor, r.DefaultIcon, r.SuggestedSlotMinutes, r.SuggestedCapacityPeople, r.ArtSha256, r.Status == ResourceVisualRevisionStatus.Published ? $"/api/public/resource-visual-revisions/{r.Id}/art.svg?v={r.ArtSha256}" : null, r.Version);
+    public static VisualRevisionDto RevisionDto(ResourceVisualTemplateRevision r) => new(r.Id, r.TemplateId, r.RevisionNo, r.Status, r.ViewBox, r.AspectRatio, r.DefaultColor, r.DefaultIcon, r.SuggestedSlotMinutes, r.SuggestedCapacityPeople, r.DefaultSchedulePolicy, r.DefaultOpenTime, r.DefaultCloseTime, r.DefaultAllowedDurationMinutes, r.DefaultPricings?.Select(ToPricingDto).ToArray(), r.DefaultRequiresDeposit, r.DefaultMaxAdvanceBookingDays, r.ArtSha256, r.Status == ResourceVisualRevisionStatus.Published ? $"/api/public/resource-visual-revisions/{r.Id}/art.svg?v={r.ArtSha256}" : null, r.Version);
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$")] private static partial Regex SlugRegex();
     private static Regex SlugPattern() => SlugRegex();
     [GeneratedRegex("^[a-z][a-z0-9-]{0,31}$")] private static partial Regex FacetPattern();

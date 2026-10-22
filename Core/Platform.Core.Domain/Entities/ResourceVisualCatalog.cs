@@ -1,4 +1,5 @@
 using Platform.Core.Domain.Common;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Domain.Entities;
 
@@ -31,11 +32,29 @@ public sealed class ResourceVisualTemplateRevision : Entity
     public string DefaultIcon { get; set; } = "square";
     public int? SuggestedSlotMinutes { get; set; } = 60;
     public int? SuggestedCapacityPeople { get; set; }
+    public SchedulePolicy? DefaultSchedulePolicy { get; set; }
+    public TimeOnly? DefaultOpenTime { get; set; }
+    public TimeOnly? DefaultCloseTime { get; set; }
+    public string? DefaultAllowedDurationMinutes { get; set; }
+    public List<ResourceVisualDefaultPricing>? DefaultPricings { get; set; }
+    public bool? DefaultRequiresDeposit { get; set; }
+    public int? DefaultMaxAdvanceBookingDays { get; set; }
     public string ArtSha256 { get; set; } = "";
     public DateTimeOffset? PublishedAt { get; set; }
     public long Version { get; set; } = 1;
     public ResourceVisualTemplateRevision() { }
     public ResourceVisualTemplateRevision(Guid id, DateTimeOffset createdAt) { Id = id; CreatedAt = createdAt; }
+}
+
+/// <summary>Published template pricing defaults, shaped like create-pricing input without resource IDs.</summary>
+public sealed class ResourceVisualDefaultPricing
+{
+    public DayOfWeek DayOfWeek { get; set; }
+    public TimeOnly StartTime { get; set; }
+    public TimeOnly EndTime { get; set; }
+    public decimal PricePerHour { get; set; }
+    public bool RequiresDeposit { get; set; }
+    public decimal DepositPercentage { get; set; }
 }
 
 public sealed class ResourceVisualTag : Entity

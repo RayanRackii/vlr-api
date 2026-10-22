@@ -54,7 +54,7 @@ public sealed class RentalAssetsController(
     {
         try
         {
-            BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
+            BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
             var asset = await assetRegistry.CreateRentableAsync(request, cancellationToken);
             var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
                 ?? throw new InvalidOperationException("Rentable configuration was not created.");

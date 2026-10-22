@@ -54,4 +54,17 @@ public sealed class ResourceVisualMigrationTests
         await using var db = factory.Create(new FakeTenantProvider());
         Assert.False(db.Database.HasPendingModelChanges());
     }
+
+    [Fact]
+    public void Unit_write_migration_grants_and_rolls_back_only_canonical_system_roles()
+    {
+        var migration = new AddUnitWriteAndVisualTemplateDefaults();
+        var up = Assert.Single(migration.UpOperations.OfType<SqlOperation>()).Sql;
+        var down = Assert.Single(migration.DownOperations.OfType<SqlOperation>()).Sql;
+
+        Assert.Contains("r.is_system_role", up);
+        Assert.Contains("lower(r.name) IN ('admin', 'superadmin')", up);
+        Assert.Contains("r.is_system_role", down);
+        Assert.Contains("lower(r.name) IN ('admin', 'superadmin')", down);
+    }
 }
