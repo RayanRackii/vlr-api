@@ -9,6 +9,11 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Arquitetura de módulos — baseline estático (2026-10-22)
+
+- [x] Adicionado teste estático em `tests/Platform.Api.Tests/Architecture/` para bloquear referências entre módulos fora de `.Contracts`; baseline versionado enumera as violações atuais e falha também quando elas são removidas. Testes não executados por instrução do usuário; Git não executado.
+- [ ] Próximo passo API: executar o teste de arquitetura e remover gradualmente as dependências existentes, apagando as linhas correspondentes da baseline. Próximo `vlr-web`: integrar catálogo/picker/editor visual e apresentação Mapa/Lista, conforme a seção “Catálogo visual + mapas” do roadmap irmão.
+
 ## Taxonomy de plataforma + Catalog (2026-10-20) — released em PROD (2026-10-21)
 
 - [x] Schema/CRUD compartilhado, `core.taxonomy.read/manage`, atribuições tipadas, filtros com descendentes/tags AND e descoberta staff/portal. Spec: [`platform-taxonomy`](docs/plans/active/2026-10-20-platform-taxonomy.md).
