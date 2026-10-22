@@ -5,6 +5,7 @@ using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Modules.ResourceVisuals;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.ResourceVisuals;
 
 namespace Platform.Api.Tests.Assets;
@@ -95,6 +96,39 @@ public sealed class AssetVisualAssignmentTests
         Assert.Null(resource.RentalConfiguration.VisualTemplateRevisionId);
         Assert.Null(resource.RentalConfiguration.CapacityPeople);
         Assert.Null(resource.RentalConfiguration.MaxAdvanceBookingDays);
+    }
+
+    [Fact]
+    public async Task Create_can_apply_published_template_defaults_without_changing_legacy_create()
+    {
+        await using var h = await BulkCreateAssetsHarness.CreateAsync();
+        var revision = await SeedVisualAsync(h, defaults: true);
+
+        var applied = await h.CreateRegistry().CreateRentableAsync(Create(h) with
+        {
+            Tag = "DEFAULTS",
+            VisualTemplateRevisionId = revision.Id,
+            ApplyTemplateDefaults = true,
+        }, Ct);
+        var rental = applied.RentalConfiguration!;
+        Assert.False(rental.RequiresDeposit);
+        Assert.Equal(14, rental.MaxAdvanceBookingDays);
+        Assert.Equal(SchedulePolicy.OpenHours, rental.SchedulePolicy);
+        Assert.Equal(new TimeOnly(8, 0), rental.OpenTime);
+        Assert.Equal(new TimeOnly(22, 0), rental.CloseTime);
+        Assert.Equal("60,120", rental.AllowedDurationMinutes);
+        var pricing = await h.Db.RentalPricings.SingleAsync(x => x.RentalAssetId == rental.Id, Ct);
+        Assert.Equal(25.50m, pricing.PricePerHour);
+
+        var legacy = await h.CreateRegistry().CreateRentableAsync(Create(h) with
+        {
+            Tag = "LEGACY",
+            VisualTemplateRevisionId = revision.Id,
+        }, Ct);
+        Assert.True(legacy.RentalConfiguration!.RequiresDeposit);
+        Assert.Null(legacy.RentalConfiguration.MaxAdvanceBookingDays);
+        Assert.Equal(SchedulePolicy.SlotGrid, legacy.RentalConfiguration.SchedulePolicy);
+        Assert.Empty(await h.Db.RentalPricings.Where(x => x.RentalAssetId == legacy.RentalConfiguration.Id).ToListAsync(Ct));
     }
 
     [Fact]
@@ -194,10 +228,20 @@ public sealed class AssetVisualAssignmentTests
     private static UpdateRentableRequest Update(BulkCreateAssetsHarness h) => new()
     { Name = "Resource", Tag = "R", UnitId = h.UnitId, CategoryId = h.CategoryId, FamilyId = h.FamilyId };
 
-    private static async Task<ResourceVisualTemplateRevision> SeedVisualAsync(BulkCreateAssetsHarness h, bool active = true, bool published = true, int? suggestedCapacity = null)
+    private static async Task<ResourceVisualTemplateRevision> SeedVisualAsync(BulkCreateAssetsHarness h, bool active = true, bool published = true, int? suggestedCapacity = null, bool defaults = false)
     {
         var template = new ResourceVisualTemplate { Slug = "test-" + Guid.NewGuid().ToString("N"), IsActive = active, NameI18n = new() { ["en"] = "Test" } };
         var revision = new ResourceVisualTemplateRevision { TemplateId = template.Id, RevisionNo = 1, FloorSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#AABBCC\"/></svg>", SuggestedCapacityPeople = suggestedCapacity };
+        if (defaults)
+        {
+            revision.DefaultSchedulePolicy = SchedulePolicy.OpenHours;
+            revision.DefaultOpenTime = new TimeOnly(8, 0);
+            revision.DefaultCloseTime = new TimeOnly(22, 0);
+            revision.DefaultAllowedDurationMinutes = "60,120";
+            revision.DefaultRequiresDeposit = false;
+            revision.DefaultMaxAdvanceBookingDays = 14;
+            revision.DefaultPricings = [new ResourceVisualDefaultPricing { DayOfWeek = DayOfWeek.Monday, StartTime = new TimeOnly(8, 0), EndTime = new TimeOnly(9, 0), PricePerHour = 25.50m, RequiresDeposit = false, DepositPercentage = 0 }];
+        }
         if (published) ResourceVisualArt.PreparePublication(revision, DateTimeOffset.UtcNow);
         h.Db.AddRange(template, revision); await h.Db.SaveChangesAsync(); return revision;
     }

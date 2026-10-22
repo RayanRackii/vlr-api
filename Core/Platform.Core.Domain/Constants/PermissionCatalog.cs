@@ -24,6 +24,7 @@ public static class PermissionCatalog
         Define(Permissions.Core.RolesRead, "Read roles", "List roles and the permission catalog."),
         Define(Permissions.Core.RolesManage, "Manage roles", "Create, update, and delete custom roles."),
         Define(Permissions.Core.UnitsRead, "Read units", "List tenant units."),
+        Define(Permissions.Core.UnitsWrite, "Write units", "Create and update tenant units."),
         Define(Permissions.Core.RegistrationFieldsRead, "Read registration fields", "List B2C registration fields."),
         Define(Permissions.Core.RegistrationFieldsWrite, "Write registration fields", "Create and update B2C registration fields."),
         Define(Permissions.Core.ModuleMenuRead, "Read module menu", "List B2C module menu items."),

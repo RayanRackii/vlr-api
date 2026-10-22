@@ -47,9 +47,15 @@ public sealed class AssetService(
         return asset is null ? null : ToResponse(asset);
     }
 
-    public async Task<AssetResponse> CreateAsync(
+    public Task<AssetResponse> CreateAsync(
         CreateAssetRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        CreateAsync(request, cancellationToken, null);
+
+    private async Task<AssetResponse> CreateAsync(
+        CreateAssetRequest request,
+        CancellationToken cancellationToken,
+        CreateRentableTemplateDefaults? templateDefaults)
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureCanCreateAssetsAsync(1, cancellationToken);
@@ -58,7 +64,14 @@ public sealed class AssetService(
         var visual = await ValidateVisualAssignmentAsync(request.IsRentable,
             JsonOptional<Guid>.Specified(request.VisualTemplateRevisionId), null, cancellationToken);
         ValidateCapacity(request.CapacityPeople);
-        BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
+        var effectiveRequiresDeposit = templateDefaults?.Apply == true
+            && !templateDefaults.RequiresDeposit.IsSpecified
+            && visual?.DefaultRequiresDeposit is { } templateRequiresDeposit
+                ? templateRequiresDeposit : request.RequiresDeposit;
+        var effectiveMaxAdvanceBookingDays = templateDefaults?.Apply == true
+            && !templateDefaults.MaxAdvanceBookingDays.IsSpecified
+                ? visual?.DefaultMaxAdvanceBookingDays : request.MaxAdvanceBookingDays;
+        BookingPolicyText.NormalizeAdvanceDays(effectiveMaxAdvanceBookingDays);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
@@ -97,12 +110,13 @@ public sealed class AssetService(
             request.IsRentable,
             request.RentalType,
             request.TotalQuantity,
-            request.RequiresDeposit,
+            effectiveRequiresDeposit,
             request.QueueEnabled,
             request.QueueOpeningTime);
         ApplyVisualConfiguration(asset, JsonOptional<Guid>.Specified(request.VisualTemplateRevisionId),
             request.CapacityPeople is null ? default : JsonOptional<int>.Specified(request.CapacityPeople), request.ConfirmVisualSuggestions,
-            JsonOptional<int>.Specified(request.MaxAdvanceBookingDays), visual);
+            JsonOptional<int>.Specified(effectiveMaxAdvanceBookingDays), visual);
+        ApplyTemplateDefaults(asset, visual, templateDefaults);
 
         await SaveChangesProtectingTagAsync(cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
@@ -329,6 +343,11 @@ public sealed class AssetService(
         CreateRentableRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.RequiresDeposit.IsSpecified && request.RequiresDeposit.Value is null)
+        {
+            throw new ArgumentException("RequiresDeposit must be true or false when supplied.");
+        }
+
         return CreateAsync(
             new CreateAssetRequest
             {
@@ -343,15 +362,19 @@ public sealed class AssetService(
                 RequiresMaintenance = false,
                 RentalType = request.RentalType,
                 TotalQuantity = request.TotalQuantity,
-                RequiresDeposit = request.RequiresDeposit,
+                RequiresDeposit = request.RequiresDeposit.Value ?? true,
                 QueueEnabled = request.QueueEnabled,
                 QueueOpeningTime = request.QueueOpeningTime,
                 VisualTemplateRevisionId = request.VisualTemplateRevisionId,
                 CapacityPeople = request.CapacityPeople,
                 ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
-                MaxAdvanceBookingDays = request.MaxAdvanceBookingDays,
+                MaxAdvanceBookingDays = request.MaxAdvanceBookingDays.Value,
             },
-            cancellationToken);
+            cancellationToken,
+            new CreateRentableTemplateDefaults(
+                request.ApplyTemplateDefaults,
+                request.RequiresDeposit,
+                request.MaxAdvanceBookingDays));
     }
 
     public async Task<AssetResponse> UpdateRentableAsync(
@@ -447,6 +470,60 @@ public sealed class AssetService(
         if (horizon.IsSpecified) rental.MaxAdvanceBookingDays = horizon.Value;
         // Duration suggestions are exposed by the picker for explicit schedule configuration.
     }
+
+    private void ApplyTemplateDefaults(
+        Asset asset,
+        ResourceVisualTemplateRevision? revision,
+        CreateRentableTemplateDefaults? request)
+    {
+        if (request?.Apply != true || revision is null || asset.RentalConfiguration is not { } rental)
+        {
+            return;
+        }
+
+        if (revision.DefaultSchedulePolicy is { } policy)
+        {
+            rental.SchedulePolicy = policy;
+            rental.OpenTime = revision.DefaultOpenTime;
+            rental.CloseTime = revision.DefaultCloseTime;
+            rental.AllowedDurationMinutes = revision.DefaultAllowedDurationMinutes;
+        }
+
+        if (revision.DefaultPricings is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var pricings = revision.DefaultPricings.Select(value => new Platform.Api.Modules.Rentals.Dtos.CreateRentalPricingDto
+        {
+            DayOfWeek = value.DayOfWeek,
+            StartTime = value.StartTime,
+            EndTime = value.EndTime,
+            PricePerHour = value.PricePerHour,
+            RequiresDeposit = value.RequiresDeposit,
+            DepositPercentage = value.DepositPercentage,
+        }).ToArray();
+        TemplateDefaultPricing.Validate(pricings);
+        foreach (var pricing in pricings)
+        {
+            dbContext.RentalPricings.Add(new RentalPricing
+            {
+                TenantId = asset.TenantId,
+                RentalAssetId = rental.Id,
+                DayOfWeek = pricing.DayOfWeek,
+                StartTime = pricing.StartTime,
+                EndTime = pricing.EndTime,
+                PricePerHour = Math.Round(pricing.PricePerHour, 2, MidpointRounding.AwayFromZero),
+                RequiresDeposit = pricing.RequiresDeposit,
+                DepositPercentage = Math.Round(pricing.DepositPercentage, 2, MidpointRounding.AwayFromZero),
+            });
+        }
+    }
+
+    private sealed record CreateRentableTemplateDefaults(
+        bool Apply,
+        JsonOptional<bool> RequiresDeposit,
+        JsonOptional<int> MaxAdvanceBookingDays);
 
     private void AuditVisualAssignment(Asset asset) => logger?.LogInformation(
         "ResourceVisualAudit Action={Action} TenantId={TenantId} RentalAssetId={RentalAssetId} RevisionId={RevisionId}",
