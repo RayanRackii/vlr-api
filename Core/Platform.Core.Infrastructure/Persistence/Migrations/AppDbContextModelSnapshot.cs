@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Infrastructure.Persistence.Configurations;
 using Platform.Core.Infrastructure.Persistence;
 
 #nullable disable
@@ -2777,6 +2778,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("default_open_time");
 
                     b.Property<List<ResourceVisualDefaultPricing>>("DefaultPricings")
+                        .HasConversion<ResourceVisualDefaultPricingsConverter, ResourceVisualDefaultPricingsComparer>()
                         .HasColumnType("jsonb")
                         .HasColumnName("default_pricings");
 

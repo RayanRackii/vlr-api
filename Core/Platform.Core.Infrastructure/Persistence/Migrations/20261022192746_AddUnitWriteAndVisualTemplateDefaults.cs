@@ -72,7 +72,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 INSERT INTO core.role_permissions (role_id, permission_id, granted_at)
                 SELECT r.id, p.id, now()
                 FROM core.roles r CROSS JOIN core.permissions p
-                WHERE lower(r.name) IN ('admin', 'superadmin')
+                WHERE r.is_system_role
+                  AND lower(r.name) IN ('admin', 'superadmin')
                   AND p.key = 'core.units.write'
                 ON CONFLICT DO NOTHING;
                 """);
@@ -117,8 +118,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 table: "resource_visual_template_revisions");
 
             migrationBuilder.Sql("""
-                DELETE FROM core.role_permissions
-                WHERE permission_id IN (SELECT id FROM core.permissions WHERE key = 'core.units.write');
+                DELETE FROM core.role_permissions rp
+                USING core.roles r, core.permissions p
+                WHERE rp.role_id = r.id
+                  AND rp.permission_id = p.id
+                  AND r.is_system_role
+                  AND lower(r.name) IN ('admin', 'superadmin')
+                  AND p.key = 'core.units.write';
                 DELETE FROM core.permissions WHERE key = 'core.units.write';
                 """);
         }

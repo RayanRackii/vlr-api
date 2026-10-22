@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Authorization;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
@@ -79,7 +80,10 @@ public sealed class UnitsController(
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+        })
         {
             return Conflict(new { error = "A unit with this name or code already exists." });
         }

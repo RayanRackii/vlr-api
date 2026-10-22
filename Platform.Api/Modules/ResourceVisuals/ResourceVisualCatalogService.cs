@@ -108,7 +108,9 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
         revision.DefaultSchedulePolicy = request.DefaultSchedulePolicy;
         revision.DefaultOpenTime = request.DefaultOpenTime;
         revision.DefaultCloseTime = request.DefaultCloseTime;
-        revision.DefaultAllowedDurationMinutes = string.IsNullOrWhiteSpace(request.DefaultAllowedDurationMinutes) ? null : request.DefaultAllowedDurationMinutes.Trim();
+        revision.DefaultAllowedDurationMinutes = string.IsNullOrWhiteSpace(request.DefaultAllowedDurationMinutes)
+            ? null
+            : RentalAllowedDurations.Normalize(request.DefaultAllowedDurationMinutes);
         revision.DefaultPricings = request.DefaultPricings?.Select(ToDefaultPricing).ToList();
         revision.DefaultRequiresDeposit = request.DefaultRequiresDeposit;
         revision.DefaultMaxAdvanceBookingDays = request.DefaultMaxAdvanceBookingDays;
@@ -204,6 +206,11 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
             throw Invalid("OpenHours defaults require an ordered open and close time.");
         if (r.DefaultSchedulePolicy != Platform.Core.Domain.Enums.SchedulePolicy.OpenHours && (r.DefaultOpenTime is not null || r.DefaultCloseTime is not null || r.DefaultAllowedDurationMinutes is not null))
             throw Invalid("Hours defaults require the OpenHours schedule policy.");
+        if (!string.IsNullOrWhiteSpace(r.DefaultAllowedDurationMinutes))
+        {
+            try { RentalAllowedDurations.Normalize(r.DefaultAllowedDurationMinutes); }
+            catch (ArgumentException ex) { throw Invalid(ex.Message); }
+        }
         if (r.DefaultPricings is { Count: > 100 }) throw Invalid("At most 100 pricing defaults are allowed.");
         if (r.DefaultPricings is not null)
         {
