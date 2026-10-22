@@ -54,7 +54,7 @@ public sealed class AssetVisualAssignmentPostgresTests(PostgresContainerFixture 
             var asset = await new AssetService(db, provider, new FakeTrialGuard()).CreateRentableAsync(new()
             { Name = "Resource", Tag = "R", UnitId = seed.UnitId, CategoryId = seed.CategoryId, FamilyId = seed.FamilyId }, CancellationToken.None);
             rentalId = asset.RentalConfig!.RentalAssetId;
-            var other = new Tenant("Other", "88888888000191", subdomain: "visual-other-" + Guid.NewGuid().ToString("N"));
+            var other = new Tenant("Other", Guid.NewGuid().ToString("N")[..20], subdomain: "visual-other-" + Guid.NewGuid().ToString("N"));
             var layout = new RentalLayout { TenantId = other.Id, Name = "Other map", IsActive = true, AspectRatio = 1.6, WidthPercent = 100 };
             db.AddRange(other, layout); await db.SaveChangesAsync(); layoutId = layout.Id;
             provider.TenantId = other.Id;
@@ -77,7 +77,7 @@ public sealed class AssetVisualAssignmentPostgresTests(PostgresContainerFixture 
 
     private static async Task<Seed> SeedAsync(Platform.Core.Infrastructure.Persistence.AppDbContext db, FakeTenantProvider provider)
     {
-        var tenant = new Tenant("Visual registry test", "77777777000191", subdomain: "visual-" + Guid.NewGuid().ToString("N"));
+        var tenant = new Tenant("Visual registry test", Guid.NewGuid().ToString("N")[..20], subdomain: "visual-" + Guid.NewGuid().ToString("N"));
         provider.TenantId = tenant.Id;
         var unit = new Unit(tenant.Id, "Site");
         var family = new AssetFamily { Key = "visual-" + Guid.NewGuid().ToString("N")[..20], Label = "Spaces", FieldSchemaJson = "{\"fields\":[]}" };

@@ -1,7 +1,9 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Core.Domain.Entities;
 
@@ -12,6 +14,7 @@ public sealed partial class RentalLayoutService
     public async Task<BookingMapCompositionDto?> GetCompositionAsync(Guid id, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
+        await using var snapshot = await BeginCompositionReadAsync(ct);
         var map = await Layouts(tenantId).AsNoTracking().FirstOrDefaultAsync(l => l.Id == id, ct);
         if (map is null) return null;
         var items = await ReadItemsAsync(tenantId, [id], false, ct);
@@ -72,6 +75,8 @@ public sealed partial class RentalLayoutService
         map.Version++; map.Touch();
         await SaveAsync(tx, ct);
         Audit("composition", tenantId, id, map.Version);
+        // A committed write transaction must be detached before opening the read snapshot.
+        if (tx is not null) await tx.DisposeAsync();
         return (await GetCompositionAsync(id, ct))!;
     }
 
@@ -127,6 +132,7 @@ public sealed partial class RentalLayoutService
     public async Task<PublicBookingMapDto?> GetPublicMapAsync(Guid id, Guid? unitId, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
+        await using var snapshot = await BeginCompositionReadAsync(ct);
         var map = await ActiveLayouts(tenantId).AsNoTracking().FirstOrDefaultAsync(l => l.Id == id && (unitId == null || l.UnitId == unitId), ct);
         if (map is null) return null;
         var items = (await ReadItemsAsync(tenantId, [id], true, ct)).Select(i => i.Dto).ToList();
@@ -165,7 +171,11 @@ public sealed partial class RentalLayoutService
         }
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("booking-map-demo-v1:" + tenantId.ToString("D")));
         var id = new Guid(hash.AsSpan(0, 16));
-        if (await Layouts(tenantId).AnyAsync(l => l.Id == id, ct)) return (await GetCompositionAsync(id, ct))!;
+        if (await Layouts(tenantId).AnyAsync(l => l.Id == id, ct))
+        {
+            if (tx is not null) await tx.DisposeAsync();
+            return (await GetCompositionAsync(id, ct))!;
+        }
         var map = new RentalLayout(id) { TenantId = tenantId, UnitId = request.UnitId, Name = request.Name.Trim(),
             IsActive = true, AspectRatio = request.AspectRatio, WidthPercent = 100 };
         dbContext.Add(map);
@@ -181,8 +191,16 @@ public sealed partial class RentalLayoutService
         }
         await SaveAsync(tx, ct);
         Audit("demo-seed", tenantId, id, map.Version);
+        if (tx is not null) await tx.DisposeAsync();
         return (await GetCompositionAsync(id, ct))!;
     }
+
+    // PostgreSQL's default ReadCommitted takes a snapshot per statement. Keep metadata,
+    // placements, decorations and referenced art on the same snapshot until materialized.
+    private async Task<IDbContextTransaction?> BeginCompositionReadAsync(CancellationToken ct) =>
+        dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct)
+            : null;
 
     private IQueryable<RentalLayout> ActiveLayouts(Guid tenantId) => Layouts(tenantId).Where(l => l.IsActive
         && (l.UnitId == null || dbContext.Units.IgnoreQueryFilters().Any(u => u.TenantId == tenantId && u.Id == l.UnitId && u.IsActive)));

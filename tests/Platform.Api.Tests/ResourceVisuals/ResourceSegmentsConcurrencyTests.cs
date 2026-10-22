@@ -16,7 +16,7 @@ public sealed class ResourceSegmentsConcurrencyTests(PostgresContainerFixture po
     public async Task Concurrent_admin_and_tenant_segment_replacements_serialize_and_never_union_sets()
     {
         var factory = postgres.Factory ?? throw new InvalidOperationException("PostgreSQL fixture unavailable.");
-        var tenant = new Tenant("Segment concurrency", "segments-" + Guid.NewGuid().ToString("N"));
+        var tenant = new Tenant("Segment concurrency", Guid.NewGuid().ToString("N")[..20]);
         var provider = new FakeTenantProvider { TenantId = tenant.Id };
         await using (var seed = factory.Create(provider))
         {

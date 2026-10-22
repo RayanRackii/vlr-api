@@ -34,7 +34,7 @@ The existing Asset Registry create/update/bulk consumers also carry the optional
 
 Picker parameters: `search`, `segmentIds`/`segmentIds[]`, `tagIds`/`tagIds[]`, `allSegments`, `page`, `pageSize`. Repeated IDs within a facet use OR; different facets and text terms use AND. Default discovery uses the tenant's active segments; no segments means all. `allSegments=true` removes the implicit segment filter. Segments are preferences, not entitlements.
 
-Composition PUT receives the complete map with `expectedVersion`, `name`, optional `unitId`, `isActive`, `sortOrder`, `aspectRatio`, `widthPercent`, `items` and `decorations`. Read the current composition before editing. Preserve placement IDs; omitted existing IDs are reconciled by resource. Version conflicts return 409 `MAP_VERSION_CONFLICT`; invalid compositions are rejected atomically. Legacy layout PUT keeps decorations and new item fields, and increments the version.
+Composition PUT receives the complete map with `expectedVersion`, `name`, optional `unitId`, `isActive`, `sortOrder`, `aspectRatio`, `widthPercent`, `items` and `decorations`. Composition and public detail reads materialize metadata/version, items, decorations and referenced art within one repeatable-read transaction. Read the current composition before editing. Preserve placement IDs; omitted existing IDs are reconciled by resource. Version conflicts return 409 `MAP_VERSION_CONFLICT`; invalid compositions are rejected atomically. Legacy layout PUT keeps decorations and new item fields, and increments the version.
 
 Settings PUT requires `expectedVersion` and four `#RRGGBB` colors: `availableColor`, `takenColor`, `unavailableColor`, `selectedColor`. It also accepts `showPriceOnBlock`, `timeFilterMode` (`Periods`/`FromTime`), `defaultView` (`Map`/`List`), and nullable `defaultLayoutId`. Missing settings read as version 0. Deleting the default map clears the preference in the same transaction.
 
@@ -53,7 +53,15 @@ All have Down. Map Down restores the old layout/item/unit constraints and remove
 
 ## Development demo
 
-Authenticate with a platform-admin bearer token. The process must run with `ASPNETCORE_ENVIRONMENT=Development`; other environments return 404 `DEV_ONLY`. Use the explicit tenant UUID and existing **RentalAsset** IDs from that tenant and unit. Do not supply Asset IDs, inferred inventory or new resources.
+Authenticate with a platform-admin bearer token. The process must run with `ASPNETCORE_ENVIRONMENT=Development`; other environments return 404 `DEV_ONLY`. `BookingMaps:DemoSeed:AllowedTenantIds` defaults to an empty list, so no tenant may be seeded without explicit deployment configuration. Non-allowlisted tenants return 403 `DEMO_SEED_TENANT_NOT_ALLOWED` before the ambient tenant context is changed or the seed service is invoked.
+
+This repo does not include an `appsettings.Development.json` for the DEV deployment. For the approved FICC DEV tenant, configure the Development process with this environment variable (never add this tenant to the shared `appsettings.json` demo allowlist):
+
+```text
+BookingMaps__DemoSeed__AllowedTenantIds__0=b27c9a0a-d585-4626-8c13-1468c5a43519
+```
+
+The environment variable is documented here, not applied to any deployment by this task. Use the explicit tenant UUID and existing **RentalAsset** IDs from that tenant and unit. Do not supply Asset IDs, inferred inventory or new resources.
 
 ```http
 POST /api/admin/tenants/{tenantId}/booking-maps/demo
@@ -102,3 +110,20 @@ Build: `dotnet build --no-restore -m:1 -p:UseSharedCompilation=false`. Tests: `d
 In this sandbox the SDK is `/home/rolvixpilot/.dotnet/dotnet`; use `DOTNET_CLI_HOME=/tmp/mapi-dotnet`. VSTest's socket is blocked. The xUnit in-process runner under `/tmp/mapi-map-inproc` was executed from `tests/Platform.Api.Tests/bin/Debug/net10.0` so repository-relative tests resolve correctly. Final suite: **1675 total, 1578 passed, 0 failed, 97 skipped**. Feature-focused tests plus permission catalog regressions: **96 total, 93 passed, 0 failed, 3 skipped**. The three feature skips cover registry/FK PostgreSQL and concurrent segment replacement.
 
 PostgreSQL 16 single-backend mode, using the isolated `/tmp/mapi-map-pg-single` cluster without sockets, separately validated Up→Down→Up, legacy asset/resource/layout/item preservation, seed idempotency/counts, admin grants, seed Down guards for references and modified metadata, published-art immutability, composite tenant FKs, missing revision FKs and the legacy-link preflight. This does not execute multi-connection concurrency tests.
+
+
+## PR #248 review corrections
+
+The two reported CI failures were fixture errors before the tested operation: the segment concurrency tenant had a 41-character TaxId for a `varchar(20)` column, and the registry tests reused a TaxId under a class-scoped PostgreSQL database, violating its unique index. Fixtures now generate separate IDs within the mapped length; the FK assertions remain intact.
+
+`BookingMapReadConcurrencyTests` pauses an admin/public reader after metadata, commits a composition save on another connection, then checks that the pending read contains only the original version and a subsequent read contains only the new version. It also exercises fresh/idempotent demo seed responses and write-transaction cleanup. `ResourceVisualPostgresMigrationTests` executes all four migrations Up→Down→Up against its own fixture database, compares legacy row snapshots, checks seeded catalog/admin grants and verifies actual seed rollback refusal for referenced or edited seeds.
+
+Both classes use `DockerFact` and run in the existing PostgreSQL CI job (`REQUIRE_POSTGRES_TESTS=true`). To reproduce all affected relational tests locally, configure an isolated loopback `ROLVIX_TEST_POSTGRES_CONNECTION`, then run:
+
+```sh
+dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj --configuration Release --filter 'FullyQualifiedName~BookingMapReadConcurrencyTests|FullyQualifiedName~ResourceVisualPostgresMigrationTests|FullyQualifiedName~ResourceSegmentsConcurrencyTests|FullyQualifiedName~AssetVisualAssignmentPostgresTests'
+```
+
+HTTP regression coverage in `BookingMapHttpTests` verifies the absent/empty allowlist, a different allowed tenant, authorized seeding, production denial and tenant-manifest rejection. No remote migration, configuration or deployment is performed by these tests.
+
+PR #248 final local validation: solution build **0 warnings/errors**; in-process xUnit suite **1679 total / 1580 passed / 0 failed / 99 skipped**, focused **97 / 92 / 0 / 5 PostgreSQL skipped**. VSTest and loopback PostgreSQL sockets are blocked by the sandbox; the real PostgreSQL regressions above require CI or a local environment with sockets.

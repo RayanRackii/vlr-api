@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -120,21 +121,45 @@ public sealed class BookingMapHttpTests
         await using var h = await AvailabilityHarness.CreateAsync();
         var request = new SeedDemoBookingMapRequest { UnitId = h.Unit.Id,
             Items = [new() { RentalAssetId = h.Primary.Id, XPercent = 0, YPercent = 0, WidthPercent = 30, HeightPercent = 30 }] };
-        using (var host = StartHost(h, environment: Environments.Production))
+        var foreign = new Tenant("Other", "22222222000191", subdomain: "other");
+        h.Db.Add(foreign); await h.Db.SaveChangesAsync();
+        using (var host = StartHost(h, environment: Environments.Production, demoAllowedTenantIds: [h.Tenant.Id]))
         {
             var client = host.GetTestClient(); client.DefaultRequestHeaders.Add("X-Map-Admin", "true");
             var blocked = await client.PostAsJsonAsync($"/api/admin/tenants/{h.Tenant.Id}/booking-maps/demo", request);
             Assert.Equal(HttpStatusCode.NotFound, blocked.StatusCode); Assert.Equal("DEV_ONLY", await Code(blocked));
         }
-        using (var host = StartHost(h))
+        using (var host = StartHost(h, demoAllowedTenantIds: [h.Tenant.Id]))
         {
             var client = host.GetTestClient(); client.DefaultRequestHeaders.Add("X-Map-Admin", "true");
             var seeded = await client.PostAsJsonAsync($"/api/admin/tenants/{h.Tenant.Id}/booking-maps/demo", request);
             Assert.Equal(HttpStatusCode.OK, seeded.StatusCode);
-            var foreign = new Tenant("Other", "22222222000191", subdomain: "other"); h.Db.Add(foreign); await h.Db.SaveChangesAsync();
+            var rejected = await client.PostAsJsonAsync($"/api/admin/tenants/{foreign.Id}/booking-maps/demo", request);
+            Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode); Assert.Equal("DEMO_SEED_TENANT_NOT_ALLOWED", await Code(rejected));
+        }
+        using (var host = StartHost(h, demoAllowedTenantIds: [foreign.Id]))
+        {
+            var client = host.GetTestClient(); client.DefaultRequestHeaders.Add("X-Map-Admin", "true");
             var rejected = await client.PostAsJsonAsync($"/api/admin/tenants/{foreign.Id}/booking-maps/demo", request);
             Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode); Assert.Equal("MAP_INVALID", await Code(rejected));
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Demo_endpoint_rejects_valid_active_tenant_when_allowlist_is_empty_or_has_only_another_tenant(bool otherTenantAllowed)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        using var host = StartHost(h, demoAllowedTenantIds: otherTenantAllowed ? [Guid.NewGuid()] : []);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-Map-Admin", "true");
+        var request = new SeedDemoBookingMapRequest { UnitId = h.Unit.Id,
+            Items = [new() { RentalAssetId = h.Primary.Id, XPercent = 0, YPercent = 0, WidthPercent = 30, HeightPercent = 30 }] };
+        var rejected = await client.PostAsJsonAsync($"/api/admin/tenants/{h.Tenant.Id}/booking-maps/demo", request);
+        Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+        Assert.Equal("DEMO_SEED_TENANT_NOT_ALLOWED", await Code(rejected));
+        Assert.Empty(await h.Db.RentalLayouts.ToListAsync());
     }
 
     [Fact]
@@ -158,13 +183,17 @@ public sealed class BookingMapHttpTests
         client.DefaultRequestHeaders.Remove("X-Map-Permissions");
         client.DefaultRequestHeaders.Add("X-Map-Permissions", string.Join(',', permissions));
     }
-    private static IHost StartHost(AvailabilityHarness h, bool enabled = true, string environment = "Development", Guid? additionalEnabledTenant = null) =>
+    private static IHost StartHost(AvailabilityHarness h, bool enabled = true, string environment = "Development", Guid? additionalEnabledTenant = null, Guid[]? demoAllowedTenantIds = null) =>
         new HostBuilder().ConfigureWebHost(web =>
         {
             web.UseEnvironment(environment).UseTestServer();
             web.ConfigureServices(services =>
             {
-                services.AddLogging(); services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+                var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+                    (demoAllowedTenantIds ?? []).Select((id, index) =>
+                        new KeyValuePair<string, string?>($"BookingMaps:DemoSeed:AllowedTenantIds:{index}", id.ToString()))).Build();
+                services.AddLogging(); services.AddSingleton<IConfiguration>(configuration);
+                services.AddOptions<BookingMapDemoSeedOptions>().BindConfiguration(BookingMapDemoSeedOptions.SectionName);
                 services.AddScoped<AmbientTenantContext>();
                 services.AddScoped<ITenantProvider>(sp => new MapTenantProvider(sp.GetRequiredService<AmbientTenantContext>(), h.Tenant.Id));
                 services.AddScoped(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), h.DatabaseName));
