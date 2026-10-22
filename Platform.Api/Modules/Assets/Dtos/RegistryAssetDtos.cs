@@ -44,6 +44,13 @@ public sealed record CreateRentableRequest
     /// Per-resource horizon override on create. Null inherits the tenant booking policy.
     /// </summary>
     public int? MaxAdvanceBookingDays { get; init; }
+
+    public Guid? VisualTemplateRevisionId { get; init; }
+
+    public int? CapacityPeople { get; init; }
+
+    /// <summary>Applies suggested capacity only when no capacity has been configured.</summary>
+    public bool ConfirmVisualSuggestions { get; init; }
 }
 
 public sealed record UpdateRentableRequest
@@ -76,4 +83,15 @@ public sealed record UpdateRentableRequest
     /// </summary>
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
+
+    /// <summary>Omitted preserves the fixed revision; explicit null clears it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalGuidConverter))]
+    public JsonOptional<Guid> VisualTemplateRevisionId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CapacityPeople { get; init; }
+
+    public bool ConfirmVisualSuggestions { get; init; }
 }

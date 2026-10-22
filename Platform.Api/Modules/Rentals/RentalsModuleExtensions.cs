@@ -7,6 +7,7 @@ public static class RentalsModuleExtensions
     public static IServiceCollection AddRentalsModule(this IServiceCollection services)
     {
         services.AddOptions<BookingUiOptions>().BindConfiguration(BookingUiOptions.SectionName);
+        services.AddOptions<BookingMapDemoSeedOptions>().BindConfiguration(BookingMapDemoSeedOptions.SectionName);
         services.AddScoped<IDailyAvailabilityService, DailyAvailabilityService>();
         services.AddScoped<IRentalAssetService, RentalAssetService>();
         services.AddScoped<IRentalPricingService, RentalPricingService>();

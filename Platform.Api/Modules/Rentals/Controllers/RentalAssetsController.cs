@@ -58,10 +58,6 @@ public sealed class RentalAssetsController(
             var asset = await assetRegistry.CreateRentableAsync(request, cancellationToken);
             var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
                 ?? throw new InvalidOperationException("Rentable configuration was not created.");
-            rental = await rentalAssetService.SetMaxAdvanceBookingDaysAsync(
-                rental.Id,
-                request.MaxAdvanceBookingDays,
-                cancellationToken);
 
             return CreatedAtAction(nameof(GetByAssetId), new { assetId = asset.Id }, rental);
         }
@@ -152,11 +148,9 @@ public sealed class RentalAssetsController(
                 BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
             }
 
-            await assetRegistry.UpdateRentableAsync(id, request, cancellationToken);
-            var rental = await rentalAssetService.SetMaxAdvanceBookingDaysAsync(
-                id,
-                request.MaxAdvanceBookingDays,
-                cancellationToken);
+            var asset = await assetRegistry.UpdateRentableAsync(id, request, cancellationToken);
+            var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
+                ?? throw new InvalidOperationException("Rentable configuration was not found.");
 
             return Ok(rental);
         }

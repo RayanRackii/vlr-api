@@ -21,6 +21,14 @@ public class RentalLayout : Entity, ITenantScoped
     /// <summary>How much of the content width the canvas occupies (50–100).</summary>
     public required double WidthPercent { get; set; }
 
+    public int SortOrder { get; set; }
+
+    public long Version { get; set; } = 1;
+
+    public RentalLayout() { }
+
+    public RentalLayout(Guid id) { Id = id; }
+
     public Unit? Unit { get; set; }
 
     private readonly List<RentalLayoutItem> _items = [];

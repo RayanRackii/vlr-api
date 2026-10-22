@@ -14,9 +14,15 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
             table.HasCheckConstraint(
                 "ck_rental_assets_advance_days",
                 "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+            table.HasCheckConstraint("ck_rental_assets_capacity_people", "capacity_people IS NULL OR (capacity_people > 0 AND capacity_people <= 100000)");
         });
 
         builder.HasKey(a => a.Id);
+        builder.HasAlternateKey(a => new { a.TenantId, a.Id });
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<ResourceVisualTemplateRevision>().WithMany()
+            .HasForeignKey(a => a.VisualTemplateRevisionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(a => a.VisualTemplateRevisionId);
 
         builder.Property(a => a.Id)
             .ValueGeneratedNever();

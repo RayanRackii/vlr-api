@@ -21,12 +21,17 @@ public sealed class RentalLayoutItemConfiguration : IEntityTypeConfiguration<Ren
         builder.Property(i => i.HeightPercent).IsRequired();
         builder.Property(i => i.ZIndex).IsRequired();
         builder.Property(i => i.CreatedAt).IsRequired();
+        builder.Property(i => i.Rotation).HasDefaultValue((short)0);
+        builder.Property(i => i.LockAspectRatio).HasDefaultValue(true);
+        builder.HasIndex(i => new { i.TenantId, i.LayoutId });
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(i => i.TenantId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(i => new { i.LayoutId, i.RentalAssetId }).IsUnique();
 
         builder.HasOne(i => i.RentalAsset)
             .WithMany()
-            .HasForeignKey(i => i.RentalAssetId)
+            .HasForeignKey(i => new { i.TenantId, i.RentalAssetId })
+            .HasPrincipalKey(r => new { r.TenantId, r.Id })
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
