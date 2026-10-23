@@ -229,12 +229,13 @@ public sealed class DailyAvailabilityTests
         var windows = (await h.ReadAsync()).Resources[0].Windows;
         Assert.Equal(3, windows[0].AvailableQuantity);
         Assert.Equal(5, windows[1].AvailableQuantity); // touching end/start does not overlap
-        foreach (var status in new[] { ReservationStatus.Completed, ReservationStatus.Canceled })
-        {
-            reservation.Status = status;
-            await h.Db.SaveChangesAsync();
-            Assert.All((await h.ReadAsync()).Resources[0].Windows, w => Assert.Equal(5, w.AvailableQuantity));
-        }
+        // Completing never releases capacity; only cancelling does.
+        reservation.Status = ReservationStatus.Completed;
+        await h.Db.SaveChangesAsync();
+        Assert.Equal([3, 5], (await h.ReadAsync()).Resources[0].Windows.Select(w => w.AvailableQuantity));
+        reservation.Status = ReservationStatus.Canceled;
+        await h.Db.SaveChangesAsync();
+        Assert.All((await h.ReadAsync()).Resources[0].Windows, w => Assert.Equal(5, w.AvailableQuantity));
         h.Primary.Type = RentalAssetType.Location;
         h.Primary.QueueEnabled = true;
         h.Primary.RequiresDeposit = true;

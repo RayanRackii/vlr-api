@@ -1,37 +1,38 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 using static Platform.Api.Modules.Rentals.Services.AvailabilityReadModel;
+using static Platform.Api.Modules.Rentals.Services.ScheduleWriteGuards;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
 /// <summary>
 /// Weekly model writes: schedule template create/update/delete and the default grid seed.
-/// Also hosts the schedule write guards (asset lock transaction, rentable/kind checks,
-/// template collision) that <see cref="ScheduleService"/> still shares.
+/// Shared write guards live in <see cref="ScheduleWriteGuards"/>.
 /// </summary>
 internal sealed class ScheduleTemplateWriter(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IOccupancyKindService occupancyKindService)
 {
+    private readonly ScheduleWriteGuards guards = new(dbContext, tenantProvider);
+
     public async Task<ScheduleTemplateResponseDto> CreateTemplateAsync(
         UpsertScheduleTemplateRequestDto request,
         CancellationToken cancellationToken)
     {
-        var tenantId = EnsureTenant();
+        var tenantId = guards.EnsureTenant();
         ValidateTimeRange(request.StartTime, request.EndTime);
-        await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
-        await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
+        await guards.EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
+        await guards.EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
 
-        await using var transaction = await BeginAssetLockedTransactionAsync(
+        await using var transaction = await guards.BeginAssetLockedTransactionAsync(
             tenantId, [request.RentalAssetId], cancellationToken);
         try
         {
-            await EnsureNoTemplateCollisionAsync(
+            await guards.EnsureNoTemplateCollisionAsync(
                 tenantId,
                 request.RentalAssetId,
                 request.DayOfWeek,
@@ -71,7 +72,7 @@ internal sealed class ScheduleTemplateWriter(
         UpsertScheduleTemplateRequestDto request,
         CancellationToken cancellationToken)
     {
-        var tenantId = EnsureTenant();
+        var tenantId = guards.EnsureTenant();
         ValidateTimeRange(request.StartTime, request.EndTime);
 
         var existing = await dbContext.ScheduleTemplates
@@ -79,11 +80,11 @@ internal sealed class ScheduleTemplateWriter(
             .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Schedule template was not found.");
 
-        await EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
-        await EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
+        await guards.EnsureRentableAsync(tenantId, request.RentalAssetId, cancellationToken);
+        await guards.EnsureOccupancyKindAsync(tenantId, request.OccupancyKindId, cancellationToken);
 
         var lockedAssetIds = new[] { existing.RentalAssetId, request.RentalAssetId };
-        await using var transaction = await BeginAssetLockedTransactionAsync(
+        await using var transaction = await guards.BeginAssetLockedTransactionAsync(
             tenantId, lockedAssetIds, cancellationToken);
         try
         {
@@ -92,7 +93,7 @@ internal sealed class ScheduleTemplateWriter(
                 ?? throw new KeyNotFoundException("Schedule template was not found.");
             EnsureCourtStillLocked(entity.RentalAssetId, lockedAssetIds);
 
-            await EnsureNoTemplateCollisionAsync(
+            await guards.EnsureNoTemplateCollisionAsync(
                 tenantId,
                 request.RentalAssetId,
                 request.DayOfWeek,
@@ -124,14 +125,14 @@ internal sealed class ScheduleTemplateWriter(
 
     public async Task DeleteTemplateAsync(Guid id, CancellationToken cancellationToken)
     {
-        var tenantId = EnsureTenant();
+        var tenantId = guards.EnsureTenant();
         var existing = await dbContext.ScheduleTemplates
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id && t.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Schedule template was not found.");
 
         var lockedAssetIds = new[] { existing.RentalAssetId };
-        await using var transaction = await BeginAssetLockedTransactionAsync(
+        await using var transaction = await guards.BeginAssetLockedTransactionAsync(
             tenantId, lockedAssetIds, cancellationToken);
         try
         {
@@ -155,11 +156,11 @@ internal sealed class ScheduleTemplateWriter(
         SeedDefaultTemplatesRequestDto request,
         CancellationToken cancellationToken)
     {
-        var tenantId = EnsureTenant();
+        var tenantId = guards.EnsureTenant();
         await occupancyKindService.EnsureDefaultsAsync(cancellationToken);
 
         var rentableIds = ResolveRentableIds(request.RentalAssetId, request.RentalAssetIds);
-        await EnsureRentablesAsync(tenantId, rentableIds, cancellationToken);
+        await guards.EnsureRentablesAsync(tenantId, rentableIds, cancellationToken);
 
         var open = request.OpenTime ?? new TimeOnly(8, 0);
         var close = request.CloseTime ?? new TimeOnly(22, 0);
@@ -175,7 +176,7 @@ internal sealed class ScheduleTemplateWriter(
             throw new ArgumentException("SlotMinutes must fit within the open interval.");
         }
 
-        await using var transaction = await BeginAssetLockedTransactionAsync(
+        await using var transaction = await guards.BeginAssetLockedTransactionAsync(
             tenantId, rentableIds, cancellationToken);
         try
         {
@@ -310,115 +311,6 @@ internal sealed class ScheduleTemplateWriter(
         return changed;
     }
 
-    internal async Task EnsureRentableAsync(
-        Guid tenantId,
-        Guid rentalAssetId,
-        CancellationToken cancellationToken)
-    {
-        var exists = await dbContext.RentalAssets
-            .AnyAsync(
-                r => r.Id == rentalAssetId && r.TenantId == tenantId && r.IsActive,
-                cancellationToken);
-        if (!exists)
-        {
-            throw new KeyNotFoundException("Rentable was not found.");
-        }
-    }
-
-    internal async Task EnsureRentablesAsync(
-        Guid tenantId,
-        IReadOnlyList<Guid> rentalAssetIds,
-        CancellationToken cancellationToken)
-    {
-        if (rentalAssetIds.Count == 0)
-        {
-            throw new ArgumentException("At least one rentable is required.");
-        }
-
-        var found = await dbContext.RentalAssets
-            .Where(r => rentalAssetIds.Contains(r.Id) && r.TenantId == tenantId && r.IsActive)
-            .Select(r => r.Id)
-            .ToListAsync(cancellationToken);
-
-        if (found.Count != rentalAssetIds.Count)
-        {
-            throw new KeyNotFoundException("One or more rentables were not found.");
-        }
-    }
-
-    internal async Task EnsureOccupancyKindAsync(
-        Guid tenantId,
-        Guid occupancyKindId,
-        CancellationToken cancellationToken)
-    {
-        var exists = await dbContext.OccupancyKinds
-            .AnyAsync(
-                k => k.Id == occupancyKindId && k.TenantId == tenantId && k.IsActive,
-                cancellationToken);
-        if (!exists)
-        {
-            throw new KeyNotFoundException("Occupancy kind was not found.");
-        }
-    }
-
-    internal async Task EnsureNoTemplateCollisionAsync(
-        Guid tenantId,
-        Guid rentalAssetId,
-        DayOfWeek dayOfWeek,
-        TimeOnly start,
-        TimeOnly end,
-        Guid occupancyKindId,
-        Guid? excludeId,
-        CancellationToken cancellationToken)
-    {
-        var existing = await dbContext.ScheduleTemplates
-            .Where(t => t.TenantId == tenantId
-                        && t.RentalAssetId == rentalAssetId
-                        && t.DayOfWeek == dayOfWeek)
-            .ToListAsync(cancellationToken);
-
-        EnsureNoTemplateCollision(
-            existing, rentalAssetId, dayOfWeek, start, end, occupancyKindId, excludeId);
-    }
-
-    internal static void EnsureNoTemplateCollision(
-        IEnumerable<ScheduleTemplate> existing,
-        Guid rentalAssetId,
-        DayOfWeek dayOfWeek,
-        TimeOnly start,
-        TimeOnly end,
-        Guid occupancyKindId,
-        Guid? excludeId)
-    {
-        foreach (var other in existing)
-        {
-            if (other.RentalAssetId != rentalAssetId || other.DayOfWeek != dayOfWeek)
-            {
-                continue;
-            }
-
-            if (excludeId is { } id && other.Id == id)
-            {
-                continue;
-            }
-
-            if (other.StartTime == start
-                && other.EndTime == end
-                && other.OccupancyKindId == occupancyKindId)
-            {
-                throw new ArgumentException(
-                    "A schedule template with the same interval and occupancy kind already exists.");
-            }
-
-            if (other.OccupancyKindId == occupancyKindId
-                && OccupancyPrecedence.IntervalsOverlap(start, end, other.StartTime, other.EndTime))
-            {
-                throw new ArgumentException(
-                    "This occupancy kind already overlaps that interval on this weekday.");
-            }
-        }
-    }
-
     internal readonly record struct TemplateExactKey(
         Guid RentalAssetId,
         DayOfWeek DayOfWeek,
@@ -436,67 +328,6 @@ internal sealed class ScheduleTemplateWriter(
             .Include(t => t.OccupancyKind)
             .FirstAsync(t => t.Id == id, cancellationToken);
         return ToTemplateDto(entity);
-    }
-
-    internal async Task<IDbContextTransaction?> BeginAssetLockedTransactionAsync(
-        Guid tenantId,
-        IEnumerable<Guid> rentalAssetIds,
-        CancellationToken cancellationToken)
-    {
-        var transaction = dbContext.Database.IsRelational()
-            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
-            : null;
-
-        try
-        {
-            await RentalAssetLocks.LockByRentalAssetIdsAsync(
-                dbContext,
-                tenantId,
-                rentalAssetIds,
-                cancellationToken);
-            return transaction;
-        }
-        catch
-        {
-            if (transaction is not null)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-            }
-
-            throw;
-        }
-    }
-
-    internal static async Task CommitIfPresentAsync(
-        IDbContextTransaction? transaction,
-        CancellationToken cancellationToken)
-    {
-        if (transaction is not null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-        }
-    }
-
-    internal static async Task RollbackIfPresentAsync(
-        IDbContextTransaction? transaction,
-        CancellationToken cancellationToken)
-    {
-        if (transaction is not null)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-        }
-    }
-
-    private Guid EnsureTenant() =>
-        tenantProvider.TenantId
-        ?? throw new UnauthorizedAccessException("Tenant context is required.");
-
-    internal static void ValidateTimeRange(TimeOnly start, TimeOnly end)
-    {
-        if (end <= start)
-        {
-            throw new ArgumentException("End time must be after start time.");
-        }
     }
 
     private static void EnsureCourtStillLocked(
