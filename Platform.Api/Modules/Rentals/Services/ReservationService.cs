@@ -20,11 +20,7 @@ public sealed class ReservationService(
     INotificationOutboxScheduler outboxScheduler,
     TimeProvider timeProvider) : IReservationService
 {
-    private static readonly ReservationStatus[] BlockingStatuses =
-    [
-        ReservationStatus.PendingDeposit,
-        ReservationStatus.Confirmed
-    ];
+    private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
 
     public async Task<CheckAvailabilityResponseDto> CheckAvailabilityAsync(
         CheckAvailabilityRequestDto request,

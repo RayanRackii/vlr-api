@@ -17,10 +17,12 @@ internal sealed class AvailabilityReadModel(
     IOccupancyKindService occupancyKindService,
     TimeProvider timeProvider)
 {
+    // Completing a reservation never releases its time.
     internal static readonly ReservationStatus[] BlockingStatuses =
     [
         ReservationStatus.PendingDeposit,
-        ReservationStatus.Confirmed
+        ReservationStatus.Confirmed,
+        ReservationStatus.Completed
     ];
 
     public async Task<DayScheduleResponseDto> GetDayAsync(
@@ -80,8 +82,11 @@ internal sealed class AvailabilityReadModel(
 
         if (customerFacing)
         {
+            var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
             all = all.Where(s =>
-                s.Status == SlotStatus.Available && s.IsBookableByCustomer);
+                s.Status == SlotStatus.Available && s.IsBookableByCustomer
+                && !ReservationBookingRules.StartsBeforeNow(
+                    TenantBookingClock.AtLocal(s.Date, s.StartTime, zone), timeProvider));
         }
 
         var slots = all
