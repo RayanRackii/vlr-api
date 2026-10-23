@@ -22,8 +22,6 @@ Pmoc -> Assets : Platform.Api/Modules/Pmoc/Controllers/MaintenancePlansControlle
 Pmoc -> Assets : Platform.Api/Modules/Pmoc/Services/MaintenancePlanService.cs
 Rentals -> Assets : Platform.Api/Modules/Rentals/Controllers/RentalAssetsController.cs
 Rentals -> ResourceVisuals : Platform.Api/Modules/Rentals/Controllers/BookingMapsController.cs
-ResourceVisuals -> Rentals : Platform.Api/Modules/ResourceVisuals/ResourceVisualCatalogService.cs
-ResourceVisuals -> Rentals : Platform.Api/Modules/ResourceVisuals/ResourceVisualContracts.cs
 Users -> Customers : Platform.Api/Modules/Users/UsersModuleExtensions.cs
 WorkOrders -> Assets : Platform.Api/Modules/WorkOrders/Controllers/WorkOrdersController.cs
 WorkOrders -> Assets : Platform.Api/Modules/WorkOrders/Services/WorkOrderService.cs

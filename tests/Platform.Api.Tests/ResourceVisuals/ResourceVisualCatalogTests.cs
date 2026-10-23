@@ -12,7 +12,7 @@ namespace Platform.Api.Tests.ResourceVisuals;
 
 public sealed class ResourceVisualCatalogTests
 {
-    private static ResourceVisualCatalogService Service(AppDbContext db, FakeTenantProvider tenant) => new(db, tenant, new FakeTrialGuard(), NullLogger<ResourceVisualCatalogService>.Instance);
+    private static ResourceVisualCatalogService Service(AppDbContext db, FakeTenantProvider tenant) => new(db, tenant, new FakeTrialGuard(), new Platform.Api.Modules.Rentals.Services.RentalVisualDefaults(), NullLogger<ResourceVisualCatalogService>.Instance);
     private static async Task Seed(AppDbContext db)
     {
         db.AddRange(ResourceVisualCatalogSeed.Tags); db.AddRange(ResourceVisualCatalogSeed.Templates); db.AddRange(ResourceVisualCatalogSeed.Revisions); db.AddRange(ResourceVisualCatalogSeed.TemplateTags); await db.SaveChangesAsync();
