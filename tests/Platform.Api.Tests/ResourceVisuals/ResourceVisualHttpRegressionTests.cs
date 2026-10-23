@@ -181,7 +181,7 @@ public sealed class ResourceVisualHttpRegressionTests
                     services.AddScoped<AppDbContext>(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), database));
                     services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>(); services.AddScoped<IPermissionResolver, HeaderPermissionResolver>(); services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
                     services.Configure<PlatformAdminOptions>(options => options.Emails = ["platform@test.local"]); services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>(); services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
-                    services.AddAuthorization(options => options.AddRolvixPolicies()); services.AddResourceVisuals(); services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
+                    services.AddAuthorization(options => options.AddRolvixPolicies()); services.AddScoped<Platform.Core.Domain.Contracts.ResourceVisuals.IRentalVisualDefaults, Platform.Api.Modules.Rentals.Services.RentalVisualDefaults>(); services.AddResourceVisuals(); services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
                     services.AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme).AddScheme<AuthenticationSchemeOptions, TestAuthentication>(SupabaseJwtBearerDefaults.AuthenticationScheme, _ => { });
                     services.AddControllers().ConfigureApplicationPartManager(manager =>
                     {
