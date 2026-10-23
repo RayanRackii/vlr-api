@@ -1,15 +1,16 @@
 using Microsoft.EntityFrameworkCore;
-using Platform.Core.Domain.Entities;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
 /// <summary>
-/// Civil day for the tenant booking-policy cap.
-/// <see cref="Tenant"/> has no timezone property. A missing, blank, or unknown
-/// id falls back to America/Sao_Paulo, the same clock that stores reservation
-/// instants, so the cap window matches <see cref="Reservation.StartDateTime"/>.
+/// Tenant booking clock: the IANA zone in the
+/// <see cref="TenantSettingKeys.BookingTimeZoneId"/> tenant setting. A missing
+/// row falls back to America/Sao_Paulo; an unknown id logs a warning and falls
+/// back too, so reads never fail on a bad setting.
 /// </summary>
 internal static class TenantBookingClock
 {
@@ -18,39 +19,59 @@ internal static class TenantBookingClock
         Guid tenantId,
         CancellationToken cancellationToken)
     {
-        var tenant = await db.Tenants
-            .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == tenantId, cancellationToken);
-        return Resolve(tenant is null ? null : ReadConfiguredTimeZoneId(tenant));
-    }
-
-    /// <summary>
-    /// Returns the tenant's configured timezone id when the model has one.
-    /// <see cref="Tenant"/> currently has no such property, so this is null.
-    /// </summary>
-    public static string? ReadConfiguredTimeZoneId(Tenant tenant)
-    {
-        ArgumentNullException.ThrowIfNull(tenant);
-        return null;
-    }
-
-    public static TimeZoneInfo Resolve(string? configuredTimeZoneId)
-    {
-        if (!string.IsNullOrWhiteSpace(configuredTimeZoneId))
+        var configured = await ReadConfiguredTimeZoneIdAsync(db, tenantId, cancellationToken);
+        var zone = Find(configured);
+        if (zone is null && configured is not null)
         {
-            try
-            {
-                return TimeZoneInfo.FindSystemTimeZoneById(configuredTimeZoneId.Trim());
-            }
-            catch (TimeZoneNotFoundException)
-            {
-            }
-            catch (InvalidTimeZoneException)
-            {
-            }
+            db.GetService<ILoggerFactory>()
+                .CreateLogger(typeof(TenantBookingClock))
+                .LogWarning(
+                    "Tenant {TenantId} has invalid {SettingKey} '{TimeZoneId}'; using {FallbackTimeZoneId}.",
+                    tenantId,
+                    TenantSettingKeys.BookingTimeZoneId,
+                    configured,
+                    BrazilTimeZone.Resolve().Id);
         }
 
-        return BrazilTimeZone.Resolve();
+        return zone ?? BrazilTimeZone.Resolve();
+    }
+
+    /// <summary>The tenant's raw configured zone id, or null when the setting is absent.</summary>
+    public static Task<string?> ReadConfiguredTimeZoneIdAsync(
+        AppDbContext db,
+        Guid tenantId,
+        CancellationToken cancellationToken) =>
+        // The caller names the tenant; the ambient filter could be a different tenant (jobs, admin).
+        db.TenantSettings
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(setting => setting.TenantId == tenantId
+                && setting.Key == TenantSettingKeys.BookingTimeZoneId)
+            .Select(setting => (string?)setting.Value)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public static TimeZoneInfo Resolve(string? configuredTimeZoneId) =>
+        Find(configuredTimeZoneId) ?? BrazilTimeZone.Resolve();
+
+    private static TimeZoneInfo? Find(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return null;
+        }
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId.Trim());
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return null;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return null;
+        }
     }
 
     public static (DateTimeOffset Start, DateTimeOffset EndExclusive) CivilDay(

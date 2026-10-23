@@ -486,6 +486,7 @@ public sealed class AdminTenantService(
                 await DeleteForTenantAsync(dbContext.Roles, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.Units, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.TenantModules, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantSettings, id, cancellationToken);
 
                 await dbContext.Tenants
                     .Where(t => t.Id == id)

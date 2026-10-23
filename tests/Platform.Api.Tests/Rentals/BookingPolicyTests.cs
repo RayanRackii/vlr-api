@@ -360,9 +360,6 @@ public sealed class BookingPolicyTests
     [Fact]
     public void Missing_tenant_timezone_falls_back_to_America_Sao_Paulo()
     {
-        var tenant = new Tenant("North Club", "12345678000199");
-        Assert.Null(TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
-
         var fallback = TenantBookingClock.Resolve(null);
         Assert.Equal(BrazilTimeZone.Resolve().Id, fallback.Id);
         Assert.Equal(fallback.Id, TenantBookingClock.Resolve("   ").Id);
@@ -392,7 +389,7 @@ public sealed class BookingPolicyTests
         var clock = BrazilTimeZone.AtLocal(Day, new TimeOnly(12, 0));
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, clock);
         var tenant = await harness.Db.Tenants.SingleAsync();
-        Assert.Null(TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
+        Assert.Null(await TenantBookingClock.ReadConfiguredTimeZoneIdAsync(harness.Db, tenant.Id, default));
         await harness.SetLimitAsync(1);
 
         var evening = await harness.BookAsync(Day, new TimeOnly(22, 0), new TimeOnly(23, 0));

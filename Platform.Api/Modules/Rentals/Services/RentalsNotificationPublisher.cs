@@ -232,8 +232,7 @@ public sealed class RentalsNotificationPublisher(
             ? trade
             : tenant?.LegalName;
         var reference = FormatReservationReference(reservation);
-        var zone = TenantBookingClock.Resolve(
-            tenant is null ? null : TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
         var schedule = ReservationCustomerEmail.FormatSchedule(
             reservation.StartDateTime,
             reservation.EndDateTime,
