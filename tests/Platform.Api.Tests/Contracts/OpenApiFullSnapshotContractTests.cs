@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
@@ -27,33 +28,28 @@ public sealed class OpenApiFullSnapshotContractTests
 
         using var document = JsonDocument.Parse(body);
         var actual = Normalize(document.RootElement);
-        var sourceSnapshotPath = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "tests",
-            "Platform.Api.Tests",
-            "Contracts",
-            SnapshotFileName);
-        var outputSnapshotPath = Path.Combine(AppContext.BaseDirectory, "Contracts", SnapshotFileName);
+        var sourceSnapshotPath = GetSourceSnapshotPath();
 
         if (Environment.GetEnvironmentVariable("UPDATE_OPENAPI_SNAPSHOT") == "1")
         {
-            var snapshotPath = File.Exists(sourceSnapshotPath) ? sourceSnapshotPath : outputSnapshotPath;
-            Directory.CreateDirectory(Path.GetDirectoryName(snapshotPath)!);
-            await File.WriteAllTextAsync(snapshotPath, actual + Environment.NewLine);
+            Directory.CreateDirectory(Path.GetDirectoryName(sourceSnapshotPath)!);
+            await File.WriteAllTextAsync(sourceSnapshotPath, actual + Environment.NewLine);
             return;
         }
 
-        var readSnapshotPath = File.Exists(sourceSnapshotPath) ? sourceSnapshotPath : outputSnapshotPath;
-        if (!File.Exists(readSnapshotPath))
+        if (!File.Exists(sourceSnapshotPath))
         {
             Assert.Fail($"OpenAPI snapshot is missing. Set UPDATE_OPENAPI_SNAPSHOT=1 and rerun this test to create {sourceSnapshotPath}.");
         }
 
-        var expected = Normalize(JsonDocument.Parse(await File.ReadAllTextAsync(readSnapshotPath)).RootElement);
+        var expected = Normalize(JsonDocument.Parse(await File.ReadAllTextAsync(sourceSnapshotPath)).RootElement);
         Assert.True(
             string.Equals(expected, actual, StringComparison.Ordinal),
             $"The full OpenAPI document changed. Review the API contract and run with UPDATE_OPENAPI_SNAPSHOT=1 to update {sourceSnapshotPath}.\n{CreateDiff(expected, actual)}");
     }
+
+    private static string GetSourceSnapshotPath([CallerFilePath] string sourceFilePath = "") =>
+        Path.Combine(Path.GetDirectoryName(sourceFilePath)!, SnapshotFileName);
 
     private static string Normalize(JsonElement element)
     {
