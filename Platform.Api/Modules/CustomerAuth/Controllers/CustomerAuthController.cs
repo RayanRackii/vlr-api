@@ -134,6 +134,11 @@ public sealed class CustomerAuthController(
             var response = await customerAuthService.LoginAsync(request, cancellationToken);
             return Ok(response);
         }
+        catch (CustomerLoginRateLimitedException ex)
+        {
+            Response.Headers.RetryAfter = ex.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { error = ex.Message });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });

@@ -11,6 +11,13 @@ public static class CustomerAuthModuleExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddOptions<CustomerLoginThrottleOptions>()
+            .Bind(configuration.GetSection(CustomerLoginThrottleOptions.SectionName))
+            .Validate(o => o.EmailLimit > 0 && o.EmailLimit < int.MaxValue
+                && o.IpLimit > 0 && o.IpLimit < int.MaxValue && o.WindowSeconds > 0,
+                "Customer login throttle limits and window must be positive; limits must allow one overflow attempt.")
+            .ValidateOnStart();
+        services.AddScoped<ICustomerLoginThrottle, CustomerLoginThrottle>();
         services.Configure<TwilioVerifyOptions>(configuration.GetSection(TwilioVerifyOptions.SectionName));
         services.AddHttpClient<IPhoneVerificationClient, TwilioVerifyPhoneVerificationClient>(client =>
         {

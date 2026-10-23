@@ -1,4 +1,5 @@
 # ROADMAP — vlr-api
+- [x] F1-4 (local): throttle B2C em PostgreSQL por tenant/e-mail normalizado e IP, 429 + Retry-After, migration reversível e testes de concorrência/não-enumeração; build OK; xUnit em processo 1603 passed/0 failed/109 skipped, PostgreSQL externo pendente, sem Git.
 
 Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `ROADMAP.md` do repo irmão **`vlr-web`**.
 
