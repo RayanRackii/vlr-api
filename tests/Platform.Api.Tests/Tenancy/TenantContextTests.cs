@@ -87,6 +87,21 @@ public sealed class TenantContextTests
     }
 
     [Fact]
+    public async Task Dispose_in_a_child_flow_does_not_consume_the_owner_flow_dispose()
+    {
+        var scope = PlatformScope.Begin(Logger, "owner");
+
+        await Task.Run(scope.Dispose);
+
+        Assert.True(PlatformScope.IsActive);
+        Assert.Equal("owner", PlatformScope.CurrentReason);
+
+        scope.Dispose();
+
+        Assert.False(PlatformScope.IsActive);
+    }
+
+    [Fact]
     public void Disposing_outer_before_inner_throws_and_keeps_inner_active()
     {
         var outer = PlatformScope.Begin(Logger, "outer");
@@ -122,6 +137,15 @@ public sealed class TenantContextTests
         var entry = Assert.Single(loggers.Entries);
         Assert.Equal(LogLevel.Information, entry.Level);
         Assert.Contains("pmoc-engine", entry.Message);
+    }
+
+    [Fact]
+    public void Begin_does_not_activate_the_scope_when_logging_throws()
+    {
+        Assert.Throws<InvalidOperationException>(() => PlatformScope.Begin(new ThrowingLogger(), "job"));
+
+        Assert.False(PlatformScope.IsActive);
+        Assert.Null(PlatformScope.CurrentReason);
     }
 
     [Fact]
@@ -193,5 +217,20 @@ public sealed class TenantContextTests
 
         Assert.Equal(TenantContextMode.Tenant, context.Mode);
         Assert.Equal(tenantId, context.TenantId);
+    }
+
+    private sealed class ThrowingLogger : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => throw new InvalidOperationException("Logging failed.");
     }
 }

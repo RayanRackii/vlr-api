@@ -11,7 +11,7 @@ public sealed partial class PlatformScope : IDisposable
     private static readonly AsyncLocal<PlatformScope?> Current = new();
 
     private readonly PlatformScope? _parent;
-    private bool _disposed;
+    private readonly AsyncLocal<bool> _disposed = new();
 
     private PlatformScope(string reason, PlatformScope? parent)
     {
@@ -31,14 +31,14 @@ public sealed partial class PlatformScope : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
         var scope = new PlatformScope(reason, Current.Value);
-        Current.Value = scope;
         LogEntered(logger, reason, scope._parent?.Reason);
+        Current.Value = scope;
         return scope;
     }
 
     public void Dispose()
     {
-        if (_disposed)
+        if (_disposed.Value)
         {
             return;
         }
@@ -50,7 +50,7 @@ public sealed partial class PlatformScope : IDisposable
                 $"PlatformScope '{Reason}' disposed out of order (current: '{CurrentReason ?? "none"}').");
         }
 
-        _disposed = true;
+        _disposed.Value = true;
         Current.Value = _parent;
     }
 
