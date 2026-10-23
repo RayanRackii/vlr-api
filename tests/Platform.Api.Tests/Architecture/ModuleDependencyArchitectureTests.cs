@@ -1,13 +1,11 @@
-using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Platform.Api.Tests.Architecture;
 
 public sealed class ModuleDependencyArchitectureTests
 {
-    private static readonly Regex ModuleReference = new(
-        @"\bPlatform\s*\.\s*Api\s*\.\s*Modules\s*\.\s*(?<module>[A-Za-z_][A-Za-z0-9_]*)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
     [Fact]
     public void Module_references_match_the_versioned_baseline()
     {
@@ -39,44 +37,80 @@ public sealed class ModuleDependencyArchitectureTests
 
     private static HashSet<string> ScanModuleReferences(string modulesRoot, HashSet<string> knownModules)
     {
-        var references = new HashSet<string>(StringComparer.Ordinal);
+        var files = Directory.EnumerateFiles(modulesRoot, "*.cs", SearchOption.AllDirectories).ToArray();
+        var trees = files.Select(path => CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: path)).ToArray();
+        var references = GetMetadataReferences();
+        var compilation = CSharpCompilation.Create(
+            "ModuleDependencyArchitectureScan",
+            trees,
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var dependencies = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var sourcePath in Directory.EnumerateFiles(modulesRoot, "*.cs", SearchOption.AllDirectories))
+        foreach (var tree in trees)
         {
-            var relativePath = Path.GetRelativePath(modulesRoot, sourcePath)
+            var relativePath = Path.GetRelativePath(modulesRoot, tree.FilePath)
                 .Replace(Path.DirectorySeparatorChar, '/');
             var sourceModule = relativePath.Split('/')[0];
-            var source = RemoveCommentsAndLiterals(File.ReadAllText(sourcePath));
+            var semanticModel = compilation.GetSemanticModel(tree);
+            var root = tree.GetRoot();
 
-            foreach (Match match in ModuleReference.Matches(source))
+            foreach (var name in root.DescendantNodesAndSelf().OfType<NameSyntax>())
             {
-                var targetModule = match.Groups["module"].Value;
+                var symbol = semanticModel.GetSymbolInfo(name).Symbol;
+                while (symbol is IAliasSymbol alias)
+                {
+                    symbol = alias.Target;
+                }
+
+                var targetNamespace = symbol switch
+                {
+                    INamespaceSymbol ns => ns,
+                    ITypeSymbol type => type.ContainingNamespace,
+                    _ => symbol?.ContainingNamespace
+                };
+
+                if (targetNamespace is null)
+                {
+                    continue;
+                }
+
+                var namespaceParts = targetNamespace.ToDisplayString().Split('.');
+                if (namespaceParts.Length < 4 ||
+                    namespaceParts[0] != "Platform" ||
+                    namespaceParts[1] != "Api" ||
+                    namespaceParts[2] != "Modules")
+                {
+                    continue;
+                }
+
+                var targetModule = namespaceParts[3];
                 if (!knownModules.Contains(targetModule) || targetModule == sourceModule)
                 {
                     continue;
                 }
 
-                var suffix = source[(match.Index + match.Length)..];
-                if (Regex.IsMatch(suffix, @"^\s*\.\s*Contracts\b", RegexOptions.CultureInvariant))
+                if (namespaceParts.Length >= 5 && namespaceParts[4] == "Contracts")
                 {
                     continue;
                 }
 
-                references.Add($"{sourceModule} -> {targetModule} : Platform.Api/Modules/{relativePath}");
+                dependencies.Add($"{sourceModule} -> {targetModule} : Platform.Api/Modules/{relativePath}");
             }
         }
 
-        return references;
+        return dependencies;
     }
 
-    private static string RemoveCommentsAndLiterals(string source)
+    private static IEnumerable<MetadataReference> GetMetadataReferences()
     {
-        // Keep offsets stable so the module name can be checked against its following namespace segment.
-        return Regex.Replace(
-            source,
-            @"//[^\r\n]*|/\*[\s\S]*?\*/|\$?@?""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*'",
-            match => new string(' ', match.Length),
-            RegexOptions.CultureInvariant);
+        var paths = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
+            .Split(Path.PathSeparator)
+            .Concat(Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll"))
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        return paths.Select(path => MetadataReference.CreateFromFile(path));
     }
 
     private static string BuildFailureMessage(string[] added, string[] resolved, string baselinePath)
