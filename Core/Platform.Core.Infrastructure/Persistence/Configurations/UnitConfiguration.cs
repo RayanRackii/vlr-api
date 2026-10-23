@@ -11,6 +11,7 @@ public sealed class UnitConfiguration : IEntityTypeConfiguration<Unit>
         builder.ToTable("units");
 
         builder.HasKey(u => u.Id);
+        builder.HasAlternateKey(u => new { u.TenantId, u.Id });
 
         builder.Property(u => u.Id)
             .ValueGeneratedNever();

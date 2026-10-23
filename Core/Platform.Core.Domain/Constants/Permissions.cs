@@ -17,6 +17,7 @@ public static class Permissions
         public const string RolesRead = "core.roles.read";
         public const string RolesManage = "core.roles.manage";
         public const string UnitsRead = "core.units.read";
+        public const string UnitsWrite = "core.units.write";
         public const string RegistrationFieldsRead = "core.registration_fields.read";
         public const string RegistrationFieldsWrite = "core.registration_fields.write";
         public const string ModuleMenuRead = "core.module_menu.read";
@@ -65,6 +66,10 @@ public static class Permissions
         public const string PricingBulkWrite = "rentals.pricing.bulk_write";
         public const string LayoutsRead = "rentals.layouts.read";
         public const string LayoutsWrite = "rentals.layouts.write";
+        public const string SegmentsRead = "rentals.segments.read";
+        public const string SegmentsWrite = "rentals.segments.write";
+        public const string MapSettingsRead = "rentals.map_settings.read";
+        public const string MapSettingsWrite = "rentals.map_settings.write";
         public const string OccupancyKindsRead = "rentals.occupancy_kinds.read";
         public const string OccupancyKindsWrite = "rentals.occupancy_kinds.write";
         public const string BookingPolicyRead = "rentals.booking_policy.read";

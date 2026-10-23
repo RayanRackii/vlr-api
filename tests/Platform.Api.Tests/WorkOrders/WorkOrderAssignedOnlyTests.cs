@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Api.Notifications;
@@ -180,8 +181,9 @@ internal sealed class WorkOrderRbacHarness : IAsyncDisposable
             new AssetRegistry(
                 db,
                 tenantProvider,
-                new AssetService(db, tenantProvider, new FakeTrialGuard()),
-                new AssetFamilyService(db)));
+                new AssetService(db, tenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(db)),
+                new AssetFamilyService(db),
+                new AssetCategoryService(db, tenantProvider)));
 
         return new WorkOrderRbacHarness(
             db,

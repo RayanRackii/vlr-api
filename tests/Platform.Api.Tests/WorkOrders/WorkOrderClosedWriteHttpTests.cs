@@ -20,6 +20,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Common;
@@ -279,6 +281,8 @@ public sealed class WorkOrderClosedWriteHttpTests
                     services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
                     services.AddScoped<IAssetFamilyService, AssetFamilyService>();
                     services.AddScoped<IAssetService, AssetService>();
+                    services.AddScoped<IRentalConfigurationSync, RentalConfigurationSync>();
+                    services.AddScoped<IAssetCategoryService, AssetCategoryService>();
                     services.AddScoped<IAssetRegistry, AssetRegistry>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<IWorkOrderGenerationService, WorkOrderGenerationService>();

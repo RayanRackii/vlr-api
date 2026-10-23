@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Modules.WorkOrders.Dtos;
 using Platform.Api.Modules.WorkOrders.Services;
@@ -213,8 +214,9 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
         var registry = new AssetRegistry(
             db,
             tenantProvider,
-            new AssetService(db, tenantProvider, new FakeTrialGuard()),
-            new AssetFamilyService(db));
+            new AssetService(db, tenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(db)),
+            new AssetFamilyService(db),
+            new AssetCategoryService(db, tenantProvider));
         return new WorkOrderService(db, tenantProvider, http, users, resolver, registry);
     }
 

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Platform.Core.Domain.Contracts.ResourceVisuals;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Rentals.Dtos;
@@ -24,7 +25,9 @@ public sealed record RentalAssetResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     int? MaxAdvanceBookingDays,
-    int? EffectiveMaxAdvanceBookingDays);
+    int? EffectiveMaxAdvanceBookingDays,
+    Guid? VisualTemplateRevisionId = null,
+    int? CapacityPeople = null);
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {
@@ -123,21 +126,6 @@ public sealed record ReservationResponseDto(
     decimal DepositPaid,
     DateTimeOffset CreatedAt,
     IReadOnlyList<ReservationItemResponseDto> Items);
-
-public sealed record CreateRentalPricingDto
-{
-    public required DayOfWeek DayOfWeek { get; init; }
-
-    public required TimeOnly StartTime { get; init; }
-
-    public required TimeOnly EndTime { get; init; }
-
-    public required decimal PricePerHour { get; init; }
-
-    public bool RequiresDeposit { get; init; }
-
-    public decimal DepositPercentage { get; init; }
-}
 
 public sealed record UpdateRentalPricingDto
 {

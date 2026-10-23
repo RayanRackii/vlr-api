@@ -37,6 +37,27 @@ public sealed class RentalAssetsController(
         return Ok(categories);
     }
 
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
+    [HttpPost("categories")]
+    public async Task<ActionResult<RegistryCategoryListItem>> CreateCategory(
+        [FromBody] CreateAssetCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var category = await assetRegistry.CreateCategoryAsync(request, cancellationToken);
+            return CreatedAtAction(nameof(ListCategories), category);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
     [RequirePermission(Permissions.Rentals.AssetsRead)]
     [HttpGet("families")]
     public async Task<ActionResult<IReadOnlyList<AssetFamilyDetailResponse>>> ListFamilies(
@@ -54,14 +75,10 @@ public sealed class RentalAssetsController(
     {
         try
         {
-            BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
+            BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
             var asset = await assetRegistry.CreateRentableAsync(request, cancellationToken);
             var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
                 ?? throw new InvalidOperationException("Rentable configuration was not created.");
-            rental = await rentalAssetService.SetMaxAdvanceBookingDaysAsync(
-                rental.Id,
-                request.MaxAdvanceBookingDays,
-                cancellationToken);
 
             return CreatedAtAction(nameof(GetByAssetId), new { assetId = asset.Id }, rental);
         }
@@ -152,11 +169,9 @@ public sealed class RentalAssetsController(
                 BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
             }
 
-            await assetRegistry.UpdateRentableAsync(id, request, cancellationToken);
-            var rental = await rentalAssetService.SetMaxAdvanceBookingDaysAsync(
-                id,
-                request.MaxAdvanceBookingDays,
-                cancellationToken);
+            var asset = await assetRegistry.UpdateRentableAsync(id, request, cancellationToken);
+            var rental = await rentalAssetService.GetByAssetIdAsync(asset.Id, cancellationToken)
+                ?? throw new InvalidOperationException("Rentable configuration was not found.");
 
             return Ok(rental);
         }

@@ -28,11 +28,15 @@ public sealed class CustomerAuthService(
     ICustomerVerificationCodeService verificationCodes,
     IEmailProvider emailProvider,
     IPasswordResetEmailQueue passwordResetEmails,
+    ICustomerLoginThrottle loginThrottle,
     ILogger<CustomerAuthService> logger,
     IHttpContextAccessor? httpContextAccessor = null,
     IOptions<BookingUiOptions>? bookingUiOptions = null) : ICustomerAuthService
 {
     private static readonly PasswordHasher<Customer> PasswordHasher = new();
+    private static readonly Customer DummyPasswordCustomer = new() { TenantId = Guid.Empty, Name = "Login timing" };
+    private static readonly string DummyPasswordHash =
+        PasswordHasher.HashPassword(DummyPasswordCustomer, Guid.NewGuid().ToString());
     private const int MinimumPasswordLength = 8;
     private const string EmailNotVerifiedMessage =
         "Email is not verified. Complete email verification first.";
@@ -284,23 +288,28 @@ public sealed class CustomerAuthService(
         CustomerLoginRequestDto request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
-
+        var tenantId = EnsureTenantContext();
         var email = NormalizeEmail(request.Email);
         var password = request.Password ?? string.Empty;
+        var retryAfter = await loginThrottle.CheckAsync(tenantId, email, GetClientIp(), cancellationToken);
+        if (retryAfter > 0)
+            throw new CustomerLoginRateLimitedException(retryAfter);
 
         var customer = await dbContext.Customers
-            .FirstOrDefaultAsync(c => c.Email == email, cancellationToken);
+            .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Email == email, cancellationToken);
+        var hasPassword = !string.IsNullOrWhiteSpace(customer?.PasswordHash);
+        var verification = PasswordHasher.VerifyHashedPassword(
+            customer ?? DummyPasswordCustomer,
+            hasPassword ? customer!.PasswordHash! : DummyPasswordHash,
+            password);
+        var invalidCredentials = customer is null || !hasPassword || verification == PasswordVerificationResult.Failed;
+        retryAfter = await loginThrottle.ConsumeAsync(
+            tenantId, email, GetClientIp(), invalidCredentials || !customer!.IsEmailVerified, cancellationToken);
+        if (retryAfter > 0)
+            throw new CustomerLoginRateLimitedException(retryAfter);
 
-        if (customer is null
-            || string.IsNullOrWhiteSpace(customer.PasswordHash)
-            || PasswordHasher.VerifyHashedPassword(
-                customer,
-                customer.PasswordHash,
-                password) == PasswordVerificationResult.Failed)
-        {
+        if (customer is null || invalidCredentials)
             throw new UnauthorizedAccessException("Invalid email or password.");
-        }
 
         if (!customer.IsEmailVerified)
         {

@@ -1,0 +1,326 @@
+{
+  "beforeTransitions": {
+    "now": "2026-10-21T11:00:00+00:00",
+    "availability": {
+      "date": "2026-10-21",
+      "timeZone": "America/Sao_Paulo",
+      "serverNow": "2026-10-21T11:00:00+00:00",
+      "quoteExpiresAt": "2026-10-21T11:01:00+00:00",
+      "currency": "BRL",
+      "resources": [
+        {
+          "rentalAssetId": "<rental:Resource A>",
+          "assetId": "<asset:Resource A>",
+          "unitId": "<unit>",
+          "name": "Resource A",
+          "type": "Location",
+          "totalQuantity": 1,
+          "requiresDeposit": false,
+          "queueEnabled": false,
+          "effectiveMaxAdvanceBookingDays": null,
+          "windows": [
+            {
+              "slotId": "<slot:booked 08-09>",
+              "startTime": "08:00:00",
+              "endTime": "09:00:00",
+              "isDerived": false,
+              "state": "Taken",
+              "reasonCode": "INSUFFICIENT_CAPACITY",
+              "availableQuantity": 0,
+              "totalAmount": 20
+            },
+            {
+              "slotId": "<slot:booked 09-10>",
+              "startTime": "09:00:00",
+              "endTime": "10:00:00",
+              "isDerived": false,
+              "state": "Taken",
+              "reasonCode": "INSUFFICIENT_CAPACITY",
+              "availableQuantity": 0,
+              "totalAmount": 20
+            },
+            {
+              "slotId": null,
+              "startTime": "10:00:00",
+              "endTime": "11:00:00",
+              "isDerived": true,
+              "state": "Taken",
+              "reasonCode": "INSUFFICIENT_CAPACITY",
+              "availableQuantity": 0,
+              "totalAmount": 20
+            },
+            {
+              "slotId": null,
+              "startTime": "11:00:00",
+              "endTime": "12:00:00",
+              "isDerived": true,
+              "state": "Taken",
+              "reasonCode": "INSUFFICIENT_CAPACITY",
+              "availableQuantity": 0,
+              "totalAmount": 20
+            }
+          ]
+        }
+      ]
+    },
+    "publicDay": {
+      "date": "2026-10-21",
+      "slots": []
+    },
+    "adminDay": {
+      "date": "2026-10-21",
+      "slots": [
+        {
+          "id": "<slot:booked 08-09>",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "08:00:00",
+          "endTime": "09:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:slotThenCompleted>",
+          "isDerived": false,
+          "source": "DailyOverride",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        },
+        {
+          "id": "<slot:booked 09-10>",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "09:00:00",
+          "endTime": "10:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:slotThenCanceled>",
+          "isDerived": false,
+          "source": "DailyOverride",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        }
+      ]
+    }
+  },
+  "transitionGuards": {
+    "cancelCompleted": {
+      "error": "InvalidOperationException",
+      "message": "Cannot cancel a completed reservation."
+    },
+    "completeCanceled": {
+      "error": "InvalidOperationException",
+      "message": "Cannot complete a reservation in status \u0027Canceled\u0027."
+    }
+  },
+  "afterTransitions": {
+    "now": "2026-10-21T11:00:00+00:00",
+    "availability": {
+      "date": "2026-10-21",
+      "timeZone": "America/Sao_Paulo",
+      "serverNow": "2026-10-21T11:00:00+00:00",
+      "quoteExpiresAt": "2026-10-21T11:01:00+00:00",
+      "currency": "BRL",
+      "resources": [
+        {
+          "rentalAssetId": "<rental:Resource A>",
+          "assetId": "<asset:Resource A>",
+          "unitId": "<unit>",
+          "name": "Resource A",
+          "type": "Location",
+          "totalQuantity": 1,
+          "requiresDeposit": false,
+          "queueEnabled": false,
+          "effectiveMaxAdvanceBookingDays": null,
+          "windows": [
+            {
+              "slotId": "<slot:booked 08-09>",
+              "startTime": "08:00:00",
+              "endTime": "09:00:00",
+              "isDerived": false,
+              "state": "Taken",
+              "reasonCode": "INSUFFICIENT_CAPACITY",
+              "availableQuantity": 0,
+              "totalAmount": 20
+            },
+            {
+              "slotId": "<slot:booked 09-10>",
+              "startTime": "09:00:00",
+              "endTime": "10:00:00",
+              "isDerived": false,
+              "state": "Available",
+              "reasonCode": null,
+              "availableQuantity": 1,
+              "totalAmount": 20
+            },
+            {
+              "slotId": null,
+              "startTime": "10:00:00",
+              "endTime": "11:00:00",
+              "isDerived": true,
+              "state": "Taken",
+              "reasonCode": "INSUFFICIENT_CAPACITY",
+              "availableQuantity": 0,
+              "totalAmount": 20
+            },
+            {
+              "slotId": null,
+              "startTime": "11:00:00",
+              "endTime": "12:00:00",
+              "isDerived": true,
+              "state": "Available",
+              "reasonCode": null,
+              "availableQuantity": 1,
+              "totalAmount": 20
+            }
+          ]
+        }
+      ]
+    },
+    "publicDay": {
+      "date": "2026-10-21",
+      "slots": [
+        {
+          "id": "<slot:booked 09-10>",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "09:00:00",
+          "endTime": "10:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Available",
+          "reservationId": null,
+          "isDerived": false,
+          "source": "DailyOverride",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "11:00:00",
+          "endTime": "12:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Available",
+          "reservationId": null,
+          "isDerived": true,
+          "source": "WeeklyDefault",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        }
+      ]
+    },
+    "adminDay": {
+      "date": "2026-10-21",
+      "slots": [
+        {
+          "id": "<slot:booked 08-09>",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "08:00:00",
+          "endTime": "09:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:slotThenCompleted>",
+          "isDerived": false,
+          "source": "DailyOverride",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        },
+        {
+          "id": "<slot:booked 09-10>",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "09:00:00",
+          "endTime": "10:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Available",
+          "reservationId": null,
+          "isDerived": false,
+          "source": "DailyOverride",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "11:00:00",
+          "endTime": "12:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": true,
+          "label": null,
+          "status": "Available",
+          "reservationId": null,
+          "isDerived": true,
+          "source": "WeeklyDefault",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false
+        }
+      ]
+    }
+  },
+  "reservationStatuses": [
+    {
+      "id": "<reservation:slotThenCompleted>",
+      "status": "Completed"
+    },
+    {
+      "id": "<reservation:slotThenCanceled>",
+      "status": "Canceled"
+    },
+    {
+      "id": "<reservation:derivedThenCompleted>",
+      "status": "Completed"
+    },
+    {
+      "id": "<reservation:derivedThenCanceled>",
+      "status": "Canceled"
+    }
+  ]
+}

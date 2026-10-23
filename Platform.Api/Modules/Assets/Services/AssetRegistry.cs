@@ -9,15 +9,27 @@ public sealed class AssetRegistry(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IAssetService assetService,
-    IAssetFamilyService assetFamilyService) : IAssetRegistry
+    IAssetFamilyService assetFamilyService,
+    IAssetCategoryService assetCategoryService) : IAssetRegistry
 {
-    public async Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
+    public async Task<RegistryCategoryListItem> CreateCategoryAsync(
+        CreateAssetCategoryRequest request,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
 
+        var category = await assetCategoryService.CreateAsync(request, cancellationToken);
+        return new RegistryCategoryListItem(category.Id, category.Name);
+    }
+
+    public async Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+
         return await dbContext.AssetCategories
             .AsNoTracking()
+            .Where(c => c.TenantId == tenantId)
             .OrderBy(c => c.Name)
             .Select(c => new RegistryCategoryListItem(c.Id, c.Name))
             .ToListAsync(cancellationToken);
@@ -26,10 +38,11 @@ public sealed class AssetRegistry(
     public async Task<IReadOnlyList<RegistryAssetListItem>> ListAssetsAsync(
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         return await dbContext.Assets
             .AsNoTracking()
+            .Where(a => a.TenantId == tenantId)
             .OrderBy(a => a.Tag)
             .Select(a => new RegistryAssetListItem(
                 a.Id,
@@ -50,19 +63,19 @@ public sealed class AssetRegistry(
 
     public async Task<Asset> RequireAssetAsync(Guid id, CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         return await dbContext.Assets
-            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken)
+            .FirstOrDefaultAsync(a => a.Id == id && a.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException($"Asset '{id}' was not found.");
     }
 
     public async Task<AssetCategory> RequireCategoryAsync(Guid id, CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         return await dbContext.AssetCategories
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
+            .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException($"Asset category '{id}' was not found.");
     }
 
@@ -70,7 +83,7 @@ public sealed class AssetRegistry(
         CreateRentableRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var created = await assetService.CreateRentableAsync(request, cancellationToken);
         return await LoadRentableAssetAsync(created.Id, cancellationToken);
@@ -81,12 +94,13 @@ public sealed class AssetRegistry(
         UpdateRentableRequest request,
         CancellationToken cancellationToken)
     {
-        EnsureTenantContext();
+        var tenantId = EnsureTenantContext();
 
         var rental = await dbContext.RentalAssets
+            .AsNoTracking()
             .Include(r => r.Asset)
             .FirstOrDefaultAsync(
-                r => r.Id == rentalAssetId && r.IsActive && r.Asset.IsRentable,
+                r => r.Id == rentalAssetId && r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.IsActive && r.Asset.IsRentable,
                 cancellationToken)
             ?? throw new KeyNotFoundException("Rentable was not found.");
 
@@ -99,13 +113,13 @@ public sealed class AssetRegistry(
         return await dbContext.Assets
             .Include(a => a.RentalConfiguration)
             .Include(a => a.Category)
-            .FirstOrDefaultAsync(a => a.Id == assetId, cancellationToken)
+            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == tenantProvider.TenantId, cancellationToken)
             ?? throw new KeyNotFoundException($"Asset '{assetId}' was not found.");
     }
 
     private Guid EnsureTenantContext()
     {
-        return tenantProvider.TenantId
-            ?? throw new UnauthorizedAccessException("Tenant context is required.");
+        return tenantProvider.TenantId is { } id && id != Guid.Empty
+            ? id : throw new UnauthorizedAccessException("Tenant context is required.");
     }
 }

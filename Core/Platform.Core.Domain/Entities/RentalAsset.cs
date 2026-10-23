@@ -54,6 +54,12 @@ public class RentalAsset : Entity, ITenantScoped
     /// </summary>
     public int? MaxAdvanceBookingDays { get; set; }
 
+    /// <summary>Fixed published visual revision; null uses the generic resource presentation.</summary>
+    public Guid? VisualTemplateRevisionId { get; set; }
+
+    /// <summary>Informational people capacity, independent of bookable stock.</summary>
+    public int? CapacityPeople { get; set; }
+
     public Asset Asset { get; set; } = null!;
 
     private readonly List<RentalPricing> _pricings = [];

@@ -32,7 +32,12 @@ public sealed record CreateRentableRequest
 
     public int TotalQuantity { get; init; } = 1;
 
-    public bool RequiresDeposit { get; init; } = true;
+    /// <summary>
+    /// Omitted keeps the legacy true default unless template defaults are explicitly applied.
+    /// Explicit null is invalid.
+    /// </summary>
+    [JsonConverter(typeof(JsonOptionalBooleanConverter))]
+    public JsonOptional<bool> RequiresDeposit { get; init; }
 
     public bool QueueEnabled { get; init; }
 
@@ -43,7 +48,25 @@ public sealed record CreateRentableRequest
     /// <summary>
     /// Per-resource horizon override on create. Null inherits the tenant booking policy.
     /// </summary>
-    public int? MaxAdvanceBookingDays { get; init; }
+    /// <summary>
+    /// Omitted inherits the tenant policy unless template defaults are explicitly applied.
+    /// Explicit null keeps that inheritance.
+    /// </summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
+
+    public Guid? VisualTemplateRevisionId { get; init; }
+
+    public int? CapacityPeople { get; init; }
+
+    /// <summary>Applies suggested capacity only when no capacity has been configured.</summary>
+    public bool ConfirmVisualSuggestions { get; init; }
+
+    /// <summary>
+    /// Applies values published on the selected visual revision only where this request omitted them.
+    /// Omitted remains false for backwards compatibility.
+    /// </summary>
+    public bool ApplyTemplateDefaults { get; init; }
 }
 
 public sealed record UpdateRentableRequest
@@ -76,4 +99,15 @@ public sealed record UpdateRentableRequest
     /// </summary>
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
+
+    /// <summary>Omitted preserves the fixed revision; explicit null clears it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalGuidConverter))]
+    public JsonOptional<Guid> VisualTemplateRevisionId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CapacityPeople { get; init; }
+
+    public bool ConfirmVisualSuggestions { get; init; }
 }

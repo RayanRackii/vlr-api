@@ -36,6 +36,7 @@ public static class DependencyInjection
             .UseSnakeCaseNamingConvention());
 
         services.AddScoped<AmbientTenantContext>();
+        services.AddScoped<ITenantContext, TenantContext>();
 
         return services;
     }

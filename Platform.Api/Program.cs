@@ -16,6 +16,7 @@ using Platform.Api.Modules.Notifications;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.ResourceVisuals;
 using Platform.Api.Modules.Roles;
 using Platform.Api.Modules.Users;
 using Platform.Api.Modules.Webhooks;
@@ -66,6 +67,7 @@ try
     builder.Services.AddWorkOrdersModule();
     builder.Services.AddDashboardModule();
     builder.Services.AddRentalsModule();
+    builder.Services.AddResourceVisuals();
     builder.Services.AddCatalogModule();
     builder.Services.AddTaxonomyModule();
     builder.Services.AddTenantNotificationsModule();
