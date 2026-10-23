@@ -10,7 +10,8 @@ namespace Platform.Api.Modules.CustomerAuth.Services;
 
 public interface ICustomerLoginThrottle
 {
-    Task<int> ConsumeAsync(Guid tenantId, string normalizedEmail, string? clientIp, CancellationToken cancellationToken);
+    Task<int> CheckAsync(Guid tenantId, string normalizedEmail, string? clientIp, CancellationToken cancellationToken);
+    Task<int> ConsumeAsync(Guid tenantId, string normalizedEmail, string? clientIp, bool failed, CancellationToken cancellationToken);
 }
 
 public sealed class CustomerLoginThrottleOptions
@@ -32,8 +33,16 @@ public sealed class CustomerLoginThrottle(
     IConfiguration configuration,
     IOptions<CustomerLoginThrottleOptions> options) : ICustomerLoginThrottle
 {
-    public async Task<int> ConsumeAsync(
-        Guid tenantId, string normalizedEmail, string? clientIp, CancellationToken cancellationToken)
+    public Task<int> CheckAsync(
+        Guid tenantId, string normalizedEmail, string? clientIp, CancellationToken cancellationToken) =>
+        ExecuteAsync(tenantId, normalizedEmail, clientIp, null, cancellationToken);
+
+    public Task<int> ConsumeAsync(
+        Guid tenantId, string normalizedEmail, string? clientIp, bool failed, CancellationToken cancellationToken) =>
+        ExecuteAsync(tenantId, normalizedEmail, clientIp, failed, cancellationToken);
+
+    private async Task<int> ExecuteAsync(
+        Guid tenantId, string normalizedEmail, string? clientIp, bool? failed, CancellationToken cancellationToken)
     {
         var secret = configuration["Supabase:JwtSecret"];
         if (string.IsNullOrWhiteSpace(secret))
@@ -51,29 +60,59 @@ public sealed class CustomerLoginThrottle(
         {
             await using var command = connection.CreateCommand();
             command.Transaction = dbContext.Database.CurrentTransaction?.GetDbTransaction();
-            // One ordered statement consumes both buckets even when one is already blocked.
-            command.CommandText = """
-                INSERT INTO core.customer_login_throttle AS bucket (bucket_key, attempts, expires_at)
-                SELECT bucket_key, 1, statement_timestamp() + make_interval(secs => @window)
-                FROM (VALUES (@ip_key), (@email_key)) AS keys(bucket_key)
-                ORDER BY bucket_key
-                ON CONFLICT (bucket_key) DO UPDATE SET
-                    attempts = CASE WHEN bucket.expires_at <= statement_timestamp() THEN 1
-                        ELSE LEAST(bucket.attempts, CASE WHEN bucket.bucket_key = @ip_key
-                            THEN @ip_limit ELSE @email_limit END) + 1 END,
-                    expires_at = CASE WHEN bucket.expires_at <= statement_timestamp()
-                        THEN statement_timestamp() + make_interval(secs => @window)
-                        ELSE bucket.expires_at END
-                RETURNING CASE WHEN attempts > CASE WHEN bucket_key = @ip_key
-                    THEN @ip_limit ELSE @email_limit END
-                    THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (expires_at - statement_timestamp())))::int)
-                    ELSE 0 END;
+            // Resolve the global IP budget first; blocked IPs cannot spend an email budget.
+            command.CommandText = failed.HasValue ? """
+                WITH ip_consumed AS (
+                    INSERT INTO core.customer_login_throttle AS bucket (bucket_key, attempts, expires_at)
+                    SELECT @ip_key, 1, statement_timestamp() + make_interval(secs => @window)
+                    WHERE @failed
+                    ON CONFLICT (bucket_key) DO UPDATE SET
+                        attempts = CASE WHEN bucket.expires_at <= statement_timestamp() THEN 1
+                            ELSE LEAST(bucket.attempts, @ip_limit) + 1 END,
+                        expires_at = CASE WHEN bucket.expires_at <= statement_timestamp()
+                            THEN statement_timestamp() + make_interval(secs => @window)
+                            ELSE bucket.expires_at END
+                    RETURNING CASE WHEN attempts > @ip_limit
+                        THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (expires_at - statement_timestamp())))::int)
+                        ELSE 0 END AS retry_after
+                ), ip_gate AS (
+                    SELECT COALESCE(MAX(retry_after), 0) AS retry_after FROM (
+                        SELECT retry_after FROM ip_consumed
+                        UNION ALL
+                        SELECT GREATEST(1, CEIL(EXTRACT(EPOCH FROM (expires_at - statement_timestamp())))::int)
+                        FROM core.customer_login_throttle
+                        WHERE NOT @failed AND bucket_key = @ip_key
+                            AND attempts >= @ip_limit AND expires_at > statement_timestamp()
+                    ) AS decisions
+                ), email_consumed AS (
+                    INSERT INTO core.customer_login_throttle AS bucket (bucket_key, attempts, expires_at)
+                    SELECT @email_key, 1, statement_timestamp() + make_interval(secs => @window)
+                    FROM ip_gate WHERE retry_after = 0
+                    ON CONFLICT (bucket_key) DO UPDATE SET
+                        attempts = CASE WHEN bucket.expires_at <= statement_timestamp() THEN 1
+                            ELSE LEAST(bucket.attempts, @email_limit) + 1 END,
+                        expires_at = CASE WHEN bucket.expires_at <= statement_timestamp()
+                            THEN statement_timestamp() + make_interval(secs => @window)
+                            ELSE bucket.expires_at END
+                    RETURNING CASE WHEN attempts > @email_limit
+                        THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (expires_at - statement_timestamp())))::int)
+                        ELSE 0 END AS retry_after
+                )
+                SELECT retry_after FROM ip_gate
+                UNION ALL SELECT retry_after FROM email_consumed;
+                """ : """
+                SELECT GREATEST(1, CEIL(EXTRACT(EPOCH FROM (expires_at - statement_timestamp())))::int)
+                FROM core.customer_login_throttle
+                WHERE expires_at > statement_timestamp()
+                    AND ((bucket_key = @ip_key AND attempts >= @ip_limit)
+                        OR (bucket_key = @email_key AND attempts >= @email_limit));
                 """;
             AddParameter("ip_key", ipKey);
             AddParameter("email_key", emailKey);
             AddParameter("ip_limit", settings.IpLimit);
             AddParameter("email_limit", settings.EmailLimit);
             AddParameter("window", settings.WindowSeconds);
+            AddParameter("failed", failed ?? false);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             var retryAfter = 0;
             while (await reader.ReadAsync(cancellationToken))

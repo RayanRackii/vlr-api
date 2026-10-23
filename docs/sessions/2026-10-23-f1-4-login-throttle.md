@@ -4,10 +4,10 @@ Desenho aprovado pelo usuário. Sem Git, branch, PR, merge, migration remota ou 
 
 ## Implementação
 
-- PostgreSQL compartilhado: uma instrução INSERT/ON CONFLICT consome IP global e tenant/e-mail normalizado em ordem estável, inclusive quando já bloqueado. Janela fixa desde a primeira tentativa, clock do banco; contador saturado; nenhum reset após sucesso.
+- PostgreSQL compartilhado: CTEs em uma instrução atômica resolvem IP global antes de consumir tenant/e-mail normalizado. IP bloqueado não consome e-mail; apenas falhas incrementam IP. Janela fixa, clock do banco; contador saturado; nenhum reset após sucesso.
 - Configuração `CustomerLoginThrottle:{EmailLimit,IpLimit,WindowSeconds}`: defaults 5/30/900, validação no startup. IP canônico pelo leitor existente (ADR 0006/0008), unknown compartilhado quando ausente.
 - Chaves HMAC-SHA256 com secret existente `Supabase:JwtSecret` e separação de domínio; e-mail/IP nunca persistidos em claro pelo throttle. Rotação do secret inicia novos buckets.
-- Gate antes do lookup; tenant explícito; conta ausente/sem hash verifica hash dummy com mesmo custo padrão. Credenciais inválidas preservam resposta genérica. Bloqueio retorna 429 `{error}` + Retry-After em segundos.
+- Checagem preliminar sem escrita antes do lookup, seguida de consumo atômico após verificar credenciais; tenant explícito; conta ausente/sem hash verifica hash dummy com mesmo custo padrão. Credenciais inválidas preservam resposta genérica. Bloqueio retorna 429 `{error}` + Retry-After em segundos.
 - Migration `20261023120000_AddCustomerLoginThrottle`: tabela operacional SQL fora do modelo EF, índice por expires_at, Down remove só a tabela. Limpeza diária no DataRetentionJob usa FOR UPDATE SKIP LOCKED, sem esperar writes de login ou inverter locks.
 
 ## Validação e revisão
@@ -25,4 +25,11 @@ Desenho aprovado pelo usuário. Sem Git, branch, PR, merge, migration remota ou 
 
 Aplicar migration Up antes do código; rollback do código antes de Down. Próxima API: validação PostgreSQL/DEV e fluxo de entrega autorizado. Próxima web: validar apresentação de 429/Retry-After no portal e continuar agenda/Slot do roadmap irmão.
 
-Follow-up pedido em ~/rolvix-ai-docs/followups/F1-4.md bloqueado por filesystem read-only; cópia em docs/followups/F1-4.md para transporte externo.
+## Correções do gate canônico M1/M2/L3
+
+- Regressões PostgreSQL adicionadas: IP bloqueado tentando 12 vezes não consome o e-mail da vítima; sucessos não criam/incrementam bucket de IP; sucessos entre falhas não zeram contadores; checagem preliminar não consome limites. Testes existentes de concorrência, janela, retenção e migration preservados.
+- SQL real em PostgreSQL 16 single-user reproduziu M1 e M2 antes da correção e passou depois, com constraint attempts > 0 e preservação de falhas anteriores. Não substitui testes multi-conexão.
+- Revisão independente identificou custo de KDF antes da rejeição; corrigido com CheckAsync somente leitura antes do lookup. Teste em processo primeiro falhou por alcançar um hash inválido, depois passou retornando o bloqueio esperado antes do KDF.
+- Build serial final: 0 warnings / 0 errors. Focados em processo: 17 total / 4 passed / 0 failed / 13 skipped. Suíte completa em processo: 1716 total / 1604 passed / 0 failed / 112 skipped. VSTest e servidor PostgreSQL continuam bloqueados por sockets.
+- Re-review independente: Critical 0 / High 0 / Medium 0. Verificação PostgreSQL multi-conexão segue obrigatória antes da integração.
+- Linha F1-4 corrigida na tabela Histórico de ROADMAP.md. [Follow-up](../followups/F1-4.md) atualizado.

@@ -280,6 +280,9 @@ internal sealed class StubCustomerAuthService : ICustomerAuthService
 
 internal sealed class AllowAllCustomerLoginThrottle : ICustomerLoginThrottle
 {
-    public Task<int> ConsumeAsync(Guid tenantId, string normalizedEmail, string? clientIp,
+    public Task<int> CheckAsync(Guid tenantId, string normalizedEmail, string? clientIp,
+        CancellationToken cancellationToken) => Task.FromResult(0);
+
+    public Task<int> ConsumeAsync(Guid tenantId, string normalizedEmail, string? clientIp, bool failed,
         CancellationToken cancellationToken) => Task.FromResult(0);
 }

@@ -43,6 +43,56 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
     }
 
     [DockerFact]
+    public async Task Blocked_ip_cannot_consume_victim_email_budget()
+    {
+        var attackerIp = Guid.NewGuid().ToString();
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(0, await Consume(Guid.NewGuid(), $"{i}@club.test", attackerIp));
+
+        var victimTenant = Guid.NewGuid();
+        for (var i = 0; i < 12; i++)
+            Assert.InRange(await Consume(victimTenant, "victim@club.test", attackerIp), 1, 900);
+
+        var victimIp = Guid.NewGuid().ToString();
+        Assert.Equal(0, await Consume(victimTenant, "victim@club.test", victimIp));
+        Assert.Equal(0, await Consume(victimTenant, "victim@club.test", victimIp));
+        Assert.InRange(await Consume(victimTenant, "victim@club.test", victimIp), 1, 900);
+    }
+
+    [DockerFact]
+    public async Task Successful_attempts_do_not_create_or_increment_ip_bucket()
+    {
+        var ip = Guid.NewGuid().ToString();
+        for (var i = 0; i < 6; i++)
+            Assert.Equal(0, await Consume(Guid.NewGuid(), $"success{i}@club.test", ip, failed: false));
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(0, await Consume(Guid.NewGuid(), $"failure{i}@club.test", ip));
+
+        var tenant = Guid.NewGuid();
+        Assert.InRange(await Consume(tenant, "valid@club.test", ip, failed: false), 1, 900);
+        Assert.Equal(0, await Consume(tenant, "valid@club.test", Guid.NewGuid().ToString()));
+        Assert.Equal(0, await Consume(tenant, "valid@club.test", Guid.NewGuid().ToString()));
+    }
+
+    [DockerFact]
+    public async Task Preliminary_check_does_not_consume_budgets_and_detects_exhaustion()
+    {
+        Assert.NotNull(postgres.Factory);
+        await using var db = postgres.Factory.Create(new FakeTenantProvider());
+        var gate = new CustomerLoginThrottle(db, CustomerAuthHarness.CreateConfig(),
+            Options.Create(new CustomerLoginThrottleOptions { EmailLimit = 2, IpLimit = 3 }));
+        var tenant = Guid.NewGuid();
+        var ip = Guid.NewGuid().ToString();
+        for (var i = 0; i < 6; i++)
+            Assert.Equal(0, await gate.CheckAsync(tenant, "check@club.test", ip, default));
+        Assert.Equal(0, await Consume(tenant, "check@club.test", ip));
+        Assert.Equal(0, await Consume(tenant, "check@club.test", ip));
+        Assert.InRange(await gate.CheckAsync(tenant, "check@club.test", Guid.NewGuid().ToString(), default), 1, 900);
+        Assert.Equal(0, await Consume(Guid.NewGuid(), "third@club.test", ip));
+        Assert.InRange(await gate.CheckAsync(Guid.NewGuid(), "other@club.test", ip, default), 1, 900);
+    }
+
+    [DockerFact]
     public async Task Parallel_instances_admit_exactly_email_budget()
     {
         var tenant = Guid.NewGuid();
@@ -76,6 +126,23 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
         var response = Assert.IsType<ObjectResult>(result.Result);
         Assert.Equal(429, response.StatusCode);
         Assert.Equal("42", controller.Response.Headers.RetryAfter.ToString());
+    }
+
+    [Fact]
+    public async Task Already_blocked_login_is_rejected_before_password_work()
+    {
+        await using var harness = await CustomerAuthHarness.CreateAsync();
+        await harness.Auth.RegisterAsync(CustomerAuthHarness.NewRegister(email: "blocked@club.test"), default);
+        var customer = await harness.Db.Customers.SingleAsync();
+        customer.PasswordHash = "invalid-base64-hash";
+        await harness.Db.SaveChangesAsync();
+        var auth = CustomerAuthHarness.CreateService(harness.Db, harness.TenantProvider,
+            harness.Phone, harness.Email, new AllowAllPhoneVerificationSendGate(), TimeProvider.System,
+            loginThrottle: new BlockedLoginThrottle());
+
+        var error = await Assert.ThrowsAsync<CustomerLoginRateLimitedException>(() => auth.LoginAsync(
+            new CustomerLoginRequestDto { Email = customer.Email!, Password = "wrong" }, default));
+        Assert.Equal(42, error.RetryAfterSeconds);
     }
 
     [Fact]
@@ -124,7 +191,7 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
     }
 
     [DockerFact]
-    public async Task Successful_login_does_not_reset_ip_budget()
+    public async Task Successful_logins_neither_increment_nor_reset_ip_failure_budget()
     {
         Assert.NotNull(postgres.Factory);
         var tenant = new Tenant("Login", "login" + Guid.NewGuid().ToString("N")[..14]);
@@ -144,12 +211,15 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
         var http = new DefaultHttpContext();
         http.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("192.0.2.99");
         // Seed the same canonical IP bucket the service will consume.
-        Assert.Equal(0, await gate.ConsumeAsync(tenant.Id, "wrong@club.test", "192.0.2.99", default));
+        Assert.Equal(0, await gate.ConsumeAsync(tenant.Id, "wrong@club.test", "192.0.2.99", true, default));
         var auth = CustomerAuthHarness.CreateService(db, provider, new FakePhoneVerificationClient(),
             new FakeEmailProvider(), new AllowAllPhoneVerificationSendGate(), TimeProvider.System,
             new HttpContextAccessor { HttpContext = http }, loginThrottle: gate);
-        Assert.Equal("test-token", (await auth.LoginAsync(
-            new CustomerLoginRequestDto { Email = customer.Email, Password = "secret123" }, default)).Token);
+        for (var i = 0; i < 3; i++)
+            Assert.Equal("test-token", (await auth.LoginAsync(
+                new CustomerLoginRequestDto { Email = customer.Email, Password = "secret123" }, default)).Token);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
+            new CustomerLoginRequestDto { Email = "second-failure@club.test", Password = "wrong" }, default));
         await Assert.ThrowsAsync<CustomerLoginRateLimitedException>(() => auth.LoginAsync(
             new CustomerLoginRequestDto { Email = "another@club.test", Password = "wrong" }, default));
     }
@@ -208,7 +278,7 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
         // Simulate a login renewing expired buckets while retention runs in another instance.
         var gate = new CustomerLoginThrottle(writer, CustomerAuthHarness.CreateConfig(),
             Options.Create(new CustomerLoginThrottleOptions { EmailLimit = 2, IpLimit = 3 }));
-        Assert.Equal(0, await gate.ConsumeAsync(tenant, "locked@club.test", ip, default));
+        Assert.Equal(0, await gate.ConsumeAsync(tenant, "locked@club.test", ip, true, default));
         await using var cleaner = postgres.Factory.Create(new FakeTenantProvider());
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await new DataRetentionJob(cleaner, NullLogger<DataRetentionJob>.Instance).ExecuteAsync(deadline.Token);
@@ -271,12 +341,21 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
         return (JsonSerializer.Serialize(result.Value), int.Parse(controller.Response.Headers.RetryAfter.ToString()));
     }
 
-    private async Task<int> Consume(Guid tenant, string email, string ip)
+    private async Task<int> Consume(Guid tenant, string email, string ip, bool failed = true)
     {
         Assert.NotNull(postgres.Factory);
         await using var db = postgres.Factory.Create(new FakeTenantProvider());
         var gate = new CustomerLoginThrottle(db, CustomerAuthHarness.CreateConfig(),
             Options.Create(new CustomerLoginThrottleOptions { EmailLimit = 2, IpLimit = 3 }));
-        return await gate.ConsumeAsync(tenant, email, ip, default);
+        return await gate.ConsumeAsync(tenant, email, ip, failed, default);
     }
+}
+
+internal sealed class BlockedLoginThrottle : ICustomerLoginThrottle
+{
+    public Task<int> CheckAsync(Guid tenantId, string normalizedEmail, string? clientIp,
+        CancellationToken cancellationToken) => Task.FromResult(42);
+
+    public Task<int> ConsumeAsync(Guid tenantId, string normalizedEmail, string? clientIp,
+        bool failed, CancellationToken cancellationToken) => Task.FromResult(42);
 }

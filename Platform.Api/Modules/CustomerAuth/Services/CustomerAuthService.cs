@@ -291,7 +291,7 @@ public sealed class CustomerAuthService(
         var tenantId = EnsureTenantContext();
         var email = NormalizeEmail(request.Email);
         var password = request.Password ?? string.Empty;
-        var retryAfter = await loginThrottle.ConsumeAsync(tenantId, email, GetClientIp(), cancellationToken);
+        var retryAfter = await loginThrottle.CheckAsync(tenantId, email, GetClientIp(), cancellationToken);
         if (retryAfter > 0)
             throw new CustomerLoginRateLimitedException(retryAfter);
 
@@ -302,7 +302,13 @@ public sealed class CustomerAuthService(
             customer ?? DummyPasswordCustomer,
             hasPassword ? customer!.PasswordHash! : DummyPasswordHash,
             password);
-        if (customer is null || !hasPassword || verification == PasswordVerificationResult.Failed)
+        var invalidCredentials = customer is null || !hasPassword || verification == PasswordVerificationResult.Failed;
+        retryAfter = await loginThrottle.ConsumeAsync(
+            tenantId, email, GetClientIp(), invalidCredentials || !customer!.IsEmailVerified, cancellationToken);
+        if (retryAfter > 0)
+            throw new CustomerLoginRateLimitedException(retryAfter);
+
+        if (customer is null || invalidCredentials)
             throw new UnauthorizedAccessException("Invalid email or password.");
 
         if (!customer.IsEmailVerified)
