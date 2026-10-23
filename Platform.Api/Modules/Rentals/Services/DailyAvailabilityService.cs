@@ -75,7 +75,7 @@ public sealed class DailyAvailabilityService(
             join reservation in db.Reservations.AsNoTracking() on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId && reservation.TenantId == tenantId
                 && ids.Contains(item.RentalAssetId)
-                && (reservation.Status == ReservationStatus.PendingDeposit || reservation.Status == ReservationStatus.Confirmed)
+                && AvailabilityReadModel.BlockingStatuses.Contains(reservation.Status)
                 && reservation.StartDateTime < dayEnd && reservation.EndDateTime > dayStart
             select new { item.RentalAssetId, item.Quantity, Start = reservation.StartDateTime, End = reservation.EndDateTime })
             .ToListAsync(cancellationToken);
@@ -130,7 +130,7 @@ public sealed class DailyAvailabilityService(
                         || !kind.IsActive || (kind.BlocksCapacity && !kind.IsBookableByCustomer)));
                 var blocked = window.Status == SlotStatus.Cancelled || window.Kind is not { IsActive: true, IsBookableByCustomer: true }
                     || blockingOverlap;
-                if (blockingOverlap || window.Status == SlotStatus.Cancelled
+                if (blockingOverlap || window.Status == SlotStatus.Cancelled || start < now
                     || window.Kind is { BlocksCapacity: true, IsBookableByCustomer: false }) available = 0;
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
                     && p.StartTime <= window.Start && p.EndTime >= window.End).AsQueryable();

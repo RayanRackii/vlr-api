@@ -17,11 +17,7 @@ public sealed class TeacherLessonService(
     TimeProvider timeProvider,
     ITeacherLessonScope teacherLessonScope) : ITeacherLessonService
 {
-    private static readonly ReservationStatus[] BlockingStatuses =
-    [
-        ReservationStatus.PendingDeposit,
-        ReservationStatus.Confirmed
-    ];
+    private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
 
     public async Task<SlotResponseDto> CreateAsync(
         CreateTeacherLessonRequestDto request,
