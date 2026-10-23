@@ -117,7 +117,7 @@ public sealed class CustomerLoginThrottle(
             var retryAfter = 0;
             while (await reader.ReadAsync(cancellationToken))
                 retryAfter = Math.Max(retryAfter, reader.GetInt32(0));
-            return retryAfter;
+            return Math.Min(retryAfter, settings.WindowSeconds);
 
             void AddParameter(string name, object value)
             {
