@@ -7,6 +7,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Svg;
+using Platform.Api.Storage;
 using Platform.Core.Domain.Common;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -22,7 +23,9 @@ public sealed class AdminTenantService(
     ITenantAccessBootstrapper tenantAccessBootstrapper,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
     IOptions<PlatformAdminOptions> platformAdminOptions,
-    ILogger<AdminTenantService> logger) : IAdminTenantService
+    ILogger<AdminTenantService> logger,
+    IOptions<StorageOptions> storageOptions,
+    IStorageProvider storageProvider) : IAdminTenantService
 {
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
         CancellationToken cancellationToken)
@@ -408,10 +411,14 @@ public sealed class AdminTenantService(
                 // still carries another tenant id. Restrict FKs then block the tenant
                 // delete; tables without a tenant FK would be left behind. Scope stays
                 // TenantId == id.
+                await DeleteForTenantAsync(dbContext.ReservationQueueTickets, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.ReservationQueueSessions, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.Slots, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.ReservationItems, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.Reservations, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.ScheduleTemplates, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.LayoutDecorations, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.BookingMapSettings, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.RentalLayoutItems, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.RentalLayouts, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.RentalPricings, id, cancellationToken);
@@ -419,6 +426,7 @@ public sealed class AdminTenantService(
                 await DeleteForTenantAsync(dbContext.RentalAssets, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.BookingPolicies, id, cancellationToken);
 
+                await DeleteForTenantAsync(dbContext.WorkOrderTaskFiles, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.WorkOrderTasks, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.WorkOrders, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.PlanTasks, id, cancellationToken);
@@ -449,6 +457,7 @@ public sealed class AdminTenantService(
                 await DeleteForTenantAsync(dbContext.CatalogOrderNumberSequences, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.ProductRequestFiles, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.ProductRequests, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.CatalogPolicies, id, cancellationToken);
 
                 // Attempts have no TenantId. Scope them through this tenant's
                 // deliveries before the delivery row is removed. Notification
@@ -467,6 +476,7 @@ public sealed class AdminTenantService(
 
                 await DeleteForTenantAsync(dbContext.OtpCodes, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.Customers, id, cancellationToken);
+                await DeleteForTenantAsync(dbContext.TenantResourceSegments, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.TenantModuleMenuItems, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.TenantRegistrationFields, id, cancellationToken);
                 await DeleteForTenantAsync(dbContext.UserInvites, id, cancellationToken);
@@ -494,6 +504,26 @@ public sealed class AdminTenantService(
             {
                 await transaction.RollbackAsync(cancellationToken);
                 throw;
+            }
+        }
+
+        var tenantStoragePrefix = $"{id:N}/";
+        foreach (var bucket in new[]
+                 {
+                     storageOptions.Value.PublicBucket,
+                     storageOptions.Value.PrivateBucket,
+                 }.Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                await storageProvider.DeletePrefixAsync(bucket, tenantStoragePrefix, cancellationToken);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    "Tenant storage purge failed after database deletion. Bucket: {Bucket}; Prefix: {Prefix}",
+                    bucket,
+                    tenantStoragePrefix);
             }
         }
 

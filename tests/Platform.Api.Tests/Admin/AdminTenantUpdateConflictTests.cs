@@ -7,6 +7,7 @@ using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Controllers;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
+using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -188,7 +189,9 @@ public sealed class AdminTenantUpdateConflictTests
                 new FakeTenantAccessBootstrapper(),
                 new FakeSupabaseAuthAdminClient(),
                 Options.Create(new PlatformAdminOptions()),
-                NullLogger<AdminTenantService>.Instance);
+                NullLogger<AdminTenantService>.Instance,
+                Options.Create(new StorageOptions()),
+                new RecordingStorageProvider());
 
             return new Harness(db, tenantProvider, service);
         }

@@ -64,6 +64,43 @@ public sealed class SupabaseStorageProviderTests
     }
 
     [Fact]
+    public async Task DeletePrefix_lists_and_removes_only_objects_under_the_prefix()
+    {
+        const string prefix = "tenant-a/";
+        var listCalls = 0;
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return Json(HttpStatusCode.OK, listCalls++ == 0
+                    ? """[{"name":"tenant-a/file.bin"}]"""
+                    : "[]");
+            }
+
+            return Json(HttpStatusCode.OK, "[]");
+        });
+        var sut = CreateSut(handler, SecretKey);
+
+        await sut.DeletePrefixAsync(Bucket, prefix);
+
+        Assert.Collection(
+            handler.Requests,
+            request =>
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal($"/storage/v1/object/list/{Bucket}", request.Path);
+                Assert.Contains($"\"prefix\":\"{prefix}\"", request.Body, StringComparison.Ordinal);
+            },
+            request =>
+            {
+                Assert.Equal(HttpMethod.Delete, request.Method);
+                Assert.Equal($"/storage/v1/object/{Bucket}", request.Path);
+                Assert.Contains("tenant-a/file.bin", request.Body, StringComparison.Ordinal);
+            },
+            request => Assert.Equal(HttpMethod.Post, request.Method));
+    }
+
+    [Fact]
     public async Task Upload_400_duplicate_json_throws_conflict()
     {
         var handler = new RecordingHandler(Json(
@@ -220,12 +257,20 @@ public sealed class SupabaseStorageProviderTests
 
         public HttpRequestMessage? Request { get; private set; }
 
+        public List<RecordedRequest> Requests { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             Request = request;
+            Requests.Add(new RecordedRequest(
+                request.Method,
+                request.RequestUri?.AbsolutePath ?? string.Empty,
+                request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult() ?? string.Empty));
             return Task.FromResult(_respond(request));
         }
     }
+
+    private sealed record RecordedRequest(HttpMethod Method, string Path, string Body);
 }

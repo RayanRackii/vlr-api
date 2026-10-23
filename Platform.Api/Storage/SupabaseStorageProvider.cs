@@ -123,6 +123,48 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         }
     }
 
+    public async Task DeletePrefixAsync(
+        string bucket,
+        string prefix,
+        CancellationToken cancellationToken = default)
+    {
+        const int batchSize = 1000;
+
+        while (true)
+        {
+            using var listResponse = await _httpClient.PostAsJsonAsync(
+                $"object/list/{Uri.EscapeDataString(bucket)}",
+                new { prefix, limit = batchSize, offset = 0 },
+                cancellationToken);
+            listResponse.EnsureSuccessStatusCode();
+
+            var objects = await listResponse.Content.ReadFromJsonAsync<List<StorageObject>>(
+                cancellationToken: cancellationToken) ?? [];
+            var keys = objects
+                .Select(storageObject => storageObject.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToArray();
+
+            if (keys.Length == 0)
+            {
+                return;
+            }
+
+            using var deleteRequest = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"object/{Uri.EscapeDataString(bucket)}")
+            {
+                Content = JsonContent.Create(new { prefixes = keys }),
+            };
+            using var deleteResponse = await _httpClient.SendAsync(
+                deleteRequest,
+                cancellationToken);
+            deleteResponse.EnsureSuccessStatusCode();
+        }
+    }
+
+    private sealed record StorageObject(string? Name);
+
     private async Task EnsureStorageSuccessAsync(
         HttpResponseMessage response,
         string bucket,

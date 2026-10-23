@@ -25,6 +25,7 @@ using Platform.Api.Modules.Users.Controllers;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -170,6 +171,8 @@ public sealed class PlatformAdminStaleTenantJwtTests
                     services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>();
                     services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
                     services.AddSingleton<NotificationQueue>();
+                    services.AddSingleton(Options.Create(new StorageOptions()));
+                    services.AddSingleton<IStorageProvider, RecordingStorageProvider>();
                     services.AddSingleton<ITrialGuard, FakeTrialGuard>();
                     services.AddSingleton<ITenantAccessBootstrapper, FakeTenantAccessBootstrapper>();
                     services.AddSingleton<ITenantUserAdminService, FakeTenantUserAdminService>();
