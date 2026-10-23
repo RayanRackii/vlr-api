@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Services;
+using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -43,6 +44,9 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         AssertTenantUntouched(before, after, scope.KeeperId);
         AssertSharedRowsUntouched(before, after);
         Assert.Equal([scope.TargetOnlyAuthId], scope.Auth.DeletedIds);
+        Assert.Equal(
+            [("catalog-public", $"{scope.TargetId:N}/"), ("catalog-private", $"{scope.TargetId:N}/")],
+            scope.Storage.DeletedPrefixes);
     }
 
     [DockerFact]
@@ -77,6 +81,19 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         AssertTenantUntouched(before, after, scope.KeeperId);
         AssertSharedRowsUntouched(before, after);
         Assert.Equal([scope.TargetOnlyAuthId], scope.Auth.DeletedIds);
+    }
+
+    [DockerFact]
+    public async Task Delete_continues_when_storage_purge_fails()
+    {
+        await using var scope = await SeedAsync(RequireFactory());
+        scope.Storage.FailPrefixDeletion = true;
+
+        await scope.Service.DeleteAsync(scope.TargetId, CancellationToken.None);
+
+        var after = await scope.SnapshotAsync();
+        Assert.False(after.ByTenant[scope.TargetId].TenantExists);
+        Assert.Equal(2, scope.Storage.DeletedPrefixes.Count);
     }
 
     private PostgresAppDbFactory RequireFactory()
@@ -192,6 +209,7 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         await db.SaveChangesAsync();
 
         var auth = new RecordingAuthClient();
+        var storage = new RecordingStorageProvider();
         var service = new AdminTenantService(
             db,
             new FakeTenantUserAdminService(),
@@ -199,9 +217,11 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
             new FakeTenantAccessBootstrapper(),
             auth,
             Options.Create(new PlatformAdminOptions()),
-            NullLogger<AdminTenantService>.Instance);
+            NullLogger<AdminTenantService>.Instance,
+            Options.Create(new StorageOptions()),
+            storage);
 
-        return new Scope(factory, db, tenantProvider, service, auth, entered.Id, target.Id, keeper.Id, targetOnlyAuthId);
+        return new Scope(factory, db, tenantProvider, service, auth, storage, entered.Id, target.Id, keeper.Id, targetOnlyAuthId);
     }
 
     private static Tenant AddTenant(AppDbContext db, string slug, string legalName)
@@ -385,6 +405,7 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         FakeTenantProvider tenantProvider,
         AdminTenantService service,
         RecordingAuthClient auth,
+        RecordingStorageProvider storage,
         Guid enteredId,
         Guid targetId,
         Guid keeperId,
@@ -397,6 +418,8 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         public AdminTenantService Service { get; } = service;
 
         public RecordingAuthClient Auth { get; } = auth;
+
+        public RecordingStorageProvider Storage { get; } = storage;
 
         public Guid EnteredId { get; } = enteredId;
 

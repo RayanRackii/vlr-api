@@ -21,4 +21,10 @@ public interface IStorageProvider
         string bucket,
         string key,
         CancellationToken cancellationToken = default);
+
+    Task DeletePrefixAsync(
+        string bucket,
+        string prefix,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Storage prefix deletion is not supported by this provider.");
 }

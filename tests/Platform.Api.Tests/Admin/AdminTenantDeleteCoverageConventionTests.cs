@@ -6,17 +6,7 @@ namespace Platform.Api.Tests.Admin;
 
 public sealed class AdminTenantDeleteCoverageConventionTests
 {
-    // remover no F1-3 depois que o delete de tenant cobrir estas tabelas.
-    private static readonly HashSet<string> KnownGaps =
-    [
-        "BookingMapSettings",
-        "CatalogPolicy",
-        "LayoutDecoration",
-        "ReservationQueueSession",
-        "ReservationQueueTicket",
-        "TenantResourceSegment",
-        "WorkOrderTaskFile",
-    ];
+    private static readonly HashSet<string> KnownGaps = [];
 
     [Fact]
     public void Every_model_entity_with_TenantId_is_deleted_or_is_an_explicit_known_gap()

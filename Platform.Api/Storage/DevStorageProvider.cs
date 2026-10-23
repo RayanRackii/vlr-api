@@ -51,6 +51,20 @@ public sealed class DevStorageProvider(
         return Task.CompletedTask;
     }
 
+    public Task DeletePrefixAsync(
+        string bucket,
+        string prefix,
+        CancellationToken cancellationToken = default)
+    {
+        var directory = ResolvePath(bucket, prefix);
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        return Task.CompletedTask;
+    }
+
     private void EnsurePublicBucket(string bucket)
     {
         if (!string.Equals(bucket, options.Value.PublicBucket, StringComparison.Ordinal))

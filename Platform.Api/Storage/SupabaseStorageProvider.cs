@@ -9,6 +9,8 @@ namespace Platform.Api.Storage;
 public sealed class SupabaseStorageProvider : IStorageProvider
 {
     private const int SanitizedBodyLimit = 500;
+    private const int ListBatchSize = 1000;
+    private const int MaxListRequests = 10_000;
 
     private readonly HttpClient _httpClient;
     private readonly StorageOptions _storageOptions;
@@ -122,6 +124,112 @@ public sealed class SupabaseStorageProvider : IStorageProvider
                 Sanitize(body));
         }
     }
+
+    public async Task DeletePrefixAsync(
+        string bucket,
+        string prefix,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantPrefix = NormalizePrefix(prefix);
+        var folders = new Queue<string>([tenantPrefix]);
+        var visitedFolders = new HashSet<string>(StringComparer.Ordinal) { tenantPrefix };
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        var listRequests = 0;
+
+        while (folders.TryDequeue(out var folder))
+        {
+            var offset = 0;
+            while (true)
+            {
+                if (++listRequests > MaxListRequests)
+                {
+                    throw new InvalidOperationException("Storage prefix deletion exceeded the listing safety limit.");
+                }
+
+                using var listResponse = await _httpClient.PostAsJsonAsync(
+                    $"object/list/{Uri.EscapeDataString(bucket)}",
+                    new { prefix = folder, limit = ListBatchSize, offset },
+                    cancellationToken);
+                listResponse.EnsureSuccessStatusCode();
+
+                var objects = await listResponse.Content.ReadFromJsonAsync<List<StorageObject>>(
+                    cancellationToken: cancellationToken) ?? [];
+
+                foreach (var storageObject in objects)
+                {
+                    if (string.IsNullOrWhiteSpace(storageObject.Name))
+                    {
+                        continue;
+                    }
+
+                    var key = BuildFullKey(tenantPrefix, folder, storageObject.Name);
+                    if (string.IsNullOrWhiteSpace(storageObject.Id))
+                    {
+                        var childFolder = $"{key}/";
+                        if (visitedFolders.Add(childFolder))
+                        {
+                            folders.Enqueue(childFolder);
+                        }
+                    }
+                    else
+                    {
+                        keys.Add(key);
+                    }
+                }
+
+                if (objects.Count < ListBatchSize)
+                {
+                    break;
+                }
+
+                offset += objects.Count;
+            }
+        }
+
+        foreach (var batch in keys.Chunk(ListBatchSize))
+        {
+            using var deleteRequest = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"object/{Uri.EscapeDataString(bucket)}")
+            {
+                Content = JsonContent.Create(new { prefixes = batch }),
+            };
+            using var deleteResponse = await _httpClient.SendAsync(
+                deleteRequest,
+                cancellationToken);
+            deleteResponse.EnsureSuccessStatusCode();
+        }
+    }
+
+    private static string NormalizePrefix(string prefix)
+    {
+        var normalized = prefix.Trim().Trim('/');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new ArgumentException("Storage prefix must not be empty.", nameof(prefix));
+        }
+
+        return $"{normalized}/";
+    }
+
+    private static string BuildFullKey(string tenantPrefix, string folder, string relativeName)
+    {
+        if (relativeName.StartsWith('/')
+            || relativeName.Split('/').Any(segment => segment is "." or ".."))
+        {
+            throw new InvalidOperationException("Storage listing returned an unsafe relative object name.");
+        }
+
+        var key = $"{folder}{relativeName}";
+        if (!key.StartsWith(tenantPrefix, StringComparison.Ordinal) || key == tenantPrefix)
+        {
+            throw new InvalidOperationException("Storage listing returned an object outside the tenant prefix.");
+        }
+
+        return key;
+    }
+
+    private sealed record StorageObject(string? Name, string? Id);
 
     private async Task EnsureStorageSuccessAsync(
         HttpResponseMessage response,
