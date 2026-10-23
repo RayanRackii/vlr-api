@@ -8,22 +8,21 @@ namespace Platform.Core.Infrastructure.Persistence;
 /// </summary>
 public sealed partial class PlatformScope : IDisposable
 {
-    private static readonly AsyncLocal<PlatformScope?> Current = new();
+    private static readonly AsyncLocal<ScopeFrame?> Current = new();
 
-    private readonly PlatformScope? _parent;
-    private readonly AsyncLocal<bool> _disposed = new();
+    private readonly ScopeFrame _frame;
 
-    private PlatformScope(string reason, PlatformScope? parent)
+    private PlatformScope(string reason, ScopeFrame? previous)
     {
         Reason = reason;
-        _parent = parent;
+        _frame = new ScopeFrame(TenantContextMode.Platform, null, previous, this);
     }
 
     public string Reason { get; }
 
-    public static bool IsActive => Current.Value is not null;
+    public static bool IsActive => Current.Value?.Mode == TenantContextMode.Platform;
 
-    public static string? CurrentReason => Current.Value?.Reason;
+    public static string? CurrentReason => Current.Value?.Owner.Reason;
 
     /// <param name="reason">Audit label (job or admin operation), logged on entry.</param>
     public static PlatformScope Begin(ILogger logger, string reason)
@@ -31,28 +30,43 @@ public sealed partial class PlatformScope : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
         var scope = new PlatformScope(reason, Current.Value);
-        LogEntered(logger, reason, scope._parent?.Reason);
-        Current.Value = scope;
+        LogEntered(logger, reason, scope._frame.Previous?.Owner.Reason);
+        Current.Value = scope._frame;
         return scope;
     }
 
     public void Dispose()
     {
-        if (_disposed.Value)
+        var current = Current.Value;
+        if (ReferenceEquals(current?.Owner, this))
         {
+            Current.Value = current.Previous;
             return;
         }
 
         // Out-of-order dispose would silently drop the inner scope's restore point.
-        if (!ReferenceEquals(Current.Value, this))
+        if (Contains(current, this))
         {
             throw new InvalidOperationException(
                 $"PlatformScope '{Reason}' disposed out of order (current: '{CurrentReason ?? "none"}').");
         }
-
-        _disposed.Value = true;
-        Current.Value = _parent;
     }
+
+    private static bool Contains(ScopeFrame? frame, PlatformScope scope)
+    {
+        for (var current = frame; current is not null; current = current.Previous)
+        {
+            if (ReferenceEquals(current.Owner, scope)) return true;
+        }
+
+        return false;
+    }
+
+    private sealed record ScopeFrame(
+        TenantContextMode Mode,
+        Guid? TenantId,
+        ScopeFrame? Previous,
+        PlatformScope Owner);
 
     [LoggerMessage(
         Level = LogLevel.Information,

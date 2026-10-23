@@ -102,6 +102,41 @@ public sealed class TenantContextTests
     }
 
     [Fact]
+    public async Task Dispose_in_an_unrelated_flow_is_a_no_op()
+    {
+        var scope = PlatformScope.Begin(Logger, "owner");
+
+        Task disposeTask;
+        using (ExecutionContext.SuppressFlow())
+        {
+            disposeTask = Task.Run(scope.Dispose);
+        }
+
+        await disposeTask;
+
+        Assert.True(PlatformScope.IsActive);
+        Assert.Equal("owner", PlatformScope.CurrentReason);
+
+        scope.Dispose();
+        Assert.False(PlatformScope.IsActive);
+    }
+
+    [Fact]
+    public void Repeated_begin_and_dispose_leave_no_ambient_scope()
+    {
+        var context = new TenantContext(new FakeTenantProvider());
+
+        for (var i = 0; i < 128; i++)
+        {
+            using var scope = PlatformScope.Begin(Logger, $"scope-{i}");
+        }
+
+        Assert.False(PlatformScope.IsActive);
+        Assert.Null(PlatformScope.CurrentReason);
+        Assert.Equal(TenantContextMode.None, context.Mode);
+    }
+
+    [Fact]
     public void Disposing_outer_before_inner_throws_and_keeps_inner_active()
     {
         var outer = PlatformScope.Begin(Logger, "outer");
