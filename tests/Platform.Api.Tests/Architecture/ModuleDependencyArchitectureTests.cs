@@ -57,6 +57,11 @@ public sealed class ModuleDependencyArchitectureTests
 
             foreach (var name in root.DescendantNodesAndSelf().OfType<NameSyntax>())
             {
+                if (name.Parent is QualifiedNameSyntax qualified && qualified.Left == name)
+                {
+                    continue; // namespace prefix of a longer name; classify only the complete reference
+                }
+
                 var symbol = semanticModel.GetSymbolInfo(name).Symbol;
                 while (symbol is IAliasSymbol alias)
                 {
