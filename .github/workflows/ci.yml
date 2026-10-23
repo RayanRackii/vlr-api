@@ -57,3 +57,6 @@ jobs:
 
       - name: Test
         run: dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj --configuration Release --verbosity minimal
+
+      - name: Verify full OpenAPI snapshot
+        run: dotnet test tests/Platform.Api.Tests/Platform.Api.Tests.csproj --configuration Release --verbosity minimal --filter FullyQualifiedName~OpenApiFullSnapshotContractTests
