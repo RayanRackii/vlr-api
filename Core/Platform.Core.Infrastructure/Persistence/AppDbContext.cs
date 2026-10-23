@@ -27,6 +27,8 @@ public class AppDbContext : DbContext
 
     public DbSet<TenantModule> TenantModules => Set<TenantModule>();
 
+    public DbSet<TenantSetting> TenantSettings => Set<TenantSetting>();
+
     public DbSet<User> Users => Set<User>();
 
     public DbSet<Unit> Units => Set<Unit>();

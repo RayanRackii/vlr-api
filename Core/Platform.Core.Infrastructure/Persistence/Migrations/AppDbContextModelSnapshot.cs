@@ -3594,6 +3594,45 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantSetting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("key");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tenant_settings");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tenant_settings_tenant_id_key");
+
+                    b.ToTable("tenant_settings", "core");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.TrialSignupClaim", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4778,6 +4817,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_tenant_resource_segments_resource_visual_tags_tag_id_tag_ki");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantSetting", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tenant_settings_tenants_tenant_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Unit", b =>

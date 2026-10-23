@@ -1,9 +1,8 @@
 namespace Platform.Api.Modules.Rentals.Services;
 
 /// <summary>
-/// Booking window on the tenant civil clock. <see cref="Tenant"/> has no timezone
-/// property, so <see cref="TenantBookingClock"/> falls back to
-/// <c>America/Sao_Paulo</c>. The injected <see cref="TimeProvider"/> is the only "now".
+/// Booking window on the tenant civil clock (<see cref="TenantBookingClock"/>:
+/// tenant setting, otherwise <c>America/Sao_Paulo</c>). The injected <see cref="TimeProvider"/> is the only "now".
 /// A start equal to that instant is still allowed; only an earlier start is rejected.
 /// </summary>
 internal static class ReservationBookingRules

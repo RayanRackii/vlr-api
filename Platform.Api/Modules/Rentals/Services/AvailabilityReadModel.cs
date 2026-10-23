@@ -3,7 +3,6 @@ using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -71,10 +70,11 @@ internal sealed class AvailabilityReadModel(
                 ResolvePersistedSource(s, templateBySlot.GetValueOrDefault(s.Id))))
             .ToList();
 
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
         var derivedOpenHours = await DeriveOpenHoursSlotsAsync(
-            date, ids, persistedStarts, cancellationToken);
+            date, ids, persistedStarts, zone, cancellationToken);
         var derivedSlotGrid = await DeriveSlotGridFromTemplatesAsync(
-            date, ids, persistedStarts, cancellationToken);
+            date, ids, persistedStarts, zone, cancellationToken);
 
         IEnumerable<SlotResponseDto> all = persisted
             .Concat(derivedOpenHours)
@@ -82,7 +82,6 @@ internal sealed class AvailabilityReadModel(
 
         if (customerFacing)
         {
-            var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
             all = all.Where(s =>
                 s.Status == SlotStatus.Available && s.IsBookableByCustomer
                 && !ReservationBookingRules.StartsBeforeNow(
@@ -228,6 +227,7 @@ internal sealed class AvailabilityReadModel(
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
         IReadOnlySet<(Guid RentalAssetId, TimeOnly StartTime)> persistedStarts,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         var rentablesQuery = dbContext.RentalAssets
@@ -259,7 +259,7 @@ internal sealed class AvailabilityReadModel(
         }
 
         var reservedWindows = await LoadReservedWindowsAsync(
-            EnsureTenant(), date, rentables.Select(r => r.Id).ToList(), cancellationToken);
+            EnsureTenant(), date, rentables.Select(r => r.Id).ToList(), zone, cancellationToken);
 
         var derived = new List<SlotResponseDto>();
 
@@ -294,8 +294,8 @@ internal sealed class AvailabilityReadModel(
                         continue;
                     }
 
-                    var startDt = ToDateTime(date, cursor);
-                    var endDt = ToDateTime(date, end);
+                    var startDt = TenantBookingClock.AtLocal(date, cursor, zone);
+                    var endDt = TenantBookingClock.AtLocal(date, end, zone);
                     var reserved = SumOverlapping(windows, startDt, endDt);
 
                     var available = rental.Type == RentalAssetType.Location
@@ -343,6 +343,7 @@ internal sealed class AvailabilityReadModel(
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
         IReadOnlySet<(Guid RentalAssetId, TimeOnly StartTime)> persistedStarts,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         var templatesQuery = dbContext.ScheduleTemplates
@@ -369,6 +370,7 @@ internal sealed class AvailabilityReadModel(
             EnsureTenant(),
             date,
             templates.Select(t => t.RentalAssetId).Distinct().ToList(),
+            zone,
             cancellationToken);
 
         var derived = new List<SlotResponseDto>();
@@ -381,8 +383,8 @@ internal sealed class AvailabilityReadModel(
                     continue;
                 }
 
-                var startDt = ToDateTime(date, window.Start);
-                var endDt = ToDateTime(date, window.End);
+                var startDt = TenantBookingClock.AtLocal(date, window.Start, zone);
+                var endDt = TenantBookingClock.AtLocal(date, window.End, zone);
                 var windows = reservedWindows.TryGetValue(window.Template.RentalAssetId, out var found)
                     ? found
                     : [];
@@ -430,6 +432,7 @@ internal sealed class AvailabilityReadModel(
         Guid tenantId,
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         if (rentalAssetIds.Count == 0)
@@ -437,8 +440,7 @@ internal sealed class AvailabilityReadModel(
             return [];
         }
 
-        var dayStart = BrazilTimeZone.StartOfCivilDay(date);
-        var dayEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(date);
+        var (dayStart, dayEnd) = TenantBookingClock.CivilDay(date, zone);
 
         var rows = await (
             from item in dbContext.ReservationItems.AsNoTracking()
@@ -531,9 +533,6 @@ internal sealed class AvailabilityReadModel(
 
     internal static string? TrimLabel(string? label) =>
         string.IsNullOrWhiteSpace(label) ? null : label.Trim();
-
-    private static DateTimeOffset ToDateTime(DateOnly date, TimeOnly time) =>
-        BrazilTimeZone.AtLocal(date, time);
 
     internal static SlotResponseDto ToSlotDto(
         Slot s,
