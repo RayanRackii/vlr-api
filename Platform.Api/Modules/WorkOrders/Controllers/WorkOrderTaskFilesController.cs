@@ -7,6 +7,12 @@ using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.WorkOrders.Controllers;
 
+public sealed class UploadRequest
+{
+    [FromForm(Name = "file")]
+    public IFormFile? File { get; init; }
+}
+
 [ApiController]
 [RequireActiveModule(PlatformModules.WorkOrders)]
 [Route("api/work-orders")]
@@ -24,9 +30,10 @@ public sealed class WorkOrderTaskFilesController(IWorkOrderTaskImageService task
     public async Task<ActionResult<WorkOrderTaskFileResponse>> Upload(
         Guid id,
         Guid taskId,
-        [FromForm] IFormFile? file,
+        [FromForm] UploadRequest request,
         CancellationToken cancellationToken)
     {
+        var file = request.File;
         if (file is null)
         {
             return BadRequest(new { error = "File is required." });
