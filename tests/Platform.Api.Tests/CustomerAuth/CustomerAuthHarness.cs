@@ -93,7 +93,8 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
         IHttpContextAccessor? httpContextAccessor = null,
         OtpHmacEvaluationCounter? hmacEvaluations = null,
         IPasswordResetEmailQueue? passwordResetEmails = null,
-        IOptions<BookingUiOptions>? bookingUiOptions = null)
+        IOptions<BookingUiOptions>? bookingUiOptions = null,
+        ICustomerLoginThrottle? loginThrottle = null)
     {
         var codes = new CustomerVerificationCodeService(
             db,
@@ -111,6 +112,7 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
             codes,
             email,
             passwordResetEmails ?? new InlinePasswordResetEmailQueue(email),
+            loginThrottle ?? new AllowAllCustomerLoginThrottle(),
             NullLogger<CustomerAuthService>.Instance,
             httpContextAccessor,
             bookingUiOptions);
@@ -274,4 +276,13 @@ internal sealed class StubCustomerAuthService : ICustomerAuthService
     {
         throw ToThrow ?? new NotImplementedException();
     }
+}
+
+internal sealed class AllowAllCustomerLoginThrottle : ICustomerLoginThrottle
+{
+    public Task<int> CheckAsync(Guid tenantId, string normalizedEmail, string? clientIp,
+        CancellationToken cancellationToken) => Task.FromResult(0);
+
+    public Task<int> ConsumeAsync(Guid tenantId, string normalizedEmail, string? clientIp, bool failed,
+        CancellationToken cancellationToken) => Task.FromResult(0);
 }

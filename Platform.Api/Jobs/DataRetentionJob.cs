@@ -20,6 +20,22 @@ public sealed class DataRetentionJob(
 
         try
         {
+            if (dbContext.Database.IsNpgsql())
+            {
+                await dbContext.Database.ExecuteSqlRawAsync(
+                    // Skip login-held rows so cleanup cannot invert the two-bucket lock order.
+                    """
+                    WITH expired AS (
+                        SELECT bucket_key FROM core.customer_login_throttle
+                        WHERE expires_at <= statement_timestamp()
+                        ORDER BY bucket_key FOR UPDATE SKIP LOCKED
+                    )
+                    DELETE FROM core.customer_login_throttle AS bucket
+                    USING expired WHERE bucket.bucket_key = expired.bucket_key
+                    """,
+                    cancellationToken);
+            }
+
             var expiredCategoryIds = await dbContext.AssetCategories
                 .Where(category =>
                     category.ScheduledDeletionAt != null
