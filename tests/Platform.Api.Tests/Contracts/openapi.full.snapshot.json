@@ -4135,6 +4135,40 @@
         },
         "type": "object"
       },
+      "RentalsReadinessItem": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "key": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RentalsReadinessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RentalsReadinessItem"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ReplacePlanTaskDto": {
         "additionalProperties": false,
         "properties": {
@@ -14421,6 +14455,35 @@
         ]
       }
     },
+    "/api/rentals/readiness": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RentalsReadinessResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RentalsReadinessResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/RentalsReadinessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RentalsReadiness"
+        ]
+      }
+    },
     "/api/rentals/resource-segments": {
       "get": {
         "responses": {
@@ -17318,6 +17381,9 @@
     },
     {
       "name": "RentalPricingsBulk"
+    },
+    {
+      "name": "RentalsReadiness"
     },
     {
       "name": "Reservations"
