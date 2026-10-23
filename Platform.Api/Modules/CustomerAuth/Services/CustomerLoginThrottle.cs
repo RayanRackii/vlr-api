@@ -87,7 +87,7 @@ public sealed class CustomerLoginThrottle(
                 ), email_consumed AS (
                     INSERT INTO core.customer_login_throttle AS bucket (bucket_key, attempts, expires_at)
                     SELECT @email_key, 1, statement_timestamp() + make_interval(secs => @window)
-                    FROM ip_gate WHERE retry_after = 0
+                    FROM ip_gate WHERE retry_after = 0 AND @failed
                     ON CONFLICT (bucket_key) DO UPDATE SET
                         attempts = CASE WHEN bucket.expires_at <= statement_timestamp() THEN 1
                             ELSE LEAST(bucket.attempts, @email_limit) + 1 END,

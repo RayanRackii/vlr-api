@@ -34,6 +34,18 @@ public sealed class CustomerLoginThrottleTests : IClassFixture<PostgresContainer
     }
 
     [DockerFact]
+    public async Task Successful_attempts_do_not_consume_email_budget()
+    {
+        var tenant = Guid.NewGuid();
+        for (var i = 0; i < 6; i++)
+            Assert.Equal(0, await Consume(tenant, "success@club.test", $"success-ip-{i}", failed: false));
+
+        Assert.Equal(0, await Consume(tenant, "success@club.test", "failure-ip-1"));
+        Assert.Equal(0, await Consume(tenant, "success@club.test", "failure-ip-2"));
+        Assert.InRange(await Consume(tenant, "success@club.test", "failure-ip-3"), 1, 900);
+    }
+
+    [DockerFact]
     public async Task Ip_limit_covers_different_emails_and_tenants()
     {
         var ip = Guid.NewGuid().ToString();
