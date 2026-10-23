@@ -9,6 +9,10 @@ namespace Platform.Api.Modules.Assets.Services;
 /// </summary>
 public interface IAssetRegistry
 {
+    Task<RegistryCategoryListItem> CreateCategoryAsync(
+        CreateAssetCategoryRequest request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
         CancellationToken cancellationToken);
 

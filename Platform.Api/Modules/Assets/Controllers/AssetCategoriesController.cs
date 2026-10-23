@@ -44,8 +44,19 @@ public sealed class AssetCategoriesController(
         [FromBody] CreateAssetCategoryRequest request,
         CancellationToken cancellationToken)
     {
-        var category = await assetCategoryService.CreateAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = category.Id }, category);
+        try
+        {
+            var category = await assetCategoryService.CreateAsync(request, cancellationToken);
+            return CreatedAtAction(nameof(GetById), new { id = category.Id }, category);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
     }
 
     [HttpPut("{id:guid}")]
@@ -55,14 +66,25 @@ public sealed class AssetCategoriesController(
         [FromBody] UpdateAssetCategoryRequest request,
         CancellationToken cancellationToken)
     {
-        var category = await assetCategoryService.UpdateAsync(id, request, cancellationToken);
-
-        if (category is null)
+        try
         {
-            return NotFound();
-        }
+            var category = await assetCategoryService.UpdateAsync(id, request, cancellationToken);
 
-        return Ok(category);
+            if (category is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(category);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
     }
 
     [HttpDelete("{id:guid}")]

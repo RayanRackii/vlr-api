@@ -319,6 +319,11 @@ public sealed class WorkOrderEndpointAuthorizationTests
 
     private sealed class StubAssetRegistry : IAssetRegistry
     {
+        public Task<RegistryCategoryListItem> CreateCategoryAsync(
+            CreateAssetCategoryRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
