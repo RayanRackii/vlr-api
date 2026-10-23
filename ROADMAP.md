@@ -12,6 +12,7 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 ## Arquitetura de módulos — baseline estático (2026-10-22)
 
 - [x] Teste estático em `tests/Platform.Api.Tests/Architecture/` usa Roslyn para detectar referências entre módulos fora de `.Contracts`, incluindo referências relativas e expressões interpoladas; baseline versionado falha para violações novas e entradas resolvidas. Build dos testes compilou; execução bloqueada pelo sandbox (VSTest não conseguiu abrir socket). Git não executado por instrução do usuário.
+- [x] Passo 8: `IRentalConfigurationSync` em `Rentals.Contracts` move a sincronização de configuração e defaults de preço para Rentals; a entrada `Assets -> Rentals` saiu da baseline.
 - [ ] Próximo passo API: executar o teste de arquitetura em ambiente que permita sockets e remover gradualmente as dependências existentes, apagando as linhas correspondentes da baseline. Próximo `vlr-web`: integrar catálogo/picker/editor visual e apresentação Mapa/Lista, conforme a seção “Catálogo visual + mapas” do roadmap irmão.
 
 ## Taxonomy de plataforma + Catalog (2026-10-20) — released em PROD (2026-10-21)

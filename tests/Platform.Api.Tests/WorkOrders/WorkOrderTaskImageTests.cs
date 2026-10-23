@@ -22,6 +22,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Services;
@@ -955,6 +957,7 @@ public sealed class WorkOrderTaskImageTests
                     services.AddSingleton<NotificationQueue>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<IAssetService, AssetService>();
+                    services.AddScoped<IRentalConfigurationSync, RentalConfigurationSync>();
                     services.AddScoped<IAssetFamilyService, AssetFamilyService>();
                     services.AddScoped<IAssetCategoryService, AssetCategoryService>();
                     services.AddScoped<IAssetRegistry, AssetRegistry>();

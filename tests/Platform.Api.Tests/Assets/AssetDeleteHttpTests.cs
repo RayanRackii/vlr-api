@@ -19,6 +19,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Common;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Controllers;
@@ -201,6 +203,7 @@ public sealed class AssetDeleteHttpTests
                     services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
                     services.AddScoped<IAssetCategoryService, AssetCategoryService>();
                     services.AddScoped<IAssetService, AssetService>();
+                    services.AddScoped<IRentalConfigurationSync, RentalConfigurationSync>();
                     services.AddAuthorization(options => options.AddRolvixPolicies());
                     services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
                     services.AddSingleton<IAuthorizationMiddlewareResultHandler, JsonForbiddenAuthorizationResultHandler>();

@@ -1,5 +1,6 @@
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -263,7 +264,7 @@ internal sealed class BulkCreateAssetsHarness : IAsyncDisposable
     }
 
     public AssetService CreateService() =>
-        new(Db, TenantProvider, new FakeTrialGuard());
+        new(Db, TenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(Db));
 
     public IAssetRegistry CreateRegistry()
     {
