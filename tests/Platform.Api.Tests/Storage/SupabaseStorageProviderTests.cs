@@ -64,17 +64,17 @@ public sealed class SupabaseStorageProviderTests
     }
 
     [Fact]
-    public async Task DeletePrefix_lists_and_removes_only_objects_under_the_prefix()
+    public async Task DeletePrefix_traverses_relative_entries_and_removes_only_full_keys_under_the_prefix()
     {
         const string prefix = "tenant-a/";
-        var listCalls = 0;
         var handler = new RecordingHandler(request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                return Json(HttpStatusCode.OK, listCalls++ == 0
-                    ? """[{"name":"tenant-a/file.bin"}]"""
-                    : "[]");
+                var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return body.Contains("\"prefix\":\"tenant-a/nested/\"", StringComparison.Ordinal)
+                    ? Json(HttpStatusCode.OK, """[{"name":"inside.bin","id":"file-2"}]""")
+                    : Json(HttpStatusCode.OK, """[{"name":"file.bin","id":"file-1"},{"name":"nested","id":null}]""");
             }
 
             return Json(HttpStatusCode.OK, "[]");
@@ -83,21 +83,54 @@ public sealed class SupabaseStorageProviderTests
 
         await sut.DeletePrefixAsync(Bucket, prefix);
 
+        var listRequests = handler.Requests.Where(request => request.Method == HttpMethod.Post).ToArray();
         Assert.Collection(
-            handler.Requests,
-            request =>
+            listRequests,
+            request => Assert.Contains($"\"prefix\":\"{prefix}\"", request.Body, StringComparison.Ordinal),
+            request => Assert.Contains("\"prefix\":\"tenant-a/nested/\"", request.Body, StringComparison.Ordinal));
+
+        var deleteRequest = Assert.Single(handler.Requests, request => request.Method == HttpMethod.Delete);
+        Assert.Equal($"/storage/v1/object/{Bucket}", deleteRequest.Path);
+        Assert.Contains("tenant-a/file.bin", deleteRequest.Body, StringComparison.Ordinal);
+        Assert.Contains("tenant-a/nested/inside.bin", deleteRequest.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"file.bin\"", deleteRequest.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"inside.bin\"", deleteRequest.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DeletePrefix_advances_the_listing_offset_before_deleting_a_full_page()
+    {
+        const string prefix = "tenant-a/";
+        var listCalls = 0;
+        var fullPage = $"[{string.Join(',', Enumerable.Range(0, 1000)
+            .Select(index => $"{{\"name\":\"file-{index}.bin\",\"id\":\"{index}\"}}"))}]";
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method != HttpMethod.Post)
             {
-                Assert.Equal(HttpMethod.Post, request.Method);
-                Assert.Equal($"/storage/v1/object/list/{Bucket}", request.Path);
-                Assert.Contains($"\"prefix\":\"{prefix}\"", request.Body, StringComparison.Ordinal);
-            },
-            request =>
-            {
-                Assert.Equal(HttpMethod.Delete, request.Method);
-                Assert.Equal($"/storage/v1/object/{Bucket}", request.Path);
-                Assert.Contains("tenant-a/file.bin", request.Body, StringComparison.Ordinal);
-            },
-            request => Assert.Equal(HttpMethod.Post, request.Method));
+                return Json(HttpStatusCode.OK, "[]");
+            }
+
+            return Json(HttpStatusCode.OK, listCalls++ == 0
+                ? fullPage
+                : """[{"name":"last.bin","id":"last"}]""");
+        });
+        var sut = CreateSut(handler, SecretKey);
+
+        await sut.DeletePrefixAsync(Bucket, prefix);
+
+        var listRequests = handler.Requests.Where(request => request.Method == HttpMethod.Post).ToArray();
+        Assert.Equal(2, listRequests.Length);
+        Assert.Contains("\"offset\":0", listRequests[0].Body, StringComparison.Ordinal);
+        Assert.Contains("\"offset\":1000", listRequests[1].Body, StringComparison.Ordinal);
+        var deleteRequests = handler.Requests.Where(request => request.Method == HttpMethod.Delete).ToArray();
+        Assert.Equal(2, deleteRequests.Length);
+        Assert.All(deleteRequests, request =>
+            Assert.Equal($"/storage/v1/object/{Bucket}", request.Path));
+
+        var deletedKeys = string.Join('\n', deleteRequests.Select(request => request.Body));
+        Assert.Contains("tenant-a/file-0.bin", deletedKeys, StringComparison.Ordinal);
+        Assert.Contains("tenant-a/last.bin", deletedKeys, StringComparison.Ordinal);
     }
 
     [Fact]
