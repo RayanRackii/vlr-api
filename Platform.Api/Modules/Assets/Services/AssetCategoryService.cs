@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -57,17 +58,31 @@ public sealed class AssetCategoryService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
+        var name = NormalizeName(request.Name);
+
+        if (await dbContext.AssetCategories.AnyAsync(c => c.Name == name, cancellationToken))
+        {
+            throw DuplicateName();
+        }
 
         var category = new AssetCategory
         {
             TenantId = tenantId,
-            Name = request.Name.Trim(),
+            Name = name,
             Manufacturer = NormalizeOptional(request.Manufacturer),
             Description = NormalizeOptional(request.Description),
         };
 
         dbContext.AssetCategories.Add(category);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsNameUniqueViolation(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+            throw DuplicateName();
+        }
 
         return ToResponse(category, linkedAssetsCount: 0);
     }
@@ -87,7 +102,13 @@ public sealed class AssetCategoryService(
             return null;
         }
 
-        category.Name = request.Name.Trim();
+        var name = NormalizeName(request.Name);
+        if (await dbContext.AssetCategories.AnyAsync(c => c.Id != id && c.Name == name, cancellationToken))
+        {
+            throw DuplicateName();
+        }
+
+        category.Name = name;
         category.Manufacturer = NormalizeOptional(request.Manufacturer);
         category.Description = NormalizeOptional(request.Description);
         category.Touch();
@@ -192,6 +213,32 @@ public sealed class AssetCategoryService(
 
         return value.Trim();
     }
+
+    private static string NormalizeName(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrEmpty(normalized))
+        {
+            throw new ArgumentException("Asset category name is required.", nameof(value));
+        }
+
+        if (normalized.Length > 200)
+        {
+            throw new ArgumentException("Asset category name must be at most 200 characters.", nameof(value));
+        }
+
+        return normalized;
+    }
+
+    private static InvalidOperationException DuplicateName() =>
+        new("An asset category with this name already exists.");
+
+    private static bool IsNameUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "ix_asset_categories_tenant_id_name",
+        };
 
     private static AssetCategoryResponse ToResponse(
         AssetCategory category,

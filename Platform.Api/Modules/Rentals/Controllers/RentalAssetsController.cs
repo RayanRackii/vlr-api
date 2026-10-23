@@ -37,6 +37,27 @@ public sealed class RentalAssetsController(
         return Ok(categories);
     }
 
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
+    [HttpPost("categories")]
+    public async Task<ActionResult<RegistryCategoryListItem>> CreateCategory(
+        [FromBody] CreateAssetCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var category = await assetRegistry.CreateCategoryAsync(request, cancellationToken);
+            return CreatedAtAction(nameof(ListCategories), category);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
     [RequirePermission(Permissions.Rentals.AssetsRead)]
     [HttpGet("families")]
     public async Task<ActionResult<IReadOnlyList<AssetFamilyDetailResponse>>> ListFamilies(

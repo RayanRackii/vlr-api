@@ -336,7 +336,8 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
                 db,
                 tenantProvider,
                 new AssetService(db, tenantProvider, new FakeTrialGuard()),
-                new AssetFamilyService(db)));
+                new AssetFamilyService(db),
+                new AssetCategoryService(db, tenantProvider)));
     }
 
     private sealed record Seed(Guid TenantId, Guid PlanId, Guid AssetId, Guid WorkOrderId, Guid TaskId);

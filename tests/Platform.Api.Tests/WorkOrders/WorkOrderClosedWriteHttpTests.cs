@@ -279,6 +279,7 @@ public sealed class WorkOrderClosedWriteHttpTests
                     services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
                     services.AddScoped<IAssetFamilyService, AssetFamilyService>();
                     services.AddScoped<IAssetService, AssetService>();
+                    services.AddScoped<IAssetCategoryService, AssetCategoryService>();
                     services.AddScoped<IAssetRegistry, AssetRegistry>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<IWorkOrderGenerationService, WorkOrderGenerationService>();
