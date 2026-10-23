@@ -9,6 +9,19 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## QA bots R7 em DEV (2026-10-23) — follow-ups (CONDITIONAL PASS, sem Blocker/High)
+
+Gate R7 rodado em DEV (API develop-6f2c72d, web develop 89ec097) antes do release PROD. Itens abaixo ficam como follow-ups; nenhum bloqueia o release.
+
+- [ ] **F1. Professor sem visão do dia.** O professor não tem uma visão diária das reservas.
+- [ ] **F2. `/os` negado para professor na FICC.** A rota de OS é negada para esse papel. Decidir: esconder a entrada de menu ou conceder a permissão.
+- [ ] **F3. "Minhas reservas" desatualizada.** A lista só mostra a nova reserva depois de recarregar a página (invalidar a query).
+- [ ] **F4. Status inconsistente.** "Confirmada" e "Aguardando depósito" aparecem para a mesma reserva em telas diferentes.
+- [ ] **F5. Painel de conflito.** Fica aberto depois de resolvido e mostra texto de erro técnico em vez de mensagem amigável.
+- [ ] **F6. Nome de ícone vazando.** Aparece "Quadra 1 · circle-dot": o nome do ícone sai como texto.
+- [ ] **F7. Ordenação de "Minhas reservas".** Está por data de criação; deveria ser por data/hora da reserva.
+- [ ] **F8. Menu do staff.** O menu pisca no carregamento, e o link para `/configuracoes` dá 404.
+
 ## Arquitetura de módulos — baseline estático (2026-10-22)
 
 - [x] Teste estático em `tests/Platform.Api.Tests/Architecture/` usa Roslyn para detectar referências entre módulos fora de `.Contracts`, incluindo referências relativas e expressões interpoladas; baseline versionado falha para violações novas e entradas resolvidas. Build dos testes compilou; execução bloqueada pelo sandbox (VSTest não conseguiu abrir socket). Git não executado por instrução do usuário.
