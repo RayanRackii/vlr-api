@@ -298,6 +298,11 @@ public sealed class WorkOrderFromPlanAuthorizationTests
 
     private sealed class UnusedAssetRegistry : IAssetRegistry
     {
+        public Task<RegistryCategoryListItem> CreateCategoryAsync(
+            CreateAssetCategoryRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();

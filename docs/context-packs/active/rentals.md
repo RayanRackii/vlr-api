@@ -137,7 +137,7 @@ Reservation is the occupancy fact (start/end + items). Slot is the schedule cell
 - Customer list: `GET /api/reservations/mine` (Customer JWT)
 - Customer self-cancel: `POST /api/reservations/mine/{id}/cancel` (Customer JWT; cutoff before start; 404 if not owner)
 - Queue (Customer): `GET/POST /api/rental-assets/{id}/queue`, `POST .../queue/join`, `POST .../queue/leave`
-- Registry without Ativos: `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families` (`rentals.assets.*`)
+- Registry without Ativos: `POST /api/rental-assets`, `PUT /api/rental-assets/{id}`, `GET /api/rental-assets/categories|families`, `POST /api/rental-assets/categories` (`rentals.assets.*`; create returns `RegistryCategoryListItem`)
 - Admin day/exceptions: `GET /api/schedule/days/{date}`, `POST /api/schedule/slots/daily-occurrence`
 - Admin list: `GET /api/reservations`
 - Admin confirm: `POST /api/reservations/{id}/confirm` — permission `rentals.reservations.confirm`; `ReservationLocks` then status decision

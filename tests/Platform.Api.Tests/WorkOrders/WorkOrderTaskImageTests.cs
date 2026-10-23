@@ -956,6 +956,7 @@ public sealed class WorkOrderTaskImageTests
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<IAssetService, AssetService>();
                     services.AddScoped<IAssetFamilyService, AssetFamilyService>();
+                    services.AddScoped<IAssetCategoryService, AssetCategoryService>();
                     services.AddScoped<IAssetRegistry, AssetRegistry>();
                     services.AddScoped<IWorkOrderService, WorkOrderService>();
                     services.AddScoped<IWorkOrderGenerationService, WorkOrderGenerationService>();

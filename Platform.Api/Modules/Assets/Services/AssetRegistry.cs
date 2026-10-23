@@ -9,8 +9,19 @@ public sealed class AssetRegistry(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IAssetService assetService,
-    IAssetFamilyService assetFamilyService) : IAssetRegistry
+    IAssetFamilyService assetFamilyService,
+    IAssetCategoryService assetCategoryService) : IAssetRegistry
 {
+    public async Task<RegistryCategoryListItem> CreateCategoryAsync(
+        CreateAssetCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+
+        var category = await assetCategoryService.CreateAsync(request, cancellationToken);
+        return new RegistryCategoryListItem(category.Id, category.Name);
+    }
+
     public async Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
         CancellationToken cancellationToken)
     {

@@ -11,6 +11,39 @@ namespace Platform.Api.Tests.Assets;
 public sealed class AssetRegistryTests
 {
     [Fact]
+    public async Task CreateCategory_returns_normalized_registry_item()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+
+        var created = await registry.CreateCategoryAsync(
+            new CreateAssetCategoryRequest { Name = "  Piscina  " },
+            CancellationToken.None);
+
+        Assert.Equal("Piscina", created.Name);
+        Assert.NotEqual(Guid.Empty, created.Id);
+        Assert.Contains(
+            harness.Db.AssetCategories,
+            category => category.Id == created.Id && category.Name == "Piscina");
+    }
+
+    [Fact]
+    public async Task CreateCategory_rejects_blank_and_duplicate_names()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            registry.CreateCategoryAsync(
+                new CreateAssetCategoryRequest { Name = "   " },
+                CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            registry.CreateCategoryAsync(
+                new CreateAssetCategoryRequest { Name = "Quadras" },
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CreateRentable_creates_asset_and_rental_config_without_inventory_entitlement()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();

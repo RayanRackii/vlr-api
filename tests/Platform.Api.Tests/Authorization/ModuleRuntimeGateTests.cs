@@ -1013,6 +1013,11 @@ public sealed class ModuleRuntimeGateTests
 
     private sealed class StubAssetRegistry : IAssetRegistry
     {
+        public Task<RegistryCategoryListItem> CreateCategoryAsync(
+            CreateAssetCategoryRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<RegistryCategoryListItem>> ListCategoriesAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<RegistryCategoryListItem>>([]);
