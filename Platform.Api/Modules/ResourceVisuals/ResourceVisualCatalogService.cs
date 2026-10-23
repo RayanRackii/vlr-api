@@ -1,15 +1,14 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
-using Platform.Api.Modules.Rentals.Dtos;
-using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Contracts.ResourceVisuals;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.ResourceVisuals;
 
 namespace Platform.Api.Modules.ResourceVisuals;
 
-public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenantProvider tenantProvider, ITrialGuard trialGuard, ILogger<ResourceVisualCatalogService> logger)
+public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenantProvider tenantProvider, ITrialGuard trialGuard, IRentalVisualDefaults rentalVisualDefaults, ILogger<ResourceVisualCatalogService> logger)
 {
     private static ResourceVisualException Invalid(string message) => new("VISUAL_TEMPLATE_INVALID", message);
     private static ResourceVisualException Missing() => new("VISUAL_TEMPLATE_INVALID", "Visual template or revision not found.", 404);
@@ -110,7 +109,7 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
         revision.DefaultCloseTime = request.DefaultCloseTime;
         revision.DefaultAllowedDurationMinutes = string.IsNullOrWhiteSpace(request.DefaultAllowedDurationMinutes)
             ? null
-            : RentalAllowedDurations.Normalize(request.DefaultAllowedDurationMinutes);
+            : rentalVisualDefaults.NormalizeAllowedDurations(request.DefaultAllowedDurationMinutes);
         revision.DefaultPricings = request.DefaultPricings?.Select(ToDefaultPricing).ToList();
         revision.DefaultRequiresDeposit = request.DefaultRequiresDeposit;
         revision.DefaultMaxAdvanceBookingDays = request.DefaultMaxAdvanceBookingDays;
@@ -197,7 +196,7 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
     {
         if (values == null || values.Count > 3 || values.Any(x => x.Key is not ("pt-BR" or "en" or "es") || x.Value?.Length > maximum) || (required && (values.Count == 0 || values.Values.Any(string.IsNullOrWhiteSpace)))) throw Invalid("Translations must use pt-BR/en/es and respect length limits.");
     }
-    private static void ValidateRevision(RevisionRequest r)
+    private void ValidateRevision(RevisionRequest r)
     {
         if (r.AspectRatio is <= 0 or > 100 || !ColorPattern().IsMatch(r.DefaultColor ?? "") || (r.DefaultIcon?.Length ?? 0) > 80 || !SlugPattern().IsMatch(r.DefaultIcon ?? "") || r.SuggestedSlotMinutes is <= 0 or > 1440 || r.SuggestedCapacityPeople is <= 0 or > 100000 || r.ViewBox?.Length > 100) throw Invalid("Invalid visual revision metadata.");
         if (r.DefaultMaxAdvanceBookingDays is < 0 or > 3650 || r.DefaultAllowedDurationMinutes?.Length > 128)
@@ -208,13 +207,13 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
             throw Invalid("Hours defaults require the OpenHours schedule policy.");
         if (!string.IsNullOrWhiteSpace(r.DefaultAllowedDurationMinutes))
         {
-            try { RentalAllowedDurations.Normalize(r.DefaultAllowedDurationMinutes); }
+            try { rentalVisualDefaults.NormalizeAllowedDurations(r.DefaultAllowedDurationMinutes); }
             catch (ArgumentException ex) { throw Invalid(ex.Message); }
         }
         if (r.DefaultPricings is { Count: > 100 }) throw Invalid("At most 100 pricing defaults are allowed.");
         if (r.DefaultPricings is not null)
         {
-            try { TemplateDefaultPricing.Validate(r.DefaultPricings); }
+            try { rentalVisualDefaults.ValidatePricing(r.DefaultPricings); }
             catch (ArgumentException ex) { throw Invalid(ex.Message); }
         }
         try

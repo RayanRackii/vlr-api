@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Services.Trial;
-using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Modules.ResourceVisuals;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
@@ -14,6 +14,7 @@ public sealed class AssetService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     ITrialGuard trialGuard,
+    IRentalConfigurationSync rentalConfigurationSync,
     ILogger<AssetService>? logger = null) : IAssetService
 {
     private const int MaxBulkCreateCount = 1000;
@@ -71,7 +72,7 @@ public sealed class AssetService(
         var effectiveMaxAdvanceBookingDays = templateDefaults?.Apply == true
             && !templateDefaults.MaxAdvanceBookingDays.IsSpecified
                 ? visual?.DefaultMaxAdvanceBookingDays : request.MaxAdvanceBookingDays;
-        BookingPolicyText.NormalizeAdvanceDays(effectiveMaxAdvanceBookingDays);
+        rentalConfigurationSync.NormalizeMaxAdvanceBookingDays(effectiveMaxAdvanceBookingDays);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
@@ -105,18 +106,14 @@ public sealed class AssetService(
         };
 
         dbContext.Assets.Add(asset);
-        SyncRentalConfiguration(
+        rentalConfigurationSync.Sync(
             asset,
-            request.IsRentable,
-            request.RentalType,
-            request.TotalQuantity,
-            effectiveRequiresDeposit,
-            request.QueueEnabled,
-            request.QueueOpeningTime);
+            new(request.IsRentable, request.RentalType, request.TotalQuantity, effectiveRequiresDeposit,
+                request.QueueEnabled, request.QueueOpeningTime));
         ApplyVisualConfiguration(asset, JsonOptional<Guid>.Specified(request.VisualTemplateRevisionId),
             request.CapacityPeople is null ? default : JsonOptional<int>.Specified(request.CapacityPeople), request.ConfirmVisualSuggestions,
             JsonOptional<int>.Specified(effectiveMaxAdvanceBookingDays), visual);
-        ApplyTemplateDefaults(asset, visual, templateDefaults);
+        rentalConfigurationSync.ApplyTemplateDefaults(asset, visual, templateDefaults?.Apply == true);
 
         await SaveChangesProtectingTagAsync(cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
@@ -134,7 +131,7 @@ public sealed class AssetService(
         await trialGuard.EnsureWritableAsync(cancellationToken);
         await using var transaction = dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
-        await BookingMapLocks.AcquireAsync(dbContext, tenantId, cancellationToken);
+        await rentalConfigurationSync.AcquireBookingMapLockAsync(tenantId, cancellationToken);
 
         ValidateRentalFields(request.IsRentable, request.RentalType, request.TotalQuantity);
         ValidateQueueFields(request.IsRentable, request.RentalType, request.QueueEnabled, request.QueueOpeningTime);
@@ -151,7 +148,7 @@ public sealed class AssetService(
         var visual = await ValidateVisualAssignmentAsync(request.IsRentable,
             request.VisualTemplateRevisionId, asset.RentalConfiguration?.VisualTemplateRevisionId, cancellationToken);
         if (request.CapacityPeople.IsSpecified) ValidateCapacity(request.CapacityPeople.Value);
-        if (request.MaxAdvanceBookingDays.IsSpecified) BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays.Value);
+        if (request.MaxAdvanceBookingDays.IsSpecified) rentalConfigurationSync.NormalizeMaxAdvanceBookingDays(request.MaxAdvanceBookingDays.Value);
         if (asset.UnitId != request.UnitId && asset.RentalConfiguration is { } configuration)
         {
             var conflicts = await dbContext.RentalLayoutItems.AsNoTracking().AnyAsync(item =>
@@ -187,14 +184,10 @@ public sealed class AssetService(
         asset.Attributes = attributes;
         asset.Touch();
 
-        SyncRentalConfiguration(
+        rentalConfigurationSync.Sync(
             asset,
-            request.IsRentable,
-            request.RentalType,
-            request.TotalQuantity,
-            request.RequiresDeposit,
-            request.QueueEnabled,
-            request.QueueOpeningTime);
+            new(request.IsRentable, request.RentalType, request.TotalQuantity, request.RequiresDeposit,
+                request.QueueEnabled, request.QueueOpeningTime));
         ApplyVisualConfiguration(asset, request.VisualTemplateRevisionId, request.CapacityPeople,
             request.ConfirmVisualSuggestions, request.MaxAdvanceBookingDays, visual);
 
@@ -316,14 +309,10 @@ public sealed class AssetService(
                 Attributes = new Dictionary<string, string?>(attributes, StringComparer.Ordinal),
             };
 
-            SyncRentalConfiguration(
+            rentalConfigurationSync.Sync(
                 asset,
-                request.IsRentable,
-                plan.RentalType,
-                plan.TotalQuantity,
-                request.RequiresDeposit,
-                request.QueueEnabled,
-                request.QueueOpeningTime);
+                new(request.IsRentable, plan.RentalType, plan.TotalQuantity, request.RequiresDeposit,
+                    request.QueueEnabled, request.QueueOpeningTime));
 
             assets.Add(asset);
         }
@@ -471,55 +460,6 @@ public sealed class AssetService(
         // Duration suggestions are exposed by the picker for explicit schedule configuration.
     }
 
-    private void ApplyTemplateDefaults(
-        Asset asset,
-        ResourceVisualTemplateRevision? revision,
-        CreateRentableTemplateDefaults? request)
-    {
-        if (request?.Apply != true || revision is null || asset.RentalConfiguration is not { } rental)
-        {
-            return;
-        }
-
-        if (revision.DefaultSchedulePolicy is { } policy)
-        {
-            rental.SchedulePolicy = policy;
-            rental.OpenTime = revision.DefaultOpenTime;
-            rental.CloseTime = revision.DefaultCloseTime;
-            rental.AllowedDurationMinutes = revision.DefaultAllowedDurationMinutes;
-        }
-
-        if (revision.DefaultPricings is not { Count: > 0 })
-        {
-            return;
-        }
-
-        var pricings = revision.DefaultPricings.Select(value => new Platform.Api.Modules.Rentals.Dtos.CreateRentalPricingDto
-        {
-            DayOfWeek = value.DayOfWeek,
-            StartTime = value.StartTime,
-            EndTime = value.EndTime,
-            PricePerHour = value.PricePerHour,
-            RequiresDeposit = value.RequiresDeposit,
-            DepositPercentage = value.DepositPercentage,
-        }).ToArray();
-        TemplateDefaultPricing.Validate(pricings);
-        foreach (var pricing in pricings)
-        {
-            dbContext.RentalPricings.Add(new RentalPricing
-            {
-                TenantId = asset.TenantId,
-                RentalAssetId = rental.Id,
-                DayOfWeek = pricing.DayOfWeek,
-                StartTime = pricing.StartTime,
-                EndTime = pricing.EndTime,
-                PricePerHour = Math.Round(pricing.PricePerHour, 2, MidpointRounding.AwayFromZero),
-                RequiresDeposit = pricing.RequiresDeposit,
-                DepositPercentage = Math.Round(pricing.DepositPercentage, 2, MidpointRounding.AwayFromZero),
-            });
-        }
-    }
-
     private sealed record CreateRentableTemplateDefaults(
         bool Apply,
         JsonOptional<bool> RequiresDeposit,
@@ -528,55 +468,6 @@ public sealed class AssetService(
     private void AuditVisualAssignment(Asset asset) => logger?.LogInformation(
         "ResourceVisualAudit Action={Action} TenantId={TenantId} RentalAssetId={RentalAssetId} RevisionId={RevisionId}",
         "resource.visual.saved", asset.TenantId, asset.RentalConfiguration?.Id, asset.RentalConfiguration?.VisualTemplateRevisionId);
-
-    private void SyncRentalConfiguration(
-        Asset asset,
-        bool isRentable,
-        RentalAssetType rentalType,
-        int totalQuantity,
-        bool requiresDeposit,
-        bool queueEnabled,
-        TimeOnly? queueOpeningTime)
-    {
-        if (!isRentable)
-        {
-            if (asset.RentalConfiguration is not null)
-            {
-                asset.RentalConfiguration.IsActive = false;
-                asset.RentalConfiguration.Touch();
-            }
-
-            return;
-        }
-
-        var enabled = queueEnabled && rentalType == RentalAssetType.Location;
-        var openingTime = enabled ? queueOpeningTime : null;
-
-        if (asset.RentalConfiguration is null)
-        {
-            asset.RentalConfiguration = new RentalAsset
-            {
-                TenantId = asset.TenantId,
-                AssetId = asset.Id,
-                Type = rentalType,
-                TotalQuantity = totalQuantity,
-                IsActive = true,
-                RequiresDeposit = requiresDeposit,
-                SchedulePolicy = SchedulePolicy.SlotGrid,
-                QueueEnabled = enabled,
-                QueueOpeningTime = openingTime,
-            };
-            return;
-        }
-
-        asset.RentalConfiguration.Type = rentalType;
-        asset.RentalConfiguration.TotalQuantity = totalQuantity;
-        asset.RentalConfiguration.RequiresDeposit = requiresDeposit;
-        asset.RentalConfiguration.QueueEnabled = enabled;
-        asset.RentalConfiguration.QueueOpeningTime = openingTime;
-        asset.RentalConfiguration.IsActive = true;
-        asset.RentalConfiguration.Touch();
-    }
 
     private static void ValidateQueueFields(
         bool isRentable,

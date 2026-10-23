@@ -51,7 +51,7 @@ public sealed class ResourceSegmentsConcurrencyTests(PostgresContainerFixture po
     }
 
     private static ResourceVisualCatalogService Service(Platform.Core.Infrastructure.Persistence.AppDbContext db, FakeTenantProvider provider) =>
-        new(db, provider, new FakeTrialGuard(), NullLogger<ResourceVisualCatalogService>.Instance);
+        new(db, provider, new FakeTrialGuard(), new Platform.Api.Modules.Rentals.Services.RentalVisualDefaults(), NullLogger<ResourceVisualCatalogService>.Instance);
 
     private sealed class LockAttempt : DbCommandInterceptor
     {

@@ -61,7 +61,7 @@ public sealed class ResourceVisualHttpTests
                 services.AddScoped<AppDbContext>(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), database));
                 services.Configure<PlatformAdminOptions>(options => options.Emails = ["platform@test.local"]);
                 services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>(); services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
-                services.AddAuthorization(options => options.AddRolvixPolicies()); services.AddResourceVisuals();
+                services.AddAuthorization(options => options.AddRolvixPolicies()); services.AddScoped<Platform.Core.Domain.Contracts.ResourceVisuals.IRentalVisualDefaults, Platform.Api.Modules.Rentals.Services.RentalVisualDefaults>(); services.AddResourceVisuals();
                 services.AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme).AddScheme<AuthenticationSchemeOptions, TestAuthentication>(SupabaseJwtBearerDefaults.AuthenticationScheme, _ => { });
                 services.AddControllers().ConfigureApplicationPartManager(manager =>
                 {

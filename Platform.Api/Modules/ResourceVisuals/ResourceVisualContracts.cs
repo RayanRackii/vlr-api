@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Platform.Api.Modules.Rentals.Dtos;
+using Platform.Core.Domain.Contracts.ResourceVisuals;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 
