@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
@@ -186,6 +187,8 @@ public sealed class PlatformAdminStaleTenantJwtTests
                     services.AddScoped<IRbacGrantGuard, RbacGrantGuard>();
                     services.AddScoped<IRbacActorAccessor, RbacActorAccessor>();
                     services.AddScoped<IPlatformAdminMembershipService, PlatformAdminMembershipService>();
+                    services.AddScoped<ITenantProvisioner, TenantProvisioner>();
+                    services.AddScoped<ITenantPurger, TenantPurger>();
                     services.AddScoped<IAdminTenantService, AdminTenantService>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<ITenantCustomerDirectory, TenantCustomerDirectory>();

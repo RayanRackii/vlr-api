@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -464,11 +465,9 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
                 new FakeTenantUserAdminService(),
                 new FakePlatformAdminMembershipService(),
                 new FakeTenantAccessBootstrapper(),
-                new FakeSupabaseAuthAdminClient(),
-                Options.Create(new PlatformAdminOptions()),
                 NullLogger<AdminTenantService>.Instance,
-                Options.Create(new StorageOptions()),
-                new RecordingStorageProvider());
+                new TenantProvisioner(db, NullLogger<TenantProvisioner>.Instance),
+                new TenantPurger(db, new FakeSupabaseAuthAdminClient(), Options.Create(new PlatformAdminOptions()), NullLogger<TenantPurger>.Instance, Options.Create(new StorageOptions()), new RecordingStorageProvider()));
 
             return new Harness(db, service);
         }

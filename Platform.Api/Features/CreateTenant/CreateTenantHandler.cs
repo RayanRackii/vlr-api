@@ -4,7 +4,7 @@ using Npgsql;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
-using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -41,6 +41,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
     ];
 
     private readonly AppDbContext _dbContext;
+    private readonly ITenantProvisioner _tenantProvisioner;
     private readonly ITenantAccessBootstrapper _tenantAccessBootstrapper;
     private readonly ITenantUserAdminService _tenantUserAdminService;
     private readonly IAnonymousTrialCreateGate _trialCreateGate;
@@ -48,12 +49,14 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
 
     public CreateTenantHandler(
         AppDbContext dbContext,
+        ITenantProvisioner tenantProvisioner,
         ITenantAccessBootstrapper tenantAccessBootstrapper,
         ITenantUserAdminService tenantUserAdminService,
         IAnonymousTrialCreateGate trialCreateGate,
         ILogger<CreateTenantHandler> logger)
     {
         _dbContext = dbContext;
+        _tenantProvisioner = tenantProvisioner;
         _tenantAccessBootstrapper = tenantAccessBootstrapper;
         _tenantUserAdminService = tenantUserAdminService;
         _trialCreateGate = trialCreateGate;
@@ -65,6 +68,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
         CancellationToken cancellationToken,
         string? clientIp = null)
     {
+        using var scope = PlatformScope.Begin(_logger, "trial-tenant-create");
         if (!request.IsTrial)
         {
             return Results.BadRequest(new { error = AnonymousOnboardingErrorCodes.TrialRequired });
@@ -149,44 +153,17 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
                 tenant.ConfigureAsTrial(DateTimeOffset.UtcNow);
             }
 
-            var headquartersUnit = new Unit(
-                tenant.Id,
+            var familyIds = await ResolveTrialFamilyIdsAsync(cancellationToken);
+            var provisioned = await _tenantProvisioner.ProvisionAsync(
+                tenant,
                 request.HeadquartersUnitName,
-                request.HeadquartersUnitCode);
-
-            _dbContext.Tenants.Add(tenant);
-            _dbContext.BookingPolicies.Add(BookingPolicyDefaults.SuggestedFor(tenant.Id));
-            _dbContext.Units.Add(headquartersUnit);
-
-            if (request.IsTrial)
-            {
-                foreach (var moduleName in PlatformModuleCatalog.NormalizeEntitlements(TrialModules))
-                {
-                    _dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
-                }
-
-                var familyIds = await ResolveTrialFamilyIdsAsync(cancellationToken);
-                foreach (var familyId in familyIds)
-                {
-                    _dbContext.TenantAssetFamilies.Add(new TenantAssetFamily(tenant.Id, familyId));
-                }
-
-                await AssetCategoryExampleSeeder.SeedForFamilyIdsAsync(
-                    _dbContext,
-                    tenant.Id,
-                    familyIds,
-                    cancellationToken);
-            }
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            var superAdminRole = new Role(
-                tenant.Id,
-                SystemRoles.SuperAdmin,
-                "Tenant super administrator with full access.",
-                isSystemRole: true);
-
-            _dbContext.Roles.Add(superAdminRole);
+                request.HeadquartersUnitCode,
+                TrialModules,
+                familyIds,
+                cancellationToken);
+            var headquartersUnit = provisioned.Headquarters;
+            var superAdminRole = provisioned.TrialSuperAdmin
+                ?? throw new InvalidOperationException("Trial provisioning requires a SuperAdmin role.");
 
             if (trialClaim is not null)
             {

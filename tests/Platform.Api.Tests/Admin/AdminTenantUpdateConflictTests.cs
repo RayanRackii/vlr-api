@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -187,11 +188,9 @@ public sealed class AdminTenantUpdateConflictTests
                 new FakeTenantUserAdminService(),
                 new FakePlatformAdminMembershipService(),
                 new FakeTenantAccessBootstrapper(),
-                new FakeSupabaseAuthAdminClient(),
-                Options.Create(new PlatformAdminOptions()),
                 NullLogger<AdminTenantService>.Instance,
-                Options.Create(new StorageOptions()),
-                new RecordingStorageProvider());
+                new TenantProvisioner(db, NullLogger<TenantProvisioner>.Instance),
+                new TenantPurger(db, new FakeSupabaseAuthAdminClient(), Options.Create(new PlatformAdminOptions()), NullLogger<TenantPurger>.Instance, Options.Create(new StorageOptions()), new RecordingStorageProvider()));
 
             return new Harness(db, tenantProvider, service);
         }
