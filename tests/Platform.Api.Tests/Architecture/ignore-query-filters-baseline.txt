@@ -27,3 +27,4 @@ Platform.Api/Modules/Users/Services/UserDirectoryService.cs
 Platform.Api/Modules/WorkOrders/Services/WorkOrderGenerationService.cs
 Platform.Api/Notifications/NotificationOutboxProcessor.cs
 Platform.Api/Services/Trial/TrialGuard.cs
+Platform.Api/Services/Tenancy/TenantPurger.cs

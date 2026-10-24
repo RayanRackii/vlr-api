@@ -1,7 +1,6 @@
 Admin -> Assets : Platform.Api/Modules/Admin/Controllers/AdminAssetFamiliesController.cs
 Admin -> Rentals : Platform.Api/Modules/Admin/Controllers/AdminBookingMapDemoController.cs
 Admin -> ResourceVisuals : Platform.Api/Modules/Admin/Controllers/AdminBookingMapDemoController.cs
-Admin -> Rentals : Platform.Api/Modules/Admin/Services/AdminTenantService.cs
 Assets -> ResourceVisuals : Platform.Api/Modules/Assets/Services/AssetService.cs
 Auth -> CustomerAuth : Platform.Api/Modules/Auth/Controllers/PasswordRecoveryController.cs
 Auth -> CustomerAuth : Platform.Api/Modules/Auth/Services/PasswordRecoveryService.cs
