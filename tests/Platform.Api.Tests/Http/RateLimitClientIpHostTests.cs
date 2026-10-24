@@ -93,7 +93,7 @@ public sealed class RateLimitClientIpHostTests
         return string.Join(Environment.NewLine, messages);
     }
 
-    private sealed class HostEnvironmentScope : IDisposable
+    internal sealed class HostEnvironmentScope : IDisposable
     {
         private readonly Dictionary<string, string?> _previous = [];
 
