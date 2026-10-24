@@ -29,7 +29,7 @@
 - Bug de alta severidade (concorrência, auth, tenant, pricing) não pode depender só de build.
 
 ## Roteamento de modelo/esforço
-Resumo: Luna/mini para mecânico, testes e docs; Terra para endpoints/componentes; Sol medium por padrão, Sol high só em passos de dados/tenant/preço; Opus só na revisão canônica. Não trocar modelo/esforço no meio de uma sessão; sessão nova por task, começando pela nota de handoff. Detalhe: [`docs/agents/routing.md`](./docs/agents/routing.md) e `~/rolvix-ai-docs/ROUTING.md`.
+Resumo: Luna/mini para mecânico, testes e docs; Terra para endpoints/componentes; Sol medium por padrão, Sol high só em passos de dados/tenant/preço; revisão canônica: Sol (padrão do gate) ou Claude Opus read-only como substituto permitido; um revisor canônico por PR (ambos só em auth/tenant/migration). Não trocar modelo/esforço no meio de uma sessão; sessão nova por task, começando pela nota de handoff. Detalhe: [`docs/agents/routing.md`](./docs/agents/routing.md) e `~/rolvix-ai-docs/ROUTING.md`.
 
 ## Skills por tipo de task (não carregar todas sempre)
 Skills user-level por nome (`grilling`, `domain-modeling`, `implement`, `tdd`, `code-review`); não duplicar o corpo; não usar caminhos de workspace (`C:\Free\...`, `../.agents/...`); se a skill exigida pela task não for descoberta, parar e informar — não improvisar cópia.

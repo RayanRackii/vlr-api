@@ -102,7 +102,7 @@ git log -5 --oneline
 
 e verifica: branch atual, working tree, commits locais, commits ainda não no remote, tracking.
 
-Se a implementação estiver concluída, validada, numa branch `feat` / `fix` / `refactor` / `test` / `chore`, e as regras deste arquivo permitirem: **commit**, **push**, e o restante do [Autonomous Delivery Workflow](#autonomous-delivery-workflow) (PR, Merge Risk Gate, merge em `develop` quando autorizado). Trabalho completo e validado não deve ficar só numa máquina.
+Se a implementação estiver concluída, validada, numa branch `feat` / `fix` / `refactor` / `test` / `chore`, e as regras deste arquivo permitirem: **commit**, **push**, e o restante do [Autonomous Delivery Workflow](./delivery-and-merge-gate.md#autonomous-delivery-workflow) (PR, Merge Risk Gate, merge em `develop` quando autorizado). Trabalho completo e validado não deve ficar só numa máquina.
 
 Não commitar código incompleto só para "limpar" a máquina. Trabalho incompleto deve ser reportado como incompleto.
 

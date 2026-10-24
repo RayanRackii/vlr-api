@@ -4,7 +4,7 @@
 
 O parent/orchestrator é dono do **ciclo técnico completo**. O usuário não precisa pedir separadamente: criar branch, commit, push, abrir PR, review, aprovar ou merge. Isso faz parte do fluxo padrão. “MR” em docs/prompts = Pull Request do GitHub.
 
-Detalhe operacional (ferramentas GitHub, merge methods, cleanup): [`docs/runbooks/autonomous-delivery.md`](./docs/runbooks/autonomous-delivery.md).
+Detalhe operacional (ferramentas GitHub, merge methods, cleanup): [`docs/runbooks/autonomous-delivery.md`](../../docs/runbooks/autonomous-delivery.md).
 
 ### Lifecycle por task independente
 

@@ -2,7 +2,7 @@
 
 ## Roteamento multi-agent
 
-Arquivos em [`.cursor/agents/`](./.cursor/agents/). São roteadores — não copiam produto, arquitetura, convenções nem o corpo dos skills.
+Arquivos em [`.cursor/agents/`](../../.cursor/agents/). São roteadores — não copiam produto, arquitetura, convenções nem o corpo dos skills.
 
 Roteamento por capacidade: Luna (`gpt-6-luna`) para mudanças pequenas, testes e docs; Terra (`gpt-5.6-terra`) para endpoints e componentes; Sol (`gpt-6.1-sol`) para mudanças complexas/cross-cutting, segurança e reviews. Se um agente ou modelo nomeado estiver indisponível, escolha o próximo modelo adequado à capacidade necessária e prossiga. O parent/orchestrator coordena Git, gates, PR, Merge Risk Gate e merge em `develop`; um writer ativo por working tree.
 
