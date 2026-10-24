@@ -20,6 +20,28 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class DailyAvailabilityTests
 {
     [Fact]
+    public async Task DST_gap_interval_that_inverts_in_UTC_is_omitted()
+    {
+        var date = new DateOnly(2026, 3, 8);
+        await using var h = await AvailabilityHarness.CreateAsync();
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.Tenant.Id,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/New_York",
+        });
+        h.Primary.OpenTime = new TimeOnly(2, 30);
+        h.Primary.CloseTime = new TimeOnly(3, 0);
+        h.Primary.AllowedDurationMinutes = "30";
+        h.Clock.SetUtcNow(new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.Zero));
+        await h.Db.SaveChangesAsync();
+
+        var response = await h.ReadAsync(date: date);
+
+        Assert.Empty(Assert.Single(response.Resources).Windows);
+    }
+
+    [Fact]
     public async Task Derived_occupied_windows_and_requested_stock_quantity_remain_visible_with_prices()
     {
         await using var h = await AvailabilityHarness.CreateAsync();

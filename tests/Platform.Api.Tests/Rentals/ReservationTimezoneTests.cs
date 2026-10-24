@@ -13,6 +13,92 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class ReservationTimezoneTests
 {
+    private static readonly DateOnly NewYorkSpringForward = new(2026, 3, 8);
+    private static readonly TimeOnly GapStart = new(2, 30);
+    private static readonly TimeOnly GapEnd = new(3, 0);
+
+    [Fact]
+    public async Task CheckAvailabilityAsync_rejects_interval_inverted_by_DST_gap_conversion()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        await h.UseNewYorkTimeAsync();
+
+        var request = new CheckAvailabilityRequestDto
+        {
+            AssetId = h.AssetId,
+            Date = NewYorkSpringForward,
+            StartTime = GapStart,
+            EndTime = GapEnd,
+            Quantity = 1,
+        };
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            h.Reservations.CheckAvailabilityAsync(request, CancellationToken.None));
+
+        Assert.Equal("EndTime must be greater than StartTime.", error.Message);
+    }
+
+    [Fact]
+    public async Task BookSlotAsync_rejects_interval_inverted_by_DST_gap_conversion()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        await h.UseNewYorkTimeAsync();
+        var slot = await h.SeedAvailableSlotAsync(
+            GapStart, GapEnd, NewYorkSpringForward);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            h.Schedule.BookSlotAsync(
+                h.CustomerId,
+                new BookSlotRequestDto
+                {
+                    SlotId = slot.Id,
+                    UnitId = h.UnitId,
+                    Quantity = 1,
+                },
+                CancellationToken.None));
+
+        Assert.Equal("End time must be after start time.", error.Message);
+    }
+
+    [Theory]
+    [InlineData(SchedulePolicy.OpenHours)]
+    [InlineData(SchedulePolicy.SlotGrid)]
+    public async Task GetDayAsync_omits_interval_inverted_by_DST_gap_conversion(
+        SchedulePolicy policy)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        await h.UseNewYorkTimeAsync();
+        await h.Kinds.EnsureDefaultsAsync(CancellationToken.None);
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.SchedulePolicy = policy;
+        rental.OpenTime = GapStart;
+        rental.CloseTime = GapEnd;
+        rental.AllowedDurationMinutes = "30";
+        if (policy == SchedulePolicy.SlotGrid)
+        {
+            var open = await h.Db.OccupancyKinds.SingleAsync(k => k.Key == "open");
+            h.Db.ScheduleTemplates.Add(new ScheduleTemplate
+            {
+                TenantId = h.TenantId,
+                RentalAssetId = h.RentalAssetId,
+                DayOfWeek = NewYorkSpringForward.DayOfWeek,
+                StartTime = GapStart,
+                EndTime = GapEnd,
+                OccupancyKindId = open.Id,
+                IsActive = true,
+            });
+        }
+        await h.Db.SaveChangesAsync();
+
+        var day = await h.Schedule.GetDayAsync(
+            NewYorkSpringForward,
+            h.RentalAssetId,
+            customerFacing: false,
+            CancellationToken.None);
+
+        Assert.Empty(day.Slots);
+    }
+
     [Fact]
     public async Task Admin_day_filter_uses_Manaus_midnight_for_both_bounds()
     {
@@ -40,7 +126,7 @@ public sealed class ReservationTimezoneTests
 
     private static readonly DateOnly CivilDate = new(2026, 9, 10);
     private static readonly TimeProvider BookingClock =
-        new TestTimeProvider(BrazilTimeZone.AtLocal(CivilDate, new TimeOnly(9, 0)));
+        new TestTimeProvider(new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.Zero));
     private static readonly TimeOnly Ten = new(10, 0);
     private static readonly TimeOnly Eleven = new(11, 0);
     private static readonly TimeOnly TwentyTwo = new(22, 0);
@@ -346,7 +432,10 @@ public sealed class ReservationTimezoneTests
                 ],
             };
 
-        public async Task<Slot> SeedAvailableSlotAsync(TimeOnly start, TimeOnly end)
+        public async Task<Slot> SeedAvailableSlotAsync(
+            TimeOnly start,
+            TimeOnly end,
+            DateOnly? date = null)
         {
             await Kinds.EnsureDefaultsAsync(CancellationToken.None);
             var openKind = await Db.OccupancyKinds.SingleAsync(k => k.Key == "open");
@@ -354,7 +443,7 @@ public sealed class ReservationTimezoneTests
             {
                 TenantId = TenantId,
                 RentalAssetId = RentalAssetId,
-                Date = CivilDate,
+                Date = date ?? CivilDate,
                 StartTime = start,
                 EndTime = end,
                 OccupancyKindId = openKind.Id,
@@ -363,6 +452,17 @@ public sealed class ReservationTimezoneTests
             Db.Slots.Add(slot);
             await Db.SaveChangesAsync();
             return slot;
+        }
+
+        public async Task UseNewYorkTimeAsync()
+        {
+            Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = TenantId,
+                Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+                Value = "America/New_York",
+            });
+            await Db.SaveChangesAsync();
         }
 
         public ValueTask DisposeAsync() => Db.DisposeAsync();

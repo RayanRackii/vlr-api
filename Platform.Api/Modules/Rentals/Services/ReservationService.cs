@@ -906,6 +906,11 @@ public sealed class ReservationService(
     {
         var start = TenantBookingClock.AtLocal(date, startTime, zone);
         var end = TenantBookingClock.AtLocal(date, endTime, zone);
+        if (end <= start)
+        {
+            throw new ArgumentException("EndTime must be greater than StartTime.");
+        }
+
         return (start, end);
     }
 

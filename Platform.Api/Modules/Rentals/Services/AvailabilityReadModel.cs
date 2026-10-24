@@ -296,6 +296,12 @@ internal sealed class AvailabilityReadModel(
 
                     var startDt = TenantBookingClock.AtLocal(date, cursor, zone);
                     var endDt = TenantBookingClock.AtLocal(date, end, zone);
+                    if (endDt <= startDt)
+                    {
+                        cursor = end;
+                        continue;
+                    }
+
                     var reserved = SumOverlapping(windows, startDt, endDt);
 
                     var available = rental.Type == RentalAssetType.Location
@@ -385,6 +391,11 @@ internal sealed class AvailabilityReadModel(
 
                 var startDt = TenantBookingClock.AtLocal(date, window.Start, zone);
                 var endDt = TenantBookingClock.AtLocal(date, window.End, zone);
+                if (endDt <= startDt)
+                {
+                    continue;
+                }
+
                 var windows = reservedWindows.TryGetValue(window.Template.RentalAssetId, out var found)
                     ? found
                     : [];

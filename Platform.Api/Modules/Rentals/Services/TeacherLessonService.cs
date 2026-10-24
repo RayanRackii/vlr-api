@@ -466,6 +466,10 @@ public sealed class TeacherLessonService(
         var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
         var start = TenantBookingClock.AtLocal(date, startTime, zone);
         var end = TenantBookingClock.AtLocal(date, endTime, zone);
+        if (end <= start)
+        {
+            throw new ArgumentException(TeacherLessonMessages.EndAfterStart);
+        }
 
         var blocking = await (
             from item in dbContext.ReservationItems.AsNoTracking()

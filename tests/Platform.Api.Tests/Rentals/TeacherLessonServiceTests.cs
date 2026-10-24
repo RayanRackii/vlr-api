@@ -15,6 +15,34 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class TeacherLessonServiceTests
 {
+    [Fact]
+    public async Task CreateAsync_rejects_interval_inverted_by_DST_gap_conversion()
+    {
+        var date = new DateOnly(2026, 3, 8);
+        var start = new TimeOnly(2, 30);
+        var end = new TimeOnly(3, 0);
+        await using var h = await TeacherLessonHarness.CreateAsync(
+            templateDay: date.DayOfWeek,
+            templateStart: start,
+            templateEnd: end,
+            timeProvider: new TestTimeProvider(
+                new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.Zero)));
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.TenantId,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/New_York",
+        });
+        await h.Db.SaveChangesAsync();
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            h.Lessons.CreateAsync(
+                h.CreateRequest(date: date, start: start, end: end),
+                CancellationToken.None));
+
+        Assert.Equal(TeacherLessonMessages.EndAfterStart, error.Message);
+    }
+
     [Theory]
     [InlineData(null, true)]
     [InlineData("America/Manaus", false)]
