@@ -15,6 +15,29 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class TeacherLessonServiceTests
 {
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("America/Manaus", false)]
+    public async Task Lesson_overlap_uses_tenant_civil_interval(string? zoneId, bool overlaps)
+    {
+        await using var h = await TeacherLessonHarness.CreateAsync();
+        if (zoneId is not null)
+            h.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = h.TenantId,
+                Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+                Value = zoneId,
+            });
+        h.SeedBlockingReservation(Tuesday, Ten, Eleven);
+        // Existing reservation ends at 14:00Z: 11:00 Sao Paulo / 10:00 Manaus.
+        await h.Db.SaveChangesAsync();
+        if (overlaps)
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                h.Lessons.CreateAsync(h.CreateRequest(), CancellationToken.None));
+        else
+            Assert.Equal("lesson", (await h.Lessons.CreateAsync(h.CreateRequest(), CancellationToken.None)).OccupancyKindKey);
+    }
+
     private static readonly DateOnly Tuesday = new(2026, 8, 25);
     private static readonly DateOnly NextTuesday = Tuesday.AddDays(7);
     private static readonly TimeOnly Ten = new(10, 0);

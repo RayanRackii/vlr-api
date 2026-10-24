@@ -160,7 +160,8 @@ public sealed class ReservationQueueService(
         var openingTime = rental.QueueOpeningTime
             ?? throw new ArgumentException(
                 "QueueOpeningTime is required when the waiting queue is enabled.");
-        var openingDate = ReservationQueueClock.ResolveOpeningDate(now, openingTime);
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, rental.TenantId, cancellationToken);
+        var openingDate = ReservationQueueClock.ResolveOpeningDate(now, openingTime, zone);
         var session = await dbContext.ReservationQueueSessions
             .AsNoTracking()
             .Include(s => s.Tickets)
@@ -285,7 +286,8 @@ public sealed class ReservationQueueService(
     {
         var openingTime = rental.QueueOpeningTime
             ?? throw new ArgumentException("QueueOpeningTime is required when the waiting queue is enabled.");
-        var openingDate = ReservationQueueClock.ResolveOpeningDate(now, openingTime);
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, rental.TenantId, cancellationToken);
+        var openingDate = ReservationQueueClock.ResolveOpeningDate(now, openingTime, zone);
 
         var existing = await dbContext.ReservationQueueSessions
             .Include(s => s.Tickets)
@@ -303,8 +305,8 @@ public sealed class ReservationQueueService(
             TenantId = rental.TenantId,
             RentalAssetId = rental.Id,
             OpeningDate = openingDate,
-            OpensAt = ReservationQueueClock.OpensAt(openingDate, openingTime),
-            WaitingRoomOpensAt = ReservationQueueClock.WaitingRoomOpensAt(openingDate, openingTime),
+            OpensAt = ReservationQueueClock.OpensAt(openingDate, openingTime, zone),
+            WaitingRoomOpensAt = ReservationQueueClock.WaitingRoomOpensAt(openingDate, openingTime, zone),
         };
         dbContext.ReservationQueueSessions.Add(session);
         return session;

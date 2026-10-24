@@ -15,3 +15,4 @@ permissions:array;nullable;items=string
 tenantTradeName:string;nullable
 tenantLegalName:string;nullable
 phone:string;nullable
+timeZoneId:string;nullable

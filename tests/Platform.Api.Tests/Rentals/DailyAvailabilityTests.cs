@@ -275,6 +275,28 @@ public sealed class DailyAvailabilityTests
         Assert.Equal("AVAILABILITY_LIMIT_EXCEEDED", (await Assert.ThrowsAsync<AvailabilityRequestException>(() => h.ReadAsync())).Code);
     }
 
+    [Theory]
+    [InlineData(null, "America/Sao_Paulo")]
+    [InlineData("Not/AZone", "America/Sao_Paulo")]
+    [InlineData("Asia/Tokyo", "Asia/Tokyo")]
+    [InlineData("E. South America Standard Time", "America/Sao_Paulo")]
+    public async Task Branding_returns_effective_iana_zone_for_the_requested_tenant(string? configured, string expected)
+    {
+        await using var h = await CustomerAuthHarness.CreateAsync();
+        if (configured is not null)
+        {
+            h.Db.TenantSettings.Add(new TenantSetting { TenantId = h.Tenant.Id,
+                Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = configured });
+        }
+        var other = new Tenant("Other", "22222222000191", subdomain: "other-zone");
+        h.Db.Tenants.Add(other);
+        h.Db.TenantSettings.Add(new TenantSetting { TenantId = other.Id,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = "America/Manaus" });
+        await h.Db.SaveChangesAsync();
+        Assert.Equal(expected, (await h.Auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).TimeZoneId);
+        Assert.Equal("America/Manaus", (await h.Auth.GetBrandingAsync("other-zone", default)).TimeZoneId);
+    }
+
     [Fact]
     public async Task Branding_flag_defaults_off_and_configuration_selects_only_the_exact_tenant()
     {

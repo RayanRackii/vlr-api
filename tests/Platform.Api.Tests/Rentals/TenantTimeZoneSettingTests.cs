@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -70,8 +71,10 @@ public sealed class TenantTimeZoneSettingTests
     [Fact]
     public async Task Missing_setting_falls_back_to_Sao_Paulo_and_the_ambient_tenant_does_not_hide_it()
     {
-        await using var db = InMemoryAppDb.Create(new FakeTenantProvider { TenantId = Guid.NewGuid() });
+        var ambientTenantId = Guid.NewGuid();
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider { TenantId = ambientTenantId });
         var tenantId = Guid.NewGuid();
+        await SetZoneAsync(db, ambientTenantId, "Asia/Tokyo");
 
         Assert.Null(await TenantBookingClock.ReadConfiguredTimeZoneIdAsync(db, tenantId, default));
         Assert.Equal(BrazilTimeZone.Resolve().Id,
@@ -79,6 +82,8 @@ public sealed class TenantTimeZoneSettingTests
 
         await SetZoneAsync(db, tenantId, "America/Manaus");
         Assert.Equal("America/Manaus", (await TenantBookingClock.ResolveForTenantAsync(db, tenantId, default)).Id);
+        Assert.Equal("America/Manaus", await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(db, tenantId, default));
+        Assert.Equal("Asia/Tokyo", await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(db, ambientTenantId, default));
     }
 
     [Fact]
@@ -98,7 +103,7 @@ public sealed class TenantTimeZoneSettingTests
 
         Assert.Equal(BrazilTimeZone.Resolve().Id, zone.Id);
         Assert.Contains(logs.Entries, entry => entry.Level == LogLevel.Warning
-            && entry.Category.EndsWith(nameof(TenantBookingClock), StringComparison.Ordinal)
+            && entry.Category.EndsWith(nameof(TenantTimeZoneProvider), StringComparison.Ordinal)
             && entry.Message.Contains("Not/AZone", StringComparison.Ordinal));
     }
 

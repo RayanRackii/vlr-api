@@ -11,6 +11,52 @@ namespace Platform.Api.Tests.Dashboard;
 
 public sealed class DashboardMetricsDefinitionTests
 {
+    [Theory]
+    [InlineData(null, 0)]
+    [InlineData("America/Manaus", 80)]
+    public async Task Revenue_month_ends_at_tenant_midnight(string? zoneId, int expectedRevenue)
+    {
+        await using var h = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = h.TenantProvider.TenantId!.Value;
+        h.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        if (zoneId is not null)
+            h.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = tenantId, Key = TenantSettingKeys.BookingTimeZoneId, Value = zoneId,
+            });
+        var customer = new Customer { TenantId = tenantId, Name = "TZ" };
+        h.Db.Customers.Add(customer);
+        // 23:30 September 30 in Manaus; 00:30 October 1 in Sao Paulo.
+        AddReservation(h, customer.Id, new DateTimeOffset(2026, 10, 1, 3, 30, 0, TimeSpan.Zero),
+            ReservationStatus.Confirmed, 80m);
+        await h.Db.SaveChangesAsync();
+        var metrics = await CreateService(h, new DateTimeOffset(2026, 9, 30, 15, 0, 0, TimeSpan.Zero))
+            .GetMetricsAsync(CancellationToken.None);
+        Assert.Equal((decimal)expectedRevenue, metrics.Rentals!.ReservedRevenueThisMonth);
+    }
+
+    [Theory]
+    [InlineData(null, 0)]
+    [InlineData("America/Manaus", 1)]
+    public async Task Civil_month_at_0330_utc_uses_tenant_zone(string? zoneId, int expected)
+    {
+        await using var h = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = h.TenantProvider.TenantId!.Value;
+        h.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.WorkOrders, isActive: true));
+        if (zoneId is not null)
+            h.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = tenantId, Key = TenantSettingKeys.BookingTimeZoneId, Value = zoneId,
+            });
+        var asset = AddAsset(h, "TZ", AssetStatus.Active, requiresMaintenance: false);
+        await h.Db.SaveChangesAsync();
+        AddWorkOrder(h, asset.Id, new DateOnly(2026, 9, 30), WorkOrderStatus.Pending);
+        await h.Db.SaveChangesAsync();
+        var result = await CreateService(h, new DateTimeOffset(2026, 10, 1, 3, 30, 0, TimeSpan.Zero))
+            .GetMetricsAsync(CancellationToken.None);
+        Assert.Equal(expected, result.WorkOrders!.TotalThisMonth);
+    }
+
     [Fact]
     public async Task In_maintenance_counts_status_maintenance_only()
     {

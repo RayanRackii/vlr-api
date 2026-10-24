@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Dashboard.Dtos;
+using Platform.Api.Services.Tenancy;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Dashboard.Services;
 
@@ -22,7 +22,9 @@ public sealed class DashboardService(
         var tomorrowStart = todayStart.AddDays(1);
         var last7Start = todayStart.AddDays(-6);
         var last30Start = todayStart.AddDays(-29);
-        var civilToday = BrazilTimeZone.GetCivilDate(utcNow);
+        var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(
+            dbContext, tenantProvider.TenantId!.Value, cancellationToken);
+        var civilToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, zone).DateTime);
         var monthStart = new DateOnly(civilToday.Year, civilToday.Month, 1);
         var nextMonthStart = monthStart.AddMonths(1);
         var confirmationWindowStart = todayStart.AddDays(-6);
@@ -82,6 +84,7 @@ public sealed class DashboardService(
                 confirmationWindowStart,
                 monthStart,
                 nextMonthStart,
+                zone,
                 cancellationToken);
         }
 
@@ -245,10 +248,11 @@ public sealed class DashboardService(
         DateTimeOffset confirmationWindowStart,
         DateOnly civilMonthStart,
         DateOnly civilNextMonthStart,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
-        var monthStart = BrazilTimeZone.StartOfCivilDay(civilMonthStart);
-        var nextMonthStart = BrazilTimeZone.StartOfCivilDay(civilNextMonthStart);
+        var monthStart = TenantTimeZoneProvider.CivilDay(civilMonthStart, zone).Start;
+        var nextMonthStart = TenantTimeZoneProvider.CivilDay(civilNextMonthStart, zone).Start;
         var reservationsToday = dbContext.Reservations
             .Where(r => r.StartDateTime >= todayStart && r.StartDateTime < tomorrowStart);
 

@@ -26,7 +26,7 @@ public sealed record AssetMetricsDto(
     IReadOnlyList<AssetFamilyCountDto> ByFamily);
 
 /// <summary>
-/// Work orders whose ScheduledDate falls in the current America/Sao_Paulo civil month.
+/// Work orders whose ScheduledDate falls in the current tenant civil month.
 /// Every status is included, and the status counts sum to <see cref="TotalThisMonth"/>.
 /// GET /api/work-orders is not filtered by month, so its length can be higher.
 /// </summary>
@@ -49,7 +49,7 @@ public sealed record MaintenanceMetricsDto(
 /// <summary>
 /// Rentals dashboard counts. <see cref="ReservedRevenueThisMonth"/> sums
 /// PendingDeposit and Confirmed reservations whose start falls in the current
-/// America/Sao_Paulo civil month.
+/// tenant civil month.
 /// </summary>
 public sealed record RentalsMetricsDto(
     int ReservationsTodayPendingDeposit,

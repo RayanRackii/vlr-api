@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Jobs;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Modules.Pmoc.Dtos;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Pmoc.Services;
 
@@ -27,7 +27,8 @@ public sealed class MaintenancePlanCoverageService(
             return null;
         }
 
-        var asOfDate = BrazilTimeZone.GetToday(timeProvider);
+        var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, plan.TenantId, cancellationToken);
+        var asOfDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), zone).DateTime);
 
         var eligibleAssets = await PmocAssetEligibility.WhereEligible(
                 dbContext.Assets.AsNoTracking(),
@@ -76,7 +77,7 @@ public sealed class MaintenancePlanCoverageService(
                     plan.IntervalDays,
                     plan.FirstDueDate,
                     asOfDate,
-                    lastCompleted));
+                    lastCompleted), zone);
 
             var lastMaintenance = lastCompleted is null
                 ? null

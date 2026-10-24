@@ -14,6 +14,7 @@ using Platform.Api.Tests.Assets;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Time;
 
@@ -22,6 +23,61 @@ namespace Platform.Api.Tests.WorkOrders;
 public sealed class PmocEngineJobTests
 {
     private static readonly DateOnly AsOf = new(2026, 9, 19);
+
+    [Theory]
+    [InlineData(null, 1)]
+    [InlineData("America/Manaus", 0)]
+    public async Task Sweep_uses_each_tenant_civil_date_at_midnight_boundary(string? zoneId, int expectedCreated)
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await SeedPlanAsync(harness, firstDueDate: AsOf);
+        await AddAssetAsync(harness, "TZ");
+        if (zoneId is not null)
+        {
+            harness.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = harness.TenantProvider.TenantId!.Value,
+                Key = TenantSettingKeys.BookingTimeZoneId,
+                Value = zoneId,
+            });
+            await harness.Db.SaveChangesAsync();
+        }
+
+        var report = await RunAsync(harness, utcNow: new DateTimeOffset(2026, 9, 19, 3, 30, 0, TimeSpan.Zero));
+
+        Assert.Equal(expectedCreated, Assert.Single(report.Plans).Created);
+        Assert.Equal(expectedCreated, await harness.Db.WorkOrders.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(null, 19)]
+    [InlineData("America/Manaus", 18)]
+    public async Task Coverage_uses_tenant_today(string? zoneId, int expectedDay)
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var plan = await SeedPlanAsync(harness, firstDueDate: AsOf);
+        await AddAssetAsync(harness, "COVERAGE-TZ");
+        if (zoneId is not null)
+        {
+            harness.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = harness.TenantProvider.TenantId!.Value,
+                Key = TenantSettingKeys.BookingTimeZoneId,
+                Value = zoneId,
+            });
+            await harness.Db.SaveChangesAsync();
+        }
+        var service = new Platform.Api.Modules.Pmoc.Services.MaintenancePlanCoverageService(
+            harness.Db, harness.TenantProvider,
+            new TestTimeProvider(new DateTimeOffset(2026, 9, 19, 3, 30, 0, TimeSpan.Zero)));
+
+        var coverage = await service.GetCoverageAsync(plan.Id, CancellationToken.None);
+
+        Assert.NotNull(coverage);
+        Assert.Equal(new DateOnly(2026, 9, expectedDay), coverage.AsOfDate);
+        Assert.Equal(expectedDay == 19 ? PmocDueStatus.DueToday : PmocDueStatus.NotDue,
+            Assert.Single(coverage.Assets).DueStatus);
+    }
 
     [Fact]
     public async Task A_inactive_plan_generates_zero()
@@ -462,8 +518,10 @@ public sealed class PmocEngineJobTests
         Assert.Null(created.AssignedUserId);
     }
 
-    [Fact]
-    public async Task AB_tenant_isolation_and_explicit_tenant_match()
+    [Theory]
+    [InlineData(null, 1)]
+    [InlineData("America/Manaus", 0)]
+    public async Task AB_tenant_isolation_and_explicit_tenant_match(string? tenantBZone, int tenantBCreated)
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var plan = await SeedPlanAsync(harness, firstDueDate: AsOf);
@@ -501,15 +559,24 @@ public sealed class PmocEngineJobTests
             Tag = "AC-B",
             Status = AssetStatus.Active,
         });
+        if (tenantBZone is not null)
+        {
+            harness.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = tenantB.Id,
+                Key = TenantSettingKeys.BookingTimeZoneId,
+                Value = tenantBZone,
+            });
+        }
         await harness.Db.SaveChangesAsync();
 
-        var report = await RunAsync(harness);
+        var report = await RunAsync(harness, utcNow: new DateTimeOffset(2026, 9, 19, 3, 30, 0, TimeSpan.Zero));
 
         Assert.Equal(2, report.Plans.Count);
         Assert.Contains(report.Plans, item => item.PlanId == plan.Id && item.EligibleAssets == 1 && item.Created == 1);
-        Assert.Contains(report.Plans, item => item.PlanId == planB.Id && item.EligibleAssets == 1 && item.Created == 1);
+        Assert.Contains(report.Plans, item => item.PlanId == planB.Id && item.EligibleAssets == 1 && item.Created == tenantBCreated);
         var orders = await harness.Db.WorkOrders.IgnoreQueryFilters().ToListAsync();
-        Assert.Equal(2, orders.Count);
+        Assert.Equal(1 + tenantBCreated, orders.Count);
         Assert.DoesNotContain(orders, item => item.AssetId == foreign.Id);
     }
 
@@ -567,9 +634,10 @@ public sealed class PmocEngineJobTests
     private static async Task<PmocEngineRunReport> RunAsync(
         BulkCreateAssetsHarness harness,
         ILogger<PmocEngineJob>? logger = null,
-        DateOnly? asOf = null)
+        DateOnly? asOf = null,
+        DateTimeOffset? utcNow = null)
     {
-        var clock = new TestTimeProvider(BrazilTimeZone.AtLocal(asOf ?? AsOf, new TimeOnly(12, 0)));
+        var clock = new TestTimeProvider(utcNow ?? BrazilTimeZone.AtLocal(asOf ?? AsOf, new TimeOnly(12, 0)));
         harness.TenantProvider.TenantId = null;
         var report = await new PmocEngineJob(
                 harness.Db,
