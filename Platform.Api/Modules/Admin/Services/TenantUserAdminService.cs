@@ -318,6 +318,7 @@ public sealed class TenantUserAdminService(
         string token,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "staff-invite-preview");
         var invite = await LoadPendingInviteAsync(token, cancellationToken);
         var existingAuthId = await ResolveExistingAuthIdAsync(invite.Email, cancellationToken);
         var tenantName = await dbContext.Tenants
@@ -340,6 +341,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken,
         ClaimsPrincipal? actor = null)
     {
+        using var _ = PlatformScope.Begin(logger, "staff-invite-accept");
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;

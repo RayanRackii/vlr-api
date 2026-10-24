@@ -138,7 +138,7 @@ public sealed class TaxonomyHttpTests
         await using var h = await CatalogHarness.CreateAsync(false);
         h.Db.Roles.Add(new Role(h.Tenant.Id, SystemRoles.Technician, isSystemRole: true));
         await h.Db.SaveChangesAsync();
-        await new TenantAccessBootstrapper(h.Db).EnsureAsync(h.Tenant.Id);
+        await new TenantAccessBootstrapper(h.Db, NullLogger<TenantAccessBootstrapper>.Instance).EnsureAsync(h.Tenant.Id);
         var permissions = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(h.Db.Permissions);
         var keys = new[] { Permissions.Core.TaxonomyRead, Permissions.Core.TaxonomyManage };
         Assert.All(permissions.Where(x => keys.Contains(x.Key)), p => Assert.Null(p.ModuleKey));

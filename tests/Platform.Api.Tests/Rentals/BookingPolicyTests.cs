@@ -532,7 +532,9 @@ public sealed class BookingPolicyTests
     public async Task Bootstrap_gives_booking_policy_to_admin_and_not_customers_read()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
-        await new TenantAccessBootstrapper(harness.Db).EnsureAsync(harness.Tenant.Id);
+        await new TenantAccessBootstrapper(
+            harness.Db,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantAccessBootstrapper>.Instance).EnsureAsync(harness.Tenant.Id);
 
         var admin = await harness.Db.Roles.SingleAsync(role => role.Name == SystemRoles.Admin);
         var user = await harness.Db.Roles.SingleAsync(role => role.Name == SystemRoles.User);

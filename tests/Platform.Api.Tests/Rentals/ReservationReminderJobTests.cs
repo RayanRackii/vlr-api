@@ -215,6 +215,41 @@ public sealed class ReservationReminderJobTests
     }
 
     [Fact]
+    public async Task Tenant_sweep_is_platform_scope_and_per_tenant_work_is_not()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+        var secondTenantId = await SeedSecondTenantReminderAsync(ctx, now.AddHours(8));
+        var reads = new List<(Guid? TenantId, string? PlatformScopeReason)>();
+        ctx.Clock.SetUtcNow(now);
+        var job = new ReservationReminderJob(
+            new ReminderJobTestScopeFactory(ctx.Harness.DatabaseName, ctx.Scheduler, reads),
+            ctx.Clock,
+            NullLogger<ReservationReminderJob>.Instance);
+
+        // Two runs: the second must not inherit the first run's scope.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            reads.Clear();
+            await job.ExecuteAsync(CancellationToken.None);
+
+            Assert.False(PlatformScope.IsActive);
+            Assert.Contains(reads, read => read.TenantId is null);
+            Assert.All(
+                reads.Where(read => read.TenantId is null),
+                read => Assert.Equal("reservation-reminder-tenant-sweep", read.PlatformScopeReason));
+            Assert.Equal(
+                new HashSet<Guid?> { ctx.Harness.TenantId, secondTenantId },
+                reads.Where(read => read.TenantId is not null).Select(read => read.TenantId).ToHashSet());
+            Assert.All(
+                reads.Where(read => read.TenantId is not null),
+                read => Assert.Null(read.PlatformScopeReason));
+        }
+    }
+
+    [Fact]
     public async Task Two_tenants_email_only_and_whatsapp_only_each_get_one_delivery()
     {
         await using var ctx = await CreateContextAsync();
@@ -732,12 +767,13 @@ public sealed class ReservationReminderJobTests
 
     private sealed class ReminderJobTestScopeFactory(
         string databaseName,
-        RecordingOutboxScheduler scheduler) : IServiceScopeFactory
+        RecordingOutboxScheduler scheduler,
+        List<(Guid? TenantId, string? PlatformScopeReason)>? reads = null) : IServiceScopeFactory
     {
         public IServiceScope CreateScope()
         {
             var ambient = new AmbientTenantContext();
-            var tenantProvider = new AmbientBackedTenantProvider(ambient);
+            var tenantProvider = new AmbientBackedTenantProvider(ambient, reads);
             var db = InMemoryAppDb.Create(tenantProvider, databaseName);
             var publisher = new RentalsNotificationPublisher(
             db,
@@ -747,9 +783,19 @@ public sealed class ReservationReminderJobTests
         }
     }
 
-    private sealed class AmbientBackedTenantProvider(AmbientTenantContext ambient) : ITenantProvider
+    /// <summary>Optionally records each tenant read (EF filter) with the active PlatformScope.</summary>
+    private sealed class AmbientBackedTenantProvider(
+        AmbientTenantContext ambient,
+        List<(Guid? TenantId, string? PlatformScopeReason)>? reads) : ITenantProvider
     {
-        public Guid? TenantId => ambient.TenantId;
+        public Guid? TenantId
+        {
+            get
+            {
+                reads?.Add((ambient.TenantId, PlatformScope.CurrentReason));
+                return ambient.TenantId;
+            }
+        }
     }
 
     private sealed class ReminderJobTestScope(

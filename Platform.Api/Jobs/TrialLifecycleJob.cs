@@ -11,6 +11,7 @@ public sealed class TrialLifecycleJob(
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "trial-lifecycle-purge");
         var now = DateTimeOffset.UtcNow;
 
         logger.LogInformation(

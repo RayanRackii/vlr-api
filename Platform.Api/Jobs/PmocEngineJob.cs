@@ -32,6 +32,7 @@ public sealed class PmocEngineJob(
     public async Task<PmocEngineRunReport> RunAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        using var _ = PlatformScope.Begin(logger, "pmoc-engine-sweep");
         var asOfDate = BrazilTimeZone.GetToday(timeProvider);
 
         var plans = await dbContext.MaintenancePlans

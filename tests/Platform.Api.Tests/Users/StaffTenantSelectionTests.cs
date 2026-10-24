@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Tests.Fakes;
@@ -89,7 +90,8 @@ public sealed class StaffTenantSelectionTests
         var admin = new StaffTenantMembershipService(
             harness.Db,
             harness.Auth,
-            new FakePlatformAdminChecker(harness.Email));
+            new FakePlatformAdminChecker(harness.Email),
+            NullLogger<StaffTenantMembershipService>.Instance);
         var platform = await Assert.ThrowsAsync<InvalidOperationException>(() => admin.SelectAsync(
             Staff(harness.Email, harness.AuthId, harness.Second.Id),
             harness.Second.Id,
@@ -165,7 +167,11 @@ public sealed class StaffTenantSelectionTests
             await db.SaveChangesAsync();
 
             var auth = new RecordingPasswordAuthAdmin();
-            var service = new StaffTenantMembershipService(db, auth, new FakePlatformAdminChecker());
+            var service = new StaffTenantMembershipService(
+                db,
+                auth,
+                new FakePlatformAdminChecker(),
+                NullLogger<StaffTenantMembershipService>.Instance);
             return new SelectionHarness(db, auth, service, home, second, other, email, authId);
         }
 
