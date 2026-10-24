@@ -292,6 +292,36 @@ public sealed class ReservationCustomerEmailTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Hangfire_single_delivery_without_tenant_is_sent(bool failClosed)
+    {
+        // INotificationOutboxScheduler enqueues ProcessDeliveryAsync alone: no tenant, no job scope.
+        var tenantProvider = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(tenantProvider, failClosed: failClosed);
+        var tenant = new Tenant("Estúdio Norte", "70707070000191", subdomain: "estudio-hangfire");
+        db.Tenants.Add(tenant);
+        var deliveryId = QueueReservationEmail(db, tenant.Id, "ana@club.test", "Sala 1");
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var email = new ThrowingEmail("nobody@club.test");
+        var processor = new NotificationOutboxProcessor(
+            db,
+            email,
+            new DevWhatsAppRecorder(),
+            NullLogger<NotificationOutboxProcessor>.Instance,
+            TimeProvider.System);
+
+        await processor.ProcessDeliveryAsync(deliveryId, CancellationToken.None);
+
+        var delivery = await db.NotificationDeliveries.IgnoreQueryFilters().SingleAsync(d => d.Id == deliveryId);
+        Assert.Equal(NotificationDeliveryStatus.Sent, delivery.Status);
+        Assert.Equal(["ana@club.test"], email.Recipients);
+        Assert.False(PlatformScope.IsActive);
+    }
+
     [Fact]
     public async Task Poison_reservation_email_does_not_block_the_outbox_batch()
     {

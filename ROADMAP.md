@@ -29,8 +29,24 @@ Gate R7 rodado em DEV (API develop-6f2c72d, web develop 89ec097) antes do releas
 - [ ] Próximo passo API: executar o teste de arquitetura em ambiente que permita sockets e remover gradualmente as dependências existentes, apagando as linhas correspondentes da baseline. Próximo `vlr-web`: integrar catálogo/picker/editor visual e apresentação Mapa/Lista, conforme a seção “Catálogo visual + mapas” do roadmap irmão.
 - [x] Passo 5 (2/2 feito): `ITenantContext` (`Tenant`/`Platform`/`None`) como adapter sobre `ITenantProvider` + `PlatformScope` (um único `AsyncLocal` de frames imutáveis, aninhável, motivo obrigatório e logado). Filtro EF, contrato HTTP e schema inalterados. 2/2: jobs (`PmocEngineJob`, `NotificationOutboxJob`, varredura de tenants do `ReservationReminderJob`, `TrialLifecycleJob`, `DataRetentionJob`, `ClientRoleDiagnosticHostedService`) e caminhos cross-tenant de admin (`AdminTenantService`, preview/accept de convite em `TenantUserAdminService`, `PlatformAdminMembershipService`, `TenantAccessBootstrapper`, memberships em `StaffTenantMembershipService`) marcados com `PlatformScope`; ratchet `IgnoreQueryFiltersArchitectureTests` (baseline só diminui). Classificação dos demais IQF: passo 7.
 - [x] Passo 6: `HttpContextTenantProvider` nega Customer JWT cujo `tenant_id` difere do tenant ambiente (rota/header `{subdomain}`) com `TenantResolutionException` → 401 genérico (sem nomear tenant); ambiente igual ao claim e staff/Super-Admin inalterados. `[RequireActiveModule]` falha fechado sem tenant (403 `Module is not active for this tenant.`), exceto action com policy `PlatformAdmin` ou dentro de `PlatformScope`. Sem migration; OpenAPI inalterado.
+- [x] Passo 7 (parte DEV, flag **default off**): `Tenancy:FailClosed` (bool, lido de configuração; nenhum appsettings/fly.toml alterado). `true`: filtro global vira `TenantId == tenant atual`; sem tenant fora de `PlatformScope` = zero linhas; dentro de `PlatformScope` = sem filtro. `false`: comportamento atual idêntico. Fluxos que dependiam do filtro desligado agora abrem `PlatformScope`: `NotificationOutboxProcessor.ProcessDeliveryAsync` (Hangfire por entrega) e os métodos por `tenantId` de `TenantUserAdminService` (admin de usuários do tenant + provisionamento trial/wizard). Triagem dos 26 IQF da baseline: 8 sob scope, 3 diagnósticos de migration, 15 tenant-por-conveniência (sem mudança). Sem migration; OpenAPI inalterado.
+- [ ] Passo 7 (resto): ligar `Tenancy__FailClosed=true` no Fly DEV (secret + restart), rodar suíte com Postgres/Docker e o E2E de matriz de módulos; depois PROD (`PRODUCTION_HUMAN_APPROVAL_REQUIRED`). Rollback: `false` + restart.
 - [x] Passo 9: contratos de defaults visuais neutros no Domain; ResourceVisuals usa a interface de Rentals e a baseline perdeu as duas referências diretas.
 - [x] Passo 12 (API): `GET /api/rentals/readiness` retorna checklist tenant-scoped de setup de Rentals; card/dashboard fica para o `vlr-web`. Sem migration.
+
+### Follow-ups Low dos passos 5 e 6 (não bloqueiam)
+
+- [ ] (5) `PmocEngineJob` marca a execução inteira com `PlatformScope`; reduzir à varredura de planos.
+- [ ] (5) Métodos de admin com `PlatformScope` sem teste dedicado de `Mode`.
+- [ ] (5) `PlatformScope.Begin` loga Information por request (`TenantUserAdminService` preview/accept, `StaffTenantMembershipService`, e agora os métodos admin do passo 7 e cada entrega do outbox): avaliar Debug.
+- [ ] (5) `PlatformScopeJobTests` usa dependências `null!`; trocar por fakes.
+- [x] (5) M1 `NotificationOutboxProcessor.ProcessDeliveryAsync` sem scope: feito no passo 7.
+- [ ] (6) **Decisão do Rayan (contrato):** tenant null no `[RequireActiveModule]` devolve 403 `Module is not active for this tenant.` (Super-Admin em modo plataforma; anônimo sem `X-Tenant-Subdomain`, que antes era 401). Alternativa: código próprio, ex. `TENANT_CONTEXT_REQUIRED`.
+- [ ] (6) `IsPlatformAdminOnly` deveria exigir também ausência de `IAllowAnonymous` na action (risco teórico hoje).
+- [ ] (6) `catch (TenantResolutionException) → 404` em `DailyAvailabilityController`/`BookingMapsController` mascararia mismatch se o gate deixasse de rodar antes (hoje inalcançável; `DailyAvailabilityHttpTests` trava o 401).
+- [ ] (6, web) **Decisão do Rayan (contrato):** `vlr-web` `customerApi` anexa o bearer de Customer em qualquer tenant em path-mode; anexar só quando `isCustomerSignedInForTenant(slug)` para evitar logout silencioso no 401.
+- [x] (6) Teste unit: Customer com `tenant_id` ausente/inválido e ambiente preenchido → negado: feito no passo 7.
+- [ ] (6) Teste HTTP de Super-Admin em modo plataforma numa rota com gate → 403 (só unit hoje).
 
 ## Taxonomy de plataforma + Catalog (2026-10-20) — released em PROD (2026-10-21)
 

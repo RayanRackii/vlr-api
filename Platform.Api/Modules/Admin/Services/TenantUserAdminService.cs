@@ -81,6 +81,9 @@ public sealed class TenantUserAdminService(
         Guid tenantId,
         CancellationToken cancellationToken)
     {
+        // Tenant-id methods run for a Super-Admin (maybe without a tenant) or tenant provisioning;
+        // every query keeps the explicit tenantId predicate.
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-list");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
 
         var platformEmails = platformAdminChecker.GetNormalizedEmails();
@@ -120,6 +123,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken,
         bool enqueueEmail = true)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-invite");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
         await trialGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
 
@@ -210,6 +214,7 @@ public sealed class TenantUserAdminService(
         Guid inviteId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-deliver-invite");
         var invite = await dbContext.UserInvites
             .AsNoTracking()
             .FirstOrDefaultAsync(
@@ -225,6 +230,7 @@ public sealed class TenantUserAdminService(
         Guid inviteId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-resend-invite");
         var invite = await dbContext.UserInvites
             .Include(item => item.InviteRoles)
             .FirstOrDefaultAsync(i => i.Id == inviteId && i.TenantId == tenantId, cancellationToken)
@@ -266,6 +272,7 @@ public sealed class TenantUserAdminService(
         Guid inviteId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-revoke-invite");
         var invite = await dbContext.UserInvites
             .FirstOrDefaultAsync(i => i.Id == inviteId && i.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found.");
@@ -288,6 +295,7 @@ public sealed class TenantUserAdminService(
         PromoteTenantUserRequestDto request,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-promote");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
         var roleName = NormalizeRole(request.RoleName);
 

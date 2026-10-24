@@ -213,6 +213,32 @@ public sealed class HttpContextTenantProviderTests
         Assert.Equal(tenantId, provider.TenantId);
     }
 
+    // Passo 6 follow-up (Sol): before the guard, a bad claim fell back to the ambient tenant.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-guid")]
+    public void Customer_with_missing_or_invalid_tenant_claim_and_ambient_tenant_throws(string? tenantClaim)
+    {
+        var claims = new List<Claim>
+        {
+            new(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+            new(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new(ClaimTypes.Role, AuthRoles.Customer),
+        };
+        if (tenantClaim is not null)
+        {
+            claims.Add(new Claim(CustomerClaimTypes.TenantId, tenantClaim));
+        }
+
+        var provider = CreateProvider(
+            new ClaimsPrincipal(new ClaimsIdentity(claims, CustomerJwtBearerDefaults.AuthenticationScheme)),
+            new AmbientTenantContext { TenantId = Guid.NewGuid() });
+
+        var exception = Assert.Throws<TenantResolutionException>(() => provider.TenantId);
+        Assert.Equal("The customer access token is missing a valid tenant_id claim.", exception.Message);
+    }
+
     [Fact]
     public void Staff_ambient_tenant_still_wins_over_app_metadata()
     {

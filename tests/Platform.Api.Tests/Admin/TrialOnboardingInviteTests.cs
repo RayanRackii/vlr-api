@@ -138,6 +138,29 @@ public sealed class TrialOnboardingInviteTests
     }
 
     [Fact]
+    public async Task Trial_provisions_tenant_and_invite_email_when_the_tenant_filter_is_fail_closed()
+    {
+        // Anonymous trial has no tenant: under Tenancy:FailClosed only a PlatformScope lets it read.
+        await using var harness = await Harness.CreateAsync(failClosed: true);
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("Ada@Club.test", "11999998888"),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status201Created, Status(result));
+        var body = Body<CreateTenantResponse>(result);
+        var invite = await harness.Db.UserInvites.IgnoreQueryFilters().SingleAsync();
+        Assert.Equal(body.InviteId, invite.Id);
+        Assert.True(harness.Queue.TryRead(out var message));
+        Assert.Equal("ada@club.test", message.Recipient);
+
+        // Super-Admin in platform mode (no tenant) manages the new tenant's invites.
+        var bundle = await harness.Invites.ListUsersAndInvitesAsync(body.TenantId, CancellationToken.None);
+        Assert.Equal([invite.Id], bundle.Invites.Select(item => item.Id));
+        await harness.Invites.RevokeInviteAsync(body.TenantId, invite.Id, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Duplicate_trial_email_returns_409()
     {
         await using var harness = await Harness.CreateAsync();
@@ -592,10 +615,11 @@ public sealed class TrialOnboardingInviteTests
 
         public static async Task<Harness> CreateAsync(
             IAnonymousTrialCreateGate? trialCreateGate = null,
-            ITenantUserAdminService? invites = null)
+            ITenantUserAdminService? invites = null,
+            bool failClosed = false)
         {
             var tenantProvider = new FakeTenantProvider { TenantId = null };
-            var db = InMemoryAppDb.Create(tenantProvider, ignoreInMemoryTransactions: true);
+            var db = InMemoryAppDb.Create(tenantProvider, ignoreInMemoryTransactions: true, failClosed: failClosed);
             db.AssetFamilies.AddRange(
                 Family(AssetFamilyKeys.Spaces, "Spaces", 1),
                 Family(AssetFamilyKeys.Electrical, "Electrical", 2),
