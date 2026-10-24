@@ -30,6 +30,7 @@ public sealed class PlatformUserAdminService(
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-platform-users-list");
         var platformEmails = platformAdminChecker.GetNormalizedEmails();
 
         var query =
@@ -91,6 +92,7 @@ public sealed class PlatformUserAdminService(
         string? actingSupabaseAuthId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-platform-users-delete");
         var user = await dbContext.Users
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
 
