@@ -26,24 +26,14 @@ public sealed class HttpContextTenantProvider : ITenantProvider
     {
         get
         {
-            if (_ambientTenantContext.TenantId is Guid ambientTenantId)
-            {
-                return ambientTenantId;
-            }
-
-            var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext is null)
-            {
-                return null;
-            }
-
-            var authenticatedIdentities = httpContext.User.Identities
+            var ambientTenantId = _ambientTenantContext.TenantId;
+            var authenticatedIdentities = _httpContextAccessor.HttpContext?.User.Identities
                 .Where(identity => identity.IsAuthenticated)
-                .ToArray();
+                .ToArray() ?? [];
 
             if (authenticatedIdentities.Length == 0)
             {
-                return null;
+                return ambientTenantId;
             }
 
             var user = new ClaimsPrincipal(authenticatedIdentities);
@@ -55,13 +45,25 @@ public sealed class HttpContextTenantProvider : ITenantProvider
             {
                 var tenantClaim = user.FindFirst(CustomerClaimTypes.TenantId)?.Value;
 
-                if (Guid.TryParse(tenantClaim, out var customerTenantId))
+                if (!Guid.TryParse(tenantClaim, out var customerTenantId))
                 {
-                    return customerTenantId;
+                    throw new TenantResolutionException(
+                        "The customer access token is missing a valid tenant_id claim.");
                 }
 
-                throw new TenantResolutionException(
-                    "The customer access token is missing a valid tenant_id claim.");
+                // A subdomain-bound ambient tenant must not run a tenant-A customer in tenant B.
+                if (ambientTenantId is Guid ambient && ambient != customerTenantId)
+                {
+                    throw new TenantResolutionException(
+                        "The customer access token is not valid for this tenant.");
+                }
+
+                return customerTenantId;
+            }
+
+            if (ambientTenantId is Guid ambientForStaff)
+            {
+                return ambientForStaff;
             }
 
             // Platform Super-Admins: the effective tenant is the request session

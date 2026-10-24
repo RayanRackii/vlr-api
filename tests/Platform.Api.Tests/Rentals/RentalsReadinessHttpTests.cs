@@ -73,13 +73,15 @@ public sealed class RentalsReadinessHttpTests
     }
 
     [Fact]
-    public async Task Missing_tenant_context_is_unauthorized()
+    public async Task Missing_tenant_context_is_denied_by_the_module_gate()
     {
         await using var h = await Harness.CreateAsync();
 
         var response = await h.GetAsync(null);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, body.RootElement.GetProperty("error").GetString());
     }
 
     [Theory]
