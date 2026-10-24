@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -20,7 +22,7 @@ public sealed class ScheduleService(
     IOccupancyKindService occupancyKindService,
     ITrialGuard trialGuard,
     IReservationQueueService reservationQueueService,
-    IRentalsNotificationPublisher notificationPublisher,
+    IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
     TimeProvider timeProvider) : IScheduleService
 {
@@ -128,7 +130,7 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
 
         var customer = await dbContext.Customers
@@ -290,9 +292,8 @@ public sealed class ScheduleService(
             var eventType = reservation.Status == ReservationStatus.PendingDeposit
                 ? RentalEventTypes.ReservationPendingDeposit
                 : RentalEventTypes.ReservationConfirmed;
-            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
-                reservation,
-                eventType,
+            var queuedDeliveries = await domainEvents.DispatchAsync(
+                new ReservationEvent(reservation, eventType),
                 cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);

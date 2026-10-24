@@ -311,7 +311,7 @@ public sealed class ReservationPastStartTests
                 tenantProvider,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
             var schedule = new ScheduleService(
@@ -320,7 +320,7 @@ public sealed class ReservationPastStartTests
                 kinds,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
 

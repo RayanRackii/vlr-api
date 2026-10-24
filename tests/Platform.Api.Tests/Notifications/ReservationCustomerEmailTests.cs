@@ -521,7 +521,7 @@ public sealed class ReservationCustomerEmailTests
             harness.TenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
-            publisher,
+            publisher.AsDomainEvents(),
             scheduler,
             LocationBookingHarness.BookingClock);
 

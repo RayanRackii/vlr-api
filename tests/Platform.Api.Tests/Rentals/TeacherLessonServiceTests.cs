@@ -1044,7 +1044,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             new OccupancyKindService(db, tenantProvider),
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
     }
@@ -1216,7 +1216,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             TenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 

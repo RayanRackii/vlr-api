@@ -283,7 +283,7 @@ public sealed class ReservationTimezoneTests
                 tenantProvider,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 BookingClock);
             var schedule = new ScheduleService(
@@ -292,7 +292,7 @@ public sealed class ReservationTimezoneTests
                 kinds,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 BookingClock);
 

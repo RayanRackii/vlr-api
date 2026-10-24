@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Notifications;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -40,7 +42,7 @@ public sealed class CatalogOrderService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IHttpContextAccessor httpContextAccessor,
-    ICatalogNotificationPublisher notificationPublisher,
+    IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler) : ICatalogOrderService
 {
     public async Task<IReadOnlyList<CatalogOrderResponse>> ListAsync(
@@ -188,7 +190,7 @@ public sealed class CatalogOrderService(
         var actorId = await ResolveB2BUserIdAsync(cancellationToken);
         var actorType = actorId is null ? CatalogActorType.System : CatalogActorType.B2BUser;
 
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -201,9 +203,8 @@ public sealed class CatalogOrderService(
             IReadOnlyList<Guid> queued = [];
             if (eventType is not null)
             {
-                queued = await notificationPublisher.PublishOrderEventAsync(
-                    order,
-                    eventType,
+                queued = await domainEvents.DispatchAsync(
+                    new CatalogOrderEvent(order, eventType),
                     cancellationToken);
             }
 

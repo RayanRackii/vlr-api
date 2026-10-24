@@ -1071,7 +1071,7 @@ public sealed class BookingPolicyTests
                 tenantProvider,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
             var schedule = new ScheduleService(
@@ -1080,7 +1080,7 @@ public sealed class BookingPolicyTests
                 kinds,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
             return new BookingPolicyHarness(

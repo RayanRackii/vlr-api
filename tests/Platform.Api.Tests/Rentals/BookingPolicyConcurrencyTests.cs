@@ -71,7 +71,7 @@ public sealed class BookingPolicyConcurrencyTests : IClassFixture<PostgresContai
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider, Clock),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             Clock);
 

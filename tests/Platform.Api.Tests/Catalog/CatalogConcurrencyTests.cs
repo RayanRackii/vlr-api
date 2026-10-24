@@ -119,7 +119,7 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
             tenantProvider,
             storage,
             storageOptions,
-            publisher,
+            publisher.AsDomainEvents(),
             new RecordingOutboxScheduler());
     }
 
@@ -134,7 +134,7 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
             db,
             tenantProvider,
             new FakeHttpContextAccessor(),
-            publisher,
+            publisher.AsDomainEvents(),
             new RecordingOutboxScheduler());
     }
 

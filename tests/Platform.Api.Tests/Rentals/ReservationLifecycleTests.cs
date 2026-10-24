@@ -259,7 +259,7 @@ public sealed class ReservationLifecycleTests
             providerB,
             new FakeTrialGuard(),
             TestReservationQueue.Create(dbB, providerB),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             TimeProvider.System);
 

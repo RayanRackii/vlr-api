@@ -205,7 +205,7 @@ public sealed class TaxonomyPostgresTests(PostgresContainerFixture postgres) : I
         await db.SaveChangesAsync();
         await using var h = await CatalogHarness.CreateAsync();
         var options = Options.Create(new StorageOptions());
-        var portal = new CatalogPortalService(db, provider, new DevStorageProvider(new FakeHostEnvironment(), options), options, h.Publisher, h.Scheduler);
+        var portal = new CatalogPortalService(db, provider, new DevStorageProvider(new FakeHostEnvironment(), options), options, h.Publisher.AsDomainEvents(), h.Scheduler);
         await db.Database.ExecuteSqlRawAsync("DROP EXTENSION IF EXISTS unaccent");
         await CheckAsync();
         await db.Database.ExecuteSqlRawAsync("CREATE EXTENSION unaccent WITH SCHEMA public");
