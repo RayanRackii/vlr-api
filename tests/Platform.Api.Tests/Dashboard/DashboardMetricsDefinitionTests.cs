@@ -12,6 +12,66 @@ namespace Platform.Api.Tests.Dashboard;
 public sealed class DashboardMetricsDefinitionTests
 {
     [Theory]
+    [InlineData("America/Manaus", "2026-10-01T03:30:00Z", "2026-09-30T23:30:00Z", "2026-09-30", 1)]
+    [InlineData("Asia/Tokyo", "2026-09-30T16:30:00Z", "2026-10-01T00:30:00Z", "2026-10-01", 0)]
+    public async Task Today_counts_use_the_tenant_civil_date(
+        string zoneId, string now, string reservationStart, string civilDate, int loggedInToday)
+    {
+        await using var h = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = h.TenantProvider.TenantId!.Value;
+        h.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = tenantId, Key = TenantSettingKeys.BookingTimeZoneId, Value = zoneId,
+        });
+        var customer = new Customer
+        {
+            TenantId = tenantId, Name = "TZ", LastLoginAt = DateTimeOffset.Parse(now).AddHours(-5),
+        };
+        h.Db.Customers.Add(customer);
+        AddReservation(h, customer.Id, DateTimeOffset.Parse(reservationStart), ReservationStatus.Confirmed, 80m);
+        h.Db.Slots.Add(new Slot
+        {
+            TenantId = tenantId, RentalAssetId = Guid.NewGuid(), OccupancyKindId = Guid.NewGuid(),
+            Date = DateOnly.Parse(civilDate), StartTime = new(10, 0), EndTime = new(11, 0),
+            Status = SlotStatus.Available,
+        });
+        await h.Db.SaveChangesAsync();
+
+        var metrics = await CreateService(h, DateTimeOffset.Parse(now)).GetMetricsAsync(default);
+
+        Assert.Equal(1, metrics.Rentals!.ReservationsTodayConfirmed);
+        Assert.Equal(1, metrics.Rentals.SlotsAvailableToday);
+        Assert.Equal(loggedInToday, metrics.CustomerActivity.LoggedInToday);
+        Assert.Equal(1, metrics.CustomerActivity.LoggedInLast7Days);
+        Assert.Equal(1, metrics.CustomerActivity.LoggedInLast30Days);
+    }
+
+    [Theory]
+    [InlineData("2026-11-01T04:30:00Z", 80)]
+    [InlineData("2026-11-01T03:30:00Z", 0)]
+    [InlineData("2026-12-01T05:00:00Z", 0)]
+    public async Task Havana_month_starts_at_the_earlier_ambiguous_midnight(string start, int revenue)
+    {
+        await using var h = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = h.TenantProvider.TenantId!.Value;
+        h.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = tenantId, Key = TenantSettingKeys.BookingTimeZoneId, Value = "America/Havana",
+        });
+        var customer = new Customer { TenantId = tenantId, Name = "TZ" };
+        h.Db.Customers.Add(customer);
+        AddReservation(h, customer.Id, DateTimeOffset.Parse(start), ReservationStatus.Confirmed, 80m);
+        await h.Db.SaveChangesAsync();
+
+        var metrics = await CreateService(h, DateTimeOffset.Parse("2026-11-15T15:00:00Z"))
+            .GetMetricsAsync(default);
+
+        Assert.Equal((decimal)revenue, metrics.Rentals!.ReservedRevenueThisMonth);
+    }
+
+    [Theory]
     [InlineData(null, 0)]
     [InlineData("America/Manaus", 80)]
     public async Task Revenue_month_ends_at_tenant_midnight(string? zoneId, int expectedRevenue)

@@ -15,6 +15,33 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ReservationQueueTests
 {
     [Theory]
+    [InlineData("2026-03-07T18:00:00Z", "2026-03-07T07:30:00Z", QueuePhase.Open)]
+    [InlineData("2026-03-08T06:59:59Z", "2026-03-08T07:30:00Z", QueuePhase.Closed)]
+    [InlineData("2026-03-08T07:00:00Z", "2026-03-08T07:30:00Z", QueuePhase.WaitingRoom)]
+    [InlineData("2026-03-08T07:30:00Z", "2026-03-08T07:30:00Z", QueuePhase.Open)]
+    public async Task New_York_queue_shifts_nonexistent_opening_and_works_the_day_before_dst(
+        string now, string opensAt, QueuePhase phase)
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync();
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.TenantId,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/New_York",
+        });
+        var rental = await h.Db.RentalAssets.SingleAsync(r => r.Id == h.RentalAssetId);
+        rental.QueueOpeningTime = new(2, 30);
+        await h.Db.SaveChangesAsync();
+        h.Time.SetUtcNow(DateTimeOffset.Parse(now));
+
+        var status = await h.Queue().GetStatusAsync(h.RentalAssetId, h.CustomerA, default);
+
+        Assert.Equal(DateTimeOffset.Parse(opensAt), status.OpensAt);
+        Assert.Equal(DateTimeOffset.Parse(opensAt).AddMinutes(-30), status.WaitingRoomOpensAt);
+        Assert.Equal(phase, status.Phase);
+    }
+
+    [Theory]
     [InlineData(null, 22, 10)]
     [InlineData("America/Manaus", 21, 11)]
     public async Task Queue_session_date_uses_tenant_midnight(string? zoneId, int day, int utcHour)

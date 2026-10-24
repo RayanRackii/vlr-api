@@ -19,6 +19,35 @@ public sealed class TenantTimeZoneSettingTests
 {
     private static readonly DateOnly Day = AvailabilityHarness.Day;
 
+    [Theory]
+    [InlineData("2026-03-08", "2026-03-08T05:00:00Z", "2026-03-09T04:00:00Z")]
+    [InlineData("2026-11-01", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z")]
+    public async Task Admin_day_filter_uses_first_valid_Havana_midnights(
+        string civilDate, string start, string end)
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync();
+        await SetZoneAsync(h.Db, h.TenantId, "America/Havana");
+        var startInstant = DateTimeOffset.Parse(start);
+        var endInstant = DateTimeOffset.Parse(end);
+        var reservations = new[]
+        {
+            startInstant.AddMinutes(-30), startInstant, endInstant.AddMinutes(-30), endInstant,
+        }.Select(instant => new Reservation
+        {
+            TenantId = h.TenantId, UnitId = h.UnitId, CustomerId = h.CustomerA,
+            CustomerName = "TZ", CustomerWhatsApp = "5511000000000",
+            Status = Core.Domain.Enums.ReservationStatus.Confirmed,
+            StartDateTime = instant, EndDateTime = instant.AddMinutes(30), TotalAmount = 20, DepositPaid = 0,
+        }).ToArray();
+        h.Db.Reservations.AddRange(reservations);
+        await h.Db.SaveChangesAsync();
+        var date = DateOnly.Parse(civilDate);
+
+        var result = await h.Reservations().ListAdminAsync(date, date, null, null, default);
+
+        Assert.Equal(reservations.Skip(1).Take(2).Select(r => r.Id).Order(), result.Select(r => r.Id).Order());
+    }
+
     // Tokyo (UTC+9): at 01:30 local the UTC date is still the previous day.
     // Manaus (UTC-4): at 21:30 local the UTC date is already the next day.
     // São Paulo would show every slot in the Tokyo case and none in the Manaus case.

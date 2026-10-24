@@ -95,13 +95,55 @@ internal static class TenantTimeZoneProvider
         }
 
         return (
-            AtLocal(date, TimeOnly.MinValue, zone),
-            AtLocal(date.AddDays(1), TimeOnly.MinValue, zone));
+            StartOfCivilDay(date, zone),
+            StartOfCivilDay(date.AddDays(1), zone));
     }
+
+    private static DateTimeOffset StartOfCivilDay(DateOnly date, TimeZoneInfo zone)
+    {
+        var midnight = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        return ToUtc(FirstValidLocal(midnight, zone), zone);
+    }
+
+    // Day boundaries use the end of a gap, rather than shifting midnight by its duration.
+    private static DateTime FirstValidLocal(DateTime local, TimeZoneInfo zone)
+    {
+        if (!zone.IsInvalidTime(local))
+        {
+            return local;
+        }
+
+        var valid = local;
+        do
+        {
+            valid = valid.AddHours(1);
+        }
+        while (zone.IsInvalidTime(valid));
+
+        var invalid = local.Ticks;
+        var end = valid.Ticks;
+        while (end - invalid > 1)
+        {
+            var middle = invalid + (end - invalid) / 2;
+            if (zone.IsInvalidTime(new DateTime(middle, DateTimeKind.Unspecified)))
+                invalid = middle;
+            else
+                end = middle;
+        }
+
+        return new DateTime(end, DateTimeKind.Unspecified);
+    }
+
+    private static DateTimeOffset ToUtc(DateTime local, TimeZoneInfo zone) =>
+        // The larger offset gives the earlier of the two instants in an overlap.
+        zone.IsAmbiguousTime(local)
+            ? new DateTimeOffset(local, zone.GetAmbiguousTimeOffsets(local).Max()).ToUniversalTime()
+            : new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone), TimeSpan.Zero);
 
     /// <summary>
     /// Civil <paramref name="date"/> and <paramref name="time"/> in <paramref name="zone"/>
-    /// as a UTC instant. The platform fallback zone uses
+    /// as a UTC instant. A nonexistent time shifts forward by the gap; an ambiguous
+    /// time uses the earlier instant. The platform fallback zone uses
     /// <see cref="BrazilTimeZone.AtLocal"/> so all consumers use the same instant.
     /// </summary>
     public static DateTimeOffset AtLocal(DateOnly date, TimeOnly time, TimeZoneInfo zone)
@@ -114,7 +156,19 @@ internal static class TenantTimeZoneProvider
         }
 
         var local = date.ToDateTime(time, DateTimeKind.Unspecified);
-        var utc = TimeZoneInfo.ConvertTimeToUtc(local, zone);
-        return new DateTimeOffset(utc, TimeSpan.Zero);
+        if (zone.IsInvalidTime(local))
+        {
+            var before = local;
+            do
+            {
+                before = before.AddHours(-1);
+            }
+            while (zone.IsInvalidTime(before));
+
+            var after = FirstValidLocal(local, zone);
+            local += zone.GetUtcOffset(after) - zone.GetUtcOffset(before);
+        }
+
+        return ToUtc(local, zone);
     }
 }

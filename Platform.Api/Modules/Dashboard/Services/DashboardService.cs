@@ -17,17 +17,16 @@ public sealed class DashboardService(
         EnsureTenantContext();
 
         var utcNow = timeProvider.GetUtcNow();
-        var today = DateOnly.FromDateTime(utcNow.UtcDateTime);
-        var todayStart = new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-        var tomorrowStart = todayStart.AddDays(1);
-        var last7Start = todayStart.AddDays(-6);
-        var last30Start = todayStart.AddDays(-29);
+        var utcTodayStart = new DateTimeOffset(utcNow.UtcDateTime.Date, TimeSpan.Zero);
+        var last7Start = utcTodayStart.AddDays(-6);
+        var last30Start = utcTodayStart.AddDays(-29);
         var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(
             dbContext, tenantProvider.TenantId!.Value, cancellationToken);
         var civilToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, zone).DateTime);
+        var (todayStart, tomorrowStart) = TenantTimeZoneProvider.CivilDay(civilToday, zone);
         var monthStart = new DateOnly(civilToday.Year, civilToday.Month, 1);
         var nextMonthStart = monthStart.AddMonths(1);
-        var confirmationWindowStart = todayStart.AddDays(-6);
+        var confirmationWindowStart = utcTodayStart.AddDays(-6);
 
         var moduleNames = await dbContext.TenantModules
             .AsNoTracking()
@@ -78,7 +77,7 @@ public sealed class DashboardService(
         if (modules.Contains(PlatformModules.Rentals))
         {
             rentals = await BuildRentalsMetricsAsync(
-                today,
+                civilToday,
                 todayStart,
                 tomorrowStart,
                 confirmationWindowStart,
