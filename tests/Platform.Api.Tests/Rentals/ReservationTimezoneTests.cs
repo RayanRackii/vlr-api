@@ -39,6 +39,26 @@ public sealed class ReservationTimezoneTests
     }
 
     [Fact]
+    public async Task CreateReservationAsync_does_not_persist_interval_inverted_by_DST_gap_conversion()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        await h.UseNewYorkTimeAsync();
+        var request = h.CreateRequest(GapStart, GapEnd) with
+        {
+            Date = NewYorkSpringForward,
+        };
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            h.Reservations.CreateReservationAsync(
+                h.CustomerId,
+                request,
+                CancellationToken.None));
+
+        Assert.Equal("EndTime must be greater than StartTime.", error.Message);
+        Assert.Empty(await h.Db.Reservations.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task BookSlotAsync_rejects_interval_inverted_by_DST_gap_conversion()
     {
         await using var h = await TimezoneBookingHarness.CreateAsync();
@@ -97,6 +117,28 @@ public sealed class ReservationTimezoneTests
             CancellationToken.None);
 
         Assert.Empty(day.Slots);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetDayAsync_omits_persisted_interval_inverted_by_DST_gap_conversion(
+        bool customerFacing)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        await h.UseNewYorkTimeAsync();
+        await h.SeedAvailableSlotAsync(GapStart, GapEnd, NewYorkSpringForward);
+
+        var day = await h.Schedule.GetDayAsync(
+            NewYorkSpringForward,
+            h.RentalAssetId,
+            customerFacing,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(day.Slots, slot =>
+            !slot.IsDerived
+            && slot.StartTime == GapStart
+            && slot.EndTime == GapEnd);
     }
 
     [Fact]

@@ -349,6 +349,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-24 | **Fix (API, PR #280, local):** agenda admin/pública omite também Slots persistidos cujo intervalo fica invertido após conversão civil→UTC; regressões cobrem slot materializado e CreateReservation sem persistência no gap DST de Nova York. Suíte completa: 1882 passed, 0 failed, 1 skipped. Sem migration. |
 | 2026-10-24 | **Refactor (API, passo 11, local):** dispatcher de eventos in-process sobre o outbox atual; publishers de Catalog/Rentals atuam como handlers, com preparação antes da transação e entregas após commit nos pontos existentes. Testes adicionados; execução pendente por ausência do SDK .NET. |
 | 2026-10-23 | **Fix (API, local, `fix/tenant-settings-timezone`, BKTZ):** store genérico `core.tenant_settings` (tenant_id FK, key, value; único por tenant+key; migration aditiva `AddTenantSettings`; incluída no purge de tenant). `TenantBookingClock` lê o fuso IANA da chave `booking.timeZoneId`: ausente → `America/Sao_Paulo`; inválido → warning + `America/Sao_Paulo`. Agenda `schedule/days` usa o fuso do tenant também nas janelas reservadas. Sem API nova; OpenAPI e golden files inalterados. |
 | 2026-10-23 | **Refactor (API, passo 9):** contratos de defaults de ResourceVisuals neutralizados em Domain; validação fica atrás de interface implementada por Rentals, sem mudança de OpenAPI ou migration. |
