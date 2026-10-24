@@ -33,6 +33,13 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
 
         if (tenantProvider.TenantId is null)
         {
+            // Fail closed: without a tenant, only platform-admin-only actions or an explicit
+            // PlatformScope may continue (null tenant turns the EF tenant filter off).
+            if (!PlatformScope.IsActive && !IsPlatformAdminOnly(context))
+            {
+                context.Result = Inactive();
+            }
+
             return;
         }
 
@@ -45,11 +52,16 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
             return;
         }
 
-        context.Result = new ObjectResult(new { error = InactiveModuleError })
-        {
-            StatusCode = StatusCodes.Status403Forbidden,
-        };
+        context.Result = Inactive();
     }
+
+    private static ObjectResult Inactive() =>
+        new(new { error = InactiveModuleError }) { StatusCode = StatusCodes.Status403Forbidden };
+
+    private static bool IsPlatformAdminOnly(AuthorizationFilterContext context) =>
+        context.ActionDescriptor.EndpointMetadata
+            .OfType<IAuthorizeData>()
+            .Any(data => data.Policy == SupabaseAuthenticationExtensions.PlatformAdminPolicy);
 
     private static string? ResolveResourceSubdomain(AuthorizationFilterContext context)
     {

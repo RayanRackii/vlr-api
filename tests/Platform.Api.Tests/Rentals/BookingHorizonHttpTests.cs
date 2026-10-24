@@ -87,7 +87,8 @@ public sealed class BookingHorizonHttpTests
                     services.AddSingleton<IScheduleService, ThrowingScheduleService>();
                     services.AddSingleton<IRentalAssetService, UnusedRentalAssetService>();
                     services.AddSingleton<IPublicTenantBinder, UnusedTenantBinder>();
-                    services.AddSingleton<ITenantProvider, NullTenantProvider>();
+                    services.AddSingleton<ITenantProvider, FixedTenantProvider>();
+                    services.AddSingleton<ITenantModuleAccessor, ActiveRentalsModule>();
                     services.AddAuthentication(CustomerJwtBearerDefaults.AuthenticationScheme)
                         .AddScheme<AuthenticationSchemeOptions, CustomerAuthHandler>(
                             CustomerJwtBearerDefaults.AuthenticationScheme,
@@ -131,9 +132,15 @@ public sealed class BookingHorizonHttpTests
         }
     }
 
-    private sealed class NullTenantProvider : ITenantProvider
+    private sealed class FixedTenantProvider : ITenantProvider
     {
-        public Guid? TenantId => null;
+        public Guid? TenantId { get; } = Guid.NewGuid();
+    }
+
+    private sealed class ActiveRentalsModule : ITenantModuleAccessor
+    {
+        public Task<IReadOnlySet<string>> GetActiveModuleKeysAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlySet<string>>(new HashSet<string> { "rentals" });
     }
 
     private sealed class UnusedTenantBinder : IPublicTenantBinder

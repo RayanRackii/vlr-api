@@ -32,7 +32,27 @@ public sealed class DailyAvailabilityHttpTests
     private const string Path = "/api/public/tenants/example/availability/days/2026-10-21";
 
     [Fact]
-    public async Task Real_controller_binds_route_tenant_over_hostile_header_and_valid_other_tenant_jwt()
+    public async Task Valid_other_tenant_customer_jwt_on_route_tenant_is_unauthorized_without_naming_it()
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        var foreign = new Tenant("Hidden tenant", "22222222000191", subdomain: "hidden");
+        h.Db.Add(foreign);
+        await h.Db.SaveChangesAsync();
+        using var host = StartHost(h);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            new CustomerJwtIssuer(Configuration()).IssueToken(new Customer { TenantId = foreign.Id, Name = "Hidden customer" }));
+
+        var response = await client.GetAsync(Path);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("example", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(foreign.Id.ToString(), body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Real_controller_binds_route_tenant_over_hostile_header()
     {
         await using var h = await AvailabilityHarness.CreateAsync();
         var foreign = new Tenant("Hidden tenant", "22222222000191", subdomain: "hidden");
@@ -42,8 +62,6 @@ public sealed class DailyAvailabilityHttpTests
         using var host = StartHost(h);
         var client = host.GetTestClient();
         client.DefaultRequestHeaders.Add("X-Tenant-Subdomain", "hidden");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
-            new CustomerJwtIssuer(Configuration()).IssueToken(new Customer { TenantId = foreign.Id, Name = "Hidden customer" }));
         var response = await client.GetAsync(Path);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
