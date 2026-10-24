@@ -13,8 +13,7 @@ namespace Platform.Api.Modules.Rentals.Services;
 /// <see cref="ReservationStatus.Confirmed"/>. <see cref="ReservationStatus.Completed"/>
 /// and <see cref="ReservationStatus.Canceled"/> do not count. The customer row lock
 /// still wraps the recount, so dropping Completed does not change the race.
-/// The civil day uses the tenant timezone when <see cref="Platform.Core.Domain.Entities.Tenant"/> has one.
-/// It has none, so the window is America/Sao_Paulo.
+/// The civil day uses the tenant booking.timeZoneId setting, with America/Sao_Paulo as fallback.
 /// </summary>
 internal static class BookingPolicyEnforcement
 {

@@ -2080,6 +2080,10 @@
             "nullable": true,
             "type": "string"
           },
+          "timeZoneId": {
+            "nullable": true,
+            "type": "string"
+          },
           "trialEndsAt": {
             "format": "date-time",
             "nullable": true,
@@ -5402,6 +5406,10 @@
             "type": "string"
           },
           "subdomain": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timeZoneId": {
             "nullable": true,
             "type": "string"
           },

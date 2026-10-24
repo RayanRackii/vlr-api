@@ -18,6 +18,11 @@ RUN dotnet publish Platform.Api/Platform.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
+# Fail the image build if the runtime loses the IANA data used by tenant clocks.
+RUN test -f /usr/share/zoneinfo/America/Sao_Paulo \
+    && test -f /usr/share/zoneinfo/America/Manaus \
+    && test -f /usr/share/zoneinfo/Asia/Tokyo
+
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 

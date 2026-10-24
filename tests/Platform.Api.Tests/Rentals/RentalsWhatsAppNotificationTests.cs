@@ -16,6 +16,27 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class RentalsWhatsAppNotificationTests
 {
     [Fact]
+    public async Task Reminder_payload_uses_tenant_Manaus_clock()
+    {
+        await using var ctx = await CreateContextAsync(requiresDeposit: false);
+        await ctx.Publisher.EnsureReadyAsync();
+        var reservation = ctx.Harness.SeedOverlappingReservation(ReservationStatus.Confirmed);
+        ctx.Harness.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = reservation.TenantId,
+            Key = TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/Manaus",
+        });
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        await ctx.Publisher.PublishReservationEventAsync(reservation, RentalEventTypes.ReservationReminder);
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        var notification = await ctx.Harness.Db.Notifications.SingleAsync();
+        Assert.Equal("01/09/2026 09:00", notification.Payload[ReservationCustomerEmail.DateTimeKey]);
+    }
+
+    [Fact]
     public async Task Pending_deposit_create_sends_status_template()
     {
         await using var ctx = await CreateContextAsync(requiresDeposit: true);

@@ -13,6 +13,31 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class ReservationTimezoneTests
 {
+    [Fact]
+    public async Task Admin_day_filter_uses_Manaus_midnight_for_both_bounds()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.TenantId,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/Manaus",
+        });
+        await h.Db.SaveChangesAsync();
+        var created = await h.Reservations.CreateReservationAsync(
+            h.CustomerId, h.CreateRequest(TwentyTwo, TwentyThree), CancellationToken.None);
+        // 22:00 Manaus = 02:00Z on the following UTC date.
+        AssertEqualUtc(created.StartDateTime, 2026, 9, 11, 2, 0);
+        var row = await h.Db.Reservations.SingleAsync();
+        row.StartDateTime = new DateTimeOffset(2026, 9, 11, 3, 15, 0, TimeSpan.Zero);
+        row.EndDateTime = row.StartDateTime.AddMinutes(30);
+        await h.Db.SaveChangesAsync();
+        Assert.Contains(await h.Reservations.ListAdminAsync(CivilDate, CivilDate, null, null,
+            CancellationToken.None), r => r.Id == created.Id);
+        Assert.DoesNotContain(await h.Reservations.ListAdminAsync(CivilDate.AddDays(1),
+            CivilDate.AddDays(1), null, null, CancellationToken.None), r => r.Id == created.Id);
+    }
+
     private static readonly DateOnly CivilDate = new(2026, 9, 10);
     private static readonly TimeProvider BookingClock =
         new TestTimeProvider(BrazilTimeZone.AtLocal(CivilDate, new TimeOnly(9, 0)));

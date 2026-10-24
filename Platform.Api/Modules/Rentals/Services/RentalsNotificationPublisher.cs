@@ -9,7 +9,7 @@ using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
+using System.Globalization;
 using NotificationEntity = Platform.Core.Domain.Entities.Notification;
 
 namespace Platform.Api.Modules.Rentals.Services;
@@ -254,7 +254,8 @@ public sealed class RentalsNotificationPublisher(
             [ReservationCustomerEmail.CustomerNameKey] = reservation.CustomerName,
             [ReservationCustomerEmail.ReferenceKey] = reference,
             [ReservationCustomerEmail.StatusKey] = NotificationCustomerCopy.Label(reservation.Status),
-            [ReservationCustomerEmail.DateTimeKey] = BrazilTimeZone.FormatCivilDateTime(reservation.StartDateTime),
+            [ReservationCustomerEmail.DateTimeKey] = TimeZoneInfo.ConvertTime(reservation.StartDateTime, zone)
+                .ToString("dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("pt-BR")),
             [ReservationCustomerEmail.DateKey] = schedule.Date,
             [ReservationCustomerEmail.StartKey] = schedule.Start,
             [ReservationCustomerEmail.EndKey] = schedule.End,
