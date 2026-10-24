@@ -59,6 +59,8 @@ try
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddCorePersistence(connectionString);
+    builder.Services.Configure<TenancyOptions>(
+        builder.Configuration.GetSection(TenancyOptions.SectionName));
     builder.Services.AddSupabaseAdminClient(builder.Configuration);
     builder.Services.AddSupabaseAuthentication(builder.Configuration);
     builder.Services.AddRbacAuthorization();

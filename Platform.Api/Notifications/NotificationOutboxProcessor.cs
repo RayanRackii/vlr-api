@@ -45,6 +45,9 @@ public sealed class NotificationOutboxProcessor(
         Guid deliveryId,
         CancellationToken cancellationToken = default)
     {
+        // Hangfire runs this alone (no tenant). Lookup is by delivery id; the reminder check
+        // below still pins the notification's own tenant.
+        using var _ = PlatformScope.Begin(logger, "notification-outbox-delivery");
         var delivery = await dbContext.NotificationDeliveries
             .Include(d => d.Notification)
             .Include(d => d.Attempts)

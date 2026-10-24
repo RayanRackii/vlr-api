@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Platform.Api.Http;
+using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Tests.Http;
 
@@ -21,7 +22,24 @@ public sealed class RateLimitClientIpHostTests
         "FLY_APP_NAME",
         "RAILWAY_ENVIRONMENT",
         "RAILWAY_PROJECT_ID",
+        "Tenancy__FailClosed",
     ];
+
+    [Theory]
+    [InlineData(null, false)] // default off: no appsettings/fly.toml sets it
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void Real_host_binds_tenancy_fail_closed(string? value, bool expected)
+    {
+        using var scope = new HostEnvironmentScope(("Tenancy__FailClosed", value!));
+
+        using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+
+        Assert.Equal(
+            expected,
+            factory.Services.GetRequiredService<IOptions<TenancyOptions>>().Value.FailClosed);
+    }
 
     [Fact]
     public void Real_host_rejects_a_header_outside_the_allowlist()
@@ -99,6 +117,7 @@ public sealed class RateLimitClientIpHostTests
             Environment.SetEnvironmentVariable("RAILWAY_ENVIRONMENT", "");
             Environment.SetEnvironmentVariable("RAILWAY_PROJECT_ID", "");
             Environment.SetEnvironmentVariable("RateLimit__ClientIpHeader", null);
+            Environment.SetEnvironmentVariable("Tenancy__FailClosed", null);
             foreach (var (name, value) in overrides)
             {
                 Environment.SetEnvironmentVariable(name, value);
