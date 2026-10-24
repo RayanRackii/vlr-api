@@ -30,6 +30,7 @@ public sealed class AdminTenantService(
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-list");
         var tenants = await TenantsIncludingModules()
             .AsNoTracking()
             .OrderBy(t => t.LegalName)
@@ -49,6 +50,7 @@ public sealed class AdminTenantService(
         Guid id,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-get");
         var tenant = await TenantsIncludingModules()
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
@@ -66,6 +68,7 @@ public sealed class AdminTenantService(
         CreateTenantRequestDto request,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-create");
         var legalName = request.LegalName.Trim();
         var taxId = request.TaxId.Trim();
         var subdomain = request.Subdomain.Trim().ToLowerInvariant();
@@ -223,6 +226,7 @@ public sealed class AdminTenantService(
         UpdateTenantRequestDto request,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-update");
         var legalName = request.LegalName.Trim();
         var taxId = request.TaxId.Trim();
         var subdomain = request.Subdomain.Trim().ToLowerInvariant();
@@ -346,6 +350,7 @@ public sealed class AdminTenantService(
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-delete");
         List<string> supabaseAuthIds;
 
         await using (var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken))
@@ -550,6 +555,7 @@ public sealed class AdminTenantService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-enter-environment");
         var tenant = await dbContext.Tenants
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId && t.IsActive, cancellationToken)

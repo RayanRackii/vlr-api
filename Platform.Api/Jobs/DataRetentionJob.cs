@@ -10,6 +10,7 @@ public sealed class DataRetentionJob(
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "data-retention-cleanup");
         var now = DateTimeOffset.UtcNow;
         var brazilToday = HangfireExtensions.GetBrazilToday();
 

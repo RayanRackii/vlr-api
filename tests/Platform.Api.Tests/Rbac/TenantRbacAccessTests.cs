@@ -47,7 +47,7 @@ public sealed class TenantRbacAccessTests
         Assert.Contains(Permissions.Core.DashboardRead, dropped.PermissionKeys);
         Assert.DoesNotContain(Permissions.Catalog.OrdersManage, dropped.PermissionKeys);
 
-        var bootstrapper = new TenantAccessBootstrapper(harness.Db);
+        var bootstrapper = new TenantAccessBootstrapper(harness.Db, NullLogger<TenantAccessBootstrapper>.Instance);
         await bootstrapper.EnsureAsync(harness.Tenant.Id);
 
         var persisted = await harness.Roles.CreateAsync(
@@ -70,7 +70,7 @@ public sealed class TenantRbacAccessTests
         harness.Db.Roles.Add(adminRole);
         await harness.Db.SaveChangesAsync();
 
-        await new TenantAccessBootstrapper(harness.Db).EnsureAsync(harness.Tenant.Id);
+        await new TenantAccessBootstrapper(harness.Db, NullLogger<TenantAccessBootstrapper>.Instance).EnsureAsync(harness.Tenant.Id);
 
         var lessonPermission = await harness.Db.Permissions.SingleAsync(
             item => item.Key == Permissions.Rentals.ScheduleLessonsWrite);
@@ -102,7 +102,7 @@ public sealed class TenantRbacAccessTests
             new RolePermission(manager.Id, kept.Id));
         await harness.Db.SaveChangesAsync();
 
-        await new TenantAccessBootstrapper(harness.Db).EnsureAsync(harness.Tenant.Id);
+        await new TenantAccessBootstrapper(harness.Db, NullLogger<TenantAccessBootstrapper>.Instance).EnsureAsync(harness.Tenant.Id);
 
         Assert.Contains(Permissions.Os.WorkOrdersAssign, PermissionCatalog.AllKeys);
         Assert.DoesNotContain(Permissions.Os.WorkOrdersAssign, PermissionCatalog.ExplicitGrantOnlyKeys);

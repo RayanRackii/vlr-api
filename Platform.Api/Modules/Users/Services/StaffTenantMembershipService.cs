@@ -27,7 +27,8 @@ public interface IStaffTenantMembershipService
 public sealed class StaffTenantMembershipService(
     AppDbContext dbContext,
     ISupabaseAuthAdminClient supabaseAuthAdminClient,
-    IPlatformAdminChecker platformAdminChecker) : IStaffTenantMembershipService
+    IPlatformAdminChecker platformAdminChecker,
+    ILogger<StaffTenantMembershipService> logger) : IStaffTenantMembershipService
 {
     public async Task<StaffTenantMembershipListResponse> ListAsync(
         ClaimsPrincipal principal,
@@ -118,6 +119,8 @@ public sealed class StaffTenantMembershipService(
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
+        // Memberships of one staff identity span tenants.
+        using var _ = PlatformScope.Begin(logger, "staff-tenant-memberships");
         var normalizedAuthId = authId.ToLowerInvariant();
         var query = dbContext.Users
             .IgnoreQueryFilters()

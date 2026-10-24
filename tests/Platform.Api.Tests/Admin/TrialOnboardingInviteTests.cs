@@ -625,7 +625,9 @@ public sealed class TrialOnboardingInviteTests
             var handlerLogger = new ListLogger<CreateTenantHandler>();
             var handler = new CreateTenantHandler(
                 db,
-                new TenantAccessBootstrapper(db),
+                new TenantAccessBootstrapper(
+                    db,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantAccessBootstrapper>.Instance),
                 inviteService,
                 trialCreateGate ?? new AnonymousTrialCreateGate(
                     new MemoryCache(new MemoryCacheOptions()),

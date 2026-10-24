@@ -10,10 +10,14 @@ public interface ITenantAccessBootstrapper
     Task EnsureAsync(Guid tenantId, CancellationToken cancellationToken = default);
 }
 
-public sealed class TenantAccessBootstrapper(AppDbContext dbContext) : ITenantAccessBootstrapper
+public sealed class TenantAccessBootstrapper(
+    AppDbContext dbContext,
+    ILogger<TenantAccessBootstrapper> logger) : ITenantAccessBootstrapper
 {
     public async Task EnsureAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
+        // Seeds the global permission catalog and roles of a target tenant (not the caller's).
+        using var _ = PlatformScope.Begin(logger, "tenant-access-bootstrap");
         await SeedMissingPermissionsAsync(cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await EnsureSystemRolesAsync(tenantId, cancellationToken);

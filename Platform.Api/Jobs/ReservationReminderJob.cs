@@ -72,6 +72,8 @@ public sealed class ReservationReminderJob(
 
     private async Task<List<Guid>> ListReminderTenantIdsAsync(CancellationToken cancellationToken)
     {
+        // Only the tenant listing is platform; per-tenant work runs outside this scope.
+        using var _ = PlatformScope.Begin(logger, "reservation-reminder-tenant-sweep");
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         // Ambient tenant stays unset on this scope, so the global filter does not hide
