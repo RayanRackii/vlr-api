@@ -107,7 +107,7 @@ A booking of one Rentable by a Customer for a concrete time window, owned by a T
 _Avoid_: Booking, appointment, agendamento (in code)
 
 **BookingPolicy**:
-Tenant-level rules for customer self-booking. One default applies to every bookable resource type (`ResourceType` null). Optional cancellation note stored as plain text (no refund math), an optional cap on how many of that customer's active reservations start on the same civil day, and an optional advance horizon (`MaxAdvanceBookingDays`). A null cap or a null horizon means unlimited. Active means `PendingDeposit` or `Confirmed`; `Completed` and `Canceled` do not count. The civil day and the horizon use the tenant's configured timezone when the tenant model has one. `Tenant` has no timezone property, so the clock falls back to America/Sao_Paulo, the same clock that stores the reservation instant. `PUT` replaces the cancellation note and the daily cap; an omitted or null value clears those. Omitted `maxAdvanceBookingDays` keeps the stored horizon; explicit null clears it. A later per-resource-type row can store the same fields with `ResourceType` set; that row is not applied. The horizon may also be overridden per Rentable. A tenant provisioned from now on is stored with a horizon of 7 days. A tenant with no policy row stays unlimited, and an existing policy row is not rewritten. A read does not apply 7 when the row is missing. There is no staff create-reservation API, so the cap and the horizon are enforced only on customer self-booking and the public day/availability reads.
+Tenant-level rules for customer self-booking. One default applies to every bookable resource type (`ResourceType` null). Optional cancellation note stored as plain text (no refund math), an optional cap on how many of that customer's active reservations start on the same civil day, and an optional advance horizon (`MaxAdvanceBookingDays`). A null cap or a null horizon means unlimited. Active means `PendingDeposit` or `Confirmed`; `Completed` and `Canceled` do not count. The civil day and the horizon use the tenant's configured timezone, defaulting to America/Sao_Paulo when unset or invalid, the same clock that stores the reservation instant. `PUT` replaces the cancellation note and the daily cap; an omitted or null value clears those. Omitted `maxAdvanceBookingDays` keeps the stored horizon; explicit null clears it. A later per-resource-type row can store the same fields with `ResourceType` set; that row is not applied. The horizon may also be overridden per Rentable. A tenant provisioned from now on is stored with a horizon of 7 days. A tenant with no policy row stays unlimited, and an existing policy row is not rewritten. A read does not apply 7 when the row is missing. There is no staff create-reservation API, so the cap and the horizon are enforced only on customer self-booking and the public day/availability reads.
 _Avoid_: court policy; quadra; refund calculator; per-rentable daily cap; treating the cap as a payment rule
 
 **Rentable**:
@@ -123,11 +123,11 @@ Optional per-Location FIFO waiting room for B2C reservation opening. Default off
 _Avoid_: per-slot queue; raffle; multi-active turns; WebSocket as the MVP transport
 
 **QueueOpeningTime**:
-Wall-clock opening **T** of reservations for that Location, in America/Sao_Paulo (not a tenant timezone). Waiting room opens at T−30 minutes. Distinct from `OpenTime`/`CloseTime` (OpenHours operating hours).
+Wall-clock opening **T** of reservations for that Location, in the tenant time zone (default America/Sao_Paulo). Waiting room opens at T−30 minutes. Distinct from `OpenTime`/`CloseTime` (OpenHours operating hours).
 _Avoid_: treating OpenHours open/close as reservation opening; per-slot T
 
 **QueueSession**:
-One daily opening of a Location waiting queue, keyed by `(TenantId, RentalAssetId, OpeningDate)` where OpeningDate is the civil date of T in America/Sao_Paulo. Lazy-created. Not keyed by Slot.
+One daily opening of a Location waiting queue, keyed by `(TenantId, RentalAssetId, OpeningDate)` where OpeningDate is the civil date of T in the tenant time zone. Lazy-created. Not keyed by Slot.
 _Avoid_: one session per slot; one session per Customer
 
 **QueueTicket**:

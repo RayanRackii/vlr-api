@@ -20,6 +20,28 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class DailyAvailabilityTests
 {
     [Fact]
+    public async Task DST_gap_interval_that_inverts_in_UTC_is_omitted()
+    {
+        var date = new DateOnly(2026, 3, 8);
+        await using var h = await AvailabilityHarness.CreateAsync();
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.Tenant.Id,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/New_York",
+        });
+        h.Primary.OpenTime = new TimeOnly(2, 30);
+        h.Primary.CloseTime = new TimeOnly(3, 0);
+        h.Primary.AllowedDurationMinutes = "30";
+        h.Clock.SetUtcNow(new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.Zero));
+        await h.Db.SaveChangesAsync();
+
+        var response = await h.ReadAsync(date: date);
+
+        Assert.Empty(Assert.Single(response.Resources).Windows);
+    }
+
+    [Fact]
     public async Task Derived_occupied_windows_and_requested_stock_quantity_remain_visible_with_prices()
     {
         await using var h = await AvailabilityHarness.CreateAsync();
@@ -273,6 +295,28 @@ public sealed class DailyAvailabilityTests
         Assert.Equal("AVAILABILITY_LIMIT_EXCEEDED", (await Assert.ThrowsAsync<AvailabilityRequestException>(() => h.ReadAsync())).Code);
         for (var i = 9; i < 101; i++) await h.AddResourceAsync(h.Tenant, h.Unit, $"Resource {i}");
         Assert.Equal("AVAILABILITY_LIMIT_EXCEEDED", (await Assert.ThrowsAsync<AvailabilityRequestException>(() => h.ReadAsync())).Code);
+    }
+
+    [Theory]
+    [InlineData(null, "America/Sao_Paulo")]
+    [InlineData("Not/AZone", "America/Sao_Paulo")]
+    [InlineData("Asia/Tokyo", "Asia/Tokyo")]
+    [InlineData("E. South America Standard Time", "America/Sao_Paulo")]
+    public async Task Branding_returns_effective_iana_zone_for_the_requested_tenant(string? configured, string expected)
+    {
+        await using var h = await CustomerAuthHarness.CreateAsync();
+        if (configured is not null)
+        {
+            h.Db.TenantSettings.Add(new TenantSetting { TenantId = h.Tenant.Id,
+                Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = configured });
+        }
+        var other = new Tenant("Other", "22222222000191", subdomain: "other-zone");
+        h.Db.Tenants.Add(other);
+        h.Db.TenantSettings.Add(new TenantSetting { TenantId = other.Id,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = "America/Manaus" });
+        await h.Db.SaveChangesAsync();
+        Assert.Equal(expected, (await h.Auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).TimeZoneId);
+        Assert.Equal("America/Manaus", (await h.Auth.GetBrandingAsync("other-zone", default)).TimeZoneId);
     }
 
     [Fact]

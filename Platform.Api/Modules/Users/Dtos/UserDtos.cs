@@ -44,7 +44,8 @@ public sealed record CurrentUserResponse(
     IReadOnlyList<string> Permissions,
     string? TenantTradeName = null,
     string? TenantLegalName = null,
-    string? Phone = null);
+    string? Phone = null,
+    string TimeZoneId = "America/Sao_Paulo");
 
 /// <summary>
 /// Body of <c>PUT /api/users/me</c>. <c>phone</c> must be present.

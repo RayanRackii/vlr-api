@@ -6,7 +6,6 @@ using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -464,8 +463,13 @@ public sealed class TeacherLessonService(
         TimeOnly endTime,
         CancellationToken cancellationToken)
     {
-        var start = BrazilTimeZone.AtLocal(date, startTime);
-        var end = BrazilTimeZone.AtLocal(date, endTime);
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+        var start = TenantBookingClock.AtLocal(date, startTime, zone);
+        var end = TenantBookingClock.AtLocal(date, endTime, zone);
+        if (end <= start)
+        {
+            throw new ArgumentException(TeacherLessonMessages.EndAfterStart);
+        }
 
         var blocking = await (
             from item in dbContext.ReservationItems.AsNoTracking()

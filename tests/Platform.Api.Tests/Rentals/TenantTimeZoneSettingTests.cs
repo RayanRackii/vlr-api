@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -17,6 +18,35 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class TenantTimeZoneSettingTests
 {
     private static readonly DateOnly Day = AvailabilityHarness.Day;
+
+    [Theory]
+    [InlineData("2026-03-08", "2026-03-08T05:00:00Z", "2026-03-09T04:00:00Z")]
+    [InlineData("2026-11-01", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z")]
+    public async Task Admin_day_filter_uses_first_valid_Havana_midnights(
+        string civilDate, string start, string end)
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync();
+        await SetZoneAsync(h.Db, h.TenantId, "America/Havana");
+        var startInstant = DateTimeOffset.Parse(start);
+        var endInstant = DateTimeOffset.Parse(end);
+        var reservations = new[]
+        {
+            startInstant.AddMinutes(-30), startInstant, endInstant.AddMinutes(-30), endInstant,
+        }.Select(instant => new Reservation
+        {
+            TenantId = h.TenantId, UnitId = h.UnitId, CustomerId = h.CustomerA,
+            CustomerName = "TZ", CustomerWhatsApp = "5511000000000",
+            Status = Core.Domain.Enums.ReservationStatus.Confirmed,
+            StartDateTime = instant, EndDateTime = instant.AddMinutes(30), TotalAmount = 20, DepositPaid = 0,
+        }).ToArray();
+        h.Db.Reservations.AddRange(reservations);
+        await h.Db.SaveChangesAsync();
+        var date = DateOnly.Parse(civilDate);
+
+        var result = await h.Reservations().ListAdminAsync(date, date, null, null, default);
+
+        Assert.Equal(reservations.Skip(1).Take(2).Select(r => r.Id).Order(), result.Select(r => r.Id).Order());
+    }
 
     // Tokyo (UTC+9): at 01:30 local the UTC date is still the previous day.
     // Manaus (UTC-4): at 21:30 local the UTC date is already the next day.
@@ -70,8 +100,10 @@ public sealed class TenantTimeZoneSettingTests
     [Fact]
     public async Task Missing_setting_falls_back_to_Sao_Paulo_and_the_ambient_tenant_does_not_hide_it()
     {
-        await using var db = InMemoryAppDb.Create(new FakeTenantProvider { TenantId = Guid.NewGuid() });
+        var ambientTenantId = Guid.NewGuid();
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider { TenantId = ambientTenantId });
         var tenantId = Guid.NewGuid();
+        await SetZoneAsync(db, ambientTenantId, "Asia/Tokyo");
 
         Assert.Null(await TenantBookingClock.ReadConfiguredTimeZoneIdAsync(db, tenantId, default));
         Assert.Equal(BrazilTimeZone.Resolve().Id,
@@ -79,6 +111,8 @@ public sealed class TenantTimeZoneSettingTests
 
         await SetZoneAsync(db, tenantId, "America/Manaus");
         Assert.Equal("America/Manaus", (await TenantBookingClock.ResolveForTenantAsync(db, tenantId, default)).Id);
+        Assert.Equal("America/Manaus", await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(db, tenantId, default));
+        Assert.Equal("Asia/Tokyo", await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(db, ambientTenantId, default));
     }
 
     [Fact]
@@ -98,7 +132,7 @@ public sealed class TenantTimeZoneSettingTests
 
         Assert.Equal(BrazilTimeZone.Resolve().Id, zone.Id);
         Assert.Contains(logs.Entries, entry => entry.Level == LogLevel.Warning
-            && entry.Category.EndsWith(nameof(TenantBookingClock), StringComparison.Ordinal)
+            && entry.Category.EndsWith(nameof(TenantTimeZoneProvider), StringComparison.Ordinal)
             && entry.Message.Contains("Not/AZone", StringComparison.Ordinal));
     }
 

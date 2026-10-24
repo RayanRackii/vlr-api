@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Authorization;
@@ -193,12 +194,13 @@ public sealed class WorkOrderGenerationService(
                     workOrder.ScheduledDate,
                     workOrder.CompletedDate)));
 
+            var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
             var due = PmocDueCalculator.Compute(
                 new PmocDueInput(
                     plan.IntervalDays,
                     plan.FirstDueDate,
                     asOfDate,
-                    lastCompleted));
+                    lastCompleted), zone);
 
             if (due.DueStatus == PmocDueStatus.NotDue)
             {

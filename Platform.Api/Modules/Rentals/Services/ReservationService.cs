@@ -9,7 +9,6 @@ using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -402,6 +401,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        var zone = await ResolveBookingZoneAsync(tenantProvider.TenantId!.Value, cancellationToken);
 
         var query = dbContext.Reservations
             .AsNoTracking()
@@ -412,13 +412,13 @@ public sealed class ReservationService(
 
         if (from is DateOnly fromDate)
         {
-            var fromStart = BrazilTimeZone.StartOfCivilDay(fromDate);
+            var fromStart = TenantBookingClock.CivilDay(fromDate, zone).Start;
             query = query.Where(r => r.EndDateTime > fromStart);
         }
 
         if (to is DateOnly toDate)
         {
-            var toEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(toDate);
+            var toEnd = TenantBookingClock.CivilDay(toDate, zone).EndExclusive;
             query = query.Where(r => r.StartDateTime < toEnd);
         }
 
@@ -906,6 +906,11 @@ public sealed class ReservationService(
     {
         var start = TenantBookingClock.AtLocal(date, startTime, zone);
         var end = TenantBookingClock.AtLocal(date, endTime, zone);
+        if (end <= start)
+        {
+            throw new ArgumentException("EndTime must be greater than StartTime.");
+        }
+
         return (start, end);
     }
 

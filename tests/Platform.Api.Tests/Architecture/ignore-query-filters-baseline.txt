@@ -20,7 +20,6 @@ Platform.Api/Modules/ModuleMenuItems/Services/ModuleMenuItemService.cs
 Platform.Api/Modules/RegistrationFields/Services/RegistrationFieldService.cs
 Platform.Api/Modules/Rentals/Services/RentalLayoutService.BookingMaps.cs
 Platform.Api/Modules/Rentals/Services/RentalLayoutService.cs
-Platform.Api/Modules/Rentals/Services/TenantBookingClock.cs
 Platform.Api/Modules/ResourceVisuals/ResourceVisualCatalogService.cs
 Platform.Api/Modules/Users/Services/StaffTenantMembershipService.cs
 Platform.Api/Modules/Users/Services/UserDirectoryService.cs
@@ -28,3 +27,4 @@ Platform.Api/Modules/WorkOrders/Services/WorkOrderGenerationService.cs
 Platform.Api/Notifications/NotificationOutboxProcessor.cs
 Platform.Api/Services/Trial/TrialGuard.cs
 Platform.Api/Services/Tenancy/TenantPurger.cs
+Platform.Api/Services/Tenancy/TenantTimeZoneProvider.cs

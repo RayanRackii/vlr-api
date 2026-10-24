@@ -222,6 +222,11 @@ public sealed class ScheduleService(
             }
 
             var end = TenantBookingClock.AtLocal(slot.Date, slot.EndTime, zone);
+            if (end <= start)
+            {
+                throw new ArgumentException("End time must be after start time.");
+            }
+
             var hours = (decimal)(end - start).TotalHours;
 
             var reservedQuantity = await GetReservedQuantityAsync(

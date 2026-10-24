@@ -120,6 +120,7 @@ public sealed class DailyAvailabilityService(
                 if (++windowCount > MaxWindows) throw Limit("At most 10000 windows may be returned. Narrow the scope.");
                 var start = TenantBookingClock.AtLocal(date, window.Start, zone);
                 var end = TenantBookingClock.AtLocal(date, window.End, zone);
+                if (end <= start) continue;
                 var reserved = reservations.Where(r => r.RentalAssetId == resource.Id && r.Start < end && r.End > start)
                     .Sum(r => (long)r.Quantity);
                 var totalQuantity = resource.Type == RentalAssetType.Location ? 1 : resource.TotalQuantity;

@@ -44,7 +44,7 @@ public class RentalAsset : Entity, ITenantScoped
     public bool QueueEnabled { get; set; }
 
     /// <summary>
-    /// Wall-clock opening T in America/Sao_Paulo. Required when <see cref="QueueEnabled"/> is true.
+    /// Wall-clock opening T in the tenant time zone. Required when <see cref="QueueEnabled"/> is true.
     /// </summary>
     public TimeOnly? QueueOpeningTime { get; set; }
 

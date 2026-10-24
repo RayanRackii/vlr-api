@@ -23,7 +23,7 @@ public sealed record PmocDueResult(
 
 public static class PmocDueCalculator
 {
-    public static PmocDueResult Compute(PmocDueInput input)
+    public static PmocDueResult Compute(PmocDueInput input, TimeZoneInfo? timeZone = null)
     {
         EnsureIntervalDays(input.IntervalDays);
 
@@ -32,7 +32,8 @@ public static class PmocDueCalculator
         if (input.LastCompleted is { } last)
         {
             history = PmocHistoryStatus.Executed;
-            nextDue = BrazilTimeZone.GetCivilDate(last.CompletedDate).AddDays(input.IntervalDays);
+            nextDue = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(last.CompletedDate, timeZone ?? BrazilTimeZone.Resolve()).DateTime)
+                .AddDays(input.IntervalDays);
         }
         else
         {

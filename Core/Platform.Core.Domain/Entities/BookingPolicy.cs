@@ -40,8 +40,7 @@ public class BookingPolicy : Entity, ITenantScoped
     /// <summary>
     /// Cap on a customer's <c>PendingDeposit</c> and <c>Confirmed</c> reservations
     /// whose start falls on one civil day. <c>Completed</c> and <c>Canceled</c> do
-    /// not count. Null means unlimited. The day uses the tenant timezone when the
-    /// tenant model has one; otherwise America/Sao_Paulo.
+    /// not count. Null means unlimited. The day uses the tenant timezone; an unset or invalid zone defaults to America/Sao_Paulo.
     /// </summary>
     public int? MaxActiveReservationsPerCustomerPerDay { get; set; }
 

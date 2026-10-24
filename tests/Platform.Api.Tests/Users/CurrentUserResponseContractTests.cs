@@ -34,6 +34,7 @@ public sealed class CurrentUserResponseContractTests
         "tenantTradeName",
         "tenantLegalName",
         "phone",
+        "timeZoneId",
     ];
 
     [Fact]
