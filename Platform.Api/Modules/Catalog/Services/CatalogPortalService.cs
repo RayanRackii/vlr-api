@@ -1,3 +1,4 @@
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Taxonomy.Dtos;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,7 @@ using Platform.Api.Common;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Storage;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -77,7 +79,7 @@ public sealed class CatalogPortalService(
     ITenantProvider tenantProvider,
     IStorageProvider storageProvider,
     IOptions<StorageOptions> storageOptions,
-    ICatalogNotificationPublisher notificationPublisher,
+    IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler) : ICatalogPortalService
 {
     public async Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
@@ -161,7 +163,7 @@ public sealed class CatalogPortalService(
             .Where(p => productIds.Contains(p.Id) && p.IsActive)
             .ToDictionaryAsync(p => p.Id, cancellationToken);
 
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -233,9 +235,8 @@ public sealed class CatalogPortalService(
 
             dbContext.CatalogOrders.Add(order);
 
-            var queued = await notificationPublisher.PublishOrderEventAsync(
-                order,
-                CatalogEventTypes.OrderCreated,
+            var queued = await domainEvents.DispatchAsync(
+                new CatalogOrderEvent(order, CatalogEventTypes.OrderCreated),
                 cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);

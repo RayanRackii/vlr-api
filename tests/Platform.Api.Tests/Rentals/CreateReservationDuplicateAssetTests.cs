@@ -195,7 +195,7 @@ internal sealed class TwoLocationBookingHarness : IAsyncDisposable
         };
 
     public ReservationService CreateReservationService() =>
-        new(Db, TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider), SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler, LocationBookingHarness.BookingClock);
+        new(Db, TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(Db, TenantProvider), SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, LocationBookingHarness.BookingClock);
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();
 }

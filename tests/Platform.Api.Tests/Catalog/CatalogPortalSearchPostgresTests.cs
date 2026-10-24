@@ -30,7 +30,7 @@ public sealed class CatalogPortalSearchPostgresTests(PostgresContainerFixture po
         await using var harness = await CatalogHarness.CreateAsync();
         var portal = new CatalogPortalService(db, provider,
             new DevStorageProvider(new FakeHostEnvironment(), Options.Create(new StorageOptions())),
-            Options.Create(new StorageOptions()), harness.Publisher, harness.Scheduler);
+            Options.Create(new StorageOptions()), harness.Publisher.AsDomainEvents(), harness.Scheduler);
 
         // This fixture owns a disposable test database; no application database is modified.
         await db.Database.ExecuteSqlRawAsync("DROP EXTENSION IF EXISTS unaccent");

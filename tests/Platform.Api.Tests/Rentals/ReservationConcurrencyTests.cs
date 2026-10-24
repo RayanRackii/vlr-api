@@ -47,7 +47,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db1, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
         var service2 = new ReservationService(
@@ -55,7 +55,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db2, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 
@@ -97,7 +97,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             occupancyKinds,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db1, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
         var service2 = new ScheduleService(
@@ -106,7 +106,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             occupancyKinds,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db2, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 
@@ -171,7 +171,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
         var booked = await scheduleService.BookSlotAsync(
@@ -244,7 +244,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
             TestReservationQueue.Create(dbBook, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 
@@ -968,7 +968,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 

@@ -1,3 +1,5 @@
+using Platform.Core.Domain.Events;
+using Platform.Api.DomainEvents;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -451,6 +453,8 @@ public sealed class CustomerJwtBearerPipelineTests
                     services.AddSingleton<IStorageProvider, NoOpStorageProvider>();
                     services.AddSingleton(Options.Create(new StorageOptions()));
                     services.AddSingleton<ICatalogNotificationPublisher, NoOpCatalogNotificationPublisher>();
+                    services.AddScoped<IDomainEventDispatcher<CatalogOrderEvent>>(sp =>
+                        sp.GetRequiredService<ICatalogNotificationPublisher>().AsDomainEvents());
                     services.AddSingleton<INotificationOutboxScheduler, NoOpNotificationOutboxScheduler>();
                     services
                         .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

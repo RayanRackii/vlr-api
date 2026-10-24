@@ -175,7 +175,7 @@ public sealed class RentalsWhatsAppNotificationTests
             new RentalsNotificationPublisher(
                 otherDb,
                 otherProvider,
-                NullLogger<RentalsNotificationPublisher>.Instance),
+                NullLogger<RentalsNotificationPublisher>.Instance).AsDomainEvents(),
             new NoOpNotificationOutboxScheduler(),
             TimeProvider.System);
 
@@ -289,7 +289,7 @@ public sealed class RentalsWhatsAppNotificationTests
             harness.TenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
-            publisher,
+            publisher.AsDomainEvents(),
             scheduler,
             LocationBookingHarness.BookingClock);
 

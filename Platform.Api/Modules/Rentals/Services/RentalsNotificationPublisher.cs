@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Platform.Api.DomainEvents;
 using Platform.Api.Notifications;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -12,9 +14,11 @@ using NotificationEntity = Platform.Core.Domain.Entities.Notification;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
-public interface IRentalsNotificationPublisher
+public interface IRentalsNotificationPublisher : IDomainEventHandler<ReservationEvent>
 {
-    Task EnsureReadyAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> IDomainEventHandler<ReservationEvent>.HandleAsync(
+        ReservationEvent domainEvent, CancellationToken cancellationToken) =>
+        PublishReservationEventAsync(domainEvent.Reservation, domainEvent.EventType, cancellationToken);
 
     Task<IReadOnlyList<Guid>> PublishReservationEventAsync(
         Reservation reservation,

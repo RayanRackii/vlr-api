@@ -240,7 +240,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             TenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 
@@ -251,7 +251,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 

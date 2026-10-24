@@ -149,13 +149,13 @@ public sealed class ExpectedPriceConcurrencyTests(PostgresContainerFixture postg
 
     private static ReservationService Reservations(AppDbContext db, ReservationQueueHarness seed) => new(
         db, seed.TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(db, seed.TenantProvider, seed.Time),
-        SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler, seed.Time);
+        SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, seed.Time);
 
     private static Task<ReservationResponseDto> BookAsync(AppDbContext db, ReservationQueueHarness seed,
         bool persisted, decimal expected, CancellationToken ct) => persisted
         ? new ScheduleService(db, seed.TenantProvider, new OccupancyKindService(db, seed.TenantProvider),
             new FakeTrialGuard(), TestReservationQueue.Create(db, seed.TenantProvider, seed.Time),
-            SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler, seed.Time)
+            SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, seed.Time)
             .BookSlotAsync(seed.CustomerA, new BookSlotRequestDto
             {
                 SlotId = seed.SlotId!.Value, UnitId = seed.UnitId, ExpectedTotalAmount = expected
