@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -30,6 +31,9 @@ public sealed class PostgresAppDbFactory : IAsyncDisposable
 
     public AppDbContext Create(ITenantProvider tenantProvider) =>
         new(_options, tenantProvider);
+
+    public AppDbContext Create(ITenantProvider tenantProvider, bool failClosed) =>
+        new(_options, tenantProvider, Options.Create(new TenancyOptions { FailClosed = failClosed }));
 
     public AppDbContext Create(ITenantProvider tenantProvider, params IInterceptor[] interceptors) =>
         new(new DbContextOptionsBuilder<AppDbContext>(_options).AddInterceptors(interceptors).Options, tenantProvider);
