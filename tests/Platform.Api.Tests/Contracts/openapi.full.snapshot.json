@@ -1430,7 +1430,6 @@
           "categoryId",
           "familyId",
           "name",
-          "tag",
           "unitId"
         ],
         "type": "object"
@@ -5778,7 +5777,6 @@
           "familyId",
           "name",
           "status",
-          "tag",
           "unitId"
         ],
         "type": "object"

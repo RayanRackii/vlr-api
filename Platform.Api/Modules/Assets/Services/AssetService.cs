@@ -85,7 +85,7 @@ public sealed class AssetService(
         var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
             family.FieldSchemaJson,
             request.Attributes);
-        var tag = request.Tag.Trim();
+        var tag = string.IsNullOrWhiteSpace(request.Tag) ? GenerateRentableTag() : request.Tag.Trim();
         await EnsureTagAvailableAsync(tag, excludeAssetId: null, cancellationToken);
 
         var asset = new Asset
@@ -167,7 +167,7 @@ public sealed class AssetService(
         var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
             family.FieldSchemaJson,
             request.Attributes);
-        var tag = request.Tag.Trim();
+        var tag = string.IsNullOrWhiteSpace(request.Tag) ? asset.Tag : request.Tag.Trim();
         await EnsureTagAvailableAsync(tag, asset.Id, cancellationToken);
 
         asset.UnitId = request.UnitId;
