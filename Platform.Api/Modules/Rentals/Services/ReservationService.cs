@@ -77,10 +77,24 @@ public sealed class ReservationService(
             today,
             PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
 
-        var multiDayPricing = calendarDays.HasValue
-            ? await ResolveMultiDayPricingAsync(rental, request.Date, request.EndDate!.Value,
-                request.StartTime, request.EndTime, cancellationToken)
-            : null;
+        RentalPricing? multiDayPricing = null;
+        if (calendarDays.HasValue)
+        {
+            try
+            {
+                multiDayPricing = await ResolveMultiDayPricingAsync(rental, request.Date, request.EndDate!.Value,
+                    request.StartTime, request.EndTime, cancellationToken);
+            }
+            catch (MultiDayUnavailableException ex)
+            {
+                return new CheckAvailabilityResponseDto(
+                    IsAvailable: false,
+                    RequestedQuantity: quantity,
+                    AvailableQuantity: 0,
+                    EstimatedTotalAmount: null,
+                    Reason: ex.Message);
+            }
+        }
 
         var reservedQuantity = await GetReservedQuantityAsync(
             tenantId,
@@ -1162,6 +1176,9 @@ public sealed class ReservationService(
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
+    private sealed class MultiDayUnavailableException(string message, Exception? innerException = null)
+        : ArgumentException(message, innerException);
+
     private async Task<RentalPricing> ResolveMultiDayPricingAsync(
         RentalAsset rental, DateOnly date, DateOnly endDate, TimeOnly startTime, TimeOnly endTime,
         CancellationToken cancellationToken)
@@ -1179,14 +1196,15 @@ public sealed class ReservationService(
             var day = DateOnly.FromDayNumber(dayNumber);
             var dayStart = day == date ? startTime : rental.OpenTime ?? TimeOnly.MinValue;
             var dayEnd = day == endDate ? endTime : rental.CloseTime ?? TimeOnly.MinValue;
-            if (OpenHoursRules.ValidateInterval(rental, dayStart, dayEnd, rental.Asset.Name) is { } error)
-                throw new ArgumentException(error);
+            if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+                && OpenHoursRules.ValidateInterval(rental, dayStart, dayEnd, rental.Asset.Name) is { } error)
+                throw new MultiDayUnavailableException(error);
             if (slots.Any(s => s.Date == day
                 && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, dayStart, dayEnd)
                 && (s.Status == SlotStatus.Cancelled || s.OccupancyKind is not { IsActive: true }
                     || s.OccupancyKind.TenantId != rental.TenantId
                     || (s.OccupancyKind.BlocksCapacity && !s.OccupancyKind.IsBookableByCustomer))))
-                throw new ArgumentException($"'{rental.Asset.Name}' is not open for the requested interval.");
+                throw new MultiDayUnavailableException($"'{rental.Asset.Name}' is not open for the requested interval.");
 
             RentalPricing pricing;
             try
@@ -1197,7 +1215,7 @@ public sealed class ReservationService(
             }
             catch (InvalidOperationException ex)
             {
-                throw new ArgumentException(ex.Message, ex);
+                throw new MultiDayUnavailableException(ex.Message, ex);
             }
             if (pricing.PricingUnit != PricingUnit.Day)
                 throw new ArgumentException("Multi-day booking requires a per-day resource.");

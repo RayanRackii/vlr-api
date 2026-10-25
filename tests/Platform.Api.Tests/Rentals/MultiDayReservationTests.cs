@@ -48,6 +48,31 @@ public sealed class MultiDayReservationTests
             "Multi-day booking requires a per-day resource.");
     }
 
+    [Fact]
+    public async Task Non_OpenHours_non_SlotGrid_day_resource_without_open_close_times_accepts_three_days()
+    {
+        await using var h = await CreateHarnessAsync();
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        // Exercise the non-SlotGrid fallback independently of OpenHours configuration.
+        rental.SchedulePolicy = (SchedulePolicy)2;
+        rental.OpenTime = null;
+        rental.CloseTime = null;
+        foreach (var pricing in await h.Db.RentalPricings.ToListAsync())
+        {
+            pricing.StartTime = TimeOnly.MinValue;
+            pricing.EndTime = new(23, 59);
+        }
+        await h.Db.SaveChangesAsync();
+
+        var service = h.CreateReservationService();
+        var quote = await service.CheckAvailabilityAsync(Quote(h, Date.AddDays(2)), CancellationToken.None);
+        Assert.True(quote.IsAvailable, quote.Reason);
+        Assert.Equal(600m, quote.EstimatedTotalAmount);
+        var created = await service.CreateReservationAsync(h.CustomerId,
+            Create(h, Date.AddDays(2)) with { ExpectedTotalAmount = 600m }, CancellationToken.None);
+        Assert.Equal(600m, created.TotalAmount);
+    }
+
     private static ReservationsController Controller(LocationBookingHarness h) =>
         new(h.CreateReservationService(), null!, null!)
         {
@@ -99,7 +124,7 @@ public sealed class MultiDayReservationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Closed_or_cancelled_middle_day_returns_400(bool cancelled)
+    public async Task Closed_or_cancelled_middle_day_quotes_unavailable_and_create_returns_400(bool cancelled)
     {
         await using var h = await CreateHarnessAsync();
         var kind = new OccupancyKind
@@ -115,18 +140,18 @@ public sealed class MultiDayReservationTests
             Status = cancelled ? SlotStatus.Cancelled : SlotStatus.Available,
         });
         await h.Db.SaveChangesAsync();
-        await AssertBadRequestAsync(h, Quote(h, Date.AddDays(2)), Create(h, Date.AddDays(2)),
+        await AssertUnavailableAsync(h,
             $"'{LocationBookingHarness.AssetName}' is not open for the requested interval.");
     }
 
     [Fact]
-    public async Task Unpriced_middle_day_returns_400_without_creating_a_reservation()
+    public async Task Unpriced_middle_day_quotes_unavailable_and_create_returns_400()
     {
         await using var h = await CreateHarnessAsync();
         h.Db.RentalPricings.Remove(await h.Db.RentalPricings.SingleAsync(
             p => p.DayOfWeek == Date.AddDays(1).DayOfWeek));
         await h.Db.SaveChangesAsync();
-        await AssertBadRequestAsync(h, Quote(h, Date.AddDays(2)), Create(h, Date.AddDays(2)),
+        await AssertUnavailableAsync(h,
             "No rental pricing covers the requested day and time window.");
     }
 
@@ -306,6 +331,20 @@ public sealed class MultiDayReservationTests
         Assert.Equal(TimeSpan.FromHours(elapsedHours), created.EndDateTime - created.StartDateTime);
         Assert.Equal(new DateTimeOffset(year, month, day, utcStartHour, 0, 0, TimeSpan.Zero), created.StartDateTime);
         Assert.Equal(new DateTimeOffset(endDate.Year, endDate.Month, endDate.Day, utcEndHour, 0, 0, TimeSpan.Zero), created.EndDateTime);
+    }
+
+    private static async Task AssertUnavailableAsync(LocationBookingHarness h, string message)
+    {
+        var controller = Controller(h);
+        var quoted = await controller.CheckAvailability(Quote(h, Date.AddDays(2)), null, CancellationToken.None);
+        var available = Assert.IsType<CheckAvailabilityResponseDto>(Assert.IsType<OkObjectResult>(quoted.Result).Value);
+        Assert.False(available.IsAvailable);
+        Assert.Equal(message, available.Reason);
+        Assert.Null(available.EstimatedTotalAmount);
+        var created = await controller.Create(Create(h, Date.AddDays(2)), CancellationToken.None);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(created.Result);
+        Assert.Equal(message, JsonSerializer.SerializeToElement(badRequest.Value, Json).GetProperty("error").GetString());
+        Assert.Empty(await h.CreateReservationService().ListMineAsync(h.CustomerId, CancellationToken.None));
     }
 
     private static async Task AssertBadRequestAsync(LocationBookingHarness h,
