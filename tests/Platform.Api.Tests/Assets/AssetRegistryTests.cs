@@ -202,6 +202,37 @@ public sealed class AssetRegistryTests
     }
 
     [Fact]
+    public async Task UpdateRentable_location_round_trips_through_the_rental_asset_response()
+    {
+        // R11: drawer saved Localização, the PUT persisted it, but GET /api/rental-assets
+        // did not return it, so the drawer reopened empty and the next save wiped it.
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var rentals = new Platform.Api.Modules.Rentals.Services.RentalAssetService(harness.Db, harness.TenantProvider);
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Sala", tag: "SALA-LOC"),
+            CancellationToken.None);
+
+        await registry.UpdateRentableAsync(
+            created.RentalConfiguration!.Id,
+            new UpdateRentableRequest
+            {
+                Name = "Sala",
+                UnitId = harness.UnitId,
+                CategoryId = harness.CategoryId,
+                FamilyId = harness.FamilyId,
+                Location = "x",
+            },
+            CancellationToken.None);
+
+        var byAsset = await rentals.GetByAssetIdAsync(created.Id, CancellationToken.None);
+        var listed = await rentals.ListRentableAsync(CancellationToken.None);
+
+        Assert.Equal("x", byAsset!.Location);
+        Assert.Equal("x", Assert.Single(listed, r => r.AssetId == created.Id).Location);
+    }
+
+    [Fact]
     public async Task UpdateRentable_missing_or_not_rentable_throws_KeyNotFound()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
