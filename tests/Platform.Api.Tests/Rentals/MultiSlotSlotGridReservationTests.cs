@@ -69,6 +69,64 @@ public sealed class MultiSlotSlotGridReservationTests
         Assert.Equal(expected, created.TotalAmount);
     }
 
+    [Theory]
+    [InlineData(false, 75)]
+    [InlineData(true, 60)]
+    public async Task Hourly_bands_inside_a_cell_are_split_and_compared_with_slot_offers(bool includeSlotOffer, decimal expected)
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        h.AddGridWindow(Ten, TenThirty, 30m);
+        h.AddGridWindow(TenThirty, Eleven, 30m);
+        if (!includeSlotOffer)
+            h.Db.RentalPricings.RemoveRange(h.Db.RentalPricings.Local.ToList());
+        var boundary = new TimeOnly(10, 45);
+        h.Db.RentalPricings.AddRange(
+            new RentalPricing
+            {
+                TenantId = h.TenantId, RentalAssetId = h.RentalAssetId, DayOfWeek = CivilDate.DayOfWeek,
+                StartTime = Ten, EndTime = boundary, PricePerHour = 60m, PricingUnit = PricingUnit.Hour,
+                RequiresDeposit = false, DepositPercentage = 0,
+            },
+            new RentalPricing
+            {
+                TenantId = h.TenantId, RentalAssetId = h.RentalAssetId, DayOfWeek = CivilDate.DayOfWeek,
+                StartTime = boundary, EndTime = Eleven, PricePerHour = 120m, PricingUnit = PricingUnit.Hour,
+                RequiresDeposit = false, DepositPercentage = 0,
+            });
+        h.Rental.AllowedDurationMinutes = "60";
+        await h.Db.SaveChangesAsync();
+
+        var quote = await h.CheckAsync(Ten, Eleven);
+        Assert.True(quote.IsAvailable, quote.Reason);
+        Assert.Equal(expected, quote.EstimatedTotalAmount);
+        Assert.Equal(expected, (await h.CreateAsync(Ten, Eleven)).TotalAmount);
+    }
+
+    [Theory]
+    [InlineData(10, 15, 10, 30)]
+    [InlineData(9, 45, 10, 15)]
+    public async Task Overlapping_cancelled_override_rejects_booking_without_changing_the_override(
+        int startHour, int startMinute, int endHour, int endMinute)
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        h.AddGridWindow(Ten, TenThirty, 35m);
+        h.AddGridWindow(TenThirty, Eleven, 35m);
+        h.AddPersistedWindow(Ten, TenThirty);
+        h.AddPersistedWindow(TenThirty, Eleven);
+        h.AddPersistedWindow(new TimeOnly(startHour, startMinute), new TimeOnly(endHour, endMinute));
+        var exception = h.Db.Slots.Local.Single(s => s.StartTime != Ten && s.StartTime != TenThirty);
+        exception.Status = SlotStatus.Cancelled;
+        h.Rental.AllowedDurationMinutes = "60";
+        await h.Db.SaveChangesAsync();
+
+        Assert.False((await h.CheckAsync(Ten, Eleven)).IsAvailable);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => h.CreateAsync(Ten, Eleven));
+        Assert.Equal(SlotStatus.Cancelled, (await h.Db.Slots.AsNoTracking().SingleAsync(s => s.Id == exception.Id)).Status);
+        Assert.Null(exception.ReservationId);
+        Assert.Empty(await h.Db.Reservations.ToListAsync());
+        Assert.All(h.Db.Slots.Local.Where(s => s.Id != exception.Id), s => Assert.Equal(SlotStatus.Available, s.Status));
+    }
+
     [Fact]
     public async Task Sixty_minute_booking_spans_two_windows_and_quote_equals_create_total()
     {
@@ -333,6 +391,48 @@ public sealed class MultiSlotSlotGridReservationTests
         });
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Good_bookings_preserve_quantity_capacity(bool persisted, bool multiWindow)
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        h.AddGridWindow(Ten, TenThirty, 35m);
+        if (multiWindow)
+            h.AddGridWindow(TenThirty, Eleven, 35m);
+        if (persisted)
+        {
+            h.AddPersistedWindow(Ten, TenThirty);
+            if (multiWindow)
+                h.AddPersistedWindow(TenThirty, Eleven);
+        }
+        h.Rental.TotalQuantity = 2;
+        h.Rental.AllowedDurationMinutes = "60";
+        await h.Db.SaveChangesAsync();
+        var end = multiWindow ? Eleven : TenThirty;
+
+        var first = await h.CreateAsync(Ten, end);
+        var remaining = await h.CheckAsync(Ten, end);
+        Assert.True(remaining.IsAvailable, remaining.Reason);
+        Assert.Equal(1, remaining.AvailableQuantity);
+        var second = await h.CreateAsync(Ten, end);
+        Assert.NotEqual(first.Id, second.Id);
+        Assert.False((await h.CheckAsync(Ten, end)).IsAvailable);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => h.CreateAsync(Ten, end));
+
+        await h.Reservations.CancelByCustomerAsync(h.CustomerId, first.Id, CancellationToken.None);
+        Assert.True((await h.CheckAsync(Ten, end)).IsAvailable);
+        await h.CreateAsync(Ten, end);
+        Assert.False((await h.CheckAsync(Ten, end)).IsAvailable);
+        Assert.All(h.Db.Slots.Local, s =>
+        {
+            Assert.Equal(SlotStatus.Available, s.Status);
+            Assert.Null(s.ReservationId);
+        });
+    }
+
     [Fact]
     public async Task Single_window_booking_is_unchanged()
     {
@@ -381,6 +481,35 @@ public sealed class MultiSlotSlotGridReservationTests
         Assert.All(booked, s => Assert.Equal(created.Id, s.ReservationId));
         for (var i = 1; i < booked.Count; i++)
             Assert.Equal(booked[i - 1].EndTime, booked[i].StartTime);
+    }
+
+    [Theory]
+    [InlineData(10, 15, 10, 30)]
+    [InlineData(9, 45, 10, 15)]
+    public async Task Moved_template_does_not_duplicate_persisted_booked_coverage(
+        int startHour, int startMinute, int endHour, int endMinute)
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        h.AddGridWindow(Ten, TenThirty, 35m);
+        h.AddGridWindow(TenThirty, Eleven, 35m);
+        h.AddPersistedWindow(Ten, TenThirty);
+        h.Rental.AllowedDurationMinutes = "60";
+        await h.Db.SaveChangesAsync();
+        var created = await h.CreateAsync(Ten, Eleven);
+
+        var template = h.Db.ScheduleTemplates.Local.Single(t => t.StartTime == Ten);
+        template.StartTime = new TimeOnly(startHour, startMinute);
+        template.EndTime = new TimeOnly(endHour, endMinute);
+        await h.Db.SaveChangesAsync();
+
+        var day = await h.Schedule.GetDayAsync(CivilDate, h.RentalAssetId, false, CancellationToken.None);
+        var booked = day.Slots.Where(s => s.Status == SlotStatus.Booked).OrderBy(s => s.StartTime).ToList();
+        Assert.Equal(2, booked.Count);
+        Assert.All(booked, s => Assert.Equal(created.Id, s.ReservationId));
+        Assert.Equal([Ten, TenThirty], booked.Select(s => s.StartTime));
+        Assert.Equal([TenThirty, Eleven], booked.Select(s => s.EndTime));
+        Assert.False(booked[0].IsDerived);
+        Assert.True(booked[1].IsDerived);
     }
 
     [Fact]

@@ -568,31 +568,22 @@ internal sealed class AvailabilityReadModel(
 
             if (gridCells is not null)
             {
-                var cells = gridCells.Select(c => (c.Start, c.End, IsDerived: true))
-                    .Concat((persistedBookedSlots ?? [])
-                        .Where(s => s.ReservationId == window.ReservationId)
-                        .Select(s => (Start: s.StartTime, End: s.EndTime, IsDerived: false)))
-                    .OrderBy(c => c.Start);
-                var cursor = startTimeOnly;
-                foreach (var cell in cells)
+                var persistedCoverage = (persistedBookedSlots ?? [])
+                    .Where(s => s.ReservationId == window.ReservationId)
+                    .Select(s => (Start: s.StartTime, End: TenantBookingClock.NormalizeEndTime(s.EndTime)))
+                    .ToList();
+                var boundaries = gridCells.SelectMany(c => new[] { c.Start, TenantBookingClock.NormalizeEndTime(c.End) })
+                    .Concat(persistedCoverage.SelectMany(c => new[] { c.Start, c.End }))
+                    .Where(t => t > startTimeOnly && t < endTimeOnly)
+                    .Append(startTimeOnly).Append(endTimeOnly).Distinct().Order().ToList();
+                // Keep the whole reservation after template edits, subtracting persisted coverage.
+                for (var i = 1; i < boundaries.Count; i++)
                 {
-                    var cellStart = cell.Start > startTimeOnly ? cell.Start : startTimeOnly;
-                    var normalizedCellEnd = TenantBookingClock.NormalizeEndTime(cell.End);
-                    var cellEnd = normalizedCellEnd < endTimeOnly ? normalizedCellEnd : endTimeOnly;
-                    if (cellEnd <= cellStart)
-                        continue;
-
-                    // Reservations remain occupancy facts even if weekly cells later move.
-                    // Fill uncovered portions, but never duplicate a linked persisted row.
-                    if (cellStart > cursor)
-                        AppendBookedCell(cursor, cellStart);
-                    if (cell.IsDerived)
+                    var cellStart = boundaries[i - 1];
+                    var cellEnd = boundaries[i];
+                    if (!persistedCoverage.Any(c => c.Start < cellEnd && c.End > cellStart))
                         AppendBookedCell(cellStart, cellEnd);
-                    if (cellEnd > cursor)
-                        cursor = cellEnd;
                 }
-                if (cursor < endTimeOnly)
-                    AppendBookedCell(cursor, endTimeOnly);
                 continue;
             }
 

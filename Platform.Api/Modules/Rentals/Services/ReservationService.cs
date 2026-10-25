@@ -262,6 +262,7 @@ public sealed class ReservationService(
             decimal totalAmount = 0m;
             var requiresDeposit = false;
             var itemResponses = new List<(ReservationItem Item, Guid AssetId, string AssetName)>();
+            var validatedSlotIds = new List<Guid>();
             var queuedLocations = new List<RentalAsset>();
 
             foreach (var itemRequest in request.Items)
@@ -311,6 +312,10 @@ public sealed class ReservationService(
                     }
 
                     slotGridWindows = plan.Windows;
+                    // Shared Goods keep schedule cells open; reservations account for quantity.
+                    // A Slot has only one ReservationId and cannot represent shared occupancy.
+                    if (rental.Type == RentalAssetType.Location || rental.TotalQuantity == 1)
+                        validatedSlotIds.AddRange(plan.PersistedSlotIds);
                 }
 
                 var reservedQuantity = await GetReservedQuantityAsync(
@@ -388,18 +393,10 @@ public sealed class ReservationService(
 
             dbContext.Reservations.Add(reservation);
 
-            var slotGridRentalIds = itemResponses
-                .Where(i => i.Item.RentalAsset.SchedulePolicy == SchedulePolicy.SlotGrid)
-                .Select(i => i.Item.RentalAssetId)
-                .ToList();
-            var normalizedEnd = TenantBookingClock.NormalizeEndTime(request.EndTime);
             var coveredSlots = await dbContext.Slots
-                .Where(s => s.TenantId == tenantId && slotGridRentalIds.Contains(s.RentalAssetId)
-                    && s.Date == request.Date && s.StartTime >= request.StartTime
-                    && s.StartTime < normalizedEnd)
+                .Where(s => s.TenantId == tenantId && validatedSlotIds.Contains(s.Id))
                 .ToListAsync(cancellationToken);
-            foreach (var slot in coveredSlots.Where(s =>
-                         TenantBookingClock.NormalizeEndTime(s.EndTime) <= normalizedEnd))
+            foreach (var slot in coveredSlots)
             {
                 slot.MarkBooked(reservation.Id);
             }
@@ -902,6 +899,15 @@ public sealed class ReservationService(
 
         var normalizedEnd = TenantBookingClock.NormalizeEndTime(endTime);
         var windows = new List<(TimeOnly Start, TimeOnly End)>();
+        var persistedSlotIds = new List<Guid>();
+        if (persistedSlots.Any(s => s.StartTime < normalizedEnd
+            && TenantBookingClock.NormalizeEndTime(s.EndTime) > startTime
+            && (s.Status != SlotStatus.Available || !s.OccupancyKind.IsActive
+                || !s.OccupancyKind.IsBookableByCustomer)))
+        {
+            return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+        }
+
         var cursor = startTime;
 
         while (cursor < normalizedEnd)
@@ -922,7 +928,7 @@ public sealed class ReservationService(
                 var winner = templateWindows.FirstOrDefault(w => w.Start == cursor);
                 if (winner.Template is null)
                 {
-                    return new SlotGridWindowPlan(false, windows);
+                    return new SlotGridWindowPlan(false, windows, persistedSlotIds);
                 }
 
                 windowEnd = TenantBookingClock.NormalizeEndTime(winner.End);
@@ -932,38 +938,41 @@ public sealed class ReservationService(
 
             if (!open || windowEnd <= cursor)
             {
-                return new SlotGridWindowPlan(false, windows);
+                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
             }
 
+            if (persisted is not null)
+                persistedSlotIds.Add(persisted.Id);
             windows.Add((cursor, windowEnd));
             cursor = windowEnd;
         }
 
         if (cursor != normalizedEnd)
         {
-            return new SlotGridWindowPlan(false, windows);
+            return new SlotGridWindowPlan(false, windows, persistedSlotIds);
         }
 
         if (windows.Count > 1)
         {
             if (string.IsNullOrWhiteSpace(rental.AllowedDurationMinutes))
             {
-                return new SlotGridWindowPlan(false, windows);
+                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
             }
 
             var totalMinutes = (TenantBookingClock.EndOfDayTime(normalizedEnd) - startTime.ToTimeSpan()).TotalMinutes;
             if (!OpenHoursRules.ParseDurations(rental.AllowedDurationMinutes).Any(minutes => minutes == totalMinutes))
             {
-                return new SlotGridWindowPlan(false, windows);
+                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
             }
         }
 
-        return new SlotGridWindowPlan(true, windows);
+        return new SlotGridWindowPlan(true, windows, persistedSlotIds);
     }
 
     private readonly record struct SlotGridWindowPlan(
         bool IsOpen,
-        IReadOnlyList<(TimeOnly Start, TimeOnly End)> Windows);
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)> Windows,
+        IReadOnlyList<Guid> PersistedSlotIds);
 
     /// <summary>
     /// Slot prices apply to each window; hourly bands use each window's elapsed time.
@@ -996,17 +1005,48 @@ public sealed class ReservationService(
             var windowHours = (decimal)(TenantBookingClock.EndAtLocal(date, window.End, zone)
                 - TenantBookingClock.AtLocal(date, window.Start, zone)).TotalHours;
             var pricing = BookingOffer.ForDerivedWindow(
-                prices.Where(p => (p.PricingUnit == PricingUnit.Slot || p.PricingUnit == PricingUnit.Hour)
+                prices.Where(p => p.PricingUnit == PricingUnit.Slot
                     && p.StartTime <= window.Start
                     && p.EndTime >= TenantBookingClock.NormalizeEndTime(window.End)),
                 windowHours, quantity);
-            if (pricing is null)
+            decimal? cellTotal = pricing is null ? null : BookingOffer.Total(pricing, windowHours, quantity);
+
+            var hourlyPrices = prices.Where(p => p.PricingUnit == PricingUnit.Hour).ToList();
+            var boundaries = hourlyPrices.SelectMany(p => new[] { p.StartTime, p.EndTime })
+                .Where(t => t > window.Start && t < window.End)
+                .Append(window.Start).Append(window.End).Distinct().Order().ToList();
+            decimal? hourlyTotal = 0m;
+            RentalPricing? lastHourlyPrice = null;
+            for (var i = 1; i < boundaries.Count; i++)
+            {
+                var segmentStart = boundaries[i - 1];
+                var segmentEnd = boundaries[i];
+                var segmentHours = (decimal)(TenantBookingClock.EndAtLocal(date, segmentEnd, zone)
+                    - TenantBookingClock.AtLocal(date, segmentStart, zone)).TotalHours;
+                var hourlyPrice = BookingOffer.ForDerivedWindow(
+                    hourlyPrices.Where(p => p.StartTime <= segmentStart && p.EndTime >= segmentEnd),
+                    segmentHours, quantity);
+                if (hourlyPrice is null)
+                {
+                    hourlyTotal = null;
+                    break;
+                }
+                hourlyTotal += BookingOffer.Total(hourlyPrice, segmentHours, quantity);
+                lastHourlyPrice = hourlyPrice;
+            }
+
+            if (hourlyTotal is not null && (cellTotal is null || hourlyTotal < cellTotal))
+            {
+                cellTotal = hourlyTotal;
+                pricing = lastHourlyPrice;
+            }
+            if (cellTotal is null)
             {
                 windowTotal = null;
                 break;
             }
 
-            windowTotal += BookingOffer.Total(pricing, windowHours, quantity);
+            windowTotal += cellTotal;
             lastWindowPrice = pricing;
         }
 
