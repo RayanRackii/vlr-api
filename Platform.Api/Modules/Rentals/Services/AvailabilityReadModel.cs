@@ -553,7 +553,11 @@ internal sealed class AvailabilityReadModel(
                 assetName,
                 date,
                 TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(start, zone).DateTime),
-                TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime),
+                // A booking that runs past civil midnight ends the day at 23:59 so staff
+                // grids never see an end (00:00) that sorts before its start.
+                end >= dayEnd
+                    ? new TimeOnly(23, 59)
+                    : TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime),
                 openKind.Id,
                 openKind.Key,
                 openKind.Label,
