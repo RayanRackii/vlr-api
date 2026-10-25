@@ -94,7 +94,11 @@ public sealed class TenantTimeZoneSettingTests
         Assert.Equal(Day.AddDays(-1), BrazilTimeZone.GetCivilDate(reservation.StartDateTime));
 
         var adminDay = await Schedule(h).GetDayAsync(Day, h.Primary.Id, customerFacing: false, default);
-        Assert.Equal([new TimeOnly(11, 0)], adminDay.Slots.Select(s => s.StartTime));
+        Assert.Equal([new TimeOnly(11, 0)], adminDay.Slots
+            .Where(s => s.Status == Core.Domain.Enums.SlotStatus.Available).Select(s => s.StartTime));
+        var booked = Assert.Single(adminDay.Slots, s => s.Status == Core.Domain.Enums.SlotStatus.Booked);
+        Assert.Equal((new TimeOnly(10, 0), new TimeOnly(11, 0), (Guid?)reservation.Id),
+            (booked.StartTime, booked.EndTime, booked.ReservationId));
     }
 
     [Fact]

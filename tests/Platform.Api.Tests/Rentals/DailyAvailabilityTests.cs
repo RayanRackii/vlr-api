@@ -440,11 +440,16 @@ internal sealed class AvailabilityHarness : IAsyncDisposable
     public ScheduleTemplate Template(int start, int end, OccupancyKind kind) => new()
     { TenantId = Tenant.Id, RentalAssetId = Primary.Id, DayOfWeek = Day.DayOfWeek, StartTime = new(start, 0),
         EndTime = new(end, 0), OccupancyKindId = kind.Id, IsActive = true };
-    public async Task ReserveAsync(RentalAsset resource, int quantity, TimeOnly start, TimeOnly end)
+    public async Task<Reservation> ReserveAsync(
+        RentalAsset resource,
+        int quantity,
+        TimeOnly start,
+        TimeOnly end,
+        ReservationStatus status = ReservationStatus.Confirmed)
     {
         var customer = new Customer { TenantId = resource.TenantId, Name = "Private customer", Phone = "5511000000000" };
         var reservation = new Reservation { TenantId = resource.TenantId, UnitId = Unit.Id, CustomerId = customer.Id,
-            CustomerName = "Private customer", CustomerWhatsApp = "Private phone", Status = ReservationStatus.Confirmed,
+            CustomerName = "Private customer", CustomerWhatsApp = "Private phone", Status = status,
             StartDateTime = BrazilTimeZone.AtLocal(Day, start), EndDateTime = BrazilTimeZone.AtLocal(Day, end),
             TotalAmount = 20, DepositPaid = 0 };
         var item = new ReservationItem { TenantId = resource.TenantId, ReservationId = reservation.Id,
@@ -452,6 +457,7 @@ internal sealed class AvailabilityHarness : IAsyncDisposable
         reservation.AddItem(item);
         Db.AddRange(customer, reservation);
         await Db.SaveChangesAsync();
+        return reservation;
     }
     public Task<DailyAvailabilityResponseDto> ReadAsync(DateOnly? date = null, Guid[]? ids = null,
         Guid? unitId = null, int quantity = 1, int? duration = null) =>
