@@ -2334,6 +2334,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("price_per_hour");
 
+                    b.Property<string>("PricingUnit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Hour")
+                        .HasColumnName("pricing_unit");
+
                     b.Property<Guid>("RentalAssetId")
                         .HasColumnType("uuid")
                         .HasColumnName("rental_asset_id");

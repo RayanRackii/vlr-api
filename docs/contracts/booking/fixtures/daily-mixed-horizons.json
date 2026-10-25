@@ -24,7 +24,8 @@
           "state": "Available",
           "reasonCode": null,
           "availableQuantity": 5,
-          "totalAmount": 20
+          "totalAmount": 20,
+          "pricingUnit": "Hour"
         }
       ]
     },
@@ -47,7 +48,8 @@
           "state": "OutsideHorizon",
           "reasonCode": "booking_horizon_exceeded",
           "availableQuantity": 1,
-          "totalAmount": 20
+          "totalAmount": 20,
+          "pricingUnit": "Hour"
         }
       ]
     }

@@ -20,6 +20,43 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class DailyAvailabilityTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Slot_pricing_quotes_one_window_per_quantity_and_exposes_its_unit(bool persisted)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        h.Primary.AllowedDurationMinutes = "30,60";
+        foreach (var price in await h.Db.RentalPricings.ToListAsync())
+        {
+            price.PricePerHour = 20.01m;
+            price.PricingUnit = PricingUnit.Slot;
+        }
+        if (persisted) h.Db.Slots.Add(h.Slot(10, 11, SlotStatus.Available));
+        await h.Db.SaveChangesAsync();
+
+        var windows = Assert.Single((await h.ReadAsync(quantity: 3)).Resources).Windows;
+        Assert.Contains(windows, w => w.EndTime - w.StartTime == TimeSpan.FromMinutes(30));
+        Assert.Contains(windows, w => w.EndTime - w.StartTime == TimeSpan.FromMinutes(60));
+        Assert.All(windows, w =>
+        {
+            Assert.Equal(60.03m, w.TotalAmount);
+            Assert.Equal(PricingUnit.Slot, w.PricingUnit);
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+            Assert.Equal("Slot", JsonSerializer.SerializeToElement(w, options).GetProperty("pricingUnit").GetString());
+        });
+
+        h.Db.RentalPricings.RemoveRange(await h.Db.RentalPricings.ToListAsync());
+        await h.Db.SaveChangesAsync();
+        Assert.All(Assert.Single((await h.ReadAsync()).Resources).Windows, w =>
+        {
+            Assert.Equal(AvailabilityWindowState.Unpriced, w.State);
+            Assert.Null(w.TotalAmount);
+            Assert.Null(w.PricingUnit);
+        });
+    }
+
+    [Theory]
     [InlineData(9, 0, 10, 0)]
     [InlineData(12, 0, 13, 0)]
     [InlineData(10, 0, 10, 30)]

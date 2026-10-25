@@ -211,7 +211,8 @@
               "state": "Past",
               "reasonCode": "START_IN_THE_PAST",
               "availableQuantity": 0,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -221,7 +222,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -231,7 +233,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -241,7 +244,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -251,7 +255,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -261,7 +266,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -271,7 +277,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             }
           ]
         }

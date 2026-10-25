@@ -88,6 +88,7 @@ public sealed class ReservationService(
         };
 
         decimal? estimatedTotal = null;
+        PricingUnit? pricingUnit = null;
         string? reason = null;
 
         if (!isAvailable)
@@ -118,14 +119,17 @@ public sealed class ReservationService(
         {
             try
             {
-                var unitPrice = await ResolveHourlyPriceAsync(
+                var hours = (decimal)(end - start).TotalHours;
+                var pricing = await ResolvePricingAsync(
                     rental.Id,
                     request.Date,
                     request.StartTime,
                     request.EndTime,
+                    hours,
+                    quantity,
                     cancellationToken);
-                var hours = (decimal)(end - start).TotalHours;
-                estimatedTotal = RoundMoney(unitPrice * hours * quantity);
+                estimatedTotal = BookingOffer.Total(pricing, hours, quantity);
+                pricingUnit = pricing.PricingUnit;
             }
             catch (InvalidOperationException ex)
             {
@@ -138,7 +142,8 @@ public sealed class ReservationService(
             RequestedQuantity: quantity,
             AvailableQuantity: availableQuantity,
             EstimatedTotalAmount: estimatedTotal,
-            Reason: isAvailable && estimatedTotal is not null ? null : reason);
+            Reason: isAvailable && estimatedTotal is not null ? null : reason,
+            PricingUnit: pricingUnit);
     }
 
     public async Task<ReservationResponseDto> CreateReservationAsync(
@@ -313,14 +318,16 @@ public sealed class ReservationService(
 
                 requiresDeposit |= rental.RequiresDeposit;
 
-                var unitPrice = await ResolveHourlyPriceAsync(
+                var pricing = await ResolvePricingAsync(
                     rental.Id,
                     request.Date,
                     request.StartTime,
                     request.EndTime,
+                    hours,
+                    quantity,
                     cancellationToken);
 
-                var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
+                var subTotal = BookingOffer.Total(pricing, hours, quantity);
                 totalAmount += subTotal;
 
                 var item = new ReservationItem
@@ -329,7 +336,7 @@ public sealed class ReservationService(
                     ReservationId = reservation.Id,
                     RentalAssetId = rental.Id,
                     Quantity = quantity,
-                    UnitPrice = unitPrice,
+                    UnitPrice = pricing.PricePerHour,
                     SubTotal = subTotal,
                 };
 
@@ -880,20 +887,24 @@ public sealed class ReservationService(
         return await query.SumAsync(x => x.Quantity, cancellationToken);
     }
 
-    private async Task<decimal> ResolveHourlyPriceAsync(
+    private async Task<RentalPricing> ResolvePricingAsync(
         Guid rentalAssetId,
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
+        decimal hours,
+        int quantity,
         CancellationToken cancellationToken)
     {
         var dayOfWeek = date.DayOfWeek;
 
-        var pricing = await BookingOffer.ForDerivedWindow(dbContext.RentalPricings
+        var prices = await dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId && p.DayOfWeek == dayOfWeek)
-            .Where(p => p.StartTime <= startTime && p.EndTime >= endTime))
-            .FirstOrDefaultAsync(cancellationToken);
+            .Where(p => p.StartTime <= startTime && p.EndTime >= endTime)
+            .OrderBy(p => p.PricePerHour)
+            .ToListAsync(cancellationToken);
+        var pricing = BookingOffer.ForDerivedWindow(prices, hours, quantity);
 
         if (pricing is null)
         {
@@ -901,7 +912,7 @@ public sealed class ReservationService(
                 "No rental pricing covers the requested day and time window.");
         }
 
-        return pricing.PricePerHour;
+        return pricing;
     }
 
     private async Task EnsureUnitExistsAsync(Guid unitId, CancellationToken cancellationToken)

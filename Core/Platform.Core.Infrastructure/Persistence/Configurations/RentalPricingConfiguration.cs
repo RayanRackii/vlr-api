@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Infrastructure.Persistence.Configurations;
 
@@ -32,6 +33,12 @@ public sealed class RentalPricingConfiguration : IEntityTypeConfiguration<Rental
 
         builder.Property(p => p.PricePerHour)
             .HasColumnType("decimal(18,2)")
+            .IsRequired();
+
+        builder.Property(p => p.PricingUnit)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .HasDefaultValue(PricingUnit.Hour)
             .IsRequired();
 
         builder.Property(p => p.RequiresDeposit)

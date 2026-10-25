@@ -27,7 +27,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": "<slot:booked 09-10>",
@@ -37,7 +38,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -47,7 +49,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -57,7 +60,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             }
           ]
         }
@@ -195,7 +199,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": "<slot:booked 09-10>",
@@ -205,7 +210,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 1,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -215,7 +221,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -225,7 +232,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 1,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             }
           ]
         }

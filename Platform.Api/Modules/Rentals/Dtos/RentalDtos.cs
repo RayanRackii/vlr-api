@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Contracts.ResourceVisuals;
@@ -89,7 +90,9 @@ public sealed record CheckAvailabilityResponseDto(
     int RequestedQuantity,
     int AvailableQuantity,
     decimal? EstimatedTotalAmount,
-    string? Reason);
+    string? Reason,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<PricingUnit>))]
+    PricingUnit? PricingUnit = null);
 
 public sealed record CreateReservationItemRequestDto
 {
@@ -150,6 +153,11 @@ public sealed record UpdateRentalPricingDto
 
     public required decimal PricePerHour { get; init; }
 
+    /// <summary>Omitted or null preserves the current pricing unit.</summary>
+    [EnumDataType(typeof(PricingUnit))]
+    [JsonConverter(typeof(JsonStringEnumConverter<PricingUnit>))]
+    public PricingUnit? PricingUnit { get; init; }
+
     public required bool RequiresDeposit { get; init; }
 
     public required decimal DepositPercentage { get; init; }
@@ -167,7 +175,9 @@ public sealed record RentalPricingResponseDto(
     bool RequiresDeposit,
     decimal DepositPercentage,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<PricingUnit>))]
+    PricingUnit PricingUnit = PricingUnit.Hour);
 
 public sealed record BulkApplyPricingsRequest
 {
@@ -187,6 +197,10 @@ public sealed record BulkPricingRowDto
     public required TimeOnly EndTime { get; init; }
 
     public required decimal PricePerHour { get; init; }
+
+    [EnumDataType(typeof(PricingUnit))]
+    [JsonConverter(typeof(JsonStringEnumConverter<PricingUnit>))]
+    public PricingUnit PricingUnit { get; init; } = PricingUnit.Hour;
 
     public required bool RequiresDeposit { get; init; }
 

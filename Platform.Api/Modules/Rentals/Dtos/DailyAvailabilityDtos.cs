@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Rentals.Dtos;
 
@@ -17,4 +18,6 @@ public sealed record ResourceAvailabilityDto(
 public sealed record AvailabilityWindowDto(
     Guid? SlotId, TimeOnly StartTime, TimeOnly EndTime, bool IsDerived,
     [property: JsonConverter(typeof(JsonStringEnumConverter<AvailabilityWindowState>))]
-    AvailabilityWindowState State, string? ReasonCode, int AvailableQuantity, decimal? TotalAmount);
+    AvailabilityWindowState State, string? ReasonCode, int AvailableQuantity, decimal? TotalAmount,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<PricingUnit>))]
+    PricingUnit? PricingUnit = null);

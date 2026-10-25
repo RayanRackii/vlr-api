@@ -55,6 +55,7 @@ public sealed class RentalPricingService(
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             PricePerHour = RoundMoney(request.PricePerHour),
+            PricingUnit = request.PricingUnit,
             RequiresDeposit = request.RequiresDeposit,
             DepositPercentage = RoundMoney(request.DepositPercentage),
         };
@@ -97,6 +98,7 @@ public sealed class RentalPricingService(
         pricing.StartTime = request.StartTime;
         pricing.EndTime = request.EndTime;
         pricing.PricePerHour = RoundMoney(request.PricePerHour);
+        pricing.PricingUnit = request.PricingUnit ?? pricing.PricingUnit;
         pricing.RequiresDeposit = request.RequiresDeposit;
         pricing.DepositPercentage = RoundMoney(request.DepositPercentage);
         pricing.Touch();
@@ -165,6 +167,7 @@ public sealed class RentalPricingService(
                         StartTime = row.StartTime,
                         EndTime = row.EndTime,
                         PricePerHour = RoundMoney(row.PricePerHour),
+                        PricingUnit = row.PricingUnit,
                         RequiresDeposit = row.RequiresDeposit,
                         DepositPercentage = RoundMoney(row.DepositPercentage),
                     });
@@ -379,5 +382,6 @@ public sealed class RentalPricingService(
             pricing.RequiresDeposit,
             pricing.DepositPercentage,
             pricing.CreatedAt,
-            pricing.UpdatedAt);
+            pricing.UpdatedAt,
+            pricing.PricingUnit);
 }

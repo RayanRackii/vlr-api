@@ -43,7 +43,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 1,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -53,7 +54,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 1,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             }
           ]
         }

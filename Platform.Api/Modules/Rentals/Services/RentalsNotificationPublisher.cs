@@ -290,6 +290,7 @@ public sealed class RentalsNotificationPublisher(
         var date = DateOnly.FromDateTime(startLocal.Date);
         var startTime = TimeOnly.FromTimeSpan(startLocal.TimeOfDay);
         var endTime = TimeOnly.FromTimeSpan(endLocal.TimeOfDay);
+        var hours = (decimal)(reservation.EndDateTime - reservation.StartDateTime).TotalHours;
         decimal deposit = 0m;
         var counted = 0;
 
@@ -315,14 +316,19 @@ public sealed class RentalsNotificationPublisher(
                 continue;
             }
 
-            var percentage = await dbContext.RentalPricings
+            var prices = await dbContext.RentalPricings
                 .AsNoTracking()
                 .Where(pricing => pricing.TenantId == tenantId && pricing.RentalAssetId == item.RentalAssetId)
                 .Where(pricing => pricing.DayOfWeek == date.DayOfWeek)
                 .Where(pricing => pricing.StartTime <= startTime && pricing.EndTime >= endTime)
                 .OrderBy(pricing => pricing.PricePerHour)
-                .Select(pricing => (decimal?)pricing.DepositPercentage)
-                .FirstOrDefaultAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
+            // Prefer the row the booking actually priced with (same unit price and subtotal), so both
+            // booking routes (persisted slot / derived window) agree with the deposit row.
+            var booked = prices.Where(pricing => pricing.PricePerHour == item.UnitPrice
+                && BookingOffer.Total(pricing, hours, item.Quantity) == item.SubTotal).ToList();
+            var percentage = BookingOffer.ForDerivedWindow(booked.Count > 0 ? booked : prices, hours, item.Quantity)
+                ?.DepositPercentage;
 
             if (percentage is null)
             {
