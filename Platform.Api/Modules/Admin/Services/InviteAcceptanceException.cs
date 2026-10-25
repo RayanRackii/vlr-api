@@ -36,4 +36,10 @@ public static class InviteAcceptanceCodes
     /// Nothing is linked and the password is left untouched.
     /// </summary>
     public const string IdentityConflict = "INVITE_IDENTITY_CONFLICT";
+
+    /// <summary>
+    /// Preview only: the invite was already accepted. The membership exists; the
+    /// client should resume tenant selection (signed in) or send the user to login.
+    /// </summary>
+    public const string AlreadyAccepted = "INVITE_ALREADY_ACCEPTED";
 }

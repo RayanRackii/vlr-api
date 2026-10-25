@@ -327,7 +327,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken)
     {
         using var _ = PlatformScope.Begin(logger, "staff-invite-preview");
-        var invite = await LoadPendingInviteAsync(token, cancellationToken);
+        var invite = await LoadPendingInviteAsync(token, cancellationToken, typedAlreadyAccepted: true);
         var existingAuthId = await ResolveExistingAuthIdAsync(invite.Email, cancellationToken);
         var tenantName = await dbContext.Tenants
             .AsNoTracking()
@@ -409,7 +409,8 @@ public sealed class TenantUserAdminService(
 
     private async Task<UserInvite> LoadPendingInviteAsync(
         string? token,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool typedAlreadyAccepted = false)
     {
         var normalized = token?.Trim() ?? string.Empty;
         if (normalized.Length == 0)
@@ -424,6 +425,15 @@ public sealed class TenantUserAdminService(
             .Include(item => item.InviteRoles)
             .FirstOrDefaultAsync(item => item.Token == normalized, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found or is invalid.");
+
+        // Preview after a successful accept (reload, back, second tab) gets a typed
+        // code so the client can resume the tenant picker instead of "invalid link".
+        if (typedAlreadyAccepted && invite.RevokedAt is null && invite.AcceptedAt is not null)
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.AlreadyAccepted,
+                StatusCodes.Status409Conflict);
+        }
 
         EnsurePendingInvite(invite);
         return invite;
