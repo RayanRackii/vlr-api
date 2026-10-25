@@ -17,6 +17,37 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class ReservationReminderJobTests
 {
+    [Theory]
+    [InlineData(ReservationStatus.Confirmed, 1, false)]
+    [InlineData(ReservationStatus.Confirmed, 0, true)]
+    [InlineData(ReservationStatus.Confirmed, -1, true)]
+    [InlineData(ReservationStatus.PendingDeposit, 1, false)]
+    [InlineData(ReservationStatus.PendingDeposit, 0, true)]
+    public async Task Reminder_requires_booking_at_least_24_hours_before_start(
+        ReservationStatus status, long ticksAfterCutoff, bool shouldSend)
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        await EnableReminderEmailAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        var start = now.AddHours(12);
+        await SeedAsync(ctx, status, start);
+        var reservation = await ctx.Harness.Db.Reservations.SingleAsync();
+        ctx.Harness.Db.Entry(reservation).Property(r => r.CreatedAt).CurrentValue =
+            start.AddHours(-24).AddTicks(ticksAfterCutoff);
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(shouldSend ? 1 : 0, ctx.WhatsApp.SendCount);
+        Assert.Equal(shouldSend ? 1 : 0, ctx.Email.SendCount);
+        if (!shouldSend)
+        {
+            Assert.Empty(ctx.Scheduler.Scheduled);
+        }
+    }
+
     [Fact]
     public void Lead_window_is_24_hours_before_start()
     {
@@ -508,6 +539,11 @@ public sealed class ReservationReminderJobTests
         DateTimeOffset start)
     {
         ctx.Harness.SeedOverlappingReservation(status, start, start.AddHours(1));
+        foreach (var entry in ctx.Harness.Db.ChangeTracker.Entries<Reservation>()
+            .Where(entry => entry.State == EntityState.Added))
+        {
+            entry.Property(r => r.CreatedAt).CurrentValue = start.AddDays(-2);
+        }
         await ctx.Harness.Db.SaveChangesAsync();
     }
 
@@ -718,6 +754,7 @@ public sealed class ReservationReminderJobTests
         db.RentalAssets.Add(rental);
         db.Customers.Add(customer);
         db.Reservations.Add(reservation);
+        db.Entry(reservation).Property(r => r.CreatedAt).CurrentValue = start.AddDays(-2);
         await db.SaveChangesAsync();
 
         var publisher = new RentalsNotificationPublisher(

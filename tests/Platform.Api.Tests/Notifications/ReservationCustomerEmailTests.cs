@@ -17,6 +17,43 @@ namespace Platform.Api.Tests.Notifications;
 
 public sealed class ReservationCustomerEmailTests
 {
+    [Theory]
+    [InlineData("America/Manaus", "2026-10-25T14:00:00Z", "Manaus, GMT-4")]
+    [InlineData("America/New_York", "2026-10-25T14:00:00Z", "Nova York, GMT-4")]
+    [InlineData("America/New_York", "2026-11-02T15:00:00Z", "Nova York, GMT-5")]
+    [InlineData("America/Sao_Paulo", "2026-10-25T13:00:00Z", "São Paulo, GMT-3")]
+    [InlineData("Asia/Kolkata", "2026-10-25T04:30:00Z", "Kolkata, GMT+5:30")]
+    [InlineData("Etc/UTC", "2026-10-25T10:00:00Z", "UTC, GMT")]
+    [InlineData("America/Port_of_Spain", "2026-10-25T14:00:00Z", "Port of Spain, GMT-4")]
+    [InlineData("America/Manaus", "2026-10-25T14:00:00Z", "Manaus, GMT-4", RentalEventTypes.ReservationReminder)]
+    [InlineData("America/New_York", "2026-10-25T14:00:00Z", "Nova York, GMT-4", RentalEventTypes.ReservationReminder)]
+    [InlineData("America/New_York", "2026-11-02T15:00:00Z", "Nova York, GMT-5", RentalEventTypes.ReservationReminder)]
+    public async Task Published_email_labels_schedule_with_tenant_zone_at_reservation_start(
+        string zoneId, string start, string expected, string eventType = RentalEventTypes.ReservationConfirmed)
+    {
+        await using var seeded = await PublisherSeed.CreateAsync(localWindowCovers: true);
+        seeded.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = seeded.TenantId,
+            Key = TenantSettingKeys.BookingTimeZoneId,
+            Value = zoneId,
+        });
+        (await seeded.Db.TenantNotificationChannelConfigs.SingleAsync()).EventType = eventType;
+        seeded.Reservation.StartDateTime = DateTimeOffset.Parse(start);
+        seeded.Reservation.EndDateTime = seeded.Reservation.StartDateTime.AddHours(1);
+        await seeded.Db.SaveChangesAsync();
+        var publisher = new RentalsNotificationPublisher(
+            seeded.Db, seeded.TenantProvider, NullLogger<RentalsNotificationPublisher>.Instance);
+
+        await publisher.PublishReservationEventAsync(seeded.Reservation, eventType);
+        await seeded.Db.SaveChangesAsync();
+
+        var notification = await seeded.Db.Notifications.SingleAsync();
+        var rendered = ReservationCustomerEmail.Render(notification.EventType, notification.Payload);
+        Assert.Contains($"10:00–11:00 (horário de {expected})", rendered.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains($"10:00–11:00 (horário de {expected})", rendered.TextBody, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Confirmed_email_includes_schedule_price_tenant_and_link_without_deposit()
     {
@@ -41,6 +78,9 @@ public sealed class ReservationCustomerEmailTests
         Assert.Contains("Total:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains(ReservationCustomerEmail.FormatMoney(80m)!, rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Ver reserva", rendered.HtmlBody, StringComparison.Ordinal);
+        Assert.Equal(1, rendered.HtmlBody.Split(url, StringSplitOptions.None).Length - 1);
+        Assert.NotNull(url);
+        Assert.Contains(url, rendered.TextBody, StringComparison.Ordinal);
         Assert.Contains($"/t/estudio/agenda?reservation={reservationId:D}", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Depósito:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Rolvix", rendered.HtmlBody, StringComparison.Ordinal);

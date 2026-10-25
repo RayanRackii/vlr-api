@@ -143,7 +143,8 @@ public sealed class ReservationReminderJob(
                     continue;
                 }
 
-                if (!ReservationReminderSchedule.IsInLeadWindow(reservation.StartDateTime, now))
+                if (!ReservationReminderSchedule.ShouldSendReminder(
+                    reservation.StartDateTime, reservation.CreatedAt, now))
                 {
                     continue;
                 }
