@@ -449,7 +449,8 @@ public sealed class ReservationService(
             await dbContext.SaveChangesAsync(cancellationToken);
             var response = ToResponse(reservation, itemResponses,
                 await policies.ReadTenantAsync(tenantId, cancellationToken),
-                await policies.ReadCategoriesAsync(tenantId, cancellationToken));
+                await policies.ReadCategoriesAsync(tenantId, cancellationToken),
+                await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -487,6 +488,7 @@ public sealed class ReservationService(
 
         var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
         var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);
+        var pricing = await ReservationItemPricing.ReadAsync(dbContext, reservations, cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -495,7 +497,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList(), tenantPolicy, categories))
+                    .ToList(), tenantPolicy, categories, pricing))
             .ToList();
     }
 
@@ -545,6 +547,7 @@ public sealed class ReservationService(
 
         var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
         var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);
+        var pricing = await ReservationItemPricing.ReadAsync(dbContext, reservations, cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -553,7 +556,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList(), tenantPolicy, categories))
+                    .ToList(), tenantPolicy, categories, pricing))
             .ToList();
     }
 
@@ -846,7 +849,8 @@ public sealed class ReservationService(
                     i.RentalAsset.Asset.Name))
                 .ToList(),
             await policies.ReadTenantAsync(reservation.TenantId, cancellationToken),
-            await policies.ReadCategoriesAsync(reservation.TenantId, cancellationToken));
+            await policies.ReadCategoriesAsync(reservation.TenantId, cancellationToken),
+            await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
 
     private Task<Reservation?> LoadReservationWithItemsAsync(
         Guid reservationId,
@@ -1266,7 +1270,8 @@ public sealed class ReservationService(
     private static ReservationResponseDto ToResponse(
         Reservation reservation,
         IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items,
-        BookingPolicy? tenantPolicy, IReadOnlyDictionary<Guid, BookingPolicy> categories) =>
+        BookingPolicy? tenantPolicy, IReadOnlyDictionary<Guid, BookingPolicy> categories,
+        IReadOnlyDictionary<Guid, ReservationItemPricing> pricing) =>
         new(
             reservation.Id,
             reservation.TenantId,
@@ -1287,7 +1292,9 @@ public sealed class ReservationService(
                 x.AssetName,
                 x.Item.Quantity,
                 x.Item.UnitPrice,
-                x.Item.SubTotal)).ToList(),
+                x.Item.SubTotal,
+                pricing.GetValueOrDefault(x.Item.Id)?.Unit,
+                pricing.GetValueOrDefault(x.Item.Id)?.Days)).ToList(),
             PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime,
                 items.Select(x => x.Item.RentalAsset), categories, tenantPolicy));
 }
