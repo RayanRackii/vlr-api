@@ -3909,6 +3909,11 @@
             "nullable": true,
             "type": "integer"
           },
+          "familyId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
