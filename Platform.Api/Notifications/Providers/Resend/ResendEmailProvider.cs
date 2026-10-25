@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace Platform.Api.Notifications.Providers.Resend;
@@ -54,6 +56,12 @@ public sealed class ResendEmailProvider : IEmailProvider
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);
 
+            if (response.StatusCode == HttpStatusCode.TooManyRequests && IsDailyQuotaExceeded(error))
+            {
+                // The outbox owns scheduling and emits the single, sanitized warning.
+                throw new EmailDeferredException();
+            }
+
             _logger.LogError(
                 "Resend rejected email to {Recipient}. Status: {Status}. Response: {Response}",
                 recipient,
@@ -65,5 +73,21 @@ public sealed class ResendEmailProvider : IEmailProvider
         }
 
         _logger.LogInformation("Email sent to {Recipient} via Resend.", recipient);
+    }
+
+    private static bool IsDailyQuotaExceeded(string error)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(error);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("name", out var name)
+                && name.ValueKind == JsonValueKind.String
+                && name.GetString() == "daily_quota_exceeded";
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }
