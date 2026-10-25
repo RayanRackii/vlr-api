@@ -221,7 +221,7 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Slot does not belong to the given unit.");
             }
 
-            var end = TenantBookingClock.AtLocal(slot.Date, slot.EndTime, zone);
+            var end = TenantBookingClock.EndAtLocal(slot.Date, slot.EndTime, zone);
             if (end <= start)
             {
                 throw new ArgumentException("End time must be after start time.");
@@ -386,6 +386,7 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken)
     {
         var dayOfWeek = date.DayOfWeek;
+        endTime = TenantBookingClock.NormalizeEndTime(endTime);
         var pricing = await BookingOffer.ForPersistedSlot(dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId

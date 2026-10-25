@@ -836,7 +836,7 @@ public sealed class ReservationService(
         if (persisted is not null)
         {
             return persisted.Status == SlotStatus.Available
-                   && persisted.EndTime == endTime
+                   && TenantBookingClock.NormalizeEndTime(persisted.EndTime) == TenantBookingClock.NormalizeEndTime(endTime)
                    && persisted.OccupancyKind.IsActive
                    && persisted.OccupancyKind.IsBookableByCustomer;
         }
@@ -851,7 +851,8 @@ public sealed class ReservationService(
             .ToListAsync(cancellationToken);
 
         var exactWinners = OccupancyPrecedence.SplitWinningWindows(templates)
-            .Where(window => window.Start == startTime && window.End == endTime)
+            .Where(window => window.Start == startTime
+                && TenantBookingClock.NormalizeEndTime(window.End) == TenantBookingClock.NormalizeEndTime(endTime))
             .ToList();
 
         return exactWinners.Count == 1
@@ -898,6 +899,7 @@ public sealed class ReservationService(
     {
         var dayOfWeek = date.DayOfWeek;
 
+        endTime = TenantBookingClock.NormalizeEndTime(endTime);
         var prices = await dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId && p.DayOfWeek == dayOfWeek)
@@ -955,7 +957,7 @@ public sealed class ReservationService(
         TimeZoneInfo zone)
     {
         var start = TenantBookingClock.AtLocal(date, startTime, zone);
-        var end = TenantBookingClock.AtLocal(date, endTime, zone);
+        var end = TenantBookingClock.EndAtLocal(date, endTime, zone);
         if (end <= start)
         {
             throw new ArgumentException("EndTime must be greater than StartTime.");

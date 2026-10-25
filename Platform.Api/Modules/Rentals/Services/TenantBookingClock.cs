@@ -25,6 +25,20 @@ internal static class TenantBookingClock
         DateOnly date, TimeZoneInfo zone) =>
         TenantTimeZoneProvider.CivilDay(date, zone);
 
+    public static readonly TimeOnly DayClose = new(23, 59, 59);
+
+    public static bool IsDayClose(TimeOnly endTime) => endTime >= DayClose;
+
+    public static TimeOnly NormalizeEndTime(TimeOnly endTime) =>
+        IsDayClose(endTime) ? DayClose : endTime;
+
+    public static TimeSpan EndOfDayTime(TimeOnly endTime) =>
+        IsDayClose(endTime) ? TimeSpan.FromDays(1) : endTime.ToTimeSpan();
+
+    // TimeOnly cannot represent 24:00; the final second denotes the exclusive civil-day end.
+    public static DateTimeOffset EndAtLocal(DateOnly date, TimeOnly endTime, TimeZoneInfo zone) =>
+        IsDayClose(endTime) ? CivilDay(date, zone).EndExclusive : AtLocal(date, endTime, zone);
+
     public static DateTimeOffset AtLocal(DateOnly date, TimeOnly time, TimeZoneInfo zone) =>
         TenantTimeZoneProvider.AtLocal(date, time, zone);
 }
