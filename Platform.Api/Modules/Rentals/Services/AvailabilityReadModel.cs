@@ -93,8 +93,24 @@ internal sealed class AvailabilityReadModel(
 
         if (customerFacing)
         {
+            var reservedWindows = await LoadReservedWindowsAsync(
+                tenantId, date, persistedEntities.Select(s => s.RentalAssetId).Distinct().ToList(),
+                zone, cancellationToken);
+            var availablePersistedIds = persistedEntities.Where(slot =>
+            {
+                var reserved = reservedWindows.TryGetValue(slot.RentalAssetId, out var windows)
+                    ? SumOverlapping(windows,
+                        TenantBookingClock.AtLocal(slot.Date, slot.StartTime, zone),
+                        TenantBookingClock.EndAtLocal(slot.Date, slot.EndTime, zone))
+                    : 0;
+                return slot.RentalAsset.Type == RentalAssetType.Location
+                    ? reserved == 0
+                    : reserved < slot.RentalAsset.TotalQuantity;
+            }).Select(slot => slot.Id).ToHashSet();
+
             all = all.Where(s =>
                 s.Status == SlotStatus.Available && s.IsBookableByCustomer
+                && (s.IsDerived || availablePersistedIds.Contains(s.Id))
                 && !ReservationBookingRules.StartsBeforeNow(
                     TenantBookingClock.AtLocal(s.Date, s.StartTime, zone), timeProvider));
         }

@@ -1031,7 +1031,8 @@ public sealed class ReservationService(
                     hourlyTotal = null;
                     break;
                 }
-                hourlyTotal += BookingOffer.Total(hourlyPrice, segmentHours, quantity);
+                // Keep hourly fragments unrounded until the complete item total is known.
+                hourlyTotal += hourlyPrice.PricePerHour * segmentHours * quantity;
                 lastHourlyPrice = hourlyPrice;
             }
 

@@ -70,6 +70,44 @@ public sealed class MultiSlotSlotGridReservationTests
     }
 
     [Theory]
+    [InlineData(60, false)]
+    [InlineData(30, false)]
+    [InlineData(20, false)]
+    [InlineData(15, false)]
+    [InlineData(60, true)]
+    [InlineData(30, true)]
+    [InlineData(20, true)]
+    [InlineData(15, true)]
+    public async Task Hourly_total_is_independent_of_grid_partition(int cellMinutes, bool windowSpecificRates)
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        for (var minute = 0; minute < 60; minute += cellMinutes)
+            h.AddGridWindow(Ten.AddMinutes(minute), Ten.AddMinutes(minute + cellMinutes), 100m);
+        if (windowSpecificRates)
+        {
+            foreach (var pricing in h.Db.RentalPricings.Local)
+                pricing.PricingUnit = PricingUnit.Hour;
+        }
+        else
+        {
+            h.Db.RentalPricings.RemoveRange(h.Db.RentalPricings.Local.ToList());
+            h.Db.RentalPricings.Add(new RentalPricing
+            {
+                TenantId = h.TenantId, RentalAssetId = h.RentalAssetId, DayOfWeek = CivilDate.DayOfWeek,
+                StartTime = Ten, EndTime = Eleven, PricePerHour = 100m, PricingUnit = PricingUnit.Hour,
+                RequiresDeposit = false, DepositPercentage = 0,
+            });
+        }
+        h.Rental.AllowedDurationMinutes = "60";
+        await h.Db.SaveChangesAsync();
+
+        var quote = await h.CheckAsync(Ten, Eleven);
+        Assert.True(quote.IsAvailable, quote.Reason);
+        Assert.Equal(100m, quote.EstimatedTotalAmount);
+        Assert.Equal(100m, (await h.CreateAsync(Ten, Eleven)).TotalAmount);
+    }
+
+    [Theory]
     [InlineData(false, 75)]
     [InlineData(true, 60)]
     public async Task Hourly_bands_inside_a_cell_are_split_and_compared_with_slot_offers(bool includeSlotOffer, decimal expected)
@@ -417,14 +455,22 @@ public sealed class MultiSlotSlotGridReservationTests
         var remaining = await h.CheckAsync(Ten, end);
         Assert.True(remaining.IsAvailable, remaining.Reason);
         Assert.Equal(1, remaining.AvailableQuantity);
+        Assert.Equal(multiWindow ? 2 : 1, (await h.Schedule.GetDayAsync(
+            CivilDate, h.RentalAssetId, true, CancellationToken.None)).Slots.Count);
         var second = await h.CreateAsync(Ten, end);
         Assert.NotEqual(first.Id, second.Id);
+        Assert.Empty((await h.Schedule.GetDayAsync(
+            CivilDate, h.RentalAssetId, true, CancellationToken.None)).Slots);
         Assert.False((await h.CheckAsync(Ten, end)).IsAvailable);
         await Assert.ThrowsAsync<InvalidOperationException>(() => h.CreateAsync(Ten, end));
 
         await h.Reservations.CancelByCustomerAsync(h.CustomerId, first.Id, CancellationToken.None);
         Assert.True((await h.CheckAsync(Ten, end)).IsAvailable);
+        Assert.Equal(multiWindow ? 2 : 1, (await h.Schedule.GetDayAsync(
+            CivilDate, h.RentalAssetId, true, CancellationToken.None)).Slots.Count);
         await h.CreateAsync(Ten, end);
+        Assert.Empty((await h.Schedule.GetDayAsync(
+            CivilDate, h.RentalAssetId, true, CancellationToken.None)).Slots);
         Assert.False((await h.CheckAsync(Ten, end)).IsAvailable);
         Assert.All(h.Db.Slots.Local, s =>
         {
