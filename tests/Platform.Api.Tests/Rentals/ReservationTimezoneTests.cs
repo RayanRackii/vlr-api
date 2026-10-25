@@ -13,6 +13,167 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class ReservationTimezoneTests
 {
+    [Theory]
+    [InlineData(7, 0, 8, 0, "not open for the requested interval")]
+    [InlineData(23, 0, 23, 30, "not open for the requested interval")]
+    [InlineData(10, 0, 10, 30, "duration is not allowed")]
+    [InlineData(10, 0, 11, 0, null)]
+    public async Task BookSlotAsync_enforces_OpenHours_for_persisted_slots(
+        int startHour, int startMinute, int endHour, int endMinute, string? expectedError)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var slot = await h.SeedAvailableSlotAsync(
+            new TimeOnly(startHour, startMinute), new TimeOnly(endHour, endMinute));
+        var request = new BookSlotRequestDto { SlotId = slot.Id, UnitId = h.UnitId, Quantity = 1 };
+
+        if (expectedError is null)
+        {
+            var booked = await h.Schedule.BookSlotAsync(h.CustomerId, request, CancellationToken.None);
+            Assert.NotEqual(Guid.Empty, booked.Id);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                h.Schedule.BookSlotAsync(h.CustomerId, request, CancellationToken.None));
+            Assert.Contains(expectedError, error.Message);
+            Assert.Empty(await h.Db.Reservations.ToListAsync());
+            Assert.Equal(SlotStatus.Available, slot.Status);
+        }
+    }
+
+    [Theory]
+    [InlineData(9, 30, 10, 30, "60", null)]
+    [InlineData(8, 0, 9, 0, "60", null)]
+    [InlineData(22, 0, 23, 0, "60", null)]
+    [InlineData(7, 30, 8, 30, "60", "not open for the requested interval")]
+    [InlineData(22, 30, 23, 30, "60", "not open for the requested interval")]
+    [InlineData(10, 0, 10, 30, "60", "duration is not allowed")]
+    [InlineData(10, 0, 11, 0, null, null)]
+    [InlineData(10, 0, 10, 30, null, "duration is not allowed")]
+    [InlineData(10, 0, 11, 0, "bad,0,-1,1440", null)]
+    [InlineData(10, 0, 10, 30, "bad,0,-1,1440", "duration is not allowed")]
+    [InlineData(10, 0, 10, 30, " 30,60,30,bad ", null)]
+    public async Task OpenHours_create_and_availability_enforce_civil_hours_and_durations(
+        int startHour, int startMinute, int endHour, int endMinute,
+        string? durations, string? expectedError)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.AllowedDurationMinutes = durations;
+        await h.Db.SaveChangesAsync();
+        var start = new TimeOnly(startHour, startMinute);
+        var end = new TimeOnly(endHour, endMinute);
+
+        var availability = await h.Reservations.CheckAvailabilityAsync(
+            new CheckAvailabilityRequestDto
+            {
+                AssetId = h.AssetId, Date = CivilDate,
+                StartTime = start, EndTime = end, Quantity = 1,
+            }, CancellationToken.None);
+
+        Assert.Equal(expectedError is null, availability.IsAvailable);
+        if (expectedError is null)
+        {
+            var created = await h.Reservations.CreateReservationAsync(
+                h.CustomerId, h.CreateRequest(start, end), CancellationToken.None);
+            Assert.NotEqual(Guid.Empty, created.Id);
+        }
+        else
+        {
+            Assert.Contains(expectedError, availability.Reason!);
+            Assert.Null(availability.EstimatedTotalAmount);
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                h.Reservations.CreateReservationAsync(
+                    h.CustomerId, h.CreateRequest(start, end), CancellationToken.None));
+            Assert.Contains(expectedError, error.Message);
+            Assert.Empty(await h.Db.Reservations.ToListAsync());
+        }
+    }
+
+    [Theory]
+    [InlineData(null, 23)]
+    [InlineData(8, null)]
+    [InlineData(8, 8)]
+    [InlineData(23, 8)]
+    public async Task OpenHours_missing_or_invalid_hours_are_not_bookable(int? openHour, int? closeHour)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.OpenTime = openHour.HasValue ? new TimeOnly(openHour.Value, 0) : null;
+        rental.CloseTime = closeHour.HasValue ? new TimeOnly(closeHour.Value, 0) : null;
+        await h.Db.SaveChangesAsync();
+
+        var availability = await h.Reservations.CheckAvailabilityAsync(
+            new CheckAvailabilityRequestDto
+            {
+                AssetId = h.AssetId, Date = CivilDate,
+                StartTime = Ten, EndTime = Eleven, Quantity = 1,
+            }, CancellationToken.None);
+        Assert.False(availability.IsAvailable);
+        Assert.Contains("not open for the requested interval", availability.Reason!);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            h.Reservations.CreateReservationAsync(
+                h.CustomerId, h.CreateRequest(Ten, Eleven), CancellationToken.None));
+        Assert.Contains("not open for the requested interval", error.Message);
+        Assert.Empty(await h.Db.Reservations.ToListAsync());
+    }
+
+    [Fact]
+    public async Task OpenHours_duration_uses_wall_clock_minutes_in_tenant_zone_across_DST()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        await h.UseNewYorkTimeAsync();
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.OpenTime = new TimeOnly(1, 0);
+        rental.CloseTime = new TimeOnly(4, 0);
+        rental.AllowedDurationMinutes = "120";
+        var pricing = await h.Db.RentalPricings.SingleAsync();
+        pricing.DayOfWeek = NewYorkSpringForward.DayOfWeek;
+        pricing.StartTime = new TimeOnly(1, 0);
+        pricing.EndTime = new TimeOnly(4, 0);
+        await h.Db.SaveChangesAsync();
+        var request = h.CreateRequest(new TimeOnly(1, 30), new TimeOnly(3, 30)) with
+        {
+            Date = NewYorkSpringForward,
+        };
+
+        var availability = await h.Reservations.CheckAvailabilityAsync(
+            new CheckAvailabilityRequestDto
+            {
+                AssetId = h.AssetId, Date = request.Date,
+                StartTime = request.StartTime, EndTime = request.EndTime, Quantity = 1,
+            }, CancellationToken.None);
+        Assert.True(availability.IsAvailable);
+        var created = await h.Reservations.CreateReservationAsync(
+            h.CustomerId, request, CancellationToken.None);
+        AssertEqualUtc(created.StartDateTime, 2026, 3, 8, 6, 30);
+        AssertEqualUtc(created.EndDateTime, 2026, 3, 8, 7, 30);
+    }
+
+    [Fact]
+    public async Task SlotGrid_does_not_apply_OpenHours_duration_or_opening_hours()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.SchedulePolicy = SchedulePolicy.SlotGrid;
+        rental.OpenTime = null;
+        rental.CloseTime = null;
+        await h.Db.SaveChangesAsync();
+        var end = new TimeOnly(10, 30);
+        await h.SeedAvailableSlotAsync(Ten, end);
+
+        var availability = await h.Reservations.CheckAvailabilityAsync(
+            new CheckAvailabilityRequestDto
+            {
+                AssetId = h.AssetId, Date = CivilDate,
+                StartTime = Ten, EndTime = end, Quantity = 1,
+            }, CancellationToken.None);
+        Assert.True(availability.IsAvailable);
+        var created = await h.Reservations.CreateReservationAsync(
+            h.CustomerId, h.CreateRequest(Ten, end), CancellationToken.None);
+        Assert.Equal(TimeSpan.FromMinutes(30), created.EndDateTime - created.StartDateTime);
+    }
+
     private static readonly DateOnly NewYorkSpringForward = new(2026, 3, 8);
     private static readonly TimeOnly GapStart = new(2, 30);
     private static readonly TimeOnly GapEnd = new(3, 0);

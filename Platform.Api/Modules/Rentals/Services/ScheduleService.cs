@@ -227,6 +227,13 @@ public sealed class ScheduleService(
                 throw new ArgumentException("End time must be after start time.");
             }
 
+            if (slot.RentalAsset.SchedulePolicy == SchedulePolicy.OpenHours
+                && OpenHoursRules.ValidateInterval(slot.RentalAsset, slot.StartTime, slot.EndTime,
+                    slot.RentalAsset.Asset.Name) is { } intervalError)
+            {
+                throw new InvalidOperationException(intervalError);
+            }
+
             var hours = (decimal)(end - start).TotalHours;
 
             var reservedQuantity = await GetReservedQuantityAsync(

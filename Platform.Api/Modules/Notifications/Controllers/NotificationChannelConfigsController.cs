@@ -44,11 +44,16 @@ public sealed class NotificationChannelConfigsController(
         {
             return Unauthorized(new { error = ex.Message });
         }
-        catch (TenantModuleInactiveException)
+        catch (TenantModuleInactiveException ex)
         {
             return StatusCode(
                 StatusCodes.Status403Forbidden,
-                new { error = RequireActiveModuleAttribute.InactiveModuleError });
+                new
+                {
+                    error = RequireActiveModuleAttribute.InactiveModuleError,
+                    code = RequireActiveModuleAttribute.InactiveModuleCode,
+                    module = ex.ModuleKey,
+                });
         }
     }
 }

@@ -792,7 +792,8 @@ public sealed class TenantUserAdminService(
 
         var portalHost = string.IsNullOrWhiteSpace(tenant?.Subdomain)
             ? null
-            : $"{tenant.Subdomain.Trim().ToLowerInvariant()}.rolvix.com.br";
+            : FrontendBaseUrlResolver.ResolveTenantPortalHost(configuration, tenant.Subdomain);
+        var tenantPortalHostTemplate = FrontendBaseUrlResolver.ResolveTenantPortalHostTemplate(configuration);
 
         var roleNames = await StaffInviteRoleNames.LoadAsync(
             dbContext,
@@ -803,7 +804,13 @@ public sealed class TenantUserAdminService(
 
         var htmlBody = RolvixEmailLayout.Wrap(
             invite.FullName,
-            RolvixEmailLayout.InviteBody(inviteUrl, companyName, portalHost, roleNames: roleNames));
+            RolvixEmailLayout.InviteBody(
+                inviteUrl,
+                companyName,
+                portalHost,
+                roleNames: roleNames,
+                frontendBaseUrl: frontendBaseUrl,
+                tenantPortalHostTemplate: tenantPortalHostTemplate));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(

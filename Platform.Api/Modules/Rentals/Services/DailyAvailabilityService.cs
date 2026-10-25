@@ -98,7 +98,7 @@ public sealed class DailyAvailabilityService(
             else if (resource.OpenTime is { } open && resource.CloseTime is { } close && close > open)
             {
                 var openKind = kinds.Values.FirstOrDefault(k => k.Key == "open" && k.IsActive);
-                foreach (var minutes in ParseDurations(resource.AllowedDurationMinutes))
+                foreach (var minutes in OpenHoursRules.ParseDurations(resource.AllowedDurationMinutes))
                 {
                     var cursor = open;
                     while (true)
@@ -129,9 +129,12 @@ public sealed class DailyAvailabilityService(
                     && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, window.Start, window.End)
                     && (s.Status == SlotStatus.Cancelled || !kinds.TryGetValue(s.OccupancyKindId, out var kind)
                         || !kind.IsActive || (kind.BlocksCapacity && !kind.IsBookableByCustomer)));
+                var invalidOpenHours = resource.SchedulePolicy == SchedulePolicy.OpenHours
+                    && window.Status != SlotStatus.Booked
+                    && OpenHoursRules.ValidateInterval(resource, window.Start, window.End, resource.Asset.Name) is not null;
                 var blocked = window.Status == SlotStatus.Cancelled || window.Kind is not { IsActive: true, IsBookableByCustomer: true }
-                    || blockingOverlap;
-                if (blockingOverlap || window.Status == SlotStatus.Cancelled || start < now
+                    || blockingOverlap || invalidOpenHours;
+                if (blockingOverlap || invalidOpenHours || window.Status == SlotStatus.Cancelled || start < now
                     || window.Kind is { BlocksCapacity: true, IsBookableByCustomer: false }) available = 0;
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
                     && p.StartTime <= window.Start && p.EndTime >= window.End).AsQueryable();
@@ -167,12 +170,5 @@ public sealed class DailyAvailabilityService(
         TenantId = tenantId, Key = "unconfigured", Label = "Unavailable", IsActive = false,
         BlocksCapacity = true, IsBookableByCustomer = false, SortOrder = 0,
     };
-    private static IEnumerable<int> ParseDurations(string? value)
-    {
-        var durations = (value ?? "").Split(',')
-            .Select(s => int.TryParse(s.Trim(), out var minutes) ? minutes : 0)
-            .Where(minutes => minutes is > 0 and < 1440).Distinct().Order().ToList();
-        return durations.Count == 0 ? [60] : durations;
-    }
     private sealed record Window(Guid? Id, TimeOnly Start, TimeOnly End, OccupancyKind? Kind, SlotStatus Status);
 }

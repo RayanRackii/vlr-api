@@ -253,6 +253,7 @@ public sealed class NotificationChannelConfigServiceTests
                 Request(RentalEventTypes.ReservationConfirmed, NotificationChannel.WhatsApp, true),
                 CancellationToken.None));
         Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, ex.Message);
+        Assert.Equal(PlatformModules.Rentals, ex.ModuleKey);
     }
 
     [Fact]

@@ -82,6 +82,8 @@ public sealed class RentalsReadinessHttpTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, body.RootElement.GetProperty("error").GetString());
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleCode, body.RootElement.GetProperty("code").GetString());
+        Assert.Equal(PlatformModules.Rentals, body.RootElement.GetProperty("module").GetString());
     }
 
     [Theory]

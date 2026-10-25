@@ -268,7 +268,7 @@ public sealed class ReservationPastStartTests
                 SchedulePolicy = SchedulePolicy.OpenHours,
                 OpenTime = TimeOnly.MinValue,
                 CloseTime = new TimeOnly(23, 59),
-                AllowedDurationMinutes = "60",
+                AllowedDurationMinutes = "30,60",
                 QueueEnabled = false,
             };
 

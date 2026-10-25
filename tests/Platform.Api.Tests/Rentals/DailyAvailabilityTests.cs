@@ -19,6 +19,44 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class DailyAvailabilityTests
 {
+    [Theory]
+    [InlineData(9, 0, 10, 0)]
+    [InlineData(12, 0, 13, 0)]
+    [InlineData(10, 0, 10, 30)]
+    public async Task Invalid_persisted_OpenHours_slots_are_blocked(
+        int startHour, int startMinute, int endHour, int endMinute)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        var slot = h.Slot(startHour, endHour, SlotStatus.Available);
+        slot.StartTime = new(startHour, startMinute);
+        slot.EndTime = new(endHour, endMinute);
+        h.Db.Slots.Add(slot);
+        await h.Db.SaveChangesAsync();
+
+        var windows = Assert.Single((await h.ReadAsync()).Resources).Windows;
+        var window = Assert.Single(windows, w => w.SlotId == slot.Id);
+        Assert.Equal(AvailabilityWindowState.Blocked, window.State);
+        Assert.Equal(0, window.AvailableQuantity);
+        Assert.Contains(windows, w => w.State == AvailabilityWindowState.Available);
+    }
+
+    [Theory]
+    [InlineData(SlotStatus.Booked, AvailabilityWindowState.Taken)]
+    [InlineData(SlotStatus.Cancelled, AvailabilityWindowState.Blocked)]
+    public async Task Invalid_persisted_OpenHours_slots_keep_occupied_and_blocked_windows_visible(
+        SlotStatus status, AvailabilityWindowState expectedState)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        var slot = h.Slot(9, 10, status);
+        h.Db.Slots.Add(slot);
+        await h.Db.SaveChangesAsync();
+        if (status == SlotStatus.Booked)
+            await h.ReserveAsync(h.Primary, 1, new(9, 0), new(10, 0));
+
+        var window = Assert.Single((await h.ReadAsync()).Resources[0].Windows, w => w.SlotId == slot.Id);
+        Assert.Equal(expectedState, window.State);
+    }
+
     [Fact]
     public async Task DST_gap_interval_that_inverts_in_UTC_is_omitted()
     {

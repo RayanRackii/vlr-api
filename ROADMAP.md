@@ -9,6 +9,14 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## R8 — correções de API (2026-10-24, fix/r8-api-batch)
+
+- [x] H1: reserva e consulta de disponibilidade em recurso `OpenHours` validam expediente (`OpenTime`/`CloseTime`, hora civil do tenant) e duração permitida (`AllowedDurationMinutes`, fallback 60 min); SlotGrid inalterado. Regras em `OpenHoursRules`.
+- [x] Tenant novo com módulo `rentals` ganha item de menu B2C genérico `Reservar horário` (agenda geral).
+- [x] Convites de staff: host do painel/login vêm de `App:FrontendBaseUrl`; host do portal público vem de `App:TenantPortalHostTemplate` (default `{subdomain}.rolvix.com.br`). PROD inalterado com os defaults.
+- [x] 403 de módulo inativo: `error` mantido + `code: "module_inactive"` + `module` (aditivo).
+- [ ] DEV: configurar `App__TenantPortalHostTemplate` (e conferir `App__FrontendBaseUrl`) no Fly DEV — ação do Rayan.
+
 ## QA bots R7 em DEV (2026-10-23) — follow-ups (CONDITIONAL PASS, sem Blocker/High)
 
 Gate R7 rodado em DEV (API develop-6f2c72d, web develop 89ec097) antes do release PROD. Itens abaixo ficam como follow-ups; nenhum bloqueia o release.
@@ -104,6 +112,7 @@ Decisões: sidebar estilo admin; vários itens por módulo com label livre; hera
 - [x] Entidade `TenantModuleMenuItem` + migration `AddTenantModuleMenuItems` (+ seed FICC “Alugar quadra”).
 - [x] `GET /api/public/tenants/{subdomain}/menu`.
 - [x] CRUD tenant `/api/module-menu-items` + platform `/api/admin/tenants/{id}/module-menu-items`.
+- [x] Provisionamento de tenant novo com `rentals` cria um único item B2C ativo de agenda geral (`Reservar horário`, ordem 0, sem `RentalAssetId`); tenants sem `rentals` não recebem item. Sem migration.
 - [x] Configuração genérica de inatividade por item de menu: `BookingIdleTimeoutMinutes` nullable (1–120) e `BookingIdleRedirectPath` nullable (path local, até 200 chars); código merged e released em PROD em 2026-10-21. Create/update Super-Admin validam com 400 `{ error }`; DTO compartilhado de leitura/admin e menu público expõe os dois campos em camelCase. Null usa o default do portal; PUT omitido/null limpa. Migration `AddMenuItemBookingIdleTimeout` aplicada e validada em DEV; released em PROD (2026-10-21). 21 casos de teste adicionados; validação operacional em `docs/sessions/2026-10-19-booking-idle-timeout.md`.
 - [ ] Validar a suíte com PostgreSQL temporário em ambiente com sockets locais habilitados; migration aplicada e validada em DEV; released em PROD em 2026-10-21. No `vlr-web`, consumir/configurar esses valores no Super-Admin e no controle de inatividade da reserva.
 - [x] Agenda B2C: assets públicos, availability, create, mine (já existia; item de menu pré-seleciona asset).

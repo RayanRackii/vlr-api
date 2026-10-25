@@ -79,7 +79,7 @@ public sealed class NotificationChannelConfigService(
 
         if (!activeModules.Contains(eventCapability.ModuleKey))
         {
-            throw new TenantModuleInactiveException();
+            throw new TenantModuleInactiveException(eventCapability.ModuleKey);
         }
 
         if (!NotificationChannelCapability.TryGetChannel(request.EventType, request.Channel, out var channelCapability)

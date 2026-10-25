@@ -323,6 +323,41 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
     }
 
     [Fact]
+    public async Task Create_rentals_adds_the_default_active_portal_menu_item()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("rentals-menu", [PlatformModules.Rentals], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        var item = await harness.Db.TenantModuleMenuItems
+            .IgnoreQueryFilters()
+            .SingleAsync(menuItem => menuItem.TenantId == created.Id);
+
+        Assert.Equal(PlatformModules.Rentals, item.ModuleName);
+        Assert.Equal("Reservar horário", item.Label);
+        Assert.Equal(0, item.SortOrder);
+        Assert.True(item.IsActive);
+        Assert.Null(item.RentalAssetId);
+    }
+
+    [Fact]
+    public async Task Create_without_rentals_does_not_add_a_portal_menu_item()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("catalog-menu", [PlatformModules.Catalog], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        Assert.Empty(await harness.Db.TenantModuleMenuItems
+            .IgnoreQueryFilters()
+            .Where(menuItem => menuItem.TenantId == created.Id)
+            .ToListAsync());
+    }
+
+    [Fact]
     public async Task Create_catalog_only_is_valid_without_inventory_or_categories()
     {
         await using var harness = await Harness.CreateAsync();
