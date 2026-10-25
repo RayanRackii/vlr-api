@@ -98,6 +98,42 @@ public sealed class AssetRegistryTests
     }
 
     [Fact]
+    public async Task Inventory_create_without_tag_generates_one_and_update_keeps_it()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var service = harness.CreateService();
+        CreateAssetRequest NoTag(string name) => new()
+        {
+            UnitId = harness.UnitId,
+            CategoryId = harness.CategoryId,
+            FamilyId = harness.FamilyId,
+            Name = name,
+            Tag = "  ",
+            Status = AssetStatus.Active,
+            IsRentable = false,
+        };
+
+        var first = await service.CreateAsync(NoTag("A"), CancellationToken.None);
+        var second = await service.CreateAsync(NoTag("B"), CancellationToken.None);
+        var updated = await service.UpdateAsync(
+            first.Id,
+            new UpdateAssetRequest
+            {
+                UnitId = harness.UnitId,
+                CategoryId = harness.CategoryId,
+                FamilyId = harness.FamilyId,
+                Name = "A2",
+                Status = AssetStatus.Active,
+                IsRentable = false,
+            },
+            CancellationToken.None);
+
+        Assert.StartsWith("RES-", first.Tag);
+        Assert.NotEqual(first.Tag, second.Tag);
+        Assert.Equal(first.Tag, updated!.Tag);
+    }
+
+    [Fact]
     public async Task UpdateRentable_updates_existing_rentable_by_rental_asset_id()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();

@@ -1430,7 +1430,6 @@
           "categoryId",
           "familyId",
           "name",
-          "tag",
           "unitId"
         ],
         "type": "object"
@@ -4002,6 +4001,11 @@
           "schedulePolicy": {
             "$ref": "#/components/schemas/SchedulePolicy"
           },
+          "scheduledDeletionAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "tenantId": {
             "format": "uuid",
             "type": "string"
@@ -5778,7 +5782,6 @@
           "familyId",
           "name",
           "status",
-          "tag",
           "unitId"
         ],
         "type": "object"
