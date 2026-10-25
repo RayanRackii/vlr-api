@@ -23,9 +23,16 @@ public sealed class TenantProvisioner(
         dbContext.Units.Add(headquarters);
         dbContext.BookingPolicies.Add(BookingPolicyDefaults.SuggestedFor(tenant.Id));
 
-        foreach (var module in PlatformModuleCatalog.NormalizeEntitlements(modules))
+        var normalizedModules = PlatformModuleCatalog.NormalizeEntitlements(modules);
+        foreach (var module in normalizedModules)
         {
             dbContext.TenantModules.Add(new TenantModule(tenant.Id, module, isActive: true));
+        }
+
+        if (normalizedModules.Contains(PlatformModules.Rentals))
+        {
+            dbContext.TenantModuleMenuItems.Add(new TenantModuleMenuItem(
+                tenant.Id, PlatformModules.Rentals, "Reservar horário", sortOrder: 0));
         }
 
         foreach (var familyId in familyIds)
