@@ -111,7 +111,8 @@ public sealed class ExpectedPriceTests
         {
             TenantId = h.TenantId, AssetId = second.Id, Type = RentalAssetType.Good,
             TotalQuantity = 4, IsActive = true, RequiresDeposit = false,
-            SchedulePolicy = SchedulePolicy.OpenHours
+            SchedulePolicy = SchedulePolicy.OpenHours,
+            OpenTime = new TimeOnly(8, 0), CloseTime = new TimeOnly(22, 0), AllowedDurationMinutes = "60"
         };
         h.Db.AddRange(second, rental, new RentalPricing
         {
