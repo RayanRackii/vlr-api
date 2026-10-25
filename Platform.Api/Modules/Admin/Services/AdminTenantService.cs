@@ -245,6 +245,8 @@ public sealed class AdminTenantService(
 
         try
         {
+            await LockTenantModulesAsync(id, cancellationToken);
+
             var tenant = await TenantsIncludingModules()
                 .Include(t => t.ModuleMenuItems)
                 .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
@@ -330,6 +332,20 @@ public sealed class AdminTenantService(
 
             throw;
         }
+    }
+
+    private async Task LockTenantModulesAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) != true)
+        {
+            return;
+        }
+
+        var key = $"tenant-modules:{tenantId}";
+        const long seed = 0;
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({key}, {seed}))",
+            cancellationToken);
     }
 
     public Task DeleteAsync(Guid id, CancellationToken cancellationToken) =>

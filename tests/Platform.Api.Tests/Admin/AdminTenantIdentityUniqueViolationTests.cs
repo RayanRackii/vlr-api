@@ -108,7 +108,7 @@ public sealed class AdminTenantIdentityUniqueViolationTests : IClassFixture<Post
     }
 
     [DockerFact]
-    public async Task Concurrent_module_insert_is_not_reported_as_an_identity_collision()
+    public async Task Concurrent_module_enable_succeeds_and_creates_one_default_menu_item_per_module()
     {
         var factory = RequireFactory();
         await InstallUpdateDelayAsync(factory);
@@ -124,28 +124,15 @@ public sealed class AdminTenantIdentityUniqueViolationTests : IClassFixture<Post
                     CaptureUpdateAsync(factory, created.Id, request),
                     CaptureUpdateAsync(factory, created.Id, request));
 
-                if (outcomes.All(outcome => outcome.Succeeded))
-                {
-                    continue;
-                }
-
-                Assert.Equal(1, outcomes.Count(outcome => outcome.Succeeded));
-                var failure = Assert.Single(outcomes, outcome => !outcome.Succeeded).Error;
-                Assert.NotNull(failure);
-                Assert.IsNotType<InvalidOperationException>(failure);
-                Assert.NotEqual(ConflictMessage, failure.Message);
-                var postgres = FindPostgresException(failure);
-                Assert.NotNull(postgres);
-                Assert.Equal(PostgresErrorCodes.UniqueViolation, postgres.SqlState);
-                Assert.Equal("ix_tenant_modules_tenant_id_module_name", postgres.ConstraintName);
-
+                Assert.All(outcomes, outcome => Assert.True(outcome.Succeeded, outcome.Error?.ToString()));
                 Assert.Equal(created.TaxId, await TaxIdAsync(factory, created.Id));
                 Assert.Equal(created.Subdomain, await SubdomainAsync(factory, created.Id));
                 Assert.Equal(2, await ModuleCountAsync(factory, created.Id));
+                Assert.Equal(2, await MenuItemCountAsync(factory, created.Id));
                 return;
             }
 
-            Assert.Fail("Concurrent module inserts did not overlap on the unique index.");
+            Assert.Fail("Concurrent module enable requests did not overlap.");
         }
         finally
         {
@@ -343,6 +330,14 @@ public sealed class AdminTenantIdentityUniqueViolationTests : IClassFixture<Post
         return await db.TenantModules
             .IgnoreQueryFilters()
             .CountAsync(module => module.TenantId == tenantId);
+    }
+
+    private static async Task<int> MenuItemCountAsync(PostgresAppDbFactory factory, Guid tenantId)
+    {
+        await using var db = factory.Create(new FakeTenantProvider { TenantId = null });
+        return await db.TenantModuleMenuItems
+            .IgnoreQueryFilters()
+            .CountAsync(item => item.TenantId == tenantId);
     }
 
     private static AdminTenantService CreateService(AppDbContext db) =>

@@ -8,6 +8,7 @@ namespace Platform.Api.Services.Tenancy;
 /// <summary>
 /// Default customer-portal menu item created when a module is enabled for a tenant.
 /// Idempotent: a module that already has any menu item (stored or pending) is skipped.
+/// Callers must serialize access per tenant to preserve idempotency across concurrent requests.
 /// </summary>
 public static class ModuleDefaultMenuItems
 {
