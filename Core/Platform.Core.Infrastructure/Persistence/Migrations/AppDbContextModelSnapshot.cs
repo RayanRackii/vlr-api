@@ -5,8 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Platform.Core.Domain.Entities;
-using Platform.Core.Infrastructure.Persistence.Configurations;
 using Platform.Core.Infrastructure.Persistence;
 
 #nullable disable
@@ -327,6 +325,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AssetCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_category_id");
+
                     b.Property<int?>("CancelCutoffHours")
                         .HasColumnType("integer")
                         .HasColumnName("cancel_cutoff_hours");
@@ -364,10 +366,18 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_booking_policies");
 
+                    b.HasIndex("AssetCategoryId")
+                        .HasDatabaseName("ix_booking_policies_asset_category_id");
+
                     b.HasIndex("TenantId")
                         .IsUnique()
                         .HasDatabaseName("ux_booking_policies_tenant_default")
-                        .HasFilter("resource_type IS NULL");
+                        .HasFilter("resource_type IS NULL AND asset_category_id IS NULL");
+
+                    b.HasIndex("TenantId", "AssetCategoryId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_booking_policies_tenant_category")
+                        .HasFilter("asset_category_id IS NOT NULL");
 
                     b.HasIndex("TenantId", "ResourceType")
                         .IsUnique()
@@ -2793,8 +2803,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("time without time zone")
                         .HasColumnName("default_open_time");
 
-                    b.Property<List<ResourceVisualDefaultPricing>>("DefaultPricings")
-                        .HasConversion<ResourceVisualDefaultPricingsConverter, ResourceVisualDefaultPricingsComparer>()
+                    b.Property<string>("DefaultPricings")
                         .HasColumnType("jsonb")
                         .HasColumnName("default_pricings");
 
@@ -4188,6 +4197,15 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_booking_map_settings_rental_layouts_tenant_id_default_layou");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.BookingPolicy", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.AssetCategory", null)
+                        .WithMany()
+                        .HasForeignKey("AssetCategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_booking_policies_asset_categories_asset_category_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>

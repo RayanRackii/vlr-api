@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Modules.Rentals.Controllers;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Dtos;
@@ -24,6 +26,87 @@ public sealed class BookingPolicyTests
     private static readonly TimeOnly Eleven = new(11, 0);
     private static readonly TimeOnly Noon = new(12, 0);
     private static readonly TimeOnly One = new(13, 0);
+
+    [Fact]
+    public async Task Category_policy_lists_rental_categories_replaces_values_and_rejects_other_tenants()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var categories = await harness.Policies.GetCategoriesAsync(CancellationToken.None);
+        var category = Assert.Single(categories, c => c.CategoryId == asset.CategoryId);
+        Assert.Null(category.MaxAdvanceBookingDays);
+        Assert.Null(category.CancelCutoffHours);
+
+        var saved = await harness.Policies.UpsertCategoryAsync(asset.CategoryId,
+            new(14, 48), CancellationToken.None);
+        Assert.Equal(14, saved.MaxAdvanceBookingDays);
+        Assert.Equal(48, saved.CancelCutoffHours);
+        Assert.Null((await harness.Policies.GetAsync(CancellationToken.None)).MaxAdvanceBookingDays);
+        var rental = await new RentalAssetService(harness.Db, harness.TenantProvider)
+            .GetByAssetIdAsync(asset.Id, CancellationToken.None);
+        Assert.Equal(14, rental!.EffectiveMaxAdvanceBookingDays);
+        Assert.Equal(48, rental.EffectiveCancelCutoffHours);
+        var cleared = await harness.Policies.UpsertCategoryAsync(asset.CategoryId,
+            new(null, null), CancellationToken.None);
+        Assert.Null(cleared.MaxAdvanceBookingDays);
+        Assert.Null(cleared.CancelCutoffHours);
+        Assert.Contains(await harness.Policies.GetCategoriesAsync(CancellationToken.None),
+            c => c.CategoryId == asset.CategoryId && c.MaxAdvanceBookingDays == null && c.CancelCutoffHours == null);
+
+        var foreignCategory = new AssetCategory { TenantId = Guid.NewGuid(), Name = "Other tenant" };
+        harness.Db.AssetCategories.Add(foreignCategory);
+        var unusedCategory = new AssetCategory { TenantId = harness.TenantId, Name = "Unused" };
+        harness.Db.AssetCategories.Add(unusedCategory);
+        await harness.Db.SaveChangesAsync();
+        Assert.DoesNotContain(await harness.Policies.GetCategoriesAsync(CancellationToken.None),
+            c => c.CategoryId == foreignCategory.Id || c.CategoryId == unusedCategory.Id);
+        var controller = new BookingPolicyController(harness.Policies, null!);
+        var response = await controller.UpsertCategory(foreignCategory.Id, new(7, 24), CancellationToken.None);
+        Assert.IsType<NotFoundObjectResult>(response.Result);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Category_horizon_applies_to_booking_availability_and_public_day(bool slotBooking)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var rentalId = await harness.Db.RentalAssets.Where(r => r.AssetId == asset.Id)
+            .Select(r => r.Id).SingleAsync();
+        await harness.Policies.UpsertCategoryAsync(asset.CategoryId, new(1, null), CancellationToken.None);
+        var requestedDay = Day.AddDays(2);
+        await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.Reservations.CheckAvailabilityAsync(
+            new CheckAvailabilityRequestDto { AssetId = asset.Id, Date = requestedDay, StartTime = Ten, EndTime = Eleven },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.Schedule.GetDayAsync(
+            requestedDay, rentalId, customerFacing: true, CancellationToken.None));
+        if (slotBooking)
+        {
+            var slot = await harness.SeedSlotAsync(requestedDay, Ten, Eleven);
+            await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.Schedule.BookSlotAsync(
+                harness.CustomerId, new BookSlotRequestDto { SlotId = slot, UnitId = harness.UnitId }, CancellationToken.None));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.BookAsync(requestedDay, Ten, Eleven));
+        }
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(3651, 0)]
+    [InlineData(0, -1)]
+    [InlineData(0, 8761)]
+    public async Task Category_policy_rejects_invalid_values(int days, int cutoff)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var controller = new BookingPolicyController(harness.Policies, null!);
+        var response = await controller.UpsertCategory(asset.CategoryId, new(days, cutoff), CancellationToken.None);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(response.Result);
+        Assert.Equal(400, Assert.IsType<ProblemDetails>(badRequest.Value).Status);
+    }
 
     [Fact]
     public async Task Cancellation_cutoff_round_trips_preserves_omitted_and_clears_null()
@@ -75,12 +158,22 @@ public sealed class BookingPolicyTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Both_booking_paths_return_the_effective_cancellation_deadline(bool slotBooking)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Both_booking_paths_return_the_effective_cancellation_deadline(bool slotBooking, bool categoryPolicy)
     {
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
-        await harness.Policies.UpsertAsync(new UpsertBookingPolicyRequestDto { CancelCutoffHours = 24 }, CancellationToken.None);
+        if (categoryPolicy)
+        {
+            var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+            await harness.Policies.UpsertCategoryAsync(asset.CategoryId, new(null, 24), CancellationToken.None);
+        }
+        else
+        {
+            await harness.Policies.UpsertAsync(new UpsertBookingPolicyRequestDto { CancelCutoffHours = 24 }, CancellationToken.None);
+        }
         ReservationResponseDto response;
         if (slotBooking)
         {

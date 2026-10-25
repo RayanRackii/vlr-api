@@ -29,6 +29,45 @@ public sealed class BookingPolicyController(
         }
     }
 
+    [RequirePermission(Permissions.Rentals.BookingPolicyRead)]
+    [HttpGet("~/api/booking-policy/categories")]
+    public async Task<ActionResult<IReadOnlyList<CategoryBookingPolicyResponseDto>>> GetCategories(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await bookingPolicyService.GetCategoriesAsync(cancellationToken));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
+    [HttpPut("~/api/booking-policy/categories/{categoryId:guid}")]
+    public async Task<ActionResult<CategoryBookingPolicyResponseDto>> UpsertCategory(
+        Guid categoryId, [FromBody] UpsertCategoryBookingPolicyRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await bookingPolicyService.UpsertCategoryAsync(categoryId, request, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Status = 404, Title = "Not Found", Detail = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Bad Request", Detail = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
     /// <summary>
     /// Replaces the tenant default booking policy.
     /// Omitted or null <c>cancellationPolicyText</c> and

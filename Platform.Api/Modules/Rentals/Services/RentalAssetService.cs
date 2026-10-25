@@ -19,6 +19,7 @@ public sealed class RentalAssetService(
     {
         var tenantId = EnsureTenantContext();
         var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
 
         var configs = await dbContext.RentalAssets
             .AsNoTracking()
@@ -28,7 +29,7 @@ public sealed class RentalAssetService(
             .OrderBy(r => r.Asset.Name)
             .ToListAsync(cancellationToken);
 
-        return configs.Select(rental => ToResponse(rental, tenantPolicy)).ToList();
+        return configs.Select(rental => ToResponse(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy)).ToList();
     }
 
     public async Task<RentalAssetResponse?> GetByAssetIdAsync(
@@ -37,6 +38,7 @@ public sealed class RentalAssetService(
     {
         var tenantId = EnsureTenantContext();
         var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
 
         var config = await dbContext.RentalAssets
             .AsNoTracking()
@@ -46,7 +48,7 @@ public sealed class RentalAssetService(
                 r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.AssetId == assetId && r.IsActive && r.Asset.IsRentable,
                 cancellationToken);
 
-        return config is null ? null : ToResponse(config, tenantPolicy);
+        return config is null ? null : ToResponse(config, categories.GetValueOrDefault(config.Asset.CategoryId), tenantPolicy);
     }
 
     public async Task<RentalAssetResponse> UpdateSchedulePolicyAsync(
@@ -94,7 +96,8 @@ public sealed class RentalAssetService(
             }
 
             var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
-            return ToResponse(rental, tenantPolicy);
+            var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
+            return ToResponse(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy);
         }
         catch
         {
@@ -168,9 +171,10 @@ public sealed class RentalAssetService(
             }
 
             var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+            var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
             var items = rentals
                 .OrderBy(r => r.Asset.Name)
-                .Select(rental => ToResponse(rental, tenantPolicy))
+                .Select(rental => ToResponse(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy))
                 .ToList();
 
             return new BulkUpdateRentalSchedulePolicyResponseDto(items.Count, items);
@@ -212,7 +216,8 @@ public sealed class RentalAssetService(
         }
 
         var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
-        return ToResponse(rental, tenantPolicy);
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
+        return ToResponse(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy);
     }
 
     private static void ValidatePolicy(
@@ -242,7 +247,7 @@ public sealed class RentalAssetService(
             ? id : throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
-    private static RentalAssetResponse ToResponse(RentalAsset rental, BookingPolicy? tenantPolicy) =>
+    private static RentalAssetResponse ToResponse(RentalAsset rental, BookingPolicy? categoryPolicy, BookingPolicy? tenantPolicy) =>
         new(
             rental.Id,
             rental.AssetId,
@@ -264,9 +269,10 @@ public sealed class RentalAssetService(
             rental.CreatedAt,
             rental.UpdatedAt,
             rental.MaxAdvanceBookingDays,
-            PolicyResolver.Resolve(rental, tenantPolicy).MaxAdvanceBookingDays,
+            PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).MaxAdvanceBookingDays,
             rental.VisualTemplateRevisionId,
             rental.CapacityPeople,
             rental.CancelCutoffHours,
-            rental.Asset.FamilyId == Guid.Empty ? null : rental.Asset.FamilyId);
+            rental.Asset.FamilyId == Guid.Empty ? null : rental.Asset.FamilyId,
+            PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).CancelCutoffHours);
 }

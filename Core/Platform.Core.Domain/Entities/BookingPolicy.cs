@@ -34,6 +34,9 @@ public class BookingPolicy : Entity, ITenantScoped
     /// </summary>
     public RentalAssetType? ResourceType { get; set; }
 
+    /// <summary>Tenant-owned category override; null for tenant defaults and reserved type policies.</summary>
+    public Guid? AssetCategoryId { get; set; }
+
     /// <summary>Plain-text cancellation note. No refund calculation.</summary>
     public string? CancellationPolicyText { get; set; }
 

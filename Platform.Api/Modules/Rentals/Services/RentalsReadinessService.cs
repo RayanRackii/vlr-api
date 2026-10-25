@@ -18,7 +18,7 @@ public sealed class RentalsReadinessService(
         var scheduleTemplateCount = await dbContext.ScheduleTemplates.AsNoTracking()
             .CountAsync(template => template.TenantId == tenantId && template.IsActive, cancellationToken);
         var hasStoredPolicy = await dbContext.BookingPolicies.AsNoTracking()
-            .AnyAsync(policy => policy.TenantId == tenantId && policy.ResourceType == null, cancellationToken);
+            .AnyAsync(policy => policy.TenantId == tenantId && policy.ResourceType == null && policy.AssetCategoryId == null, cancellationToken);
         var visualOrMapCount =
             await dbContext.RentalAssets.AsNoTracking()
                 .CountAsync(asset => asset.TenantId == tenantId && asset.VisualTemplateRevisionId != null, cancellationToken)

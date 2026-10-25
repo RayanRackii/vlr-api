@@ -29,3 +29,13 @@ public sealed record UpsertBookingPolicyRequestDto
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> CancelCutoffHours { get; init; }
 }
+
+public sealed record CategoryBookingPolicyResponseDto(
+    Guid CategoryId,
+    string CategoryName,
+    int? MaxAdvanceBookingDays,
+    int? CancelCutoffHours);
+
+public sealed record UpsertCategoryBookingPolicyRequestDto(
+    int? MaxAdvanceBookingDays,
+    int? CancelCutoffHours);

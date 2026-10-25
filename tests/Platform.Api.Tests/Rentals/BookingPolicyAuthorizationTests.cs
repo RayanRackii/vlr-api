@@ -192,6 +192,14 @@ public sealed class BookingPolicyAuthorizationTests
 
     private sealed class StubBookingPolicyService : IBookingPolicyService
     {
+        public Task<IReadOnlyList<CategoryBookingPolicyResponseDto>> GetCategoriesAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<CategoryBookingPolicyResponseDto>>([]);
+
+        public Task<CategoryBookingPolicyResponseDto> UpsertCategoryAsync(Guid categoryId,
+            UpsertCategoryBookingPolicyRequestDto request, CancellationToken cancellationToken) =>
+            Task.FromResult(new CategoryBookingPolicyResponseDto(categoryId, "Category",
+                request.MaxAdvanceBookingDays, request.CancelCutoffHours));
+
         public Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new BookingPolicyResponseDto("Plain note", null, null));
 
