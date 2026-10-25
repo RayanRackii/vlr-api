@@ -94,6 +94,13 @@ public sealed class ReservationService(
                 ? "Location is already reserved for the requested interval."
                 : $"Insufficient quantity. Available: {availableQuantity}, requested: {quantity}.";
         }
+        else if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+                 && OpenHoursRules.ValidateInterval(
+                     rental, request.StartTime, request.EndTime, rental.Asset.Name) is { } openHoursError)
+        {
+            isAvailable = false;
+            reason = openHoursError;
+        }
         else if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
                  && !await IsSlotGridIntervalOpenAsync(
                      rental.Id,
@@ -259,6 +266,13 @@ public sealed class ReservationService(
                 if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
                 {
                     queuedLocations.Add(rental);
+                }
+
+                if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+                    && OpenHoursRules.ValidateInterval(
+                        rental, request.StartTime, request.EndTime, rental.Asset.Name) is { } openHoursError)
+                {
+                    throw new InvalidOperationException(openHoursError);
                 }
 
                 if (rental.SchedulePolicy == SchedulePolicy.SlotGrid

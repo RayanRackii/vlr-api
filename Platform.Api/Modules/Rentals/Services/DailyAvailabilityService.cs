@@ -98,7 +98,7 @@ public sealed class DailyAvailabilityService(
             else if (resource.OpenTime is { } open && resource.CloseTime is { } close && close > open)
             {
                 var openKind = kinds.Values.FirstOrDefault(k => k.Key == "open" && k.IsActive);
-                foreach (var minutes in ParseDurations(resource.AllowedDurationMinutes))
+                foreach (var minutes in OpenHoursRules.ParseDurations(resource.AllowedDurationMinutes))
                 {
                     var cursor = open;
                     while (true)
@@ -167,12 +167,5 @@ public sealed class DailyAvailabilityService(
         TenantId = tenantId, Key = "unconfigured", Label = "Unavailable", IsActive = false,
         BlocksCapacity = true, IsBookableByCustomer = false, SortOrder = 0,
     };
-    private static IEnumerable<int> ParseDurations(string? value)
-    {
-        var durations = (value ?? "").Split(',')
-            .Select(s => int.TryParse(s.Trim(), out var minutes) ? minutes : 0)
-            .Where(minutes => minutes is > 0 and < 1440).Distinct().Order().ToList();
-        return durations.Count == 0 ? [60] : durations;
-    }
     private sealed record Window(Guid? Id, TimeOnly Start, TimeOnly End, OccupancyKind? Kind, SlotStatus Status);
 }

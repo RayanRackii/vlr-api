@@ -9,6 +9,12 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## R8 — H1 OpenHours (2026-10-24; implementação local)
+
+- [x] Criação e consulta de disponibilidade validam expediente e duração civil permitida com regras compartilhadas; parser extraído da disponibilidade diária (fallback 60 min), sem alinhamento à grade.
+- [x] Regressões escritas para limites, duração/default, configuração inválida, fuso New York/DST e preservação de SlotGrid.
+- [ ] Executar `ReservationTimezoneTests` e suíte Rentals fora do sandbox (`dotnet` indisponível); concluir revisão antes de merge. Sem commit, migration ou alteração de ambiente.
+
 ## QA bots R7 em DEV (2026-10-23) — follow-ups (CONDITIONAL PASS, sem Blocker/High)
 
 Gate R7 rodado em DEV (API develop-6f2c72d, web develop 89ec097) antes do release PROD. Itens abaixo ficam como follow-ups; nenhum bloqueia o release.
