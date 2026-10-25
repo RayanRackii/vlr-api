@@ -38,7 +38,8 @@ public sealed class DailyAvailabilityService(
         var timeZoneId = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId) ? ianaId : zone.Id;
         var today = BookingHorizon.CivilToday(now, zone);
         var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
-        var tenantDays = PolicyResolver.Resolve(null, tenantPolicy).MaxAdvanceBookingDays;
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
+        var tenantDays = PolicyResolver.Resolve(null, null, tenantPolicy).MaxAdvanceBookingDays;
         var resourcesQuery = db.RentalAssets.AsNoTracking().Include(r => r.Asset)
             .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.Asset.Unit.TenantId == tenantId
                 && r.IsActive && r.Asset.IsRentable);
@@ -49,7 +50,7 @@ public sealed class DailyAvailabilityService(
         var resources = await resourcesQuery.OrderBy(r => r.Id).Take(MaxResources + 1).ToListAsync(cancellationToken);
         if (resources.Count > MaxResources) throw Limit("At most 100 resources may be returned. Narrow the scope.");
         if (resources.Count > 0 && resources.All(r =>
-                BookingHorizon.IsBeyond(date, today, PolicyResolver.Resolve(r, tenantPolicy).MaxAdvanceBookingDays)))
+                BookingHorizon.IsBeyond(date, today, PolicyResolver.Resolve(r, categories.GetValueOrDefault(r.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays)))
             throw new BookingHorizonExceededException();
         if (resources.Count == 0)
         {
@@ -119,7 +120,7 @@ public sealed class DailyAvailabilityService(
                 }
             }
             var windows = new List<AvailabilityWindowDto>();
-            var effectiveDays = PolicyResolver.Resolve(resource, tenantPolicy).MaxAdvanceBookingDays;
+            var effectiveDays = PolicyResolver.Resolve(resource, categories.GetValueOrDefault(resource.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays;
             foreach (var window in candidates.OrderBy(w => w.Start).ThenBy(w => w.End).ThenBy(w => w.Id))
             {
                 if (window.End <= window.Start || (durationMinutes.HasValue

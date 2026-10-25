@@ -4,6 +4,11 @@ namespace Platform.Api.Modules.Rentals.Services;
 
 public interface IBookingPolicyService
 {
+    Task<IReadOnlyList<CategoryBookingPolicyResponseDto>> GetCategoriesAsync(CancellationToken cancellationToken);
+
+    Task<CategoryBookingPolicyResponseDto> UpsertCategoryAsync(
+        Guid categoryId, UpsertCategoryBookingPolicyRequestDto request, CancellationToken cancellationToken);
+
     Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken);
 
     /// <summary>

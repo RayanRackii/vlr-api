@@ -66,10 +66,11 @@ public sealed class ReservationService(
 
         var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
         var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
         BookingHorizon.Ensure(
             request.Date,
             today,
-            PolicyResolver.Resolve(rental, tenantPolicy).MaxAdvanceBookingDays);
+            PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
 
         var reservedQuantity = await GetReservedQuantityAsync(
             tenantId,
@@ -370,7 +371,8 @@ public sealed class ReservationService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
             var response = ToResponse(reservation, itemResponses,
-                await policies.ReadTenantAsync(tenantId, cancellationToken));
+                await policies.ReadTenantAsync(tenantId, cancellationToken),
+                await policies.ReadCategoriesAsync(tenantId, cancellationToken));
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -407,6 +409,7 @@ public sealed class ReservationService(
             .ToListAsync(cancellationToken);
 
         var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -415,7 +418,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList(), tenantPolicy))
+                    .ToList(), tenantPolicy, categories))
             .ToList();
     }
 
@@ -464,6 +467,7 @@ public sealed class ReservationService(
             .ToListAsync(cancellationToken);
 
         var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -472,7 +476,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList(), tenantPolicy))
+                    .ToList(), tenantPolicy, categories))
             .ToList();
     }
 
@@ -691,8 +695,9 @@ public sealed class ReservationService(
             }
 
             var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+            var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
             var cutoff = PolicyResolver.StrictestCancelCutoffHours(
-                reservation.Items.Select(item => item.RentalAsset), tenantPolicy);
+                reservation.Items.Select(item => item.RentalAsset), categories, tenantPolicy);
             var now = timeProvider.GetUtcNow();
             if (cutoff is > 0 && now >= reservation.StartDateTime.AddHours(-cutoff.Value))
             {
@@ -763,7 +768,8 @@ public sealed class ReservationService(
                     i.RentalAsset.AssetId,
                     i.RentalAsset.Asset.Name))
                 .ToList(),
-            await policies.ReadTenantAsync(reservation.TenantId, cancellationToken));
+            await policies.ReadTenantAsync(reservation.TenantId, cancellationToken),
+            await policies.ReadCategoriesAsync(reservation.TenantId, cancellationToken));
 
     private Task<Reservation?> LoadReservationWithItemsAsync(
         Guid reservationId,
@@ -972,7 +978,7 @@ public sealed class ReservationService(
     private static ReservationResponseDto ToResponse(
         Reservation reservation,
         IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items,
-        BookingPolicy? tenantPolicy) =>
+        BookingPolicy? tenantPolicy, IReadOnlyDictionary<Guid, BookingPolicy> categories) =>
         new(
             reservation.Id,
             reservation.TenantId,
@@ -995,5 +1001,5 @@ public sealed class ReservationService(
                 x.Item.UnitPrice,
                 x.Item.SubTotal)).ToList(),
             PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime,
-                items.Select(x => x.Item.RentalAsset), tenantPolicy));
+                items.Select(x => x.Item.RentalAsset), categories, tenantPolicy));
 }

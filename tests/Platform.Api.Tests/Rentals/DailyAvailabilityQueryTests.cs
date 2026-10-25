@@ -9,7 +9,7 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class DailyAvailabilityQueryTests(PostgresContainerFixture fixture) : IClassFixture<PostgresContainerFixture>
 {
     [DockerFact]
-    public async Task PostgreSql_projection_uses_eight_reads_for_one_or_many_resources_and_never_writes()
+    public async Task PostgreSql_projection_uses_nine_reads_for_one_or_many_resources_and_never_writes()
     {
         Assert.NotNull(fixture.Factory);
         await using var h = await AvailabilityHarness.CreateAsync();
@@ -24,11 +24,11 @@ public sealed class DailyAvailabilityQueryTests(PostgresContainerFixture fixture
         var service = new DailyAvailabilityService(db, h.TenantProvider, h.Clock);
         var one = await service.GetAsync(AvailabilityHarness.Day, [h.Primary.Id], null, 1, null, default);
         Assert.Single(one.Resources);
-        Assert.Equal(8, counter.Reads);
+        Assert.Equal(9, counter.Reads);
         counter.Reads = 0;
         var many = await service.GetAsync(AvailabilityHarness.Day, [h.Primary.Id, other.Id], null, 1, null, default);
         Assert.Equal(2, many.Resources.Count);
-        Assert.Equal(8, counter.Reads);
+        Assert.Equal(9, counter.Reads);
         Assert.Empty(db.ChangeTracker.Entries());
     }
 

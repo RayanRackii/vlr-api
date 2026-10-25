@@ -10,20 +10,29 @@ public sealed record EffectiveBookingPolicy(
     int? MaxActiveReservationsPerCustomerPerDay,
     string? CancellationPolicyText);
 
-/// <summary>Resource overrides, then tenant defaults, then unlimited defaults.</summary>
+/// <summary>Resource overrides, then category policies, then tenant defaults, then unlimited defaults.</summary>
 public sealed class PolicyResolver(AppDbContext db)
 {
     public Task<BookingPolicy?> ReadTenantAsync(Guid tenantId, CancellationToken cancellationToken) =>
         db.BookingPolicies.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.ResourceType == null, cancellationToken);
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.ResourceType == null && p.AssetCategoryId == null, cancellationToken);
 
-    public static int? StrictestCancelCutoffHours(IEnumerable<RentalAsset> resources, BookingPolicy? tenant) =>
-        resources.Select(resource => Resolve(resource, tenant).CancelCutoffHours).Max();
+    public async Task<IReadOnlyDictionary<Guid, BookingPolicy>> ReadCategoriesAsync(
+        Guid tenantId, CancellationToken cancellationToken) =>
+        await db.BookingPolicies.AsNoTracking()
+            .Where(p => p.TenantId == tenantId && p.AssetCategoryId != null && p.ResourceType == null)
+            .ToDictionaryAsync(p => p.AssetCategoryId!.Value, cancellationToken);
+
+    public static int? StrictestCancelCutoffHours(IEnumerable<RentalAsset> resources,
+        IReadOnlyDictionary<Guid, BookingPolicy> categories, BookingPolicy? tenant) =>
+        resources.Select(resource => Resolve(resource,
+            categories.GetValueOrDefault(resource.Asset.CategoryId), tenant).CancelCutoffHours).Max();
 
     public static DateTimeOffset? CancelDeadlineUtc(
-        DateTimeOffset start, IEnumerable<RentalAsset> resources, BookingPolicy? tenant)
+        DateTimeOffset start, IEnumerable<RentalAsset> resources,
+        IReadOnlyDictionary<Guid, BookingPolicy> categories, BookingPolicy? tenant)
     {
-        var cutoff = StrictestCancelCutoffHours(resources, tenant);
+        var cutoff = StrictestCancelCutoffHours(resources, categories, tenant);
         return cutoff is > 0 ? start.AddHours(-cutoff.Value).ToUniversalTime() : null;
     }
 
@@ -34,9 +43,9 @@ public sealed class PolicyResolver(AppDbContext db)
         return hours;
     }
 
-    public static EffectiveBookingPolicy Resolve(RentalAsset? resource, BookingPolicy? tenant) =>
-        new(resource?.MaxAdvanceBookingDays ?? tenant?.MaxAdvanceBookingDays,
-            resource?.CancelCutoffHours ?? tenant?.CancelCutoffHours,
+    public static EffectiveBookingPolicy Resolve(RentalAsset? resource, BookingPolicy? category, BookingPolicy? tenant) =>
+        new(resource?.MaxAdvanceBookingDays ?? category?.MaxAdvanceBookingDays ?? tenant?.MaxAdvanceBookingDays,
+            resource?.CancelCutoffHours ?? category?.CancelCutoffHours ?? tenant?.CancelCutoffHours,
             tenant?.MaxActiveReservationsPerCustomerPerDay,
             tenant?.CancellationPolicyText);
 }

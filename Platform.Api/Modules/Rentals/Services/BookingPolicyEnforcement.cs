@@ -62,6 +62,6 @@ internal static class BookingPolicyEnforcement
         CancellationToken cancellationToken)
     {
         var policy = await new PolicyResolver(db).ReadTenantAsync(tenantId, cancellationToken);
-        return PolicyResolver.Resolve(null, policy).MaxActiveReservationsPerCustomerPerDay;
+        return PolicyResolver.Resolve(null, null, policy).MaxActiveReservationsPerCustomerPerDay;
     }
 }

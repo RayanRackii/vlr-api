@@ -1203,6 +1203,30 @@
         },
         "type": "object"
       },
+      "CategoryBookingPolicyResponseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "categoryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "categoryName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CategoryDto": {
         "additionalProperties": false,
         "properties": {
@@ -3924,6 +3948,11 @@
             "format": "date-time",
             "type": "string"
           },
+          "effectiveCancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "effectiveMaxAdvanceBookingDays": {
             "format": "int32",
             "nullable": true,
@@ -6256,6 +6285,22 @@
           "orderCancelableUpToStatus",
           "requestCancelableUpToStatus"
         ],
+        "type": "object"
+      },
+      "UpsertCategoryBookingPolicyRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "UpsertModuleMenuItemRequestDto": {
@@ -9922,6 +9967,103 @@
         },
         "tags": [
           "PasswordRecovery"
+        ]
+      }
+    },
+    "/api/booking-policy/categories": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BookingPolicy"
+        ]
+      }
+    },
+    "/api/booking-policy/categories/{categoryId}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "categoryId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BookingPolicy"
         ]
       }
     },
