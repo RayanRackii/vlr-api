@@ -73,6 +73,22 @@ public sealed class MultiDayReservationTests
         Assert.Equal(600m, created.TotalAmount);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("60")]
+    public async Task Multi_day_segments_ignore_single_day_allowed_durations(string? allowed)
+    {
+        // Regression (R13): Kit Camera 4K with default durations quoted every Dias > 1 as
+        // "requested duration is not allowed" because each day segment was checked against them.
+        await using var h = await CreateHarnessAsync();
+        (await h.Db.RentalAssets.SingleAsync()).AllowedDurationMinutes = allowed;
+        await h.Db.SaveChangesAsync();
+        var quote = await h.CreateReservationService().CheckAvailabilityAsync(
+            Quote(h, Date.AddDays(2)), CancellationToken.None);
+        Assert.True(quote.IsAvailable, quote.Reason);
+        Assert.Equal(600m, quote.EstimatedTotalAmount);
+    }
+
     private static ReservationsController Controller(LocationBookingHarness h) =>
         new(h.CreateReservationService(), null!, null!)
         {
