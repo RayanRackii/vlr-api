@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Tests.Fakes;
@@ -25,6 +26,10 @@ public sealed class RequireActiveModuleNullTenantTests
 
         var result = Assert.IsType<ObjectResult>(context.Result);
         Assert.Equal(StatusCodes.Status403Forbidden, result.StatusCode);
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(result.Value));
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, body.RootElement.GetProperty("error").GetString());
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleCode, body.RootElement.GetProperty("code").GetString());
+        Assert.Equal(PlatformModules.Rentals, body.RootElement.GetProperty("module").GetString());
     }
 
     [Fact]

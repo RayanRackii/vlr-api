@@ -16,6 +16,7 @@ namespace Platform.Api.Authorization;
 public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, IAsyncAuthorizationFilter
 {
     public const string InactiveModuleError = "Module is not active for this tenant.";
+    public const string InactiveModuleCode = "module_inactive";
 
     public string ModuleKey { get; } = moduleKey;
 
@@ -55,8 +56,11 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
         context.Result = Inactive();
     }
 
-    private static ObjectResult Inactive() =>
-        new(new { error = InactiveModuleError }) { StatusCode = StatusCodes.Status403Forbidden };
+    private ObjectResult Inactive() =>
+        new(new { error = InactiveModuleError, code = InactiveModuleCode, module = ModuleKey.Trim().ToLowerInvariant() })
+        {
+            StatusCode = StatusCodes.Status403Forbidden,
+        };
 
     private static bool IsPlatformAdminOnly(AuthorizationFilterContext context) =>
         context.ActionDescriptor.EndpointMetadata

@@ -580,6 +580,8 @@ public sealed class ModuleRuntimeGateTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(InactiveError, doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleCode, doc.RootElement.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("module").GetString()));
     }
 
     private static async Task AssertTenantMismatchAsync(HttpResponseMessage response, SeededGate seed)
