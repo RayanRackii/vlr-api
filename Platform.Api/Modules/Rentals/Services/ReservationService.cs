@@ -91,6 +91,7 @@ public sealed class ReservationService(
         decimal? estimatedTotal = null;
         PricingUnit? pricingUnit = null;
         string? reason = null;
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)>? slotGridWindows = null;
 
         if (!isAvailable)
         {
@@ -105,32 +106,47 @@ public sealed class ReservationService(
             isAvailable = false;
             reason = openHoursError;
         }
-        else if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
-                 && !await IsSlotGridIntervalOpenAsync(
-                     rental.Id,
-                     request.Date,
-                     request.StartTime,
-                     request.EndTime,
-                     cancellationToken))
+        else if (rental.SchedulePolicy == SchedulePolicy.SlotGrid)
         {
-            isAvailable = false;
-            reason = "This interval is not open for booking.";
+            var plan = await ResolveSlotGridWindowsAsync(
+                rental, request.Date, request.StartTime, request.EndTime, cancellationToken);
+            if (!plan.IsOpen)
+            {
+                isAvailable = false;
+                reason = "This interval is not open for booking.";
+            }
+            else
+            {
+                slotGridWindows = plan.Windows;
+            }
         }
-        else
+
+        if (isAvailable && reason is null)
         {
             try
             {
                 var hours = (decimal)(end - start).TotalHours;
-                var pricing = await ResolvePricingAsync(
-                    rental.Id,
-                    request.Date,
-                    request.StartTime,
-                    request.EndTime,
-                    hours,
-                    quantity,
-                    cancellationToken);
-                estimatedTotal = BookingOffer.Total(pricing, hours, quantity);
-                pricingUnit = pricing.PricingUnit;
+                if (slotGridWindows is { Count: > 1 } windows)
+                {
+                    var (total, unit, _) = await ResolveSlotGridPricingAsync(
+                        rental.Id, request.Date, request.StartTime, request.EndTime,
+                        windows, hours, quantity, zone, cancellationToken);
+                    estimatedTotal = total;
+                    pricingUnit = unit;
+                }
+                else
+                {
+                    var pricing = await ResolvePricingAsync(
+                        rental.Id,
+                        request.Date,
+                        request.StartTime,
+                        request.EndTime,
+                        hours,
+                        quantity,
+                        cancellationToken);
+                    estimatedTotal = BookingOffer.Total(pricing, hours, quantity);
+                    pricingUnit = pricing.PricingUnit;
+                }
             }
             catch (InvalidOperationException ex)
             {
@@ -283,16 +299,18 @@ public sealed class ReservationService(
                     throw new InvalidOperationException(openHoursError);
                 }
 
-                if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
-                    && !await IsSlotGridIntervalOpenAsync(
-                        rental.Id,
-                        request.Date,
-                        request.StartTime,
-                        request.EndTime,
-                        cancellationToken))
+                IReadOnlyList<(TimeOnly Start, TimeOnly End)>? slotGridWindows = null;
+                if (rental.SchedulePolicy == SchedulePolicy.SlotGrid)
                 {
-                    throw new InvalidOperationException(
-                        $"'{rental.Asset.Name}' is not open for the requested interval.");
+                    var plan = await ResolveSlotGridWindowsAsync(
+                        rental, request.Date, request.StartTime, request.EndTime, cancellationToken);
+                    if (!plan.IsOpen)
+                    {
+                        throw new InvalidOperationException(
+                            $"'{rental.Asset.Name}' is not open for the requested interval.");
+                    }
+
+                    slotGridWindows = plan.Windows;
                 }
 
                 var reservedQuantity = await GetReservedQuantityAsync(
@@ -319,16 +337,30 @@ public sealed class ReservationService(
 
                 requiresDeposit |= rental.RequiresDeposit;
 
-                var pricing = await ResolvePricingAsync(
-                    rental.Id,
-                    request.Date,
-                    request.StartTime,
-                    request.EndTime,
-                    hours,
-                    quantity,
-                    cancellationToken);
+                decimal subTotal;
+                decimal itemUnitPrice;
+                if (slotGridWindows is { Count: > 1 } windows)
+                {
+                    var (total, _, unitPrice) = await ResolveSlotGridPricingAsync(
+                        rental.Id, request.Date, request.StartTime, request.EndTime,
+                        windows, hours, quantity, zone, cancellationToken);
+                    subTotal = total;
+                    itemUnitPrice = unitPrice;
+                }
+                else
+                {
+                    var pricing = await ResolvePricingAsync(
+                        rental.Id,
+                        request.Date,
+                        request.StartTime,
+                        request.EndTime,
+                        hours,
+                        quantity,
+                        cancellationToken);
+                    subTotal = BookingOffer.Total(pricing, hours, quantity);
+                    itemUnitPrice = pricing.PricePerHour;
+                }
 
-                var subTotal = BookingOffer.Total(pricing, hours, quantity);
                 totalAmount += subTotal;
 
                 var item = new ReservationItem
@@ -337,7 +369,7 @@ public sealed class ReservationService(
                     ReservationId = reservation.Id,
                     RentalAssetId = rental.Id,
                     Quantity = quantity,
-                    UnitPrice = pricing.PricePerHour,
+                    UnitPrice = itemUnitPrice,
                     SubTotal = subTotal,
                 };
 
@@ -355,6 +387,22 @@ public sealed class ReservationService(
             reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
 
             dbContext.Reservations.Add(reservation);
+
+            var slotGridRentalIds = itemResponses
+                .Where(i => i.Item.RentalAsset.SchedulePolicy == SchedulePolicy.SlotGrid)
+                .Select(i => i.Item.RentalAssetId)
+                .ToList();
+            var normalizedEnd = TenantBookingClock.NormalizeEndTime(request.EndTime);
+            var coveredSlots = await dbContext.Slots
+                .Where(s => s.TenantId == tenantId && slotGridRentalIds.Contains(s.RentalAssetId)
+                    && s.Date == request.Date && s.StartTime >= request.StartTime
+                    && s.StartTime < normalizedEnd)
+                .ToListAsync(cancellationToken);
+            foreach (var slot in coveredSlots.Where(s =>
+                         TenantBookingClock.NormalizeEndTime(s.EndTime) <= normalizedEnd))
+            {
+                slot.MarkBooked(reservation.Id);
+            }
 
             foreach (var queued in queuedLocations)
             {
@@ -821,49 +869,163 @@ public sealed class ReservationService(
         }
     }
 
-    private async Task<bool> IsSlotGridIntervalOpenAsync(
-        Guid rentalAssetId,
+    /// <summary>
+    /// A SlotGrid interval is open iff it is exactly the union of one or more contiguous,
+    /// open windows (persisted slots take precedence over template winners by StartTime).
+    /// Bookings spanning more than one window additionally require the total duration to be
+    /// one of the rental's AllowedDurationMinutes; when that is unset, only a single window
+    /// may be booked (today's behavior).
+    /// </summary>
+    private async Task<SlotGridWindowPlan> ResolveSlotGridWindowsAsync(
+        RentalAsset rental,
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        var persisted = await dbContext.Slots
+        var persistedSlots = await dbContext.Slots
             .AsNoTracking()
             .Include(s => s.OccupancyKind)
-            .FirstOrDefaultAsync(
-                s => s.TenantId == tenantId
-                     && s.RentalAssetId == rentalAssetId
-                     && s.Date == date
-                     && s.StartTime == startTime,
-                cancellationToken);
-
-        if (persisted is not null)
-        {
-            return persisted.Status == SlotStatus.Available
-                   && TenantBookingClock.NormalizeEndTime(persisted.EndTime) == TenantBookingClock.NormalizeEndTime(endTime)
-                   && persisted.OccupancyKind.IsActive
-                   && persisted.OccupancyKind.IsBookableByCustomer;
-        }
+            .Where(s => s.TenantId == tenantId && s.RentalAssetId == rental.Id && s.Date == date)
+            .ToListAsync(cancellationToken);
 
         var templates = await dbContext.ScheduleTemplates
             .AsNoTracking()
             .Include(t => t.OccupancyKind)
             .Where(t => t.TenantId == tenantId
-                        && t.RentalAssetId == rentalAssetId
+                        && t.RentalAssetId == rental.Id
                         && t.IsActive
                         && t.DayOfWeek == date.DayOfWeek)
             .ToListAsync(cancellationToken);
+        var templateWindows = OccupancyPrecedence.SplitWinningWindows(templates);
 
-        var exactWinners = OccupancyPrecedence.SplitWinningWindows(templates)
-            .Where(window => window.Start == startTime
-                && TenantBookingClock.NormalizeEndTime(window.End) == TenantBookingClock.NormalizeEndTime(endTime))
-            .ToList();
+        var normalizedEnd = TenantBookingClock.NormalizeEndTime(endTime);
+        var windows = new List<(TimeOnly Start, TimeOnly End)>();
+        var cursor = startTime;
 
-        return exactWinners.Count == 1
-               && exactWinners[0].Template.OccupancyKind.IsActive
-               && exactWinners[0].Template.OccupancyKind.IsBookableByCustomer;
+        while (cursor < normalizedEnd)
+        {
+            bool open;
+            TimeOnly windowEnd;
+
+            var persisted = persistedSlots.FirstOrDefault(s => s.StartTime == cursor);
+            if (persisted is not null)
+            {
+                windowEnd = TenantBookingClock.NormalizeEndTime(persisted.EndTime);
+                open = persisted.Status == SlotStatus.Available
+                       && persisted.OccupancyKind.IsActive
+                       && persisted.OccupancyKind.IsBookableByCustomer;
+            }
+            else
+            {
+                var winner = templateWindows.FirstOrDefault(w => w.Start == cursor);
+                if (winner.Template is null)
+                {
+                    return new SlotGridWindowPlan(false, windows);
+                }
+
+                windowEnd = TenantBookingClock.NormalizeEndTime(winner.End);
+                open = winner.Template.OccupancyKind.IsActive
+                       && winner.Template.OccupancyKind.IsBookableByCustomer;
+            }
+
+            if (!open || windowEnd <= cursor)
+            {
+                return new SlotGridWindowPlan(false, windows);
+            }
+
+            windows.Add((cursor, windowEnd));
+            cursor = windowEnd;
+        }
+
+        if (cursor != normalizedEnd)
+        {
+            return new SlotGridWindowPlan(false, windows);
+        }
+
+        if (windows.Count > 1)
+        {
+            if (string.IsNullOrWhiteSpace(rental.AllowedDurationMinutes))
+            {
+                return new SlotGridWindowPlan(false, windows);
+            }
+
+            var totalMinutes = (TenantBookingClock.EndOfDayTime(normalizedEnd) - startTime.ToTimeSpan()).TotalMinutes;
+            if (!OpenHoursRules.ParseDurations(rental.AllowedDurationMinutes).Any(minutes => minutes == totalMinutes))
+            {
+                return new SlotGridWindowPlan(false, windows);
+            }
+        }
+
+        return new SlotGridWindowPlan(true, windows);
+    }
+
+    private readonly record struct SlotGridWindowPlan(
+        bool IsOpen,
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)> Windows);
+
+    /// <summary>
+    /// Slot prices apply to each window; hourly bands use each window's elapsed time.
+    /// Day and Fixed offers cover the whole interval (Fixed once per item).
+    /// </summary>
+    private async Task<(decimal Total, PricingUnit Unit, decimal UnitPrice)> ResolveSlotGridPricingAsync(
+        Guid rentalAssetId,
+        DateOnly date,
+        TimeOnly overallStart,
+        TimeOnly overallEnd,
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)> windows,
+        decimal overallHours,
+        int quantity,
+        TimeZoneInfo zone,
+        CancellationToken cancellationToken)
+    {
+        var prices = await dbContext.RentalPricings.AsNoTracking()
+            .Where(p => p.RentalAssetId == rentalAssetId && p.DayOfWeek == date.DayOfWeek)
+            .ToListAsync(cancellationToken);
+        var fullRangePricing = BookingOffer.ForDerivedWindow(
+            prices.Where(p => p.PricingUnit != PricingUnit.Slot
+                && p.StartTime <= overallStart
+                && p.EndTime >= TenantBookingClock.NormalizeEndTime(overallEnd)),
+            overallHours, quantity);
+
+        decimal? windowTotal = 0m;
+        RentalPricing? lastWindowPrice = null;
+        foreach (var window in windows)
+        {
+            var windowHours = (decimal)(TenantBookingClock.EndAtLocal(date, window.End, zone)
+                - TenantBookingClock.AtLocal(date, window.Start, zone)).TotalHours;
+            var pricing = BookingOffer.ForDerivedWindow(
+                prices.Where(p => (p.PricingUnit == PricingUnit.Slot || p.PricingUnit == PricingUnit.Hour)
+                    && p.StartTime <= window.Start
+                    && p.EndTime >= TenantBookingClock.NormalizeEndTime(window.End)),
+                windowHours, quantity);
+            if (pricing is null)
+            {
+                windowTotal = null;
+                break;
+            }
+
+            windowTotal += BookingOffer.Total(pricing, windowHours, quantity);
+            lastWindowPrice = pricing;
+        }
+
+        if (fullRangePricing is not null)
+        {
+            var total = BookingOffer.Total(fullRangePricing, overallHours, quantity);
+            if (windowTotal is null || total <= windowTotal.Value)
+            {
+                return (total, fullRangePricing.PricingUnit, fullRangePricing.PricePerHour);
+            }
+        }
+
+        if (windowTotal is not null && lastWindowPrice is not null)
+        {
+            return (RoundMoney(windowTotal.Value), lastWindowPrice.PricingUnit, lastWindowPrice.PricePerHour);
+        }
+
+        throw new InvalidOperationException(
+            "No rental pricing covers the requested day and time window.");
     }
 
     internal async Task<int> GetReservedQuantityAsync(

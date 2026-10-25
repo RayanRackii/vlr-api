@@ -84,7 +84,8 @@ internal sealed class AvailabilityReadModel(
         var derivedOpenHours = await DeriveOpenHoursSlotsAsync(
             date, ids, persistedStarts, persistedBookedReservations, !customerFacing, zone, cancellationToken);
         var derivedSlotGrid = await DeriveSlotGridFromTemplatesAsync(
-            date, ids, persistedStarts, persistedBookedReservations, !customerFacing, zone, cancellationToken);
+            date, ids, persistedStarts, persistedBookedReservations, !customerFacing, zone, cancellationToken,
+            persistedEntities);
 
         IEnumerable<SlotResponseDto> all = persisted
             .Concat(derivedOpenHours)
@@ -374,7 +375,8 @@ internal sealed class AvailabilityReadModel(
         IReadOnlySet<(Guid RentalAssetId, Guid ReservationId)> persistedBookedReservations,
         bool includeBookedReservations,
         TimeZoneInfo zone,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<Slot> persistedSlots)
     {
         var templatesQuery = dbContext.ScheduleTemplates
             .AsNoTracking()
@@ -413,7 +415,8 @@ internal sealed class AvailabilityReadModel(
         foreach (var group in templates.GroupBy(t => t.RentalAssetId))
         {
             var rental = group.First().RentalAsset;
-            foreach (var window in OccupancyPrecedence.SplitWinningWindows(group.ToList()))
+            var templateWindows = OccupancyPrecedence.SplitWinningWindows(group.ToList());
+            foreach (var window in templateWindows)
             {
                 if (persistedStarts.Contains((window.Template.RentalAssetId, window.Start)))
                 {
@@ -467,9 +470,15 @@ internal sealed class AvailabilityReadModel(
                 var windows = reservedWindows.TryGetValue(rental.Id, out var found)
                     ? found
                     : [];
+                var gridCells = templateWindows
+                    .Where(w => !persistedStarts.Contains((rental.Id, w.Start)))
+                    .Select(w => (w.Start, w.End))
+                    .ToList();
                 AppendDerivedBookedReservations(
                     derived, date, zone, rental.Id, rental.Asset.Name, windows, openKind,
-                    persistedBookedReservations, SchedulePolicy.SlotGrid, supportsEntireRecurrence: true);
+                    persistedBookedReservations, SchedulePolicy.SlotGrid, supportsEntireRecurrence: true,
+                    gridCells, persistedSlots.Where(s => s.RentalAssetId == rental.Id
+                        && s.Status == SlotStatus.Booked).ToList());
             }
         }
 
@@ -533,12 +542,14 @@ internal sealed class AvailabilityReadModel(
         OccupancyKind openKind,
         IReadOnlySet<(Guid RentalAssetId, Guid ReservationId)> persistedBookedReservations,
         SchedulePolicy schedulePolicy,
-        bool supportsEntireRecurrence)
+        bool supportsEntireRecurrence,
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)>? gridCells = null,
+        IReadOnlyList<Slot>? persistedBookedSlots = null)
     {
         var (dayStart, dayEnd) = TenantBookingClock.CivilDay(date, zone);
         foreach (var window in windows)
         {
-            if (persistedBookedReservations.Contains((rentalAssetId, window.ReservationId)))
+            if (gridCells is null && persistedBookedReservations.Contains((rentalAssetId, window.ReservationId)))
             {
                 continue;
             }
@@ -550,16 +561,50 @@ internal sealed class AvailabilityReadModel(
                 continue;
             }
 
-            derived.Add(new SlotResponseDto(
+            var startTimeOnly = TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(start, zone).DateTime);
+            var endTimeOnly = end >= dayEnd
+                ? TenantBookingClock.DayClose
+                : TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime);
+
+            if (gridCells is not null)
+            {
+                var cells = gridCells.Select(c => (c.Start, c.End, IsDerived: true))
+                    .Concat((persistedBookedSlots ?? [])
+                        .Where(s => s.ReservationId == window.ReservationId)
+                        .Select(s => (Start: s.StartTime, End: s.EndTime, IsDerived: false)))
+                    .OrderBy(c => c.Start);
+                var cursor = startTimeOnly;
+                foreach (var cell in cells)
+                {
+                    var cellStart = cell.Start > startTimeOnly ? cell.Start : startTimeOnly;
+                    var normalizedCellEnd = TenantBookingClock.NormalizeEndTime(cell.End);
+                    var cellEnd = normalizedCellEnd < endTimeOnly ? normalizedCellEnd : endTimeOnly;
+                    if (cellEnd <= cellStart)
+                        continue;
+
+                    // Reservations remain occupancy facts even if weekly cells later move.
+                    // Fill uncovered portions, but never duplicate a linked persisted row.
+                    if (cellStart > cursor)
+                        AppendBookedCell(cursor, cellStart);
+                    if (cell.IsDerived)
+                        AppendBookedCell(cellStart, cellEnd);
+                    if (cellEnd > cursor)
+                        cursor = cellEnd;
+                }
+                if (cursor < endTimeOnly)
+                    AppendBookedCell(cursor, endTimeOnly);
+                continue;
+            }
+
+            AppendBookedCell(startTimeOnly, endTimeOnly);
+
+            void AppendBookedCell(TimeOnly cellStart, TimeOnly cellEnd) => derived.Add(new SlotResponseDto(
                 Guid.Empty,
                 rentalAssetId,
                 assetName,
                 date,
-                TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(start, zone).DateTime),
-                // Represent the exclusive civil-day boundary with the same end used by templates.
-                end >= dayEnd
-                    ? TenantBookingClock.DayClose
-                    : TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime),
+                cellStart,
+                cellEnd,
                 openKind.Id,
                 openKind.Key,
                 openKind.Label,
