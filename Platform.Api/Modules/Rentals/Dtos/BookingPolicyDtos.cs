@@ -6,7 +6,8 @@ namespace Platform.Api.Modules.Rentals.Dtos;
 public sealed record BookingPolicyResponseDto(
     string? CancellationPolicyText,
     int? MaxActiveReservationsPerCustomerPerDay,
-    int? MaxAdvanceBookingDays);
+    int? MaxAdvanceBookingDays,
+    int? CancelCutoffHours = null);
 
 /// <summary>
 /// Replacement of the tenant default booking policy.
@@ -23,4 +24,8 @@ public sealed record UpsertBookingPolicyRequestDto
 
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
+
+    /// <summary>Omitted keeps the cutoff; explicit null clears it.</summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CancelCutoffHours { get; init; }
 }

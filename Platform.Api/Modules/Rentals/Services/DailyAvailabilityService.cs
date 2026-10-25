@@ -14,8 +14,11 @@ public interface IDailyAvailabilityService
 
 /// <summary>Read-only bulk projection. No seeding, materialization, queue mutation or capacity hold.</summary>
 public sealed class DailyAvailabilityService(
-    AppDbContext db, ITenantProvider tenantProvider, TimeProvider clock) : IDailyAvailabilityService
+    AppDbContext db, ITenantProvider tenantProvider, TimeProvider clock,
+    PolicyResolver? policyResolver = null) : IDailyAvailabilityService
 {
+    private readonly PolicyResolver policies = policyResolver ?? new(db);
+
     public const int MaxResources = 100;
     public const int MaxWindows = 10000;
 
@@ -34,7 +37,8 @@ public sealed class DailyAvailabilityService(
         var zone = await TenantBookingClock.ResolveForTenantAsync(db, tenantId, cancellationToken);
         var timeZoneId = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId) ? ianaId : zone.Id;
         var today = BookingHorizon.CivilToday(now, zone);
-        var tenantDays = await BookingHorizon.ReadTenantDaysAsync(db, tenantId, cancellationToken);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        var tenantDays = PolicyResolver.Resolve(null, tenantPolicy).MaxAdvanceBookingDays;
         var resourcesQuery = db.RentalAssets.AsNoTracking().Include(r => r.Asset)
             .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.Asset.Unit.TenantId == tenantId
                 && r.IsActive && r.Asset.IsRentable);
@@ -45,7 +49,7 @@ public sealed class DailyAvailabilityService(
         var resources = await resourcesQuery.OrderBy(r => r.Id).Take(MaxResources + 1).ToListAsync(cancellationToken);
         if (resources.Count > MaxResources) throw Limit("At most 100 resources may be returned. Narrow the scope.");
         if (resources.Count > 0 && resources.All(r =>
-                BookingHorizon.IsBeyond(date, today, BookingHorizon.Effective(r.MaxAdvanceBookingDays, tenantDays))))
+                BookingHorizon.IsBeyond(date, today, PolicyResolver.Resolve(r, tenantPolicy).MaxAdvanceBookingDays)))
             throw new BookingHorizonExceededException();
         if (resources.Count == 0)
         {
@@ -112,7 +116,7 @@ public sealed class DailyAvailabilityService(
                 }
             }
             var windows = new List<AvailabilityWindowDto>();
-            var effectiveDays = BookingHorizon.Effective(resource.MaxAdvanceBookingDays, tenantDays);
+            var effectiveDays = PolicyResolver.Resolve(resource, tenantPolicy).MaxAdvanceBookingDays;
             foreach (var window in candidates.OrderBy(w => w.Start).ThenBy(w => w.End).ThenBy(w => w.Id))
             {
                 if (window.End <= window.Start || (durationMinutes.HasValue

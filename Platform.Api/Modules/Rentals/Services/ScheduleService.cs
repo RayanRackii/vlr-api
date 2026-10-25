@@ -308,6 +308,7 @@ public sealed class ScheduleService(
                 new ReservationEvent(reservation, eventType),
                 cancellationToken);
 
+            var tenantPolicy = await new PolicyResolver(dbContext).ReadTenantAsync(tenantId, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
@@ -341,7 +342,9 @@ public sealed class ScheduleService(
                         item.Quantity,
                         item.UnitPrice,
                         item.SubTotal)
-                ]);
+                ],
+                PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime, [slot.RentalAsset],
+                    tenantPolicy));
         }
         catch
         {

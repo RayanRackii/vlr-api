@@ -114,7 +114,7 @@ public sealed class ResourceVisualPostgresMigrationTests(PostgresContainerFixtur
         return await db.Database.SqlQuery<string>($"""
             SELECT jsonb_build_object(
                 'asset', (SELECT to_jsonb(a) FROM assets.assets a WHERE a.id = {sentinel.AssetId}),
-                'resource', (SELECT to_jsonb(r) - ARRAY['capacity_people','visual_template_revision_id']
+                'resource', (SELECT to_jsonb(r) - ARRAY['capacity_people','visual_template_revision_id','cancel_cutoff_hours']
                     FROM rentals.rental_assets r WHERE r.id = {sentinel.RentalId}),
                 'layout', (SELECT to_jsonb(l) - ARRAY['sort_order','version']
                     FROM rentals.layouts l WHERE l.id = {sentinel.LayoutId}),

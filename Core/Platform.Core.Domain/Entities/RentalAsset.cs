@@ -54,6 +54,9 @@ public class RentalAsset : Entity, ITenantScoped
     /// </summary>
     public int? MaxAdvanceBookingDays { get; set; }
 
+    /// <summary>Customer cancellation cutoff in hours; null inherits the tenant policy.</summary>
+    public int? CancelCutoffHours { get; set; }
+
     /// <summary>Fixed published visual revision; null uses the generic resource presentation.</summary>
     public Guid? VisualTemplateRevisionId { get; set; }
 

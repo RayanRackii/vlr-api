@@ -70,6 +70,8 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
 
         builder.Property(a => a.MaxAdvanceBookingDays);
 
+        builder.Property(a => a.CancelCutoffHours);
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 

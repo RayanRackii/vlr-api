@@ -37,6 +37,8 @@ public sealed class BookingPolicyConfiguration : IEntityTypeConfiguration<Bookin
 
         builder.Property(policy => policy.MaxAdvanceBookingDays);
 
+        builder.Property(policy => policy.CancelCutoffHours);
+
         builder.Property(policy => policy.CreatedAt)
             .IsRequired();
 

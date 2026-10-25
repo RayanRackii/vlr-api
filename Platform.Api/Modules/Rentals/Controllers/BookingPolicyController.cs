@@ -35,6 +35,8 @@ public sealed class BookingPolicyController(
     /// <c>maxActiveReservationsPerCustomerPerDay</c> clear those stored values.
     /// Omitted <c>maxAdvanceBookingDays</c> keeps the stored horizon.
     /// Explicit null clears it (unlimited).
+    /// Omitted <c>cancelCutoffHours</c> keeps the cutoff; explicit null clears it.
+    /// The cutoff must be between 0 and 8760 hours.
     /// </summary>
     [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
     [HttpPut]

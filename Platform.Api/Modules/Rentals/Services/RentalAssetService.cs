@@ -9,14 +9,16 @@ namespace Platform.Api.Modules.Rentals.Services;
 
 public sealed class RentalAssetService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : IRentalAssetService
+    ITenantProvider tenantProvider,
+    PolicyResolver? policyResolver = null) : IRentalAssetService
 {
+    private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
+
     public async Task<IReadOnlyList<RentalAssetResponse>> ListRentableAsync(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-            dbContext, tenantId, cancellationToken);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
 
         var configs = await dbContext.RentalAssets
             .AsNoTracking()
@@ -26,7 +28,7 @@ public sealed class RentalAssetService(
             .OrderBy(r => r.Asset.Name)
             .ToListAsync(cancellationToken);
 
-        return configs.Select(rental => ToResponse(rental, tenantHorizon)).ToList();
+        return configs.Select(rental => ToResponse(rental, tenantPolicy)).ToList();
     }
 
     public async Task<RentalAssetResponse?> GetByAssetIdAsync(
@@ -34,8 +36,7 @@ public sealed class RentalAssetService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-            dbContext, tenantId, cancellationToken);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
 
         var config = await dbContext.RentalAssets
             .AsNoTracking()
@@ -45,7 +46,7 @@ public sealed class RentalAssetService(
                 r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.AssetId == assetId && r.IsActive && r.Asset.IsRentable,
                 cancellationToken);
 
-        return config is null ? null : ToResponse(config, tenantHorizon);
+        return config is null ? null : ToResponse(config, tenantPolicy);
     }
 
     public async Task<RentalAssetResponse> UpdateSchedulePolicyAsync(
@@ -76,6 +77,8 @@ public sealed class RentalAssetService(
                     cancellationToken)
                 ?? throw new KeyNotFoundException("Rentable was not found.");
 
+            if (request.CancelCutoffHours.IsSpecified)
+                rental.CancelCutoffHours = PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours.Value);
             rental.SchedulePolicy = request.SchedulePolicy;
             rental.OpenTime = request.OpenTime;
             rental.CloseTime = request.CloseTime;
@@ -90,9 +93,8 @@ public sealed class RentalAssetService(
                 await transaction.CommitAsync(cancellationToken);
             }
 
-            var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-                dbContext, tenantId, cancellationToken);
-            return ToResponse(rental, tenantHorizon);
+            var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+            return ToResponse(rental, tenantPolicy);
         }
         catch
         {
@@ -146,8 +148,12 @@ public sealed class RentalAssetService(
                 ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
                 : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
 
+            var cutoff = request.CancelCutoffHours.IsSpecified
+                ? PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours.Value) : null;
             foreach (var rental in rentals)
             {
+                if (request.CancelCutoffHours.IsSpecified)
+                    rental.CancelCutoffHours = cutoff;
                 rental.SchedulePolicy = request.SchedulePolicy;
                 rental.OpenTime = request.OpenTime;
                 rental.CloseTime = request.CloseTime;
@@ -161,11 +167,10 @@ public sealed class RentalAssetService(
                 await transaction.CommitAsync(cancellationToken);
             }
 
-            var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-                dbContext, tenantId, cancellationToken);
+            var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
             var items = rentals
                 .OrderBy(r => r.Asset.Name)
-                .Select(rental => ToResponse(rental, tenantHorizon))
+                .Select(rental => ToResponse(rental, tenantPolicy))
                 .ToList();
 
             return new BulkUpdateRentalSchedulePolicyResponseDto(items.Count, items);
@@ -206,9 +211,8 @@ public sealed class RentalAssetService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-            dbContext, tenantId, cancellationToken);
-        return ToResponse(rental, tenantHorizon);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        return ToResponse(rental, tenantPolicy);
     }
 
     private static void ValidatePolicy(
@@ -238,7 +242,7 @@ public sealed class RentalAssetService(
             ? id : throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
-    private static RentalAssetResponse ToResponse(RentalAsset rental, int? tenantHorizon) =>
+    private static RentalAssetResponse ToResponse(RentalAsset rental, BookingPolicy? tenantPolicy) =>
         new(
             rental.Id,
             rental.AssetId,
@@ -260,7 +264,8 @@ public sealed class RentalAssetService(
             rental.CreatedAt,
             rental.UpdatedAt,
             rental.MaxAdvanceBookingDays,
-            BookingHorizon.Effective(rental.MaxAdvanceBookingDays, tenantHorizon),
+            PolicyResolver.Resolve(rental, tenantPolicy).MaxAdvanceBookingDays,
             rental.VisualTemplateRevisionId,
-            rental.CapacityPeople);
+            rental.CapacityPeople,
+            rental.CancelCutoffHours);
 }

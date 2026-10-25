@@ -29,12 +29,12 @@ public sealed class BookingPolicyService(
 
         try
         {
-            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, request.CancelCutoffHours, cancellationToken);
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, request.CancelCutoffHours, cancellationToken);
         }
     }
 
@@ -43,6 +43,7 @@ public sealed class BookingPolicyService(
         string? text,
         int? limit,
         JsonOptional<int> horizon,
+        JsonOptional<int> cancelCutoff,
         CancellationToken cancellationToken)
     {
         var policy = await FindDefaultAsync(tenantId, tracking: true, cancellationToken);
@@ -50,6 +51,9 @@ public sealed class BookingPolicyService(
         var resolvedHorizon = horizon.IsSpecified
             ? BookingPolicyText.NormalizeAdvanceDays(horizon.Value)
             : policy?.MaxAdvanceBookingDays;
+        var resolvedCutoff = cancelCutoff.IsSpecified
+            ? PolicyResolver.ValidateCancelCutoffHours(cancelCutoff.Value)
+            : policy?.CancelCutoffHours;
         if (policy is null)
         {
             policy = new BookingPolicy
@@ -59,12 +63,14 @@ public sealed class BookingPolicyService(
                 CancellationPolicyText = text,
                 MaxActiveReservationsPerCustomerPerDay = limit,
                 MaxAdvanceBookingDays = resolvedHorizon,
+                CancelCutoffHours = resolvedCutoff,
             };
             dbContext.BookingPolicies.Add(policy);
         }
         else
         {
             policy.Replace(text, limit, resolvedHorizon);
+            policy.CancelCutoffHours = resolvedCutoff;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -100,7 +106,8 @@ public sealed class BookingPolicyService(
         new(
             policy?.CancellationPolicyText,
             policy?.MaxActiveReservationsPerCustomerPerDay,
-            policy?.MaxAdvanceBookingDays);
+            policy?.MaxAdvanceBookingDays,
+            policy?.CancelCutoffHours);
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgres
