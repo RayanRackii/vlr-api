@@ -267,5 +267,6 @@ public sealed class RentalAssetService(
             PolicyResolver.Resolve(rental, tenantPolicy).MaxAdvanceBookingDays,
             rental.VisualTemplateRevisionId,
             rental.CapacityPeople,
-            rental.CancelCutoffHours);
+            rental.CancelCutoffHours,
+            rental.Asset.FamilyId == Guid.Empty ? null : rental.Asset.FamilyId);
 }

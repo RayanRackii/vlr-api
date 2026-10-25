@@ -42,6 +42,21 @@ public sealed class BookingPolicyTests
     }
 
     [Fact]
+    public async Task Rentable_responses_expose_the_asset_family()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var service = new RentalAssetService(harness.Db, harness.TenantProvider);
+
+        var single = await service.GetByAssetIdAsync(harness.AssetId, CancellationToken.None);
+        var listed = (await service.ListRentableAsync(CancellationToken.None)).Single(r => r.AssetId == harness.AssetId);
+
+        Assert.NotEqual(Guid.Empty, asset.FamilyId);
+        Assert.Equal(asset.FamilyId, single!.FamilyId);
+        Assert.Equal(asset.FamilyId, listed.FamilyId);
+    }
+
+    [Fact]
     public async Task Resource_cutoff_update_preserves_omitted_and_clears_null()
     {
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));

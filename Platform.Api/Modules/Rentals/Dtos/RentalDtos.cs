@@ -30,7 +30,8 @@ public sealed record RentalAssetResponse(
     int? EffectiveMaxAdvanceBookingDays,
     Guid? VisualTemplateRevisionId = null,
     int? CapacityPeople = null,
-    int? CancelCutoffHours = null);
+    int? CancelCutoffHours = null,
+    Guid? FamilyId = null);
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {
