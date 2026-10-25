@@ -510,6 +510,9 @@
           "isDerived": {
             "type": "boolean"
           },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
+          },
           "reasonCode": {
             "nullable": true,
             "type": "string"
@@ -748,6 +751,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "requiresDeposit": {
             "type": "boolean"
@@ -1243,6 +1249,9 @@
           "isAvailable": {
             "type": "boolean"
           },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
+          },
           "reason": {
             "nullable": true,
             "type": "string"
@@ -1721,6 +1730,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "requiresDeposit": {
             "type": "boolean"
@@ -3547,6 +3559,15 @@
         },
         "type": "object"
       },
+      "PricingUnit": {
+        "enum": [
+          "Hour",
+          "Slot",
+          "Day",
+          "Fixed"
+        ],
+        "type": "string"
+      },
       "ProductRequestFileDto": {
         "additionalProperties": false,
         "properties": {
@@ -4084,6 +4105,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "rentalAssetId": {
             "format": "uuid",
@@ -6006,6 +6030,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "requiresDeposit": {
             "type": "boolean"

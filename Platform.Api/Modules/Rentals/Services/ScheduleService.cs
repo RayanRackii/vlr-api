@@ -250,14 +250,14 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Insufficient quantity for this slot.");
             }
 
-            var unitPrice = await ResolveHourlyPriceAsync(
+            var pricing = await ResolvePricingAsync(
                 slot.RentalAssetId,
                 slot.Date,
                 slot.StartTime,
                 slot.EndTime,
                 cancellationToken);
 
-            var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
+            var subTotal = BookingOffer.Total(pricing, hours, quantity);
             if (request.ExpectedTotalAmount is decimal expected && expected != subTotal)
             {
                 throw new PriceChangedException(subTotal);
@@ -285,7 +285,7 @@ public sealed class ScheduleService(
                 ReservationId = reservation.Id,
                 RentalAssetId = slot.RentalAssetId,
                 Quantity = quantity,
-                UnitPrice = unitPrice,
+                UnitPrice = pricing.PricePerHour,
                 SubTotal = subTotal,
             };
             reservation.AddItem(item);
@@ -378,7 +378,7 @@ public sealed class ScheduleService(
         return await query.SumAsync(cancellationToken);
     }
 
-    private async Task<decimal> ResolveHourlyPriceAsync(
+    private async Task<RentalPricing> ResolvePricingAsync(
         Guid rentalAssetId,
         DateOnly date,
         TimeOnly startTime,
@@ -396,7 +396,7 @@ public sealed class ScheduleService(
             ?? throw new InvalidOperationException(
                 "No pricing covers the requested interval for this rentable.");
 
-        return pricing.PricePerHour;
+        return pricing;
     }
 
     private Guid EnsureTenant() =>

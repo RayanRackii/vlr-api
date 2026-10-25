@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Notifications;
 using Platform.Api.Tests.Infrastructure;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 
@@ -10,6 +13,121 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class ExpectedPriceTests
 {
+    [Theory]
+    [InlineData(false, 50, PricingUnit.Fixed, 50)]
+    [InlineData(true, 120, PricingUnit.Hour, 20)]
+    public async Task Mixed_units_use_the_lowest_total_for_derived_windows_and_latest_start_for_slots(
+        bool persisted, decimal expected, PricingUnit unit, decimal unitPrice)
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync(
+            queueEnabled: false, includeSlot: true, type: RentalAssetType.Good);
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.TotalQuantity = 5;
+        rental.AllowedDurationMinutes = "120";
+        var hourly = await h.Db.RentalPricings.SingleAsync();
+        hourly.StartTime = new(9, 0);
+        hourly.PricePerHour = 20;
+        hourly.DepositPercentage = 10;
+        h.Db.RentalPricings.Add(new()
+        {
+            TenantId = h.TenantId, RentalAssetId = h.RentalAssetId,
+            DayOfWeek = ReservationQueueHarness.BookDate.DayOfWeek,
+            StartTime = new(8, 0), EndTime = new(22, 0), PricePerHour = 50,
+            PricingUnit = PricingUnit.Fixed, RequiresDeposit = true, DepositPercentage = 80,
+        });
+        (await h.Db.Slots.SingleAsync()).EndTime = new(12, 0);
+        if (!persisted) h.Db.Slots.RemoveRange(await h.Db.Slots.ToListAsync());
+        await h.Db.SaveChangesAsync();
+
+        var daily = await new DailyAvailabilityService(h.Db, h.TenantProvider, h.Time).GetAsync(
+            ReservationQueueHarness.BookDate, [h.RentalAssetId], h.UnitId, 3, 120, CancellationToken.None);
+        var quote = Assert.Single(Assert.Single(daily.Resources).Windows, w => w.StartTime == new TimeOnly(10, 0));
+        Assert.Equal(expected, quote.TotalAmount);
+        Assert.Equal(unit, quote.PricingUnit);
+        var check = await h.Reservations().CheckAvailabilityAsync(new()
+        {
+            AssetId = h.AssetId, Date = ReservationQueueHarness.BookDate,
+            StartTime = new(10, 0), EndTime = new(12, 0), Quantity = 3,
+        }, CancellationToken.None);
+        Assert.Equal(50m, check.EstimatedTotalAmount);
+        Assert.Equal(PricingUnit.Fixed, check.PricingUnit);
+
+        var created = persisted
+            ? await h.Schedule().BookSlotAsync(h.CustomerA, new()
+            {
+                UnitId = h.UnitId, SlotId = h.SlotId!.Value, Quantity = 3, ExpectedTotalAmount = expected,
+            }, CancellationToken.None)
+            : await h.Reservations().CreateReservationAsync(h.CustomerA, h.BookRequest() with
+            {
+                EndTime = new(12, 0), ExpectedTotalAmount = expected,
+                Items = [new() { AssetId = h.AssetId, Quantity = 3 }],
+            }, CancellationToken.None);
+        Assert.Equal(expected, created.TotalAmount);
+        Assert.Equal(unitPrice, Assert.Single(created.Items).UnitPrice);
+
+        if (!persisted)
+        {
+            var publisher = new RentalsNotificationPublisher(h.Db, h.TenantProvider,
+                NullLogger<RentalsNotificationPublisher>.Instance);
+            await publisher.EnsureReadyAsync();
+            await publisher.PublishReservationEventAsync(await h.Db.Reservations.SingleAsync(),
+                RentalEventTypes.ReservationPendingDeposit);
+            await h.Db.SaveChangesAsync();
+            Assert.Equal("R$ 40,00", (await h.Db.Notifications.SingleAsync()).Payload[ReservationCustomerEmail.DepositKey]);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, PricingUnit.Slot, 60.03)]
+    [InlineData(true, PricingUnit.Slot, 60.03)]
+    [InlineData(false, PricingUnit.Day, 60.03)]
+    [InlineData(true, PricingUnit.Day, 60.03)]
+    [InlineData(false, PricingUnit.Fixed, 20.01)]
+    [InlineData(true, PricingUnit.Fixed, 20.01)]
+    public async Task Non_hour_quote_matches_booking_and_rejects_a_stale_expected_total(
+        bool persisted, PricingUnit unit, decimal expected)
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync(
+            queueEnabled: false, includeSlot: true, type: RentalAssetType.Good);
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.TotalQuantity = 5;
+        rental.AllowedDurationMinutes = "30";
+        var price = await h.Db.RentalPricings.SingleAsync();
+        price.PricePerHour = 20.01m;
+        price.PricingUnit = unit;
+        (await h.Db.Slots.SingleAsync()).EndTime = new(10, 30);
+        if (!persisted) h.Db.Slots.RemoveRange(await h.Db.Slots.ToListAsync());
+        await h.Db.SaveChangesAsync();
+
+        var availability = await h.Reservations().CheckAvailabilityAsync(new()
+        {
+            AssetId = h.AssetId, Date = ReservationQueueHarness.BookDate,
+            StartTime = new(10, 0), EndTime = new(10, 30), Quantity = 3,
+        }, CancellationToken.None);
+        Assert.True(availability.IsAvailable);
+        Assert.Equal(expected, availability.EstimatedTotalAmount);
+        Assert.Equal(unit, availability.PricingUnit);
+
+        Task<ReservationResponseDto> Submit(decimal quoted) => persisted
+            ? h.Schedule().BookSlotAsync(h.CustomerA, new()
+            {
+                UnitId = h.UnitId, SlotId = h.SlotId!.Value, Quantity = 3, ExpectedTotalAmount = quoted,
+            }, CancellationToken.None)
+            : h.Reservations().CreateReservationAsync(h.CustomerA, h.BookRequest() with
+            {
+                EndTime = new(10, 30), ExpectedTotalAmount = quoted,
+                Items = [new() { AssetId = h.AssetId, Quantity = 3 }],
+            }, CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<PriceChangedException>(() => Submit(expected + 1));
+        Assert.Equal(expected, error.CurrentTotalAmount);
+        var created = await Submit(expected);
+        Assert.Equal(expected, created.TotalAmount);
+        var item = Assert.Single(created.Items);
+        Assert.Equal(20.01m, item.UnitPrice);
+        Assert.Equal(expected, item.SubTotal);
+    }
+
     [Theory]
     [InlineData(false, 99)] [InlineData(true, 99)]
     [InlineData(false, 101)] [InlineData(true, 101)]

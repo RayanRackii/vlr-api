@@ -172,6 +172,19 @@
             "null"
           ],
           "minimum": 0
+        },
+        "pricingUnit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Hour",
+            "Slot",
+            "Day",
+            "Fixed",
+            null
+          ]
         }
       }
     }

@@ -26,7 +26,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -36,7 +37,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           }
         ]
       },
@@ -59,7 +61,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -69,7 +72,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": "<slot:override 10-10:30>",
@@ -79,7 +83,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -89,7 +94,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -99,7 +105,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -109,7 +116,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           }
         ]
       }

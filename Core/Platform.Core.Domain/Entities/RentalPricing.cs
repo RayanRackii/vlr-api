@@ -1,4 +1,5 @@
 using Platform.Core.Domain.Common;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Domain.Entities;
 
@@ -17,7 +18,10 @@ public class RentalPricing : Entity, ITenantScoped
 
     public required TimeOnly EndTime { get; set; }
 
+    /// <summary>Price per hour, or price per unit when PricingUnit is not Hour.</summary>
     public required decimal PricePerHour { get; set; }
+
+    public PricingUnit PricingUnit { get; set; } = PricingUnit.Hour;
 
     public required bool RequiresDeposit { get; set; }
 

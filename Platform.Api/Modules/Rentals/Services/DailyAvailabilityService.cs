@@ -142,9 +142,10 @@ public sealed class DailyAvailabilityService(
                     || window.Kind is { BlocksCapacity: true, IsBookableByCustomer: false }) available = 0;
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
                     && p.StartTime <= window.Start && p.EndTime >= window.End).AsQueryable();
-                var hourly = (window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching) : BookingOffer.ForDerivedWindow(matching))
-                    .Select(p => (decimal?)p.PricePerHour).FirstOrDefault();
-                var amount = hourly.HasValue ? BookingOffer.Total(hourly.Value, (decimal)(end - start).TotalHours, quantity) : (decimal?)null;
+                var hours = (decimal)(end - start).TotalHours;
+                var pricing = window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching).FirstOrDefault()
+                    : BookingOffer.ForDerivedWindow(matching, hours, quantity);
+                var amount = pricing is not null ? BookingOffer.Total(pricing, hours, quantity) : (decimal?)null;
                 var state = BookingHorizon.IsBeyond(date, today, effectiveDays) ? AvailabilityWindowState.OutsideHorizon
                     : start < now ? AvailabilityWindowState.Past
                     : blocked ? AvailabilityWindowState.Blocked
@@ -159,7 +160,8 @@ public sealed class DailyAvailabilityService(
                     AvailabilityWindowState.Unpriced => "PRICE_UNAVAILABLE",
                     _ => null,
                 };
-                windows.Add(new(window.Id, window.Start, window.End, !window.Id.HasValue, state, reason, available, amount));
+                windows.Add(new(window.Id, window.Start, window.End, !window.Id.HasValue, state, reason, available, amount,
+                    pricing?.PricingUnit));
             }
             result.Add(new(resource.Id, resource.AssetId, resource.Asset.UnitId, resource.Asset.Name,
                 resource.Type.ToString(), resource.Type == RentalAssetType.Location ? 1 : resource.TotalQuantity,

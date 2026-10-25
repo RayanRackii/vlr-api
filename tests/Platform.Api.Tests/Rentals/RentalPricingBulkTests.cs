@@ -10,6 +10,48 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class RentalPricingBulkTests
 {
+    [Theory]
+    [InlineData(PricingUnit.Hour)]
+    [InlineData(PricingUnit.Slot)]
+    [InlineData(PricingUnit.Day)]
+    [InlineData(PricingUnit.Fixed)]
+    public async Task Pricing_unit_round_trips_through_create_update_and_bulk(PricingUnit unit)
+    {
+        await using var h = await PricingBulkHarness.CreateAsync(rentableCount: 1);
+        var service = h.CreateService();
+        var assetId = h.AssetIds[0];
+        var created = await service.CreateAsync(assetId,
+            ToCreate(MorningRow()) with { PricingUnit = unit }, CancellationToken.None);
+        Assert.Equal(unit, created.PricingUnit);
+
+        var update = new UpdateRentalPricingDto
+        {
+            DayOfWeek = created.DayOfWeek, StartTime = created.StartTime, EndTime = created.EndTime,
+            PricePerHour = 120, RequiresDeposit = false, DepositPercentage = 0,
+        };
+        var unchanged = await service.UpdateAsync(assetId, created.Id, update, CancellationToken.None);
+        Assert.Equal(unit, unchanged!.PricingUnit);
+        var changed = await service.UpdateAsync(assetId, created.Id,
+            update with { PricingUnit = PricingUnit.Fixed }, CancellationToken.None);
+        Assert.Equal(PricingUnit.Fixed, changed!.PricingUnit);
+
+        await service.ApplyBulkAsync(ReplaceRequest(h.AssetIds,
+            [MorningRow() with { PricingUnit = unit }]), CancellationToken.None);
+        Assert.Equal(unit, Assert.Single(await service.GetByAssetIdAsync(assetId, CancellationToken.None)).PricingUnit);
+    }
+
+    [Fact]
+    public async Task Omitted_pricing_unit_defaults_to_hour_on_create_and_bulk()
+    {
+        await using var h = await PricingBulkHarness.CreateAsync(rentableCount: 1);
+        var service = h.CreateService();
+        var created = await service.CreateAsync(h.AssetIds[0], ToCreate(MorningRow()), CancellationToken.None);
+        Assert.Equal(PricingUnit.Hour, created.PricingUnit);
+        await service.ApplyBulkAsync(ReplaceRequest(h.AssetIds, [MorningRow()]), CancellationToken.None);
+        Assert.Equal(PricingUnit.Hour,
+            Assert.Single(await service.GetByAssetIdAsync(h.AssetIds[0], CancellationToken.None)).PricingUnit);
+    }
+
     [Fact]
     public async Task ApplyBulk_ReplaceTrue_SingleAsset_CreatesPricings()
     {
