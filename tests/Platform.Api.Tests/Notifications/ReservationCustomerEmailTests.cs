@@ -166,6 +166,22 @@ public sealed class ReservationCustomerEmailTests
         Assert.Equal("13:00", schedule.End);
     }
 
+    [Theory]
+    [InlineData(3, 0, 0)]   // next-day 00:00 local (new stored end)
+    [InlineData(2, 59, 59)] // legacy 23:59:59 local
+    public void Day_close_end_renders_as_midnight_on_the_start_date(int h, int m, int s)
+    {
+        var zone = BrazilTimeZone.Resolve();
+        var start = new DateTimeOffset(2026, 10, 27, 2, 30, 0, TimeSpan.Zero); // 26/10 23:30 local
+        var end = new DateTimeOffset(2026, 10, 27, h, m, s, TimeSpan.Zero);
+
+        var schedule = ReservationCustomerEmail.FormatSchedule(start, end, zone);
+
+        Assert.Equal("26/10/2026", schedule.Date);
+        Assert.Equal("23:30", schedule.Start);
+        Assert.Equal("00:00", schedule.End);
+    }
+
     [Fact]
     public void Portal_link_uses_the_existing_web_origin_and_subdomain()
     {

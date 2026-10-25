@@ -45,8 +45,14 @@ public static class ReservationCustomerEmail
     {
         var startLocal = TimeZoneInfo.ConvertTime(start, zone);
         var endLocal = TimeZoneInfo.ConvertTime(end, zone);
+        // Day-close end (legacy 23:59:59 or next-day 00:00) renders as 00:00 of the start's day, like the picker.
+        if (endLocal.TimeOfDay >= new TimeSpan(23, 59, 59))
+            endLocal = endLocal.Date.AddDays(1);
+        var endDay = endLocal.TimeOfDay == TimeSpan.Zero && endLocal.Date == startLocal.Date.AddDays(1)
+            ? startLocal
+            : endLocal;
         var startDate = startLocal.ToString("dd/MM/yyyy", Portuguese);
-        var endDate = endLocal.ToString("dd/MM/yyyy", Portuguese);
+        var endDate = endDay.ToString("dd/MM/yyyy", Portuguese);
         var date = startDate == endDate ? startDate : $"{startDate}–{endDate}";
         return (
             date,
