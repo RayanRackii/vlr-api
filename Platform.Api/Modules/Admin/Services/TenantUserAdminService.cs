@@ -432,7 +432,7 @@ public sealed class TenantUserAdminService(
         {
             throw new InviteAcceptanceException(
                 InviteAcceptanceCodes.AlreadyAccepted,
-                409);
+                StatusCodes.Status409Conflict);
         }
 
         EnsurePendingInvite(invite);
@@ -486,7 +486,7 @@ public sealed class TenantUserAdminService(
         {
             throw new InviteAcceptanceException(
                 InviteAcceptanceCodes.IdentityConflict,
-                409);
+                StatusCodes.Status409Conflict);
         }
 
         var localId = distinctLocal.Count == 1 ? distinctLocal[0] : null;
@@ -496,7 +496,7 @@ public sealed class TenantUserAdminService(
         {
             throw new InviteAcceptanceException(
                 InviteAcceptanceCodes.IdentityConflict,
-                409);
+                StatusCodes.Status409Conflict);
         }
 
         if (!string.IsNullOrWhiteSpace(authId))
@@ -516,7 +516,7 @@ public sealed class TenantUserAdminService(
         {
             throw new InviteAcceptanceException(
                 InviteAcceptanceCodes.ExistingAccountSignInRequired,
-                409);
+                StatusCodes.Status409Conflict);
         }
 
         var actorEmail = actor.FindFirst("email")?.Value
@@ -559,7 +559,7 @@ public sealed class TenantUserAdminService(
         {
             throw new InviteAcceptanceException(
                 InviteAcceptanceCodes.IdentityConflict,
-                409);
+                StatusCodes.Status409Conflict);
         }
 
         if (user is not null && !user.IsActive)
