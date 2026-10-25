@@ -18,12 +18,14 @@ namespace Platform.Api.Tests.Notifications;
 public sealed class ReservationCustomerEmailTests
 {
     [Theory]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 1, 1, 1, "Total")]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 24, 1, "Total (2 unidades)")]
-    [InlineData(RentalEventTypes.ReservationCanceled, 1, 25, 2, "Total (2 dias)")]
-    [InlineData(RentalEventTypes.ReservationCanceled, 2, 49, 3, "Total (2 unidades · 3 dias)")]
-    public async Task Published_day_email_counts_elapsed_days_and_excludes_foreign_items(
-        string eventType, int quantity, int hours, int days, string expectedLabel)
+    [InlineData(RentalEventTypes.ReservationConfirmed, 1, 10, 1, 1, "Total")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 10, 24, 2, "Total (2 unidades · 2 dias)")]
+    [InlineData(RentalEventTypes.ReservationCanceled, 1, 10, 25, 2, "Total (2 dias)")]
+    [InlineData(RentalEventTypes.ReservationCanceled, 2, 10, 49, 3, "Total (2 unidades · 3 dias)")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 16, 42, 3, "Total (2 unidades · 3 dias)")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 12, 48, 3, "Total (2 unidades · 3 dias)")]
+    public async Task Published_day_email_counts_inclusive_civil_days_and_excludes_foreign_items(
+        string eventType, int quantity, int startHour, int hours, int days, string expectedLabel)
     {
         await using var seeded = await PublisherSeed.CreateAsync(localWindowCovers: true);
         (await seeded.Db.TenantNotificationChannelConfigs.SingleAsync()).EventType = eventType;
@@ -37,6 +39,7 @@ public sealed class ReservationCustomerEmailTests
                 PricingUnit = PricingUnit.Day, PricePerHour = 100m,
                 RequiresDeposit = false, DepositPercentage = 0,
             });
+        seeded.Reservation.StartDateTime = seeded.Reservation.StartDateTime.AddHours(startHour - 10);
         seeded.Reservation.EndDateTime = seeded.Reservation.StartDateTime.AddHours(hours);
         seeded.Reservation.Items.Single(i => i.TenantId == seeded.TenantId).Quantity = quantity;
         await seeded.Db.SaveChangesAsync();

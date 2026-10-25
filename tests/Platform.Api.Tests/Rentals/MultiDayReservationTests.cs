@@ -242,6 +242,13 @@ public sealed class MultiDayReservationTests
         var created = await h.CreateReservationService().CreateReservationAsync(h.CustomerId, create, CancellationToken.None);
         Assert.Equal(600m, created.TotalAmount);
         Assert.Equal(TimeSpan.FromHours(elapsedHours), created.EndDateTime - created.StartDateTime);
+        var listed = Assert.Single(await h.CreateReservationService().ListMineAsync(h.CustomerId, CancellationToken.None));
+        foreach (var response in new[] { created, listed })
+        {
+            var item = JsonSerializer.SerializeToElement(response, Json).GetProperty("items")[0];
+            Assert.Equal("Day", item.GetProperty("pricingUnit").GetString());
+            Assert.Equal(3, item.GetProperty("days").GetInt32());
+        }
     }
 
     [Theory]
@@ -392,6 +399,7 @@ public sealed class MultiDayReservationTests
             Create(h, endDate) with { Date = date, StartTime = quote.StartTime, EndTime = quote.EndTime }, CancellationToken.None);
         Assert.Equal(600m, created.TotalAmount);
         Assert.Equal(TimeSpan.FromHours(elapsedHours), created.EndDateTime - created.StartDateTime);
+        Assert.Equal(3, Assert.Single(created.Items).Days);
         Assert.Equal(new DateTimeOffset(year, month, day, utcStartHour, 0, 0, TimeSpan.Zero), created.StartDateTime);
         Assert.Equal(new DateTimeOffset(endDate.Year, endDate.Month, endDate.Day, utcEndHour, 0, 0, TimeSpan.Zero), created.EndDateTime);
     }

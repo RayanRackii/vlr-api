@@ -55,7 +55,7 @@ internal sealed record ReservationItemPricing(PricingUnit? Unit, int? Days)
                     }
                     PricingUnit? unit = !missingRule && units.Count == 1 ? units.Single() : null;
                     int? days = unit == PricingUnit.Day
-                        ? Math.Max(1, (int)Math.Ceiling((reservation.EndDateTime - reservation.StartDateTime).TotalHours / 24))
+                        ? Math.Max(1, (lastDate - start.Date).Days + 1)
                         : null;
                     result[item.Id] = new(unit, days);
                 }
