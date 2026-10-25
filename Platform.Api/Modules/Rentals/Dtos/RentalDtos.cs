@@ -137,7 +137,9 @@ public sealed record ReservationItemResponseDto(
     string AssetName,
     int Quantity,
     decimal UnitPrice,
-    decimal SubTotal);
+    decimal SubTotal,
+    PricingUnit? PricingUnit = null,
+    int? Days = null);
 
 public sealed record ReservationResponseDto(
     Guid Id,

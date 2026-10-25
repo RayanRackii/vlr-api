@@ -19,6 +19,44 @@ public sealed class MultiDayReservationTests
     private static readonly DateOnly Date = LocationBookingHarness.Date.AddDays(1);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    [Theory]
+    [InlineData(PricingUnit.Hour)]
+    [InlineData(PricingUnit.Slot)]
+    [InlineData(PricingUnit.Day)]
+    [InlineData(PricingUnit.Fixed)]
+    public async Task Item_display_metadata_uses_current_rule_and_null_for_ambiguity(PricingUnit unit)
+    {
+        await using var h = await CreateHarnessAsync();
+        var service = h.CreateReservationService();
+        foreach (var rule in await h.Db.RentalPricings.ToListAsync()) rule.PricingUnit = unit;
+        await h.Db.SaveChangesAsync();
+        var created = await service.CreateReservationAsync(h.CustomerId, Create(h, null), CancellationToken.None);
+        var item = JsonSerializer.SerializeToElement(created, Json).GetProperty("items")[0];
+        Assert.Equal(unit.ToString(), item.GetProperty("pricingUnit").GetString());
+        if (unit == PricingUnit.Day) Assert.Equal(1, item.GetProperty("days").GetInt32());
+        else Assert.Equal(JsonValueKind.Null, item.GetProperty("days").ValueKind);
+
+        var original = await h.Db.RentalPricings.FirstAsync(p => p.DayOfWeek == Date.DayOfWeek);
+        h.Db.RentalPricings.Add(new RentalPricing
+        {
+            TenantId = h.TenantId, RentalAssetId = h.RentalAssetId,
+            DayOfWeek = original.DayOfWeek, StartTime = original.StartTime, EndTime = original.EndTime,
+            PricingUnit = unit == PricingUnit.Fixed ? PricingUnit.Hour : PricingUnit.Fixed,
+            PricePerHour = 100m, RequiresDeposit = false, DepositPercentage = 0m,
+        });
+        await h.Db.SaveChangesAsync();
+        var listed = Assert.Single(await service.ListMineAsync(h.CustomerId, CancellationToken.None));
+        var ambiguous = JsonSerializer.SerializeToElement(listed, Json).GetProperty("items")[0];
+        Assert.Equal(JsonValueKind.Null, ambiguous.GetProperty("pricingUnit").ValueKind);
+        Assert.Equal(JsonValueKind.Null, ambiguous.GetProperty("days").ValueKind);
+
+        h.Db.RentalPricings.RemoveRange(await h.Db.RentalPricings.ToListAsync());
+        await h.Db.SaveChangesAsync();
+        var missing = Assert.Single(await service.ListMineAsync(h.CustomerId, CancellationToken.None));
+        Assert.Null(Assert.Single(missing.Items).PricingUnit);
+        Assert.Null(Assert.Single(missing.Items).Days);
+    }
+
     [Fact]
     public async Task Three_civil_days_quote_and_create_charge_three_days_for_two_items()
     {
@@ -32,6 +70,15 @@ public sealed class MultiDayReservationTests
         Assert.Equal(600m, created.TotalAmount);
         Assert.Equal(600m, Assert.Single(created.Items).SubTotal);
         Assert.Equal(TimeSpan.FromHours(58), created.EndDateTime - created.StartDateTime);
+        var listed = Assert.Single(await service.ListMineAsync(h.CustomerId, CancellationToken.None));
+        foreach (var response in new[] { created, listed })
+        {
+            var json = JsonSerializer.SerializeToElement(response, Json);
+            var item = json.GetProperty("items")[0];
+            Assert.Equal("Day", item.GetProperty("pricingUnit").GetString());
+            Assert.Equal(2, item.GetProperty("quantity").GetInt32());
+            Assert.Equal(3, item.GetProperty("days").GetInt32());
+        }
     }
 
     [Theory]
@@ -195,6 +242,13 @@ public sealed class MultiDayReservationTests
         var created = await h.CreateReservationService().CreateReservationAsync(h.CustomerId, create, CancellationToken.None);
         Assert.Equal(600m, created.TotalAmount);
         Assert.Equal(TimeSpan.FromHours(elapsedHours), created.EndDateTime - created.StartDateTime);
+        var listed = Assert.Single(await h.CreateReservationService().ListMineAsync(h.CustomerId, CancellationToken.None));
+        foreach (var response in new[] { created, listed })
+        {
+            var item = JsonSerializer.SerializeToElement(response, Json).GetProperty("items")[0];
+            Assert.Equal("Day", item.GetProperty("pricingUnit").GetString());
+            Assert.Equal(3, item.GetProperty("days").GetInt32());
+        }
     }
 
     [Theory]
@@ -345,6 +399,7 @@ public sealed class MultiDayReservationTests
             Create(h, endDate) with { Date = date, StartTime = quote.StartTime, EndTime = quote.EndTime }, CancellationToken.None);
         Assert.Equal(600m, created.TotalAmount);
         Assert.Equal(TimeSpan.FromHours(elapsedHours), created.EndDateTime - created.StartDateTime);
+        Assert.Equal(3, Assert.Single(created.Items).Days);
         Assert.Equal(new DateTimeOffset(year, month, day, utcStartHour, 0, 0, TimeSpan.Zero), created.StartDateTime);
         Assert.Equal(new DateTimeOffset(endDate.Year, endDate.Month, endDate.Day, utcEndHour, 0, 0, TimeSpan.Zero), created.EndDateTime);
     }

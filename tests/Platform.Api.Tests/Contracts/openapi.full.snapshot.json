@@ -4363,9 +4363,17 @@
             "nullable": true,
             "type": "string"
           },
+          "days": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "quantity": {
             "format": "int32",

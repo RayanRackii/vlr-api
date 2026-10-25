@@ -21,6 +21,9 @@ public static class ReservationCustomerEmail
     public const string TimeZoneKey = "reservationTimeZone";
     public const string StartInstantKey = "reservationStartInstant";
     public const string TotalKey = "reservationTotal";
+    public const string ItemsKey = "reservationItems";
+    public const string QuantityKey = "reservationQuantity";
+    public const string DaysKey = "reservationDays";
     public const string DepositKey = "reservationDeposit";
     public const string UrlKey = "reservationUrl";
 
@@ -73,6 +76,9 @@ public static class ReservationCustomerEmail
         var start = Text(payload, StartKey);
         var end = Text(payload, EndKey);
         var total = Text(payload, TotalKey);
+        var items = Text(payload, ItemsKey);
+        var dimensions = FormatDimensions(Count(payload, QuantityKey), Count(payload, DaysKey));
+        var totalLabel = dimensions.Length > 0 ? $"Total ({dimensions})" : "Total";
         var deposit = Text(payload, DepositKey);
         var url = Text(payload, UrlKey);
         var timeRange = string.IsNullOrWhiteSpace(start) || string.IsNullOrWhiteSpace(end)
@@ -95,7 +101,8 @@ public static class ReservationCustomerEmail
         AppendLabeledRow(inner, "Estabelecimento", tenantName);
         AppendLabeledRow(inner, "Data", date);
         AppendLabeledRow(inner, "Horário", timeRange);
-        AppendLabeledRow(inner, "Total", total);
+        AppendLabeledRow(inner, "Itens", items);
+        AppendLabeledRow(inner, totalLabel, total);
         AppendLabeledRow(inner, "Depósito", deposit);
         AppendLink(inner, url);
         inner.Append("</table>");
@@ -115,7 +122,7 @@ public static class ReservationCustomerEmail
         foreach (var (label, value) in new[]
         {
             ("Estabelecimento", tenantName), ("Data", date), ("Horário", timeRange),
-            ("Total", total), ("Depósito", deposit),
+            ("Itens", items), (totalLabel, total), ("Depósito", deposit),
         })
         {
             if (!string.IsNullOrWhiteSpace(value))
@@ -152,6 +159,17 @@ public static class ReservationCustomerEmail
             _ => $"Reserva {resource}",
         };
     }
+
+    internal static string FormatDimensions(int quantity, int days) =>
+        string.Join(" · ", new[]
+        {
+            quantity > 1 ? $"{quantity} unidades" : null,
+            days > 1 ? $"{days} dias" : null,
+        }.Where(part => part is not null));
+
+    private static int Count(IReadOnlyDictionary<string, string?> payload, string key) =>
+        int.TryParse(Text(payload, key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? Math.Max(1, value) : 1;
 
     private static string Intro(string eventType, string safeReference) =>
         eventType switch

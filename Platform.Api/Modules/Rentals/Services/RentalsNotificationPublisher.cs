@@ -237,6 +237,26 @@ public sealed class RentalsNotificationPublisher(
             : tenant?.LegalName;
         var reference = FormatReservationReference(reservation);
         var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+        var pricing = await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken);
+        var items = reservation.Items.Where(i => i.TenantId == tenantId).ToList();
+        var itemSummary = string.Join("; ", items.Select(item =>
+        {
+            var metadata = pricing.GetValueOrDefault(item.Id);
+            var unit = metadata?.Unit switch
+            {
+                PricingUnit.Hour => "/hora",
+                PricingUnit.Slot => "/horário",
+                PricingUnit.Day => "/dia",
+                PricingUnit.Fixed => "fixo",
+                _ => null,
+            };
+            var dimensions = ReservationCustomerEmail.FormatDimensions(item.Quantity, metadata?.Days ?? 1);
+            return string.Join(" ", new[]
+            {
+                item.RentalAsset?.Asset?.Name ?? "recurso", unit,
+                dimensions.Length > 0 ? $"x {dimensions}" : null,
+            }.Where(part => part is not null));
+        }));
         var schedule = ReservationCustomerEmail.FormatSchedule(
             reservation.StartDateTime,
             reservation.EndDateTime,
@@ -263,6 +283,10 @@ public sealed class RentalsNotificationPublisher(
                 ? ianaId : zone.Id,
             [ReservationCustomerEmail.StartInstantKey] = reservation.StartDateTime.ToString("O", CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.TotalKey] = ReservationCustomerEmail.FormatMoney(reservation.TotalAmount),
+            [ReservationCustomerEmail.ItemsKey] = itemSummary,
+            [ReservationCustomerEmail.QuantityKey] = items.Sum(i => i.Quantity).ToString(CultureInfo.InvariantCulture),
+            [ReservationCustomerEmail.DaysKey] = pricing.Values.Select(p => p.Days ?? 1).DefaultIfEmpty(1).Max()
+                .ToString(CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.DepositKey] = await ResolveDepositTextAsync(
                 reservation,
                 tenantId,
