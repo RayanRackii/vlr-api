@@ -95,9 +95,10 @@ internal static class BookingHorizon
             .Select(item => new { item.MaxAdvanceBookingDays, item.Asset.CategoryId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (resource is null) return;
-        Ensure(startDate, today, Effective(resource.MaxAdvanceBookingDays,
-                categories.GetValueOrDefault(resource.CategoryId)?.MaxAdvanceBookingDays ?? tenantDays));
+        var categoryDays = resource is null
+            ? null
+            : categories.GetValueOrDefault(resource.CategoryId)?.MaxAdvanceBookingDays;
+        Ensure(startDate, today, Effective(resource?.MaxAdvanceBookingDays, categoryDays ?? tenantDays));
     }
 
     /// <summary>
