@@ -29,11 +29,8 @@ public sealed class TenantProvisioner(
             dbContext.TenantModules.Add(new TenantModule(tenant.Id, module, isActive: true));
         }
 
-        if (normalizedModules.Contains(PlatformModules.Rentals))
-        {
-            dbContext.TenantModuleMenuItems.Add(new TenantModuleMenuItem(
-                tenant.Id, PlatformModules.Rentals, "Reservar horário", sortOrder: 0));
-        }
+        // New tenant: no stored menu items yet.
+        ModuleDefaultMenuItems.Ensure(dbContext, tenant.Id, normalizedModules, []);
 
         foreach (var familyId in familyIds)
         {
