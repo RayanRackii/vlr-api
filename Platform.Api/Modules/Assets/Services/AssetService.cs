@@ -344,7 +344,7 @@ public sealed class AssetService(
                 CategoryId = request.CategoryId,
                 FamilyId = request.FamilyId,
                 Name = request.Name,
-                Tag = request.Tag,
+                Tag = string.IsNullOrWhiteSpace(request.Tag) ? GenerateRentableTag() : request.Tag,
                 Location = request.Location,
                 Status = AssetStatus.Active,
                 IsRentable = true,
@@ -390,7 +390,7 @@ public sealed class AssetService(
                 CategoryId = request.CategoryId,
                 FamilyId = request.FamilyId,
                 Name = request.Name,
-                Tag = request.Tag,
+                Tag = string.IsNullOrWhiteSpace(request.Tag) ? asset.Tag : request.Tag,
                 Location = request.Location,
                 SerialNumber = asset.SerialNumber,
                 InstallationDate = asset.InstallationDate,
@@ -459,6 +459,9 @@ public sealed class AssetService(
         if (horizon.IsSpecified) rental.MaxAdvanceBookingDays = horizon.Value;
         // Duration suggestions are exposed by the picker for explicit schedule configuration.
     }
+
+    // Unique per tenant in practice; EnsureTagAvailableAsync still guards collisions.
+    private static string GenerateRentableTag() => $"RES-{Guid.NewGuid():N}"[..12].ToUpperInvariant();
 
     private sealed record CreateRentableTemplateDefaults(
         bool Apply,

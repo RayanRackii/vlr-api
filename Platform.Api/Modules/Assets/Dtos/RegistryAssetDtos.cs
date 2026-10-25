@@ -20,7 +20,11 @@ public sealed record CreateRentableRequest
 {
     public required string Name { get; init; }
 
-    public required string Tag { get; init; }
+    /// <summary>
+    /// Registry identifier. Optional: create generates one when omitted and
+    /// update keeps the stored tag, because RentalAssetResponse does not expose it.
+    /// </summary>
+    public string? Tag { get; init; }
 
     public required Guid UnitId { get; init; }
 
@@ -73,7 +77,11 @@ public sealed record UpdateRentableRequest
 {
     public required string Name { get; init; }
 
-    public required string Tag { get; init; }
+    /// <summary>
+    /// Registry identifier. Optional: create generates one when omitted and
+    /// update keeps the stored tag, because RentalAssetResponse does not expose it.
+    /// </summary>
+    public string? Tag { get; init; }
 
     public required Guid UnitId { get; init; }
 

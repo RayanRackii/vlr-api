@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
@@ -125,6 +127,78 @@ public sealed class AssetRegistryTests
         Assert.Equal("Bloco A", updated.Location);
         Assert.False(updated.RentalConfiguration!.RequiresDeposit);
         Assert.True(updated.IsRentable);
+    }
+
+    // Exact body the web drawer sends (R11 Bot4 repro): no "tag", because
+    // RentalAssetResponse does not expose it. Must deserialize, not 400.
+    private const string WebRentableBodyWithoutTag = """
+        {"name":"Sala Cancelamento","unitId":"66596a2c-82cc-4c0a-bf36-c3c7046a03b5",
+         "categoryId":"3ef7d7a1-1610-4770-8980-49f4e88f79b2","familyId":"11111111-1111-1111-1111-111111111101",
+         "rentalType":"Location","totalQuantity":1,"requiresDeposit":false,"queueEnabled":false,
+         "queueOpeningTime":null,"location":"x"}
+        """;
+
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    [Fact]
+    public void Web_rentable_body_without_tag_deserializes_for_create_and_update()
+    {
+        var update = JsonSerializer.Deserialize<UpdateRentableRequest>(WebRentableBodyWithoutTag, WebJson);
+        var create = JsonSerializer.Deserialize<CreateRentableRequest>(WebRentableBodyWithoutTag, WebJson);
+
+        Assert.NotNull(update);
+        Assert.Null(update.Tag);
+        Assert.Equal("x", update.Location);
+        Assert.NotNull(create);
+        Assert.Null(create.Tag);
+    }
+
+    [Fact]
+    public async Task UpdateRentable_without_tag_keeps_stored_tag()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Sala", tag: "SALA-1"),
+            CancellationToken.None);
+
+        var updated = await registry.UpdateRentableAsync(
+            created.RentalConfiguration!.Id,
+            new UpdateRentableRequest
+            {
+                Name = "Sala",
+                UnitId = harness.UnitId,
+                CategoryId = harness.CategoryId,
+                FamilyId = harness.FamilyId,
+                Location = "x",
+            },
+            CancellationToken.None);
+
+        Assert.Equal("SALA-1", updated.Tag);
+        Assert.Equal("x", updated.Location);
+    }
+
+    [Fact]
+    public async Task CreateRentable_without_tag_generates_distinct_tags()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        CreateRentableRequest NoTag(string name) => new()
+        {
+            Name = name,
+            UnitId = harness.UnitId,
+            CategoryId = harness.CategoryId,
+            FamilyId = harness.FamilyId,
+        };
+
+        var first = await registry.CreateRentableAsync(NoTag("A"), CancellationToken.None);
+        var second = await registry.CreateRentableAsync(NoTag("B"), CancellationToken.None);
+
+        Assert.StartsWith("RES-", first.Tag);
+        Assert.NotEqual(first.Tag, second.Tag);
     }
 
     [Fact]
