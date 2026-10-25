@@ -96,6 +96,7 @@ Set on the **production** Railway (legado) service (not implied by `ASPNETCORE_E
 | `Resend__FromEmail` | **yes** | Verified sender |
 | `Resend__FromName` | recommended | Default in code: `Rolvix` |
 | `App__FrontendBaseUrl` | **yes** | Invite/recovery links; must be `https://rolvix.com.br`, never localhost |
+| `App__TenantPortalHostTemplate` | optional | Public tenant portal host shown in staff invites; default `{subdomain}.rolvix.com.br` |
 | `Storage__PublicBucket` | optional | Default `catalog-public` |
 | `Storage__PrivateBucket` | optional | Default `catalog-private` |
 | `Storage__SignedUrlTtlSeconds` | optional | Default `900` |

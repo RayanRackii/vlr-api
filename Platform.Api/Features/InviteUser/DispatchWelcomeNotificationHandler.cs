@@ -15,7 +15,7 @@ public sealed class DispatchWelcomeNotificationHandler(
 
         var htmlBody = RolvixEmailLayout.Wrap(
             notification.Email,
-            RolvixEmailLayout.InviteBody(inviteUrl, "sua empresa"));
+            RolvixEmailLayout.InviteBody(inviteUrl, "sua empresa", frontendBaseUrl: frontendBaseUrl));
 
         await queue.EnqueueAsync(
             new NotificationMessage(
