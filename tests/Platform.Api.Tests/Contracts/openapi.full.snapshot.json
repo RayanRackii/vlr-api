@@ -3970,6 +3970,10 @@
           "isActive": {
             "type": "boolean"
           },
+          "location": {
+            "nullable": true,
+            "type": "string"
+          },
           "maxAdvanceBookingDays": {
             "format": "int32",
             "nullable": true,
