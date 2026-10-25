@@ -245,7 +245,10 @@ public sealed class AdminTenantService(
 
         try
         {
+            await LockTenantModulesAsync(id, cancellationToken);
+
             var tenant = await TenantsIncludingModules()
+                .Include(t => t.ModuleMenuItems)
                 .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
             if (tenant is null)
@@ -287,7 +290,12 @@ public sealed class AdminTenantService(
                 accentColor: request.AccentColor,
                 welcomeTagline: request.WelcomeTagline);
 
-            SyncTenantModules(tenant, modules);
+            var enabledModules = SyncTenantModules(tenant, modules);
+            ModuleDefaultMenuItems.Ensure(
+                dbContext,
+                tenant.Id,
+                enabledModules,
+                tenant.ModuleMenuItems.Select(item => item.ModuleName));
             await SyncTenantAssetFamiliesAsync(tenant.Id, families, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -326,6 +334,20 @@ public sealed class AdminTenantService(
         }
     }
 
+    private async Task LockTenantModulesAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) != true)
+        {
+            return;
+        }
+
+        var key = $"tenant-modules:{tenantId}";
+        const long seed = 0;
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({key}, {seed}))",
+            cancellationToken);
+    }
+
     public Task DeleteAsync(Guid id, CancellationToken cancellationToken) =>
         tenantPurger.PurgeAsync(id, cancellationToken);
 
@@ -353,8 +375,10 @@ public sealed class AdminTenantService(
         CancellationToken cancellationToken) =>
         platformAdminMembershipService.ExitTenantAsync(principal, cancellationToken);
 
-    private void SyncTenantModules(Tenant tenant, IReadOnlyList<string> desiredModules)
+    /// <returns>Modules newly added or re-activated by this sync.</returns>
+    private List<string> SyncTenantModules(Tenant tenant, IReadOnlyList<string> desiredModules)
     {
+        var enabled = new List<string>();
         var desired = new HashSet<string>(desiredModules, StringComparer.OrdinalIgnoreCase);
         var remainingDesired = new HashSet<string>(desired, StringComparer.OrdinalIgnoreCase);
 
@@ -367,6 +391,7 @@ public sealed class AdminTenantService(
                 if (!module.IsActive)
                 {
                     module.Activate();
+                    enabled.Add(module.ModuleName);
                 }
 
                 continue;
@@ -388,7 +413,10 @@ public sealed class AdminTenantService(
             }
 
             dbContext.TenantModules.Add(new TenantModule(tenant.Id, moduleName, isActive: true));
+            enabled.Add(moduleName);
         }
+
+        return enabled;
     }
 
     private async Task SyncTenantAssetFamiliesAsync(
