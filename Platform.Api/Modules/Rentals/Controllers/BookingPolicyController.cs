@@ -30,7 +30,7 @@ public sealed class BookingPolicyController(
     }
 
     [RequirePermission(Permissions.Rentals.BookingPolicyRead)]
-    [HttpGet("~/api/booking-policy/categories")]
+    [HttpGet("categories")]
     public async Task<ActionResult<IReadOnlyList<CategoryBookingPolicyResponseDto>>> GetCategories(
         CancellationToken cancellationToken)
     {
@@ -45,7 +45,7 @@ public sealed class BookingPolicyController(
     }
 
     [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
-    [HttpPut("~/api/booking-policy/categories/{categoryId:guid}")]
+    [HttpPut("categories/{categoryId:guid}")]
     public async Task<ActionResult<CategoryBookingPolicyResponseDto>> UpsertCategory(
         Guid categoryId, [FromBody] UpsertCategoryBookingPolicyRequestDto request,
         CancellationToken cancellationToken)

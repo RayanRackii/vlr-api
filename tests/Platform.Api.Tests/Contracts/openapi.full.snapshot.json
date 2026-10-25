@@ -9970,103 +9970,6 @@
         ]
       }
     },
-    "/api/booking-policy/categories": {
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
-                  },
-                  "type": "array"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
-                  },
-                  "type": "array"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "BookingPolicy"
-        ]
-      }
-    },
-    "/api/booking-policy/categories/{categoryId}": {
-      "put": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "categoryId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/*\u002Bjson": {
-              "schema": {
-                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
-              }
-            },
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
-              }
-            },
-            "text/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "BookingPolicy"
-        ]
-      }
-    },
     "/api/catalog/notification-channels": {
       "get": {
         "responses": {
@@ -14654,6 +14557,103 @@
               "text/plain": {
                 "schema": {
                   "$ref": "#/components/schemas/BookingPolicyResponseDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BookingPolicy"
+        ]
+      }
+    },
+    "/api/rentals/booking-policy/categories": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BookingPolicy"
+        ]
+      }
+    },
+    "/api/rentals/booking-policy/categories/{categoryId}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "categoryId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
                 }
               }
             },
