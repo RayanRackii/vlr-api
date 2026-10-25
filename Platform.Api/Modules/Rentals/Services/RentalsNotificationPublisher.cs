@@ -323,7 +323,12 @@ public sealed class RentalsNotificationPublisher(
                 .Where(pricing => pricing.StartTime <= startTime && pricing.EndTime >= endTime)
                 .OrderBy(pricing => pricing.PricePerHour)
                 .ToListAsync(cancellationToken);
-            var percentage = BookingOffer.ForDerivedWindow(prices, hours, item.Quantity)?.DepositPercentage;
+            // Prefer the row the booking actually priced with (same unit price and subtotal), so both
+            // booking routes (persisted slot / derived window) agree with the deposit row.
+            var booked = prices.Where(pricing => pricing.PricePerHour == item.UnitPrice
+                && BookingOffer.Total(pricing, hours, item.Quantity) == item.SubTotal).ToList();
+            var percentage = BookingOffer.ForDerivedWindow(booked.Count > 0 ? booked : prices, hours, item.Quantity)
+                ?.DepositPercentage;
 
             if (percentage is null)
             {

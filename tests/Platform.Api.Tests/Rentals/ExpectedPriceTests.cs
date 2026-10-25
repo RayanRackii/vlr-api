@@ -65,7 +65,6 @@ public sealed class ExpectedPriceTests
         Assert.Equal(expected, created.TotalAmount);
         Assert.Equal(unitPrice, Assert.Single(created.Items).UnitPrice);
 
-        if (!persisted)
         {
             var publisher = new RentalsNotificationPublisher(h.Db, h.TenantProvider,
                 NullLogger<RentalsNotificationPublisher>.Instance);
@@ -73,7 +72,7 @@ public sealed class ExpectedPriceTests
             await publisher.PublishReservationEventAsync(await h.Db.Reservations.SingleAsync(),
                 RentalEventTypes.ReservationPendingDeposit);
             await h.Db.SaveChangesAsync();
-            Assert.Equal("R$ 40,00", (await h.Db.Notifications.SingleAsync()).Payload[ReservationCustomerEmail.DepositKey]);
+            Assert.Equal(persisted ? "R$ 12,00" : "R$ 40,00", (await h.Db.Notifications.SingleAsync()).Payload[ReservationCustomerEmail.DepositKey]);
         }
     }
 
