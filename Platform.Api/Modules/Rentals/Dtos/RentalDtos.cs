@@ -82,6 +82,10 @@ public sealed record CheckAvailabilityRequestDto
 
     public required DateOnly Date { get; init; }
 
+    /// <summary>Inclusive last civil day; omitted/null means Date.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateOnly? EndDate { get; init; }
+
     public required TimeOnly StartTime { get; init; }
 
     public required TimeOnly EndTime { get; init; }
@@ -110,6 +114,10 @@ public sealed record CreateReservationRequestDto
     public required Guid UnitId { get; init; }
 
     public required DateOnly Date { get; init; }
+
+    /// <summary>Inclusive last civil day; omitted/null means Date. Daily limits count the start date only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateOnly? EndDate { get; init; }
 
     public required TimeOnly StartTime { get; init; }
 

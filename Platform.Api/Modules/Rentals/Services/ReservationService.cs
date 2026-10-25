@@ -31,11 +31,12 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
+        ValidateTimeRange(request.Date, request.StartTime, request.EndTime, request.EndDate);
 
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
         var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
-        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
+        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone, request.EndDate);
+        var calendarDays = request.EndDate > request.Date ? request.EndDate.Value.DayNumber - request.Date.DayNumber + 1 : (int?)null;
 
         var rental = await dbContext.RentalAssets
             .AsNoTracking()
@@ -71,6 +72,29 @@ public sealed class ReservationService(
             request.Date,
             today,
             PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
+        BookingHorizon.Ensure(
+            request.EndDate ?? request.Date,
+            today,
+            PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
+
+        RentalPricing? multiDayPricing = null;
+        if (calendarDays.HasValue)
+        {
+            try
+            {
+                multiDayPricing = await ResolveMultiDayPricingAsync(rental, request.Date, request.EndDate!.Value,
+                    request.StartTime, request.EndTime, cancellationToken);
+            }
+            catch (MultiDayUnavailableException ex)
+            {
+                return new CheckAvailabilityResponseDto(
+                    IsAvailable: false,
+                    RequestedQuantity: quantity,
+                    AvailableQuantity: 0,
+                    EstimatedTotalAmount: null,
+                    Reason: ex.Message);
+            }
+        }
 
         var reservedQuantity = await GetReservedQuantityAsync(
             tenantId,
@@ -99,7 +123,7 @@ public sealed class ReservationService(
                 ? "Location is already reserved for the requested interval."
                 : $"Insufficient quantity. Available: {availableQuantity}, requested: {quantity}.";
         }
-        else if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+        else if (!calendarDays.HasValue && rental.SchedulePolicy == SchedulePolicy.OpenHours
                  && OpenHoursRules.ValidateInterval(
                      rental, request.StartTime, request.EndTime, rental.Asset.Name) is { } openHoursError)
         {
@@ -136,7 +160,7 @@ public sealed class ReservationService(
                 }
                 else
                 {
-                    var pricing = await ResolvePricingAsync(
+                    var pricing = multiDayPricing ?? await ResolvePricingAsync(
                         rental.Id,
                         request.Date,
                         request.StartTime,
@@ -144,7 +168,7 @@ public sealed class ReservationService(
                         hours,
                         quantity,
                         cancellationToken);
-                    estimatedTotal = BookingOffer.Total(pricing, hours, quantity);
+                    estimatedTotal = BookingOffer.Total(pricing, hours, quantity, calendarDays);
                     pricingUnit = pricing.PricingUnit;
                 }
             }
@@ -171,7 +195,7 @@ public sealed class ReservationService(
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
-        ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
+        ValidateTimeRange(request.Date, request.StartTime, request.EndTime, request.EndDate);
 
         if (request.Items is null || request.Items.Count == 0)
         {
@@ -196,7 +220,8 @@ public sealed class ReservationService(
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
 
         var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
-        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
+        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone, request.EndDate);
+        var calendarDays = request.EndDate > request.Date ? request.EndDate.Value.DayNumber - request.Date.DayNumber + 1 : (int?)null;
         ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
         var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
         var hours = (decimal)(end - start).TotalHours;
@@ -211,6 +236,7 @@ public sealed class ReservationService(
 
         try
         {
+            // A multi-day reservation counts once, against its start civil date only.
             await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
                 dbContext,
                 tenantId,
@@ -240,7 +266,8 @@ public sealed class ReservationService(
                 dbContext,
                 tenantId,
                 request.Items.Select(item => item.AssetId).ToList(),
-                request.Date,
+                // The last day is at or after the start, so this enforces both endpoints.
+                request.EndDate ?? request.Date,
                 today,
                 tenantHorizon,
                 cancellationToken);
@@ -293,7 +320,12 @@ public sealed class ReservationService(
                     queuedLocations.Add(rental);
                 }
 
-                if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+                var multiDayPricing = calendarDays.HasValue
+                    ? await ResolveMultiDayPricingAsync(rental, request.Date, request.EndDate!.Value,
+                        request.StartTime, request.EndTime, cancellationToken)
+                    : null;
+
+                if (!calendarDays.HasValue && rental.SchedulePolicy == SchedulePolicy.OpenHours
                     && OpenHoursRules.ValidateInterval(
                         rental, request.StartTime, request.EndTime, rental.Asset.Name) is { } openHoursError)
                 {
@@ -354,7 +386,7 @@ public sealed class ReservationService(
                 }
                 else
                 {
-                    var pricing = await ResolvePricingAsync(
+                    var pricing = multiDayPricing ?? await ResolvePricingAsync(
                         rental.Id,
                         request.Date,
                         request.StartTime,
@@ -362,7 +394,7 @@ public sealed class ReservationService(
                         hours,
                         quantity,
                         cancellationToken);
-                    subTotal = BookingOffer.Total(pricing, hours, quantity);
+                    subTotal = BookingOffer.Total(pricing, hours, quantity, calendarDays);
                     itemUnitPrice = pricing.PricePerHour;
                 }
 
@@ -1144,11 +1176,62 @@ public sealed class ReservationService(
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
-    private static void ValidateTimeRange(DateOnly date, TimeOnly startTime, TimeOnly endTime)
-    {
-        _ = date;
+    private sealed class MultiDayUnavailableException(string message, Exception? innerException = null)
+        : ArgumentException(message, innerException);
 
-        if (endTime <= startTime)
+    private async Task<RentalPricing> ResolveMultiDayPricingAsync(
+        RentalAsset rental, DateOnly date, DateOnly endDate, TimeOnly startTime, TimeOnly endTime,
+        CancellationToken cancellationToken)
+    {
+        if (rental.SchedulePolicy == SchedulePolicy.SlotGrid)
+            throw new ArgumentException("Multi-day booking is not supported for SlotGrid resources.");
+
+        var slots = await dbContext.Slots.AsNoTracking().Include(s => s.OccupancyKind)
+            .Where(s => s.TenantId == rental.TenantId && s.RentalAssetId == rental.Id
+                && s.Date >= date && s.Date <= endDate)
+            .ToListAsync(cancellationToken);
+        RentalPricing? firstPricing = null;
+        for (var dayNumber = date.DayNumber; dayNumber <= endDate.DayNumber; dayNumber++)
+        {
+            var day = DateOnly.FromDayNumber(dayNumber);
+            var dayStart = day == date ? startTime : rental.OpenTime ?? TimeOnly.MinValue;
+            var dayEnd = day == endDate ? endTime : rental.CloseTime ?? TimeOnly.MinValue;
+            if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+                && OpenHoursRules.ValidateInterval(rental, dayStart, dayEnd, rental.Asset.Name) is { } error)
+                throw new MultiDayUnavailableException(error);
+            if (slots.Any(s => s.Date == day
+                && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, dayStart, dayEnd)
+                && (s.Status == SlotStatus.Cancelled || s.OccupancyKind is not { IsActive: true }
+                    || s.OccupancyKind.TenantId != rental.TenantId
+                    || (s.OccupancyKind.BlocksCapacity && !s.OccupancyKind.IsBookableByCustomer))))
+                throw new MultiDayUnavailableException($"'{rental.Asset.Name}' is not open for the requested interval.");
+
+            RentalPricing pricing;
+            try
+            {
+                pricing = await ResolvePricingAsync(rental.Id, day, dayStart, dayEnd,
+                    (decimal)(TenantBookingClock.EndOfDayTime(dayEnd) - dayStart.ToTimeSpan()).TotalHours,
+                    1, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new MultiDayUnavailableException(ex.Message, ex);
+            }
+            if (pricing.PricingUnit != PricingUnit.Day)
+                throw new ArgumentException("Multi-day booking requires a per-day resource.");
+            firstPricing ??= pricing;
+        }
+
+        return firstPricing!;
+    }
+
+    private static void ValidateTimeRange(DateOnly date, TimeOnly startTime, TimeOnly endTime, DateOnly? endDate)
+    {
+        if ((endDate ?? date) < date)
+            throw new ArgumentException("EndDate must not be before Date.");
+        if ((endDate ?? date).DayNumber - date.DayNumber >= 31)
+            throw new ArgumentException("Reservations may span at most 31 civil days.");
+        if ((endDate ?? date) == date && endTime <= startTime)
         {
             throw new ArgumentException("EndTime must be greater than StartTime.");
         }
@@ -1163,10 +1246,11 @@ public sealed class ReservationService(
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
-        TimeZoneInfo zone)
+        TimeZoneInfo zone,
+        DateOnly? endDate)
     {
         var start = TenantBookingClock.AtLocal(date, startTime, zone);
-        var end = TenantBookingClock.EndAtLocal(date, endTime, zone);
+        var end = TenantBookingClock.EndAtLocal(endDate ?? date, endTime, zone);
         if (end <= start)
         {
             throw new ArgumentException("EndTime must be greater than StartTime.");
