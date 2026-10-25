@@ -1796,6 +1796,11 @@
             "format": "date",
             "type": "string"
           },
+          "endDate": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "endTime": {
             "format": "time",
             "type": "string"
@@ -14875,6 +14880,14 @@
             "in": "query",
             "name": "Date",
             "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "EndDate",
             "schema": {
               "format": "date",
               "type": "string"
