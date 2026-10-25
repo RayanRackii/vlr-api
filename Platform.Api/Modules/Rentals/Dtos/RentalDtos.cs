@@ -33,7 +33,8 @@ public sealed record RentalAssetResponse(
     int? CancelCutoffHours = null,
     Guid? FamilyId = null,
     int? EffectiveCancelCutoffHours = null,
-    string? Location = null);
+    string? Location = null,
+    DateTimeOffset? ScheduledDeletionAt = null);
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {

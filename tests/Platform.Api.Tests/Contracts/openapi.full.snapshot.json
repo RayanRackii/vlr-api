@@ -4001,6 +4001,11 @@
           "schedulePolicy": {
             "$ref": "#/components/schemas/SchedulePolicy"
           },
+          "scheduledDeletionAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "tenantId": {
             "format": "uuid",
             "type": "string"
