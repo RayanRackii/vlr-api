@@ -14,6 +14,34 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ReservationTimezoneTests
 {
     [Theory]
+    [InlineData(7, 0, 8, 0, "not open for the requested interval")]
+    [InlineData(23, 0, 23, 30, "not open for the requested interval")]
+    [InlineData(10, 0, 10, 30, "duration is not allowed")]
+    [InlineData(10, 0, 11, 0, null)]
+    public async Task BookSlotAsync_enforces_OpenHours_for_persisted_slots(
+        int startHour, int startMinute, int endHour, int endMinute, string? expectedError)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var slot = await h.SeedAvailableSlotAsync(
+            new TimeOnly(startHour, startMinute), new TimeOnly(endHour, endMinute));
+        var request = new BookSlotRequestDto { SlotId = slot.Id, UnitId = h.UnitId, Quantity = 1 };
+
+        if (expectedError is null)
+        {
+            var booked = await h.Schedule.BookSlotAsync(h.CustomerId, request, CancellationToken.None);
+            Assert.NotEqual(Guid.Empty, booked.Id);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                h.Schedule.BookSlotAsync(h.CustomerId, request, CancellationToken.None));
+            Assert.Contains(expectedError, error.Message);
+            Assert.Empty(await h.Db.Reservations.ToListAsync());
+            Assert.Equal(SlotStatus.Available, slot.Status);
+        }
+    }
+
+    [Theory]
     [InlineData(9, 30, 10, 30, "60", null)]
     [InlineData(8, 0, 9, 0, "60", null)]
     [InlineData(22, 0, 23, 0, "60", null)]

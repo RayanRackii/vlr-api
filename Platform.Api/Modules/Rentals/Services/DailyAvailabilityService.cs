@@ -129,9 +129,12 @@ public sealed class DailyAvailabilityService(
                     && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, window.Start, window.End)
                     && (s.Status == SlotStatus.Cancelled || !kinds.TryGetValue(s.OccupancyKindId, out var kind)
                         || !kind.IsActive || (kind.BlocksCapacity && !kind.IsBookableByCustomer)));
+                var invalidOpenHours = resource.SchedulePolicy == SchedulePolicy.OpenHours
+                    && window.Status != SlotStatus.Booked
+                    && OpenHoursRules.ValidateInterval(resource, window.Start, window.End, resource.Asset.Name) is not null;
                 var blocked = window.Status == SlotStatus.Cancelled || window.Kind is not { IsActive: true, IsBookableByCustomer: true }
-                    || blockingOverlap;
-                if (blockingOverlap || window.Status == SlotStatus.Cancelled || start < now
+                    || blockingOverlap || invalidOpenHours;
+                if (blockingOverlap || invalidOpenHours || window.Status == SlotStatus.Cancelled || start < now
                     || window.Kind is { BlocksCapacity: true, IsBookableByCustomer: false }) available = 0;
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
                     && p.StartTime <= window.Start && p.EndTime >= window.End).AsQueryable();
