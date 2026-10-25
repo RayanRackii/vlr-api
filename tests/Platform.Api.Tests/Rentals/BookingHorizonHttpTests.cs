@@ -21,6 +21,7 @@ using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Serialization;
+using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -28,6 +29,42 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class BookingHorizonHttpTests
 {
+    [Fact]
+    public async Task Customer_cancel_returns_409_with_cutoff_code_and_hours()
+    {
+        using var host = StartHost(typeof(ReservationsController));
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(CustomerAuthHandler.HeaderName, "member@club.test");
+        var response = await client.PostAsync($"/api/reservations/mine/{Guid.NewGuid()}/cancel", null);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<CutoffErrorBody>();
+        Assert.NotNull(body);
+        Assert.Equal("cancel_cutoff_passed", body.Code);
+        Assert.Equal(24, body.CancelCutoffHours);
+    }
+
+    [Theory]
+    [InlineData(-1, HttpStatusCode.BadRequest)]
+    [InlineData(8761, HttpStatusCode.BadRequest)]
+    [InlineData(0, HttpStatusCode.OK)]
+    [InlineData(8760, HttpStatusCode.OK)]
+    public async Task Policy_put_validates_cutoff_bounds(int hours, HttpStatusCode expected)
+    {
+        using var host = StartHost(typeof(BookingPolicyController));
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(CustomerAuthHandler.HeaderName, "member@club.test");
+        var response = await client.PutAsJsonAsync("/api/rentals/booking-policy", new { cancelCutoffHours = hours });
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.OK)
+        {
+            var body = await response.Content.ReadFromJsonAsync<BookingPolicyResponseDto>();
+            Assert.NotNull(body);
+            Assert.Equal(hours, body.CancelCutoffHours);
+        }
+    }
+
+    private sealed record CutoffErrorBody(string Code, int CancelCutoffHours);
+
     [Fact]
     public async Task Create_availability_book_and_public_day_return_400_with_the_horizon_code()
     {
@@ -88,11 +125,14 @@ public sealed class BookingHorizonHttpTests
                     services.AddSingleton<IRentalAssetService, UnusedRentalAssetService>();
                     services.AddSingleton<IPublicTenantBinder, UnusedTenantBinder>();
                     services.AddSingleton<ITenantProvider, FixedTenantProvider>();
+                    services.AddSingleton<AppDbContext>(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>()));
+                    services.AddScoped<IBookingPolicyService, BookingPolicyService>();
                     services.AddSingleton<ITenantModuleAccessor, ActiveRentalsModule>();
                     services.AddAuthentication(CustomerJwtBearerDefaults.AuthenticationScheme)
                         .AddScheme<AuthenticationSchemeOptions, CustomerAuthHandler>(
                             CustomerJwtBearerDefaults.AuthenticationScheme,
-                            _ => { });
+                            _ => { })
+                        .AddScheme<AuthenticationSchemeOptions, CustomerAuthHandler>("Supabase", _ => { });
                     services.AddAuthorization(options => options.AddRolvixPolicies());
                     services.AddSingleton<IAuthorizationHandler, AllowPermissionHandler>();
                     services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
@@ -188,7 +228,7 @@ public sealed class BookingHorizonHttpTests
             Guid customerId,
             Guid reservationId,
             CancellationToken cancellationToken) =>
-            throw new NotImplementedException();
+            throw new CancelCutoffPassedException(24);
     }
 
     private sealed class ThrowingScheduleService : IScheduleService
@@ -304,7 +344,9 @@ public sealed class BookingHorizonHttpTests
             }
 
             var customerId = Guid.NewGuid();
-            Claim[] claims =
+            Claim[] claims = Scheme.Name == SupabaseJwtBearerDefaults.AuthenticationScheme
+                ? [new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())]
+                :
             [
                 new(CustomerClaimTypes.CustomerId, customerId.ToString()),
                 new(CustomerClaimTypes.TenantId, Guid.NewGuid().ToString()),

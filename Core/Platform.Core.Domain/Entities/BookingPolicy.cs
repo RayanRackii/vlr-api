@@ -51,6 +51,9 @@ public class BookingPolicy : Entity, ITenantScoped
     /// </summary>
     public int? MaxAdvanceBookingDays { get; set; }
 
+    /// <summary>Customer cancellation cutoff in hours; null means no cutoff.</summary>
+    public int? CancelCutoffHours { get; set; }
+
     public void Replace(
         string? cancellationPolicyText,
         int? maxActiveReservationsPerCustomerPerDay,

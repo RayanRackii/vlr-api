@@ -575,6 +575,11 @@
       "BookingPolicyResponseDto": {
         "additionalProperties": false,
         "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "cancellationPolicyText": {
             "nullable": true,
             "type": "string"
@@ -768,6 +773,11 @@
           "allowedDurationMinutes": {
             "nullable": true,
             "type": "string"
+          },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "closeTime": {
             "format": "time",
@@ -3866,6 +3876,11 @@
             "format": "uuid",
             "type": "string"
           },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "capacityPeople": {
             "format": "int32",
             "nullable": true,
@@ -4387,6 +4402,11 @@
       "ReservationResponseDto": {
         "additionalProperties": false,
         "properties": {
+          "cancelDeadlineUtc": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -6012,6 +6032,11 @@
             "nullable": true,
             "type": "string"
           },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "closeTime": {
             "format": "time",
             "nullable": true,
@@ -6131,6 +6156,11 @@
       "UpsertBookingPolicyRequestDto": {
         "additionalProperties": false,
         "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "cancellationPolicyText": {
             "nullable": true,
             "type": "string"

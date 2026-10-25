@@ -327,6 +327,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int?>("CancelCutoffHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("cancel_cutoff_hours");
+
                     b.Property<string>("CancellationPolicyText")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
@@ -2055,6 +2059,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("AssetId")
                         .HasColumnType("uuid")
                         .HasColumnName("asset_id");
+
+                    b.Property<int?>("CancelCutoffHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("cancel_cutoff_hours");
 
                     b.Property<int?>("CapacityPeople")
                         .HasColumnType("integer")

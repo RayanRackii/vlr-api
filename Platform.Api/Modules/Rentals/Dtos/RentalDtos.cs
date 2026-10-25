@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Contracts.ResourceVisuals;
 using Platform.Core.Domain.Enums;
 
@@ -27,7 +28,8 @@ public sealed record RentalAssetResponse(
     int? MaxAdvanceBookingDays,
     int? EffectiveMaxAdvanceBookingDays,
     Guid? VisualTemplateRevisionId = null,
-    int? CapacityPeople = null);
+    int? CapacityPeople = null,
+    int? CancelCutoffHours = null);
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {
@@ -39,6 +41,11 @@ public sealed record UpdateRentalSchedulePolicyRequestDto
 
     /// <summary>Comma-separated minutes for OpenHours (e.g. "60" or "60,120").</summary>
     public string? AllowedDurationMinutes { get; init; }
+
+    /// <summary>Omitted keeps the override; explicit null restores tenant inheritance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CancelCutoffHours { get; init; }
 }
 
 public sealed record BulkUpdateRentalSchedulePolicyRequestDto
@@ -53,6 +60,11 @@ public sealed record BulkUpdateRentalSchedulePolicyRequestDto
 
     /// <summary>Comma-separated minutes for OpenHours (e.g. "60" or "60,120").</summary>
     public string? AllowedDurationMinutes { get; init; }
+
+    /// <summary>Omitted keeps the override; explicit null restores tenant inheritance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CancelCutoffHours { get; init; }
 }
 
 public sealed record BulkUpdateRentalSchedulePolicyResponseDto(
@@ -125,7 +137,8 @@ public sealed record ReservationResponseDto(
     decimal TotalAmount,
     decimal DepositPaid,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<ReservationItemResponseDto> Items);
+    IReadOnlyList<ReservationItemResponseDto> Items,
+    DateTimeOffset? CancelDeadlineUtc = null);
 
 public sealed record UpdateRentalPricingDto
 {

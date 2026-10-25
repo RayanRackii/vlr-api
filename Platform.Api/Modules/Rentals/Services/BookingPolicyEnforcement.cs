@@ -61,12 +61,7 @@ internal static class BookingPolicyEnforcement
         Guid tenantId,
         CancellationToken cancellationToken)
     {
-        var policy = await db.BookingPolicies
-            .AsNoTracking()
-            .Where(item => item.TenantId == tenantId && item.ResourceType == null)
-            .Select(item => new { item.MaxActiveReservationsPerCustomerPerDay })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return policy?.MaxActiveReservationsPerCustomerPerDay;
+        var policy = await new PolicyResolver(db).ReadTenantAsync(tenantId, cancellationToken);
+        return PolicyResolver.Resolve(null, policy).MaxActiveReservationsPerCustomerPerDay;
     }
 }

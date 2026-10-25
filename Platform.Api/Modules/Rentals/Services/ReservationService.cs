@@ -19,8 +19,11 @@ public sealed class ReservationService(
     IReservationQueueService reservationQueueService,
     IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
-    TimeProvider timeProvider) : IReservationService
+    TimeProvider timeProvider,
+    PolicyResolver? policyResolver = null) : IReservationService
 {
+    private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
+
     private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
 
     public async Task<CheckAvailabilityResponseDto> CheckAvailabilityAsync(
@@ -62,12 +65,11 @@ public sealed class ReservationService(
         }
 
         var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
-        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-            dbContext, tenantId, cancellationToken);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
         BookingHorizon.Ensure(
             request.Date,
             today,
-            BookingHorizon.Effective(rental.MaxAdvanceBookingDays, tenantHorizon));
+            PolicyResolver.Resolve(rental, tenantPolicy).MaxAdvanceBookingDays);
 
         var reservedQuantity = await GetReservedQuantityAsync(
             tenantId,
@@ -360,6 +362,8 @@ public sealed class ReservationService(
                 cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = ToResponse(reservation, itemResponses,
+                await policies.ReadTenantAsync(tenantId, cancellationToken));
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -367,7 +371,7 @@ public sealed class ReservationService(
 
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponse(reservation, itemResponses);
+            return response;
         }
         catch
         {
@@ -395,6 +399,7 @@ public sealed class ReservationService(
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
+        var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -403,7 +408,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList()))
+                    .ToList(), tenantPolicy))
             .ToList();
     }
 
@@ -451,6 +456,7 @@ public sealed class ReservationService(
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
+        var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -459,7 +465,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList()))
+                    .ToList(), tenantPolicy))
             .ToList();
     }
 
@@ -494,8 +500,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Confirmed)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status != ReservationStatus.PendingDeposit)
@@ -510,10 +517,11 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationConfirmed),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -553,8 +561,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Completed)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status != ReservationStatus.Confirmed)
@@ -569,10 +578,11 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCompleted),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -606,8 +616,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status == ReservationStatus.Completed)
@@ -620,10 +631,11 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCanceled),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -661,8 +673,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status == ReservationStatus.Completed)
@@ -670,7 +683,16 @@ public sealed class ReservationService(
                 throw new InvalidOperationException("Cannot cancel a completed reservation.");
             }
 
-            if (DateTimeOffset.UtcNow >= reservation.StartDateTime)
+            var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+            var cutoff = PolicyResolver.StrictestCancelCutoffHours(
+                reservation.Items.Select(item => item.RentalAsset), tenantPolicy);
+            var now = timeProvider.GetUtcNow();
+            if (cutoff is > 0 && now >= reservation.StartDateTime.AddHours(-cutoff.Value))
+            {
+                throw new CancelCutoffPassedException(cutoff.Value);
+            }
+
+            if (now >= reservation.StartDateTime)
             {
                 throw new InvalidOperationException(
                     "Cannot cancel a reservation that has already started.");
@@ -681,10 +703,11 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCanceled),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -723,7 +746,8 @@ public sealed class ReservationService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static ReservationResponseDto ToResponseFromEntity(Reservation reservation) =>
+    private async Task<ReservationResponseDto> ToResponseFromEntityAsync(
+        Reservation reservation, CancellationToken cancellationToken) =>
         ToResponse(
             reservation,
             reservation.Items
@@ -731,7 +755,8 @@ public sealed class ReservationService(
                     i,
                     i.RentalAsset.AssetId,
                     i.RentalAsset.Asset.Name))
-                .ToList());
+                .ToList(),
+            await policies.ReadTenantAsync(reservation.TenantId, cancellationToken));
 
     private Task<Reservation?> LoadReservationWithItemsAsync(
         Guid reservationId,
@@ -933,7 +958,8 @@ public sealed class ReservationService(
 
     private static ReservationResponseDto ToResponse(
         Reservation reservation,
-        IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items) =>
+        IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items,
+        BookingPolicy? tenantPolicy) =>
         new(
             reservation.Id,
             reservation.TenantId,
@@ -954,5 +980,7 @@ public sealed class ReservationService(
                 x.AssetName,
                 x.Item.Quantity,
                 x.Item.UnitPrice,
-                x.Item.SubTotal)).ToList());
+                x.Item.SubTotal)).ToList(),
+            PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime,
+                items.Select(x => x.Item.RentalAsset), tenantPolicy));
 }
