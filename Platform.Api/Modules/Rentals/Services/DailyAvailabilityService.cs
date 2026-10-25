@@ -107,8 +107,11 @@ public sealed class DailyAvailabilityService(
                     var cursor = open;
                     while (true)
                     {
-                        var end = cursor.AddMinutes(minutes);
-                        if (end <= cursor || end > close) break;
+                        var endOffset = cursor.ToTimeSpan().Add(TimeSpan.FromMinutes(minutes));
+                        if (endOffset > TenantBookingClock.EndOfDayTime(close)) break;
+                        var end = endOffset == TimeSpan.FromDays(1)
+                            ? TenantBookingClock.DayClose : TimeOnly.FromTimeSpan(endOffset);
+                        if (end <= cursor) break;
                         if (!persistedStarts.Contains(cursor))
                             candidates.Add(new(null, cursor, end, openKind, SlotStatus.Available));
                         cursor = end;
@@ -120,10 +123,10 @@ public sealed class DailyAvailabilityService(
             foreach (var window in candidates.OrderBy(w => w.Start).ThenBy(w => w.End).ThenBy(w => w.Id))
             {
                 if (window.End <= window.Start || (durationMinutes.HasValue
-                        && (window.End - window.Start).TotalMinutes != durationMinutes.Value)) continue;
+                        && (TenantBookingClock.EndOfDayTime(window.End) - window.Start.ToTimeSpan()).TotalMinutes != durationMinutes.Value)) continue;
                 if (++windowCount > MaxWindows) throw Limit("At most 10000 windows may be returned. Narrow the scope.");
                 var start = TenantBookingClock.AtLocal(date, window.Start, zone);
-                var end = TenantBookingClock.AtLocal(date, window.End, zone);
+                var end = TenantBookingClock.EndAtLocal(date, window.End, zone);
                 if (end <= start) continue;
                 var reserved = reservations.Where(r => r.RentalAssetId == resource.Id && r.Start < end && r.End > start)
                     .Sum(r => (long)r.Quantity);
@@ -141,7 +144,7 @@ public sealed class DailyAvailabilityService(
                 if (blockingOverlap || invalidOpenHours || window.Status == SlotStatus.Cancelled || start < now
                     || window.Kind is { BlocksCapacity: true, IsBookableByCustomer: false }) available = 0;
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
-                    && p.StartTime <= window.Start && p.EndTime >= window.End).AsQueryable();
+                    && p.StartTime <= window.Start && p.EndTime >= TenantBookingClock.NormalizeEndTime(window.End)).AsQueryable();
                 var hours = (decimal)(end - start).TotalHours;
                 var pricing = window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching).FirstOrDefault()
                     : BookingOffer.ForDerivedWindow(matching, hours, quantity);

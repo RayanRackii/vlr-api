@@ -63,7 +63,7 @@ internal sealed class AvailabilityReadModel(
         var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
         persistedEntities = persistedEntities
             .Where(slot =>
-                TenantBookingClock.AtLocal(slot.Date, slot.EndTime, zone)
+                TenantBookingClock.EndAtLocal(slot.Date, slot.EndTime, zone)
                 > TenantBookingClock.AtLocal(slot.Date, slot.StartTime, zone))
             .ToList();
 
@@ -294,8 +294,11 @@ internal sealed class AvailabilityReadModel(
                 var cursor = open;
                 while (true)
                 {
-                    var end = cursor.AddMinutes(minutes);
-                    if (end > close || end <= cursor)
+                    var endOffset = cursor.ToTimeSpan().Add(TimeSpan.FromMinutes(minutes));
+                    if (endOffset > TenantBookingClock.EndOfDayTime(close)) break;
+                    var end = endOffset == TimeSpan.FromDays(1)
+                        ? TenantBookingClock.DayClose : TimeOnly.FromTimeSpan(endOffset);
+                    if (end <= cursor)
                     {
                         break;
                     }
@@ -307,7 +310,7 @@ internal sealed class AvailabilityReadModel(
                     }
 
                     var startDt = TenantBookingClock.AtLocal(date, cursor, zone);
-                    var endDt = TenantBookingClock.AtLocal(date, end, zone);
+                    var endDt = TenantBookingClock.EndAtLocal(date, end, zone);
                     if (endDt <= startDt)
                     {
                         cursor = end;
@@ -418,7 +421,7 @@ internal sealed class AvailabilityReadModel(
                 }
 
                 var startDt = TenantBookingClock.AtLocal(date, window.Start, zone);
-                var endDt = TenantBookingClock.AtLocal(date, window.End, zone);
+                var endDt = TenantBookingClock.EndAtLocal(date, window.End, zone);
                 if (endDt <= startDt)
                 {
                     continue;
@@ -553,10 +556,9 @@ internal sealed class AvailabilityReadModel(
                 assetName,
                 date,
                 TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(start, zone).DateTime),
-                // A booking that runs past civil midnight ends the day at 23:59 so staff
-                // grids never see an end (00:00) that sorts before its start.
+                // Represent the exclusive civil-day boundary with the same end used by templates.
                 end >= dayEnd
-                    ? new TimeOnly(23, 59)
+                    ? TenantBookingClock.DayClose
                     : TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime),
                 openKind.Id,
                 openKind.Key,

@@ -15,13 +15,13 @@ internal static class OpenHoursRules
     internal static string? ValidateInterval(RentalAsset rental, TimeOnly start, TimeOnly end, string name)
     {
         if (rental.OpenTime is not { } open || rental.CloseTime is not { } close
-            || close <= open || start < open || end > close || end <= start)
+            || close <= open || start < open || TenantBookingClock.EndOfDayTime(end) > TenantBookingClock.EndOfDayTime(close) || end <= start)
         {
             return $"'{name}' is not open for the requested interval.";
         }
 
         // Requests and opening hours are tenant-local civil times, including across DST.
-        var minutes = (end - start).TotalMinutes;
+        var minutes = (TenantBookingClock.EndOfDayTime(end) - start.ToTimeSpan()).TotalMinutes;
         return ParseDurations(rental.AllowedDurationMinutes).Any(allowed => allowed == minutes)
             ? null
             : $"'{name}' requested duration is not allowed.";

@@ -14,6 +14,191 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ReservationTimezoneTests
 {
     [Theory]
+    [InlineData(false, 10, 27, 30, 40, 20, 30, 3)]
+    [InlineData(true, 10, 27, 0, 50, 50, 60, 4)]
+    [InlineData(true, 10, 31, 0, 50, 50, 60, 4)]
+    [InlineData(true, 11, 1, 0, 50, 50, 60, 5)]
+    public async Task Day_close_template_quotes_and_stores_the_full_interval(
+        bool newYork, int month, int day, int startMinute, decimal rate, decimal expected,
+        int minutes, int utcEndHour)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        if (newYork) await h.UseNewYorkTimeAsync();
+        var date = new DateOnly(2026, month, day);
+        var start = new TimeOnly(23, startMinute);
+        var end = new TimeOnly(23, 59, 59);
+        await h.ConfigureDayCloseAsync(date, start, end, PricingUnit.Hour, rate);
+
+        var available = await h.Reservations.CheckAvailabilityAsync(new CheckAvailabilityRequestDto
+        {
+            AssetId = h.AssetId, Date = date, StartTime = start, EndTime = end, Quantity = 1,
+        }, CancellationToken.None);
+        Assert.True(available.IsAvailable, available.Reason);
+        Assert.Equal(expected, available.EstimatedTotalAmount);
+
+        var created = await h.Reservations.CreateReservationAsync(h.CustomerId,
+            h.CreateRequest(start, end) with { Date = date }, CancellationToken.None);
+        Assert.Equal(expected, created.TotalAmount);
+        Assert.Equal(TimeSpan.FromMinutes(minutes), created.EndDateTime - created.StartDateTime);
+        var stored = Assert.Single(await h.Reservations.ListMineAsync(h.CustomerId, CancellationToken.None));
+        var next = date.AddDays(1);
+        Assert.Equal(new DateTimeOffset(next.Year, next.Month, next.Day, utcEndHour, 0, 0, TimeSpan.Zero),
+            stored.EndDateTime);
+    }
+
+    [Fact]
+    public async Task Day_close_OpenHours_accepts_the_full_allowed_duration()
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var start = new TimeOnly(23, 30);
+        var end = new TimeOnly(23, 59, 59);
+        await h.ConfigureDayCloseAsync(CivilDate, start, end, PricingUnit.Hour, 40m);
+        var rental = await h.Db.RentalAssets.SingleAsync();
+        rental.SchedulePolicy = SchedulePolicy.OpenHours;
+        rental.OpenTime = new TimeOnly(23, 0);
+        rental.CloseTime = end;
+        rental.AllowedDurationMinutes = "30";
+        await h.Db.SaveChangesAsync();
+
+        var available = await h.Reservations.CheckAvailabilityAsync(new CheckAvailabilityRequestDto
+        {
+            AssetId = h.AssetId, Date = CivilDate, StartTime = start, EndTime = end, Quantity = 1,
+        }, CancellationToken.None);
+        Assert.True(available.IsAvailable, available.Reason);
+        Assert.Equal(20m, available.EstimatedTotalAmount);
+        var daily = Assert.Single((await h.Daily.GetAsync(CivilDate, [h.RentalAssetId],
+            h.UnitId, 1, 30, CancellationToken.None)).Resources).Windows;
+        Assert.Equal(2, daily.Count);
+        Assert.Contains(daily, w => w.StartTime == start && w.EndTime == end && w.TotalAmount == 20m);
+        var agenda = await h.Schedule.GetDayAsync(CivilDate, h.RentalAssetId, false, CancellationToken.None);
+        Assert.Equal(2, agenda.Slots.Count);
+        Assert.Contains(agenda.Slots, w => w.StartTime == start && w.EndTime == end);
+        var created = await h.Reservations.CreateReservationAsync(h.CustomerId,
+            h.CreateRequest(start, end), CancellationToken.None);
+        Assert.Equal(20m, created.TotalAmount);
+    }
+
+    [Theory]
+    [InlineData(false, PricingUnit.Hour, 40, 20)]
+    [InlineData(false, PricingUnit.Slot, 35, 35)]
+    [InlineData(false, PricingUnit.Day, 80, 80)]
+    [InlineData(false, PricingUnit.Fixed, 15, 15)]
+    [InlineData(true, PricingUnit.Hour, 40, 20)]
+    [InlineData(true, PricingUnit.Slot, 35, 35)]
+    [InlineData(true, PricingUnit.Day, 80, 80)]
+    [InlineData(true, PricingUnit.Fixed, 15, 15)]
+    public async Task Day_close_daily_quotes_and_both_booking_routes_preserve_pricing_units(
+        bool persisted, PricingUnit unit, decimal rate, decimal expected)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var start = new TimeOnly(23, 30);
+        var end = new TimeOnly(23, 59, 59);
+        await h.ConfigureDayCloseAsync(CivilDate, start, end, unit, rate);
+        var slot = persisted ? await h.SeedAvailableSlotAsync(start, end) : null;
+        var window = Assert.Single(Assert.Single((await h.Daily.GetAsync(CivilDate,
+            [h.RentalAssetId], h.UnitId, 1, 30, CancellationToken.None)).Resources).Windows);
+        Assert.Equal(end, window.EndTime);
+        Assert.Equal(AvailabilityWindowState.Available, window.State);
+        Assert.Equal(expected, window.TotalAmount);
+        Assert.Equal(unit, window.PricingUnit);
+
+        var created = slot is not null
+            ? await h.Schedule.BookSlotAsync(h.CustomerId, new BookSlotRequestDto
+            {
+                SlotId = slot.Id, UnitId = h.UnitId, Quantity = 1, ExpectedTotalAmount = expected,
+            }, CancellationToken.None)
+            : await h.Reservations.CreateReservationAsync(h.CustomerId,
+                h.CreateRequest(start, end) with { ExpectedTotalAmount = expected }, CancellationToken.None);
+        Assert.Equal(expected, created.TotalAmount);
+        Assert.Equal(TimeSpan.FromMinutes(30), created.EndDateTime - created.StartDateTime);
+        var taken = Assert.Single(Assert.Single((await h.Daily.GetAsync(CivilDate,
+            [h.RentalAssetId], h.UnitId, 1, 30, CancellationToken.None)).Resources).Windows);
+        Assert.Equal(AvailabilityWindowState.Taken, taken.State);
+        var booked = Assert.Single((await h.Schedule.GetDayAsync(CivilDate, h.RentalAssetId,
+            false, CancellationToken.None)).Slots);
+        Assert.Equal(SlotStatus.Booked, booked.Status);
+        Assert.Equal(created.Id, booked.ReservationId);
+        Assert.Equal(end, booked.EndTime);
+    }
+
+    [Theory]
+    [InlineData(9990000)]
+    [InlineData(9999999)]
+    public async Task Day_close_fractional_second_matches_the_template_and_pricing(int fractionalTicks)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var start = new TimeOnly(23, 30);
+        var end = new TimeOnly(23, 59, 59);
+        await h.ConfigureDayCloseAsync(CivilDate, start, end, PricingUnit.Hour, 40m);
+        var fractionalEnd = end.Add(TimeSpan.FromTicks(fractionalTicks));
+        var available = await h.Reservations.CheckAvailabilityAsync(new CheckAvailabilityRequestDto
+        {
+            AssetId = h.AssetId, Date = CivilDate, StartTime = start, EndTime = fractionalEnd, Quantity = 1,
+        }, CancellationToken.None);
+        Assert.True(available.IsAvailable, available.Reason);
+        Assert.Equal(20m, available.EstimatedTotalAmount);
+        var created = await h.Reservations.CreateReservationAsync(h.CustomerId,
+            h.CreateRequest(start, fractionalEnd), CancellationToken.None);
+        Assert.Equal(20m, created.TotalAmount);
+        Assert.Equal(TimeSpan.FromMinutes(30), created.EndDateTime - created.StartDateTime);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Day_close_is_exclusive_and_cancel_only_releases_its_own_interval(bool persisted)
+    {
+        await using var h = await TimezoneBookingHarness.CreateAsync();
+        var start = new TimeOnly(23, 30);
+        var end = new TimeOnly(23, 59, 59);
+        await h.ConfigureDayCloseAsync(CivilDate, start, end, PricingUnit.Hour, 40m);
+        await h.SeedAvailableSlotAsync(new TimeOnly(23, 0), start);
+        if (persisted) await h.SeedAvailableSlotAsync(start, end);
+        await h.SeedAvailableSlotAsync(TimeOnly.MinValue, new TimeOnly(0, 30), CivilDate.AddDays(1));
+        h.Db.RentalPricings.Add(new RentalPricing
+        {
+            TenantId = h.TenantId, RentalAssetId = h.RentalAssetId,
+            DayOfWeek = CivilDate.AddDays(1).DayOfWeek, StartTime = TimeOnly.MinValue,
+            EndTime = new TimeOnly(1, 0), PricePerHour = 40m, RequiresDeposit = false, DepositPercentage = 0,
+        });
+        await h.Db.SaveChangesAsync();
+
+        Task<CheckAvailabilityResponseDto> Check(DateOnly date, TimeOnly from, TimeOnly to) =>
+            h.Reservations.CheckAvailabilityAsync(new CheckAvailabilityRequestDto
+            {
+                AssetId = h.AssetId, Date = date, StartTime = from, EndTime = to, Quantity = 1,
+            }, CancellationToken.None);
+
+        // Only the exact template/slot window is bookable; 23:59:58 is not day-close.
+        Assert.False((await Check(CivilDate, start, new TimeOnly(23, 59, 58))).IsAvailable);
+        var late = await h.Reservations.CreateReservationAsync(h.CustomerId,
+            h.CreateRequest(start, end), CancellationToken.None);
+        Assert.False((await Check(CivilDate, start, end)).IsAvailable);
+        Assert.True((await Check(CivilDate, new TimeOnly(23, 0), start)).IsAvailable);
+        Assert.True((await Check(CivilDate.AddDays(1), TimeOnly.MinValue, new TimeOnly(0, 30))).IsAvailable);
+        var nextDay = await h.Schedule.GetDayAsync(CivilDate.AddDays(1), h.RentalAssetId,
+            false, CancellationToken.None);
+        Assert.DoesNotContain(nextDay.Slots, w => w.ReservationId == late.Id);
+
+        var early = await h.Reservations.CreateReservationAsync(h.CustomerId,
+            h.CreateRequest(new TimeOnly(23, 0), start), CancellationToken.None);
+        var midnight = await h.Reservations.CreateReservationAsync(h.CustomerId,
+            h.CreateRequest(TimeOnly.MinValue, new TimeOnly(0, 30)) with { Date = CivilDate.AddDays(1) },
+            CancellationToken.None);
+        Assert.Equal(3, (await h.Reservations.ListMineAsync(h.CustomerId, CancellationToken.None)).Count);
+
+        var canceled = await h.Reservations.CancelByCustomerAsync(h.CustomerId, late.Id, CancellationToken.None);
+        Assert.Equal(ReservationStatus.Canceled, canceled.Status);
+        Assert.Equal(late.EndDateTime, canceled.EndDateTime);
+        Assert.True((await Check(CivilDate, start, end)).IsAvailable);
+        Assert.False((await Check(CivilDate, new TimeOnly(23, 0), start)).IsAvailable);
+        Assert.False((await Check(CivilDate.AddDays(1), TimeOnly.MinValue, new TimeOnly(0, 30))).IsAvailable);
+        var remaining = await h.Reservations.ListMineAsync(h.CustomerId, CancellationToken.None);
+        Assert.All(remaining.Where(r => r.Id == early.Id || r.Id == midnight.Id),
+            r => Assert.NotEqual(ReservationStatus.Canceled, r.Status));
+    }
+
+    [Theory]
     [InlineData(7, 0, 8, 0, "not open for the requested interval")]
     [InlineData(23, 0, 23, 30, "not open for the requested interval")]
     [InlineData(10, 0, 10, 30, "duration is not allowed")]
@@ -522,6 +707,9 @@ public sealed class ReservationTimezoneTests
 
         public OccupancyKindService Kinds { get; }
 
+        public DailyAvailabilityService Daily => new(Db,
+            new FakeTenantProvider { TenantId = TenantId }, BookingClock);
+
         public static async Task<TimezoneBookingHarness> CreateAsync()
         {
             var tenantProvider = new FakeTenantProvider();
@@ -655,6 +843,27 @@ public sealed class ReservationTimezoneTests
             Db.Slots.Add(slot);
             await Db.SaveChangesAsync();
             return slot;
+        }
+
+        public async Task ConfigureDayCloseAsync(DateOnly date, TimeOnly start, TimeOnly end,
+            PricingUnit unit, decimal price)
+        {
+            var rental = await Db.RentalAssets.SingleAsync();
+            rental.SchedulePolicy = SchedulePolicy.SlotGrid;
+            var pricing = await Db.RentalPricings.SingleAsync();
+            pricing.DayOfWeek = date.DayOfWeek;
+            pricing.StartTime = TimeOnly.MinValue;
+            pricing.EndTime = end;
+            pricing.PricePerHour = price;
+            pricing.PricingUnit = unit;
+            await Kinds.EnsureDefaultsAsync(CancellationToken.None);
+            var kind = await Db.OccupancyKinds.SingleAsync(k => k.Key == "open");
+            Db.ScheduleTemplates.Add(new ScheduleTemplate
+            {
+                TenantId = TenantId, RentalAssetId = RentalAssetId, DayOfWeek = date.DayOfWeek,
+                StartTime = start, EndTime = end, OccupancyKindId = kind.Id, IsActive = true,
+            });
+            await Db.SaveChangesAsync();
         }
 
         public async Task UseNewYorkTimeAsync()
