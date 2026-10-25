@@ -259,6 +259,9 @@ public sealed class RentalsNotificationPublisher(
             [ReservationCustomerEmail.DateKey] = schedule.Date,
             [ReservationCustomerEmail.StartKey] = schedule.Start,
             [ReservationCustomerEmail.EndKey] = schedule.End,
+            [ReservationCustomerEmail.TimeZoneKey] = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId)
+                ? ianaId : zone.Id,
+            [ReservationCustomerEmail.StartInstantKey] = reservation.StartDateTime.ToString("O", CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.TotalKey] = ReservationCustomerEmail.FormatMoney(reservation.TotalAmount),
             [ReservationCustomerEmail.DepositKey] = await ResolveDepositTextAsync(
                 reservation,

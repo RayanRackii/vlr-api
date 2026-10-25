@@ -18,6 +18,8 @@ public static class ReservationCustomerEmail
     public const string DateKey = "reservationDate";
     public const string StartKey = "reservationStart";
     public const string EndKey = "reservationEnd";
+    public const string TimeZoneKey = "reservationTimeZone";
+    public const string StartInstantKey = "reservationStartInstant";
     public const string TotalKey = "reservationTotal";
     public const string DepositKey = "reservationDeposit";
     public const string UrlKey = "reservationUrl";
@@ -70,6 +72,13 @@ public static class ReservationCustomerEmail
         var timeRange = string.IsNullOrWhiteSpace(start) || string.IsNullOrWhiteSpace(end)
             ? null
             : $"{start}–{end}";
+        var timeZoneId = Text(payload, TimeZoneKey);
+        if (timeRange is not null && timeZoneId is not null
+            && DateTimeOffset.TryParse(Text(payload, StartInstantKey), CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var startInstant))
+        {
+            timeRange += $" ({TenantTimeZoneLabel.Format(timeZoneId, startInstant)})";
+        }
 
         var inner = new StringBuilder();
         inner.Append(
@@ -90,11 +99,33 @@ public static class ReservationCustomerEmail
             string.IsNullOrWhiteSpace(customerName) ? " " : customerName,
             inner.ToString(),
             brand);
+        var text = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(customerName))
+        {
+            text.AppendLine($"Olá {customerName},");
+        }
+        text.AppendLine(System.Net.WebUtility.HtmlDecode(
+            Intro(eventType, safeReference).Replace("<strong>", "").Replace("</strong>", "")));
+        foreach (var (label, value) in new[]
+        {
+            ("Estabelecimento", tenantName), ("Data", date), ("Horário", timeRange),
+            ("Total", total), ("Depósito", deposit),
+        })
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                text.AppendLine($"{label}: {value}");
+            }
+        }
+        if (IsSafeHttp(url))
+        {
+            text.AppendLine($"Ver reserva: {url}");
+        }
 
         return new ReservationEmailContent(
             SubjectFor(eventType, reference),
             html,
-            brand);
+            brand) { TextBody = text.ToString() };
     }
 
     public static string SubjectFor(string eventType, string? reference)
@@ -170,7 +201,6 @@ public static class ReservationCustomerEmail
         html.Append(
             $"""
             <tr><td style="padding:8px 0 8px;"><a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">Ver reserva</a></td></tr>
-            <tr><td style="padding:0;font-size:12px;line-height:1.55;color:#71717a;word-break:break-all;">{safeUrl}</td></tr>
             """);
     }
 
@@ -195,4 +225,7 @@ public static class ReservationCustomerEmail
 public sealed record ReservationEmailContent(
     string Subject,
     string HtmlBody,
-    string? FromDisplayName);
+    string? FromDisplayName)
+{
+    public string TextBody { get; init; } = string.Empty;
+}

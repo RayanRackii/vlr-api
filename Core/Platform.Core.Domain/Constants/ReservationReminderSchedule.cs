@@ -8,4 +8,7 @@ public static class ReservationReminderSchedule
 
     public static bool IsInLeadWindow(DateTimeOffset start, DateTimeOffset utcNow) =>
         start > utcNow && start <= utcNow.Add(LeadTime);
+
+    public static bool ShouldSendReminder(DateTimeOffset start, DateTimeOffset createdAt, DateTimeOffset now) =>
+        IsInLeadWindow(start, now) && start - createdAt >= LeadTime;
 }
