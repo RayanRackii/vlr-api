@@ -12,12 +12,20 @@ internal static class OpenHoursRules
         return durations.Count == 0 ? [60] : durations;
     }
 
-    internal static string? ValidateInterval(RentalAsset rental, TimeOnly start, TimeOnly end, string name)
+    internal static string? ValidateInterval(RentalAsset rental, TimeOnly start, TimeOnly end, string name,
+        bool enforceAllowedDurations = true)
     {
         if (rental.OpenTime is not { } open || rental.CloseTime is not { } close
             || close <= open || start < open || TenantBookingClock.EndOfDayTime(end) > TenantBookingClock.EndOfDayTime(close) || end <= start)
         {
             return $"'{name}' is not open for the requested interval.";
+        }
+
+        // Multi-day segments (start->close, open->close, open->end) only need to fit opening hours;
+        // allowed durations describe single-day bookings.
+        if (!enforceAllowedDurations)
+        {
+            return null;
         }
 
         // Requests and opening hours are tenant-local civil times, including across DST.

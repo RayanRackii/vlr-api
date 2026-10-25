@@ -1197,7 +1197,8 @@ public sealed class ReservationService(
             var dayStart = day == date ? startTime : rental.OpenTime ?? TimeOnly.MinValue;
             var dayEnd = day == endDate ? endTime : rental.CloseTime ?? TimeOnly.MinValue;
             if (rental.SchedulePolicy == SchedulePolicy.OpenHours
-                && OpenHoursRules.ValidateInterval(rental, dayStart, dayEnd, rental.Asset.Name) is { } error)
+                && OpenHoursRules.ValidateInterval(rental, dayStart, dayEnd, rental.Asset.Name,
+                    enforceAllowedDurations: false) is { } error)
                 throw new MultiDayUnavailableException(error);
             if (slots.Any(s => s.Date == day
                 && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, dayStart, dayEnd)
