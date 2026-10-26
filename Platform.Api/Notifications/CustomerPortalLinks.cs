@@ -42,15 +42,22 @@ public static class CustomerPortalLinks
                 return null;
             }
 
-            var host = template.Replace("{subdomain}", sub, StringComparison.Ordinal).ToLowerInvariant();
-            if (Uri.CheckHostName(host) != UriHostNameType.Dns)
+            // Path-style templates (e.g. "web.example.app/t/{subdomain}") carry a path
+            // prefix after the host; only the host part is validated as DNS.
+            var resolved = template.Replace("{subdomain}", sub, StringComparison.Ordinal).ToLowerInvariant();
+            var slash = resolved.IndexOf('/');
+            var host = slash < 0 ? resolved : resolved[..slash];
+            var prefix = slash < 0 ? string.Empty : resolved[slash..].TrimEnd('/');
+            if (Uri.CheckHostName(host) != UriHostNameType.Dns
+                || prefix.Contains("..", StringComparison.Ordinal)
+                || prefix.IndexOfAny(['?', '#', '\\']) >= 0)
             {
                 return null;
             }
 
             return new UriBuilder(baseUri.Scheme, host)
             {
-                Path = "/agenda",
+                Path = $"{prefix}/agenda",
                 Query = query,
             }.Uri.AbsoluteUri;
         }
