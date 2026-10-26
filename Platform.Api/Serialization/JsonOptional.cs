@@ -24,6 +24,32 @@ public readonly struct JsonOptional<T>
     public static implicit operator JsonOptional<T>(T? value) => Specified(value);
 }
 
+/// <summary>Distinguishes an omitted string from an explicit null or value.</summary>
+public readonly struct JsonOptionalString
+{
+    public bool IsSpecified { get; private init; }
+
+    public string? Value { get; private init; }
+
+    public static JsonOptionalString Specified(string? value) => new() { IsSpecified = true, Value = value };
+
+    public static implicit operator JsonOptionalString(string? value) => Specified(value);
+}
+
+public sealed class JsonOptionalStringConverter : JsonConverter<JsonOptionalString>
+{
+    public override bool HandleNull => true;
+
+    public override JsonOptionalString Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        JsonOptionalString.Specified(reader.TokenType == JsonTokenType.Null ? null : reader.GetString());
+
+    public override void Write(Utf8JsonWriter writer, JsonOptionalString value, JsonSerializerOptions options)
+    {
+        if (value.Value is { } text) writer.WriteStringValue(text);
+        else writer.WriteNullValue();
+    }
+}
+
 /// <summary>
 /// Reads <c>maxAdvanceBookingDays</c> so a missing property is not the same as null.
 /// </summary>

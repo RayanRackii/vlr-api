@@ -235,7 +235,7 @@ public sealed class ReservationTimezoneTests
     [InlineData(10, 0, 10, 30, "60", "duration is not allowed")]
     [InlineData(10, 0, 11, 0, null, null)]
     [InlineData(10, 0, 10, 30, null, "duration is not allowed")]
-    [InlineData(10, 0, 11, 0, "bad,0,-1,1440", null)]
+    [InlineData(10, 0, 11, 0, "bad,0,-1,1440", "duration is not allowed")]
     [InlineData(10, 0, 10, 30, "bad,0,-1,1440", "duration is not allowed")]
     [InlineData(10, 0, 10, 30, " 30,60,30,bad ", null)]
     public async Task OpenHours_create_and_availability_enforce_civil_hours_and_durations(

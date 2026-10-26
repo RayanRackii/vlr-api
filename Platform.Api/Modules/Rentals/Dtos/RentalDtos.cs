@@ -45,7 +45,9 @@ public sealed record UpdateRentalSchedulePolicyRequestDto
     public TimeOnly? CloseTime { get; init; }
 
     /// <summary>Comma-separated minutes for OpenHours (e.g. "60" or "60,120").</summary>
-    public string? AllowedDurationMinutes { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalStringConverter))]
+    public JsonOptionalString AllowedDurationMinutes { get; init; }
 
     /// <summary>Omitted keeps the override; explicit null restores tenant inheritance.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -64,7 +66,9 @@ public sealed record BulkUpdateRentalSchedulePolicyRequestDto
     public TimeOnly? CloseTime { get; init; }
 
     /// <summary>Comma-separated minutes for OpenHours (e.g. "60" or "60,120").</summary>
-    public string? AllowedDurationMinutes { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalStringConverter))]
+    public JsonOptionalString AllowedDurationMinutes { get; init; }
 
     /// <summary>Omitted keeps the override; explicit null restores tenant inheritance.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

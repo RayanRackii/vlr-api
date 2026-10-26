@@ -559,21 +559,84 @@ public sealed class MultiSlotSlotGridReservationTests
     }
 
     [Fact]
-    public async Task SlotGrid_rentable_can_save_allowed_duration_minutes_not_a_multiple_of_slot_length()
+    public async Task SlotGrid_rentable_rejects_allowed_duration_minutes_not_a_multiple_of_slot_length()
     {
         await using var h = await MultiSlotHarness.CreateAsync();
         var service = new RentalAssetService(h.Db, h.TenantProvider);
 
-        var response = await service.UpdateSchedulePolicyAsync(
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(
             h.RentalAssetId,
             new UpdateRentalSchedulePolicyRequestDto
             {
                 SchedulePolicy = SchedulePolicy.SlotGrid,
                 AllowedDurationMinutes = "40,70",
             },
-            CancellationToken.None);
+            CancellationToken.None));
 
-        Assert.Equal("40,70", response.AllowedDurationMinutes);
+        Assert.Contains("40 não é múltiplo do slot de 60 min", error.Message);
+        Assert.Contains("70 não é múltiplo do slot de 60 min", error.Message);
+    }
+
+    [Theory]
+    [InlineData("60,60", "valores duplicados não são permitidos: 60")]
+    [InlineData("0", "AllowedDurationMinutes deve conter minutos inteiros positivos")]
+    [InlineData("1441", "1441 excede o limite máximo de 1440 min")]
+    public async Task SlotGrid_rentable_rejects_invalid_allowed_duration_minutes(string allowed, string expectedError)
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        var service = new RentalAssetService(h.Db, h.TenantProvider);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(
+            h.RentalAssetId,
+            new UpdateRentalSchedulePolicyRequestDto
+            {
+                SchedulePolicy = SchedulePolicy.SlotGrid,
+                AllowedDurationMinutes = allowed,
+            },
+            CancellationToken.None));
+
+        Assert.Contains(expectedError, error.Message);
+    }
+
+    [Fact]
+    public async Task OpenHours_rentable_rejects_allowed_duration_exceeding_daily_window()
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        var service = new RentalAssetService(h.Db, h.TenantProvider);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(
+            h.RentalAssetId,
+            new UpdateRentalSchedulePolicyRequestDto
+            {
+                SchedulePolicy = SchedulePolicy.OpenHours,
+                OpenTime = new TimeOnly(8, 0),
+                CloseTime = new TimeOnly(16, 0),
+                AllowedDurationMinutes = "600",
+            },
+            CancellationToken.None));
+
+        Assert.Contains("600 excede a janela de funcionamento de 480 min", error.Message);
+    }
+
+    [Fact]
+    public async Task OpenHours_update_validates_stored_durations_when_request_omits_them()
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        h.Rental.AllowedDurationMinutes = "600";
+        await h.Db.SaveChangesAsync();
+        var service = new RentalAssetService(h.Db, h.TenantProvider);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(
+            h.RentalAssetId,
+            new UpdateRentalSchedulePolicyRequestDto
+            {
+                SchedulePolicy = SchedulePolicy.OpenHours,
+                OpenTime = new TimeOnly(8, 0),
+                CloseTime = new TimeOnly(16, 0),
+            },
+            CancellationToken.None));
+
+        Assert.Contains("600 excede a janela de funcionamento de 480 min", error.Message);
     }
 
     private sealed class MultiSlotHarness : IAsyncDisposable

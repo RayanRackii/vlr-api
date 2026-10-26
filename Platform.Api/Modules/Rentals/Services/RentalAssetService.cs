@@ -84,9 +84,7 @@ public sealed class RentalAssetService(
             rental.SchedulePolicy = request.SchedulePolicy;
             rental.OpenTime = request.OpenTime;
             rental.CloseTime = request.CloseTime;
-            rental.AllowedDurationMinutes = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
-                ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-                : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
+            rental.AllowedDurationMinutes = NormalizeAllowedDurations(request, rental.AllowedDurationMinutes);
             rental.Touch();
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -147,10 +145,6 @@ public sealed class RentalAssetService(
                 throw new KeyNotFoundException("One or more rentables were not found.");
             }
 
-            var allowed = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
-                ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-                : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
-
             var cutoff = request.CancelCutoffHours.IsSpecified
                 ? PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours.Value) : null;
             foreach (var rental in rentals)
@@ -160,7 +154,7 @@ public sealed class RentalAssetService(
                 rental.SchedulePolicy = request.SchedulePolicy;
                 rental.OpenTime = request.OpenTime;
                 rental.CloseTime = request.CloseTime;
-                rental.AllowedDurationMinutes = allowed;
+                rental.AllowedDurationMinutes = NormalizeAllowedDurations(request, rental.AllowedDurationMinutes);
                 rental.Touch();
             }
 
@@ -239,6 +233,42 @@ public sealed class RentalAssetService(
         {
             throw new ArgumentException("CloseTime must be after OpenTime.");
         }
+    }
+
+    private static string? NormalizeAllowedDurations(
+        UpdateRentalSchedulePolicyRequestDto request,
+        string? storedAllowedDurationMinutes)
+    {
+        var value = request.AllowedDurationMinutes.IsSpecified
+            ? request.AllowedDurationMinutes.Value
+            : storedAllowedDurationMinutes;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var openingWindowMinutes = request.SchedulePolicy == SchedulePolicy.OpenHours
+            ? (int?)OpenHoursRules.DailyWindowMinutes(request.OpenTime!.Value, request.CloseTime!.Value)
+            : null;
+        return RentalAllowedDurations.Normalize(value, openingWindowMinutes: openingWindowMinutes);
+    }
+
+    private static string? NormalizeAllowedDurations(
+        BulkUpdateRentalSchedulePolicyRequestDto request,
+        string? storedAllowedDurationMinutes)
+    {
+        var value = request.AllowedDurationMinutes.IsSpecified
+            ? request.AllowedDurationMinutes.Value
+            : storedAllowedDurationMinutes;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var openingWindowMinutes = request.SchedulePolicy == SchedulePolicy.OpenHours
+            ? (int?)OpenHoursRules.DailyWindowMinutes(request.OpenTime!.Value, request.CloseTime!.Value)
+            : null;
+        return RentalAllowedDurations.Normalize(value, openingWindowMinutes: openingWindowMinutes);
     }
 
     private Guid EnsureTenantContext()
