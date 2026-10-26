@@ -442,6 +442,23 @@ public sealed class ReservationCustomerEmailTests
         Assert.Null(CustomerPortalLinks.ReservationAgenda("https://rolvix.com.br", "../agenda", id, "{subdomain}.rolvix.com.br"));
     }
 
+    [Fact]
+    public void Portal_link_supports_path_style_host_templates()
+    {
+        var id = Guid.Parse("55555555-5555-4555-8555-555555555555");
+
+        Assert.Equal(
+            $"https://web-git-develop.example.app/t/estudio/agenda?reservation={id:D}",
+            CustomerPortalLinks.ReservationAgenda("https://web-git-develop.example.app", "Estudio", id, "web-git-develop.example.app/t/{subdomain}"));
+        Assert.Equal(
+            $"https://web.example.app/t/estudio/agenda?reservation={id:D}",
+            CustomerPortalLinks.ReservationAgenda("https://web.example.app", "estudio", id, " web.example.app/t/{subdomain}/ "));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://web.example.app", "estudio", id, "bad host/t/{subdomain}"));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://web.example.app", "estudio", id, "/t/{subdomain}"));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://web.example.app", "estudio", id, "web.example.app/../{subdomain}"));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://web.example.app", "estudio", id, "web.example.app/t/{subdomain}?x=1"));
+    }
+
     [Theory]
     [InlineData(0.5, "30 min")]
     [InlineData(2.0, "2 h")]
