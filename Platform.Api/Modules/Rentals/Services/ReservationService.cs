@@ -114,6 +114,8 @@ public sealed class ReservationService(
 
         decimal? estimatedTotal = null;
         PricingUnit? pricingUnit = null;
+        decimal? unitPrice = null;
+        decimal? pricedUnits = null;
         string? reason = null;
         IReadOnlyList<(TimeOnly Start, TimeOnly End)>? slotGridWindows = null;
 
@@ -170,6 +172,8 @@ public sealed class ReservationService(
                         cancellationToken);
                     estimatedTotal = BookingOffer.Total(pricing, hours, quantity, calendarDays);
                     pricingUnit = pricing.PricingUnit;
+                    unitPrice = pricing.PricePerHour;
+                    pricedUnits = BookingOffer.PricedUnits(pricing.PricingUnit, hours, quantity, calendarDays);
                 }
             }
             catch (InvalidOperationException ex)
@@ -184,7 +188,9 @@ public sealed class ReservationService(
             AvailableQuantity: availableQuantity,
             EstimatedTotalAmount: estimatedTotal,
             Reason: isAvailable && estimatedTotal is not null ? null : reason,
-            PricingUnit: pricingUnit);
+            PricingUnit: pricingUnit,
+            UnitPrice: unitPrice,
+            PricedUnits: pricedUnits);
     }
 
     public async Task<ReservationResponseDto> CreateReservationAsync(
