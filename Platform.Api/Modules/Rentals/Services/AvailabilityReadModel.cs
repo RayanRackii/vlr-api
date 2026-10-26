@@ -115,12 +115,64 @@ internal sealed class AvailabilityReadModel(
                     TenantBookingClock.AtLocal(s.Date, s.StartTime, zone), timeProvider));
         }
 
+        if (!customerFacing)
+        {
+            all = await AttachBookingDetailsAsync(tenantId, all.ToList(), cancellationToken);
+        }
+
         var slots = all
             .OrderBy(s => s.AssetName)
             .ThenBy(s => s.StartTime)
             .ToList();
 
         return new DayScheduleResponseDto(date, slots);
+    }
+
+    /// <summary>
+    /// Staff day view: stamp booked cells with the reservation item quantity for that resource
+    /// and the customer name, so multi-unit occupancy counts units rather than bookings.
+    /// </summary>
+    private async Task<List<SlotResponseDto>> AttachBookingDetailsAsync(
+        Guid tenantId,
+        List<SlotResponseDto> slots,
+        CancellationToken cancellationToken)
+    {
+        var reservationIds = slots
+            .Where(s => s.Status == SlotStatus.Booked && s.ReservationId is not null)
+            .Select(s => s.ReservationId!.Value)
+            .Distinct()
+            .ToList();
+        if (reservationIds.Count == 0)
+        {
+            return slots;
+        }
+
+        var rows = await (
+            from item in dbContext.ReservationItems.AsNoTracking()
+            join reservation in dbContext.Reservations.AsNoTracking()
+                on item.ReservationId equals reservation.Id
+            where item.TenantId == tenantId
+                  && reservation.TenantId == tenantId
+                  && reservationIds.Contains(reservation.Id)
+            select new { reservation.Id, item.RentalAssetId, item.Quantity, reservation.CustomerName })
+            .ToListAsync(cancellationToken);
+
+        var quantities = rows
+            .GroupBy(r => (r.Id, r.RentalAssetId))
+            .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+        var names = rows
+            .GroupBy(r => r.Id)
+            .ToDictionary(g => g.Key, g => g.First().CustomerName);
+
+        return slots
+            .Select(s => s.Status == SlotStatus.Booked && s.ReservationId is { } rid
+                ? s with
+                {
+                    Quantity = quantities.TryGetValue((rid, s.RentalAssetId), out var q) ? q : null,
+                    CustomerName = names.GetValueOrDefault(rid),
+                }
+                : s)
+            .ToList();
     }
 
     private async Task<List<Slot>> LoadPersistedSlotEntitiesAsync(

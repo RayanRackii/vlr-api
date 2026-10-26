@@ -130,7 +130,9 @@ public sealed record SlotResponseDto(
     SlotOccurrenceSource Source,
     Guid? SourceTemplateId,
     SchedulePolicy SchedulePolicy,
-    bool SupportsEntireRecurrence);
+    bool SupportsEntireRecurrence,
+    int? Quantity = null,
+    string? CustomerName = null);
 
 public sealed record DayScheduleResponseDto(
     DateOnly Date,
