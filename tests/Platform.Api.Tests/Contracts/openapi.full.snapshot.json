@@ -1665,6 +1665,11 @@
           "applyTemplateDefaults": {
             "type": "boolean"
           },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "capacityPeople": {
             "format": "int32",
             "nullable": true,
@@ -6005,6 +6010,11 @@
       "UpdateRentableRequest": {
         "additionalProperties": false,
         "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "capacityPeople": {
             "format": "int32",
             "nullable": true,

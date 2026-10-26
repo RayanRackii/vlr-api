@@ -179,6 +179,40 @@ public sealed class AssetRegistryTests
         Converters = { new JsonStringEnumConverter() },
     };
 
+    // QA R18 HIGH: drawer "Prazo de cancelamento" = 1h answered 200 but never persisted,
+    // because UpdateRentableRequest had no CancelCutoffHours and the field was dropped.
+    [Fact]
+    public async Task UpdateRentable_persists_cancel_cutoff_from_web_body_and_null_clears_it()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Projetor", tag: "PRJ-1"), CancellationToken.None);
+        var body = $$"""
+            {"name":"Projetor","unitId":"{{harness.UnitId}}","categoryId":"{{harness.CategoryId}}",
+             "familyId":"{{harness.FamilyId}}","rentalType":"Location","totalQuantity":1,
+             "requiresDeposit":true,"queueEnabled":false,"queueOpeningTime":null,"location":null,
+             "cancelCutoffHours":1}
+            """;
+        var request = JsonSerializer.Deserialize<UpdateRentableRequest>(body, WebJson)!;
+        Assert.True(request.CancelCutoffHours.IsSpecified);
+
+        var updated = await registry.UpdateRentableAsync(created.RentalConfiguration!.Id, request, CancellationToken.None);
+        Assert.Equal(1, updated.RentalConfiguration!.CancelCutoffHours);
+
+        var untouched = request with { CancelCutoffHours = default };
+        updated = await registry.UpdateRentableAsync(created.RentalConfiguration.Id, untouched, CancellationToken.None);
+        Assert.Equal(1, updated.RentalConfiguration!.CancelCutoffHours);
+
+        var cleared = JsonSerializer.Deserialize<UpdateRentableRequest>(body.Replace("\"cancelCutoffHours\":1", "\"cancelCutoffHours\":null"), WebJson)!;
+        updated = await registry.UpdateRentableAsync(created.RentalConfiguration.Id, cleared, CancellationToken.None);
+        Assert.Null(updated.RentalConfiguration!.CancelCutoffHours);
+
+        var invalid = JsonSerializer.Deserialize<UpdateRentableRequest>(body.Replace("\"cancelCutoffHours\":1", "\"cancelCutoffHours\":9000"), WebJson)!;
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            registry.UpdateRentableAsync(created.RentalConfiguration.Id, invalid, CancellationToken.None));
+    }
+
     [Fact]
     public void Web_rentable_body_without_tag_deserializes_for_create_and_update()
     {
