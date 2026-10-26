@@ -562,6 +562,9 @@ public sealed class MultiSlotSlotGridReservationTests
     public async Task SlotGrid_rentable_rejects_allowed_duration_minutes_not_a_multiple_of_slot_length()
     {
         await using var h = await MultiSlotHarness.CreateAsync();
+        h.AddGridWindow(new TimeOnly(10, 0), new TimeOnly(10, 30), 10m);
+        h.AddGridWindow(new TimeOnly(10, 30), new TimeOnly(11, 0), 10m);
+        await h.Db.SaveChangesAsync();
         var service = new RentalAssetService(h.Db, h.TenantProvider);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(
@@ -569,12 +572,33 @@ public sealed class MultiSlotSlotGridReservationTests
             new UpdateRentalSchedulePolicyRequestDto
             {
                 SchedulePolicy = SchedulePolicy.SlotGrid,
-                AllowedDurationMinutes = "40,70",
+                AllowedDurationMinutes = "45,70",
             },
             CancellationToken.None));
 
-        Assert.Contains("40 não é múltiplo do slot de 60 min", error.Message);
-        Assert.Contains("70 não é múltiplo do slot de 60 min", error.Message);
+        Assert.Contains("45 não é múltiplo do slot de 30 min", error.Message);
+        Assert.Contains("70 não é múltiplo do slot de 30 min", error.Message);
+    }
+
+    [Fact]
+    public async Task SlotGrid_rentable_uses_its_template_slot_length_for_allowed_durations()
+    {
+        await using var h = await MultiSlotHarness.CreateAsync();
+        h.AddGridWindow(new TimeOnly(10, 0), new TimeOnly(10, 30), 10m);
+        h.AddGridWindow(new TimeOnly(10, 30), new TimeOnly(11, 0), 10m);
+        await h.Db.SaveChangesAsync();
+        var service = new RentalAssetService(h.Db, h.TenantProvider);
+
+        await service.UpdateSchedulePolicyAsync(
+            h.RentalAssetId,
+            new UpdateRentalSchedulePolicyRequestDto
+            {
+                SchedulePolicy = SchedulePolicy.SlotGrid,
+                AllowedDurationMinutes = "30,60",
+            },
+            CancellationToken.None);
+
+        Assert.Equal("30,60", h.Rental.AllowedDurationMinutes);
     }
 
     [Theory]
