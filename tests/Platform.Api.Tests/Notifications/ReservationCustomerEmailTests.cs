@@ -426,6 +426,46 @@ public sealed class ReservationCustomerEmailTests
         Assert.Null(CustomerPortalLinks.ReservationAgenda(null, "estudio", id));
     }
 
+    [Fact]
+    public void Portal_link_targets_the_tenant_host_when_a_host_template_exists()
+    {
+        var id = Guid.Parse("44444444-4444-4444-8444-444444444444");
+
+        Assert.Equal(
+            $"https://estudio.rolvix.com.br/agenda?reservation={id:D}",
+            CustomerPortalLinks.ReservationAgenda("https://rolvix.com.br", "Estudio", id, "{subdomain}.rolvix.com.br"));
+        Assert.Equal(
+            $"https://estudio.portal.example.test/agenda?reservation={id:D}",
+            CustomerPortalLinks.ReservationAgenda("https://app.example.test/", "estudio", id, " {subdomain}.portal.example.test "));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://rolvix.com.br", "estudio", id, "rolvix.com.br"));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://rolvix.com.br", "estudio", id, "{subdomain}.bad host"));
+        Assert.Null(CustomerPortalLinks.ReservationAgenda("https://rolvix.com.br", "../agenda", id, "{subdomain}.rolvix.com.br"));
+    }
+
+    [Theory]
+    [InlineData(0.5, "30 min")]
+    [InlineData(2.0, "2 h")]
+    [InlineData(1.5, "1 h 30 min")]
+    [InlineData(0.0, null)]
+    public void Hourly_duration_is_formatted_for_the_item_line(double hours, string? expected) =>
+        Assert.Equal(expected, ReservationCustomerEmail.FormatDuration((decimal)hours));
+
+    [Fact]
+    public void Half_hour_hourly_item_shows_duration_next_to_the_total()
+    {
+        var payload = Payload(total: "R$ 20,00", deposit: null, url: null);
+        payload[ReservationCustomerEmail.ItemDetailsKey] = JsonSerializer.Serialize(new[]
+        {
+            new { Name = "Sala", Quantity = 1, PricingUnit = PricingUnit.Hour.ToString(), UnitPrice = 40m, LineTotal = 20m, Hours = 0.5m },
+        });
+
+        var rendered = ReservationCustomerEmail.Render(RentalEventTypes.ReservationConfirmed, payload);
+
+        Assert.Contains(
+            $"Sala: 1 x {ReservationCustomerEmail.FormatMoney(40m)} por hora = {ReservationCustomerEmail.FormatMoney(20m)} (30 min)",
+            rendered.TextBody, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(".")]
     [InlineData("..")]
@@ -653,7 +693,8 @@ public sealed class ReservationCustomerEmailTests
         Assert.Contains("Depósito:", sent.Body, StringComparison.Ordinal);
         Assert.Contains(ReservationCustomerEmail.FormatMoney(50m)!, sent.Body, StringComparison.Ordinal);
         Assert.Contains("Estúdio Norte", sent.Body, StringComparison.Ordinal);
-        Assert.Contains("/t/estudio/agenda?reservation=", sent.Body, StringComparison.Ordinal);
+        Assert.Contains("https://estudio.rolvix.com.br/agenda?reservation=", sent.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("/t/estudio/", sent.Body, StringComparison.Ordinal);
         Assert.Contains(sent.ReservationId.ToString("D"), sent.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Rolvix", sent.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("Quadra", sent.Body, StringComparison.Ordinal);
