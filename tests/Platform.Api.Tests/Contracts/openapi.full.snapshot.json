@@ -1276,6 +1276,11 @@
           "pricingUnit": {
             "$ref": "#/components/schemas/PricingUnit"
           },
+          "pricedUnits": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
           "reason": {
             "nullable": true,
             "type": "string"
@@ -1283,6 +1288,11 @@
           "requestedQuantity": {
             "format": "int32",
             "type": "integer"
+          },
+          "unitPrice": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           }
         },
         "type": "object"

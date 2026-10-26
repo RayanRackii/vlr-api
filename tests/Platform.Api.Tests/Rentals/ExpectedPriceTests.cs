@@ -51,6 +51,8 @@ public sealed class ExpectedPriceTests
         }, CancellationToken.None);
         Assert.Equal(50m, check.EstimatedTotalAmount);
         Assert.Equal(PricingUnit.Fixed, check.PricingUnit);
+        Assert.Equal(50m, check.UnitPrice);
+        Assert.Equal(1m, check.PricedUnits);
 
         var created = persisted
             ? await h.Schedule().BookSlotAsync(h.CustomerA, new()
@@ -77,14 +79,14 @@ public sealed class ExpectedPriceTests
     }
 
     [Theory]
-    [InlineData(false, PricingUnit.Slot, 60.03)]
-    [InlineData(true, PricingUnit.Slot, 60.03)]
-    [InlineData(false, PricingUnit.Day, 60.03)]
-    [InlineData(true, PricingUnit.Day, 60.03)]
-    [InlineData(false, PricingUnit.Fixed, 20.01)]
-    [InlineData(true, PricingUnit.Fixed, 20.01)]
+    [InlineData(false, PricingUnit.Slot, 60.03, 3)]
+    [InlineData(true, PricingUnit.Slot, 60.03, 3)]
+    [InlineData(false, PricingUnit.Day, 60.03, 3)]
+    [InlineData(true, PricingUnit.Day, 60.03, 3)]
+    [InlineData(false, PricingUnit.Fixed, 20.01, 1)]
+    [InlineData(true, PricingUnit.Fixed, 20.01, 1)]
     public async Task Non_hour_quote_matches_booking_and_rejects_a_stale_expected_total(
-        bool persisted, PricingUnit unit, decimal expected)
+        bool persisted, PricingUnit unit, decimal expected, decimal pricedUnits)
     {
         await using var h = await ReservationQueueHarness.CreateAsync(
             queueEnabled: false, includeSlot: true, type: RentalAssetType.Good);
@@ -106,6 +108,8 @@ public sealed class ExpectedPriceTests
         Assert.True(availability.IsAvailable);
         Assert.Equal(expected, availability.EstimatedTotalAmount);
         Assert.Equal(unit, availability.PricingUnit);
+        Assert.Equal(20.01m, availability.UnitPrice);
+        Assert.Equal(pricedUnits, availability.PricedUnits);
 
         Task<ReservationResponseDto> Submit(decimal quoted) => persisted
             ? h.Schedule().BookSlotAsync(h.CustomerA, new()

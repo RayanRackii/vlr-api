@@ -100,7 +100,9 @@ public sealed record CheckAvailabilityResponseDto(
     decimal? EstimatedTotalAmount,
     string? Reason,
     [property: JsonConverter(typeof(JsonStringEnumConverter<PricingUnit>))]
-    PricingUnit? PricingUnit = null);
+    PricingUnit? PricingUnit = null,
+    decimal? UnitPrice = null,
+    decimal? PricedUnits = null);
 
 public sealed record CreateReservationItemRequestDto
 {

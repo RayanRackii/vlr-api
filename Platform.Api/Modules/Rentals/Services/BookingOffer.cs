@@ -30,4 +30,14 @@ internal static class BookingOffer
             PricingUnit.Fixed => Math.Round(unitPrice, 2, MidpointRounding.AwayFromZero),
             _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, "Unknown pricing unit."),
         };
+
+    public static decimal PricedUnits(PricingUnit unit, decimal hours, int quantity, int? calendarDays = null) =>
+        unit switch
+        {
+            PricingUnit.Hour => hours * quantity,
+            PricingUnit.Slot => quantity,
+            PricingUnit.Day => (calendarDays ?? Math.Max(1m, Math.Ceiling(hours / 24m))) * quantity,
+            PricingUnit.Fixed => 1m,
+            _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, "Unknown pricing unit."),
+        };
 }
