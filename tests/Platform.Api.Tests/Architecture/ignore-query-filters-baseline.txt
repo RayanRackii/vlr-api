@@ -1,0 +1,30 @@
+# Passo 5 (2/2): production files allowed to call IgnoreQueryFilters().
+# Ratchet: this list may only shrink. A new file needs an explicit PlatformScope review
+# (passo 7 classifies the remaining entries as platform vs. tenant convenience).
+Core/Platform.Core.Infrastructure/MigrationOps/CatalogPreflightDiagnostics.cs
+Core/Platform.Core.Infrastructure/MigrationOps/PmocPeriodCollisionDiagnostics.cs
+Core/Platform.Core.Infrastructure/MigrationOps/RbacSchemaDiagnostics.cs
+Core/Platform.Core.Infrastructure/Persistence/AssetCategoryExampleSeeder.cs
+Platform.Api/Authentication/CustomerJwtSessionValidator.cs
+Platform.Api/Authentication/PlatformAdminTenantSessionMiddleware.cs
+Platform.Api/Authorization/ClientRoleDiagnosticHostedService.cs
+Platform.Api/Authorization/PermissionResolver.cs
+Platform.Api/Authorization/TenantAccessBootstrapper.cs
+Platform.Api/Authorization/TenantModuleAccessor.cs
+Platform.Api/Jobs/PmocEngineJob.cs
+Platform.Api/Modules/Admin/Services/AdminTenantService.cs
+Platform.Api/Modules/Admin/Services/PlatformAdminMembershipService.cs
+Platform.Api/Modules/Admin/Services/TenantUserAdminService.cs
+Platform.Api/Modules/Assets/Services/AssetFamilyService.cs
+Platform.Api/Modules/ModuleMenuItems/Services/ModuleMenuItemService.cs
+Platform.Api/Modules/RegistrationFields/Services/RegistrationFieldService.cs
+Platform.Api/Modules/Rentals/Services/RentalLayoutService.BookingMaps.cs
+Platform.Api/Modules/Rentals/Services/RentalLayoutService.cs
+Platform.Api/Modules/ResourceVisuals/ResourceVisualCatalogService.cs
+Platform.Api/Modules/Users/Services/StaffTenantMembershipService.cs
+Platform.Api/Modules/Users/Services/UserDirectoryService.cs
+Platform.Api/Modules/WorkOrders/Services/WorkOrderGenerationService.cs
+Platform.Api/Notifications/NotificationOutboxProcessor.cs
+Platform.Api/Services/Trial/TrialGuard.cs
+Platform.Api/Services/Tenancy/TenantPurger.cs
+Platform.Api/Services/Tenancy/TenantTimeZoneProvider.cs

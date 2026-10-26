@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Modules.Rentals.Controllers;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets.Dtos;
@@ -24,6 +26,187 @@ public sealed class BookingPolicyTests
     private static readonly TimeOnly Eleven = new(11, 0);
     private static readonly TimeOnly Noon = new(12, 0);
     private static readonly TimeOnly One = new(13, 0);
+
+    [Fact]
+    public async Task Category_policy_lists_rental_categories_replaces_values_and_rejects_other_tenants()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var categories = await harness.Policies.GetCategoriesAsync(CancellationToken.None);
+        var category = Assert.Single(categories, c => c.CategoryId == asset.CategoryId);
+        Assert.Null(category.MaxAdvanceBookingDays);
+        Assert.Null(category.CancelCutoffHours);
+
+        var saved = await harness.Policies.UpsertCategoryAsync(asset.CategoryId,
+            new(14, 48), CancellationToken.None);
+        Assert.Equal(14, saved.MaxAdvanceBookingDays);
+        Assert.Equal(48, saved.CancelCutoffHours);
+        Assert.Null((await harness.Policies.GetAsync(CancellationToken.None)).MaxAdvanceBookingDays);
+        var rental = await new RentalAssetService(harness.Db, harness.TenantProvider)
+            .GetByAssetIdAsync(asset.Id, CancellationToken.None);
+        Assert.Equal(14, rental!.EffectiveMaxAdvanceBookingDays);
+        Assert.Equal(48, rental.EffectiveCancelCutoffHours);
+        var cleared = await harness.Policies.UpsertCategoryAsync(asset.CategoryId,
+            new(null, null), CancellationToken.None);
+        Assert.Null(cleared.MaxAdvanceBookingDays);
+        Assert.Null(cleared.CancelCutoffHours);
+        Assert.Contains(await harness.Policies.GetCategoriesAsync(CancellationToken.None),
+            c => c.CategoryId == asset.CategoryId && c.MaxAdvanceBookingDays == null && c.CancelCutoffHours == null);
+
+        var foreignCategory = new AssetCategory { TenantId = Guid.NewGuid(), Name = "Other tenant" };
+        harness.Db.AssetCategories.Add(foreignCategory);
+        var unusedCategory = new AssetCategory { TenantId = harness.TenantId, Name = "Unused" };
+        harness.Db.AssetCategories.Add(unusedCategory);
+        await harness.Db.SaveChangesAsync();
+        Assert.DoesNotContain(await harness.Policies.GetCategoriesAsync(CancellationToken.None),
+            c => c.CategoryId == foreignCategory.Id || c.CategoryId == unusedCategory.Id);
+        var controller = new BookingPolicyController(harness.Policies, null!);
+        var response = await controller.UpsertCategory(foreignCategory.Id, new(7, 24), CancellationToken.None);
+        Assert.IsType<NotFoundObjectResult>(response.Result);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Category_horizon_applies_to_booking_availability_and_public_day(bool slotBooking)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var rentalId = await harness.Db.RentalAssets.Where(r => r.AssetId == asset.Id)
+            .Select(r => r.Id).SingleAsync();
+        await harness.Policies.UpsertCategoryAsync(asset.CategoryId, new(1, null), CancellationToken.None);
+        var requestedDay = Day.AddDays(2);
+        await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.Reservations.CheckAvailabilityAsync(
+            new CheckAvailabilityRequestDto { AssetId = asset.Id, Date = requestedDay, StartTime = Ten, EndTime = Eleven },
+            CancellationToken.None));
+        await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.Schedule.GetDayAsync(
+            requestedDay, rentalId, customerFacing: true, CancellationToken.None));
+        if (slotBooking)
+        {
+            var slot = await harness.SeedSlotAsync(requestedDay, Ten, Eleven);
+            await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.Schedule.BookSlotAsync(
+                harness.CustomerId, new BookSlotRequestDto { SlotId = slot, UnitId = harness.UnitId }, CancellationToken.None));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<BookingHorizonExceededException>(() => harness.BookAsync(requestedDay, Ten, Eleven));
+        }
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(3651, 0)]
+    [InlineData(0, -1)]
+    [InlineData(0, 8761)]
+    public async Task Category_policy_rejects_invalid_values(int days, int cutoff)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var controller = new BookingPolicyController(harness.Policies, null!);
+        var response = await controller.UpsertCategory(asset.CategoryId, new(days, cutoff), CancellationToken.None);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(response.Result);
+        Assert.Equal(400, Assert.IsType<ProblemDetails>(badRequest.Value).Status);
+    }
+
+    [Fact]
+    public async Task Cancellation_cutoff_round_trips_preserves_omitted_and_clears_null()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        Assert.Null((await harness.Policies.GetAsync(CancellationToken.None)).CancelCutoffHours);
+        var saved = await harness.Policies.UpsertAsync(
+            DeserializePolicy("{\"cancelCutoffHours\":24}"), CancellationToken.None);
+        Assert.Equal(24, saved.CancelCutoffHours);
+        var kept = await harness.Policies.UpsertAsync(DeserializePolicy("{}"), CancellationToken.None);
+        Assert.Equal(24, kept.CancelCutoffHours);
+        var cleared = await harness.Policies.UpsertAsync(
+            DeserializePolicy("{\"cancelCutoffHours\":null}"), CancellationToken.None);
+        Assert.Null(cleared.CancelCutoffHours);
+        Assert.Null((await harness.Policies.GetAsync(CancellationToken.None)).CancelCutoffHours);
+    }
+
+    [Fact]
+    public async Task Rentable_responses_expose_the_asset_family()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var service = new RentalAssetService(harness.Db, harness.TenantProvider);
+
+        var single = await service.GetByAssetIdAsync(harness.AssetId, CancellationToken.None);
+        var listed = (await service.ListRentableAsync(CancellationToken.None)).Single(r => r.AssetId == harness.AssetId);
+
+        Assert.NotEqual(Guid.Empty, asset.FamilyId);
+        Assert.Equal(asset.FamilyId, single!.FamilyId);
+        Assert.Equal(asset.FamilyId, listed.FamilyId);
+    }
+
+    [Fact]
+    public async Task Resource_cutoff_update_preserves_omitted_and_clears_null()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var rental = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.AssetId);
+        var service = new RentalAssetService(harness.Db, harness.TenantProvider);
+        var request = new UpdateRentalSchedulePolicyRequestDto
+        {
+            SchedulePolicy = SchedulePolicy.OpenHours, OpenTime = new TimeOnly(8, 0), CloseTime = new TimeOnly(22, 0),
+            CancelCutoffHours = 48,
+        };
+        Assert.Equal(48, (await service.UpdateSchedulePolicyAsync(rental.Id, request, CancellationToken.None)).CancelCutoffHours);
+        var omitted = request with { CancelCutoffHours = default };
+        Assert.Equal(48, (await service.UpdateSchedulePolicyAsync(rental.Id, omitted, CancellationToken.None)).CancelCutoffHours);
+        var cleared = request with { CancelCutoffHours = JsonOptional<int>.Specified(null) };
+        Assert.Null((await service.UpdateSchedulePolicyAsync(rental.Id, cleared, CancellationToken.None)).CancelCutoffHours);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Both_booking_paths_return_the_effective_cancellation_deadline(bool slotBooking, bool categoryPolicy)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        if (categoryPolicy)
+        {
+            var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+            await harness.Policies.UpsertCategoryAsync(asset.CategoryId, new(null, 24), CancellationToken.None);
+        }
+        else
+        {
+            await harness.Policies.UpsertAsync(new UpsertBookingPolicyRequestDto { CancelCutoffHours = 24 }, CancellationToken.None);
+        }
+        ReservationResponseDto response;
+        if (slotBooking)
+        {
+            var slot = await harness.SeedSlotAsync(Day, Ten, Eleven);
+            response = await harness.Schedule.BookSlotAsync(harness.CustomerId,
+                new BookSlotRequestDto { SlotId = slot, UnitId = harness.UnitId }, CancellationToken.None);
+        }
+        else
+        {
+            response = await harness.BookAsync(Day, Ten, Eleven);
+        }
+        var expected = new DateTimeOffset(2026, 10, 13, 13, 0, 0, TimeSpan.Zero);
+        Assert.Equal(expected, response.CancelDeadlineUtc);
+        var confirmed = await harness.Reservations.ConfirmAsync(response.Id, CancellationToken.None);
+        Assert.Equal(expected, confirmed.CancelDeadlineUtc);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(8761)]
+    public async Task Resource_cutoff_rejects_out_of_range_values(int hours)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var rental = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.AssetId);
+        var service = new RentalAssetService(harness.Db, harness.TenantProvider);
+        var request = new UpdateRentalSchedulePolicyRequestDto
+        {
+            SchedulePolicy = SchedulePolicy.OpenHours, OpenTime = new TimeOnly(8, 0), CloseTime = new TimeOnly(22, 0),
+            CancelCutoffHours = hours,
+        };
+        await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(rental.Id, request, CancellationToken.None));
+        Assert.Null((await service.GetByAssetIdAsync(harness.AssetId, CancellationToken.None))!.CancelCutoffHours);
+    }
 
     [Fact]
     public async Task Missing_policy_is_unlimited_and_stores_sanitized_plain_text()
@@ -360,9 +543,6 @@ public sealed class BookingPolicyTests
     [Fact]
     public void Missing_tenant_timezone_falls_back_to_America_Sao_Paulo()
     {
-        var tenant = new Tenant("North Club", "12345678000199");
-        Assert.Null(TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
-
         var fallback = TenantBookingClock.Resolve(null);
         Assert.Equal(BrazilTimeZone.Resolve().Id, fallback.Id);
         Assert.Equal(fallback.Id, TenantBookingClock.Resolve("   ").Id);
@@ -392,7 +572,7 @@ public sealed class BookingPolicyTests
         var clock = BrazilTimeZone.AtLocal(Day, new TimeOnly(12, 0));
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, clock);
         var tenant = await harness.Db.Tenants.SingleAsync();
-        Assert.Null(TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
+        Assert.Null(await TenantBookingClock.ReadConfiguredTimeZoneIdAsync(harness.Db, tenant.Id, default));
         await harness.SetLimitAsync(1);
 
         var evening = await harness.BookAsync(Day, new TimeOnly(22, 0), new TimeOnly(23, 0));
@@ -535,7 +715,9 @@ public sealed class BookingPolicyTests
     public async Task Bootstrap_gives_booking_policy_to_admin_and_not_customers_read()
     {
         await using var harness = await RbacAccessHarness.CreateAsync();
-        await new TenantAccessBootstrapper(harness.Db).EnsureAsync(harness.Tenant.Id);
+        await new TenantAccessBootstrapper(
+            harness.Db,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantAccessBootstrapper>.Instance).EnsureAsync(harness.Tenant.Id);
 
         var admin = await harness.Db.Roles.SingleAsync(role => role.Name == SystemRoles.Admin);
         var user = await harness.Db.Roles.SingleAsync(role => role.Name == SystemRoles.User);
@@ -1072,7 +1254,7 @@ public sealed class BookingPolicyTests
                 tenantProvider,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
             var schedule = new ScheduleService(
@@ -1081,7 +1263,7 @@ public sealed class BookingPolicyTests
                 kinds,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
             return new BookingPolicyHarness(

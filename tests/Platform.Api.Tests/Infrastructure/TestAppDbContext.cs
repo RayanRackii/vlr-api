@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Options;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Tests.Infrastructure;
@@ -10,8 +11,11 @@ namespace Platform.Api.Tests.Infrastructure;
 /// </summary>
 internal sealed class TestAppDbContext : AppDbContext
 {
-    public TestAppDbContext(DbContextOptions<AppDbContext> options, ITenantProvider tenantProvider)
-        : base(options, tenantProvider)
+    public TestAppDbContext(
+        DbContextOptions<AppDbContext> options,
+        ITenantProvider tenantProvider,
+        IOptions<TenancyOptions>? tenancyOptions = null)
+        : base(options, tenantProvider, tenancyOptions)
     {
     }
 

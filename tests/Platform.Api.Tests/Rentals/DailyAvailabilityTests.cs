@@ -19,6 +19,103 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class DailyAvailabilityTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Slot_pricing_quotes_one_window_per_quantity_and_exposes_its_unit(bool persisted)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        h.Primary.AllowedDurationMinutes = "30,60";
+        foreach (var price in await h.Db.RentalPricings.ToListAsync())
+        {
+            price.PricePerHour = 20.01m;
+            price.PricingUnit = PricingUnit.Slot;
+        }
+        if (persisted) h.Db.Slots.Add(h.Slot(10, 11, SlotStatus.Available));
+        await h.Db.SaveChangesAsync();
+
+        var windows = Assert.Single((await h.ReadAsync(quantity: 3)).Resources).Windows;
+        Assert.Contains(windows, w => w.EndTime - w.StartTime == TimeSpan.FromMinutes(30));
+        Assert.Contains(windows, w => w.EndTime - w.StartTime == TimeSpan.FromMinutes(60));
+        Assert.All(windows, w =>
+        {
+            Assert.Equal(60.03m, w.TotalAmount);
+            Assert.Equal(PricingUnit.Slot, w.PricingUnit);
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+            Assert.Equal("Slot", JsonSerializer.SerializeToElement(w, options).GetProperty("pricingUnit").GetString());
+        });
+
+        h.Db.RentalPricings.RemoveRange(await h.Db.RentalPricings.ToListAsync());
+        await h.Db.SaveChangesAsync();
+        Assert.All(Assert.Single((await h.ReadAsync()).Resources).Windows, w =>
+        {
+            Assert.Equal(AvailabilityWindowState.Unpriced, w.State);
+            Assert.Null(w.TotalAmount);
+            Assert.Null(w.PricingUnit);
+        });
+    }
+
+    [Theory]
+    [InlineData(9, 0, 10, 0)]
+    [InlineData(12, 0, 13, 0)]
+    [InlineData(10, 0, 10, 30)]
+    public async Task Invalid_persisted_OpenHours_slots_are_blocked(
+        int startHour, int startMinute, int endHour, int endMinute)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        var slot = h.Slot(startHour, endHour, SlotStatus.Available);
+        slot.StartTime = new(startHour, startMinute);
+        slot.EndTime = new(endHour, endMinute);
+        h.Db.Slots.Add(slot);
+        await h.Db.SaveChangesAsync();
+
+        var windows = Assert.Single((await h.ReadAsync()).Resources).Windows;
+        var window = Assert.Single(windows, w => w.SlotId == slot.Id);
+        Assert.Equal(AvailabilityWindowState.Blocked, window.State);
+        Assert.Equal(0, window.AvailableQuantity);
+        Assert.Contains(windows, w => w.State == AvailabilityWindowState.Available);
+    }
+
+    [Theory]
+    [InlineData(SlotStatus.Booked, AvailabilityWindowState.Taken)]
+    [InlineData(SlotStatus.Cancelled, AvailabilityWindowState.Blocked)]
+    public async Task Invalid_persisted_OpenHours_slots_keep_occupied_and_blocked_windows_visible(
+        SlotStatus status, AvailabilityWindowState expectedState)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        var slot = h.Slot(9, 10, status);
+        h.Db.Slots.Add(slot);
+        await h.Db.SaveChangesAsync();
+        if (status == SlotStatus.Booked)
+            await h.ReserveAsync(h.Primary, 1, new(9, 0), new(10, 0));
+
+        var window = Assert.Single((await h.ReadAsync()).Resources[0].Windows, w => w.SlotId == slot.Id);
+        Assert.Equal(expectedState, window.State);
+    }
+
+    [Fact]
+    public async Task DST_gap_interval_that_inverts_in_UTC_is_omitted()
+    {
+        var date = new DateOnly(2026, 3, 8);
+        await using var h = await AvailabilityHarness.CreateAsync();
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.Tenant.Id,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/New_York",
+        });
+        h.Primary.OpenTime = new TimeOnly(2, 30);
+        h.Primary.CloseTime = new TimeOnly(3, 0);
+        h.Primary.AllowedDurationMinutes = "30";
+        h.Clock.SetUtcNow(new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.Zero));
+        await h.Db.SaveChangesAsync();
+
+        var response = await h.ReadAsync(date: date);
+
+        Assert.Empty(Assert.Single(response.Resources).Windows);
+    }
+
     [Fact]
     public async Task Derived_occupied_windows_and_requested_stock_quantity_remain_visible_with_prices()
     {
@@ -275,6 +372,28 @@ public sealed class DailyAvailabilityTests
         Assert.Equal("AVAILABILITY_LIMIT_EXCEEDED", (await Assert.ThrowsAsync<AvailabilityRequestException>(() => h.ReadAsync())).Code);
     }
 
+    [Theory]
+    [InlineData(null, "America/Sao_Paulo")]
+    [InlineData("Not/AZone", "America/Sao_Paulo")]
+    [InlineData("Asia/Tokyo", "Asia/Tokyo")]
+    [InlineData("E. South America Standard Time", "America/Sao_Paulo")]
+    public async Task Branding_returns_effective_iana_zone_for_the_requested_tenant(string? configured, string expected)
+    {
+        await using var h = await CustomerAuthHarness.CreateAsync();
+        if (configured is not null)
+        {
+            h.Db.TenantSettings.Add(new TenantSetting { TenantId = h.Tenant.Id,
+                Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = configured });
+        }
+        var other = new Tenant("Other", "22222222000191", subdomain: "other-zone");
+        h.Db.Tenants.Add(other);
+        h.Db.TenantSettings.Add(new TenantSetting { TenantId = other.Id,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = "America/Manaus" });
+        await h.Db.SaveChangesAsync();
+        Assert.Equal(expected, (await h.Auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).TimeZoneId);
+        Assert.Equal("America/Manaus", (await h.Auth.GetBrandingAsync("other-zone", default)).TimeZoneId);
+    }
+
     [Fact]
     public async Task Branding_flag_defaults_off_and_configuration_selects_only_the_exact_tenant()
     {
@@ -358,11 +477,16 @@ internal sealed class AvailabilityHarness : IAsyncDisposable
     public ScheduleTemplate Template(int start, int end, OccupancyKind kind) => new()
     { TenantId = Tenant.Id, RentalAssetId = Primary.Id, DayOfWeek = Day.DayOfWeek, StartTime = new(start, 0),
         EndTime = new(end, 0), OccupancyKindId = kind.Id, IsActive = true };
-    public async Task ReserveAsync(RentalAsset resource, int quantity, TimeOnly start, TimeOnly end)
+    public async Task<Reservation> ReserveAsync(
+        RentalAsset resource,
+        int quantity,
+        TimeOnly start,
+        TimeOnly end,
+        ReservationStatus status = ReservationStatus.Confirmed)
     {
         var customer = new Customer { TenantId = resource.TenantId, Name = "Private customer", Phone = "5511000000000" };
         var reservation = new Reservation { TenantId = resource.TenantId, UnitId = Unit.Id, CustomerId = customer.Id,
-            CustomerName = "Private customer", CustomerWhatsApp = "Private phone", Status = ReservationStatus.Confirmed,
+            CustomerName = "Private customer", CustomerWhatsApp = "Private phone", Status = status,
             StartDateTime = BrazilTimeZone.AtLocal(Day, start), EndDateTime = BrazilTimeZone.AtLocal(Day, end),
             TotalAmount = 20, DepositPaid = 0 };
         var item = new ReservationItem { TenantId = resource.TenantId, ReservationId = reservation.Id,
@@ -370,6 +494,7 @@ internal sealed class AvailabilityHarness : IAsyncDisposable
         reservation.AddItem(item);
         Db.AddRange(customer, reservation);
         await Db.SaveChangesAsync();
+        return reservation;
     }
     public Task<DailyAvailabilityResponseDto> ReadAsync(DateOnly? date = null, Guid[]? ids = null,
         Guid? unitId = null, int quantity = 1, int? duration = null) =>

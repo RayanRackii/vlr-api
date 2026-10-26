@@ -220,7 +220,7 @@ internal sealed class ReservationQueueHarness : IAsyncDisposable
             TenantProvider,
             new FakeTrialGuard(),
             Queue(),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             Time);
 
@@ -231,7 +231,7 @@ internal sealed class ReservationQueueHarness : IAsyncDisposable
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
             Queue(),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             Time);
 

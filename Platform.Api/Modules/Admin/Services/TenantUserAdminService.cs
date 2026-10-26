@@ -81,6 +81,9 @@ public sealed class TenantUserAdminService(
         Guid tenantId,
         CancellationToken cancellationToken)
     {
+        // Tenant-id methods run for a Super-Admin (maybe without a tenant) or tenant provisioning;
+        // every query keeps the explicit tenantId predicate.
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-list");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
 
         var platformEmails = platformAdminChecker.GetNormalizedEmails();
@@ -120,6 +123,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken,
         bool enqueueEmail = true)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-invite");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
         await trialGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
 
@@ -210,6 +214,7 @@ public sealed class TenantUserAdminService(
         Guid inviteId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-deliver-invite");
         var invite = await dbContext.UserInvites
             .AsNoTracking()
             .FirstOrDefaultAsync(
@@ -225,6 +230,7 @@ public sealed class TenantUserAdminService(
         Guid inviteId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-resend-invite");
         var invite = await dbContext.UserInvites
             .Include(item => item.InviteRoles)
             .FirstOrDefaultAsync(i => i.Id == inviteId && i.TenantId == tenantId, cancellationToken)
@@ -266,6 +272,7 @@ public sealed class TenantUserAdminService(
         Guid inviteId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-revoke-invite");
         var invite = await dbContext.UserInvites
             .FirstOrDefaultAsync(i => i.Id == inviteId && i.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found.");
@@ -288,6 +295,7 @@ public sealed class TenantUserAdminService(
         PromoteTenantUserRequestDto request,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "admin-tenant-users-promote");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
         var roleName = NormalizeRole(request.RoleName);
 
@@ -318,7 +326,8 @@ public sealed class TenantUserAdminService(
         string token,
         CancellationToken cancellationToken)
     {
-        var invite = await LoadPendingInviteAsync(token, cancellationToken);
+        using var _ = PlatformScope.Begin(logger, "staff-invite-preview");
+        var invite = await LoadPendingInviteAsync(token, cancellationToken, typedAlreadyAccepted: true);
         var existingAuthId = await ResolveExistingAuthIdAsync(invite.Email, cancellationToken);
         var tenantName = await dbContext.Tenants
             .AsNoTracking()
@@ -340,6 +349,7 @@ public sealed class TenantUserAdminService(
         CancellationToken cancellationToken,
         ClaimsPrincipal? actor = null)
     {
+        using var _ = PlatformScope.Begin(logger, "staff-invite-accept");
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
@@ -399,7 +409,8 @@ public sealed class TenantUserAdminService(
 
     private async Task<UserInvite> LoadPendingInviteAsync(
         string? token,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool typedAlreadyAccepted = false)
     {
         var normalized = token?.Trim() ?? string.Empty;
         if (normalized.Length == 0)
@@ -414,6 +425,15 @@ public sealed class TenantUserAdminService(
             .Include(item => item.InviteRoles)
             .FirstOrDefaultAsync(item => item.Token == normalized, cancellationToken)
             ?? throw new KeyNotFoundException("Invite was not found or is invalid.");
+
+        // Preview after a successful accept (reload, back, second tab) gets a typed
+        // code so the client can resume the tenant picker instead of "invalid link".
+        if (typedAlreadyAccepted && invite.RevokedAt is null && invite.AcceptedAt is not null)
+        {
+            throw new InviteAcceptanceException(
+                InviteAcceptanceCodes.AlreadyAccepted,
+                StatusCodes.Status409Conflict);
+        }
 
         EnsurePendingInvite(invite);
         return invite;
@@ -782,7 +802,8 @@ public sealed class TenantUserAdminService(
 
         var portalHost = string.IsNullOrWhiteSpace(tenant?.Subdomain)
             ? null
-            : $"{tenant.Subdomain.Trim().ToLowerInvariant()}.rolvix.com.br";
+            : FrontendBaseUrlResolver.ResolveTenantPortalHost(configuration, tenant.Subdomain);
+        var tenantPortalHostTemplate = FrontendBaseUrlResolver.ResolveTenantPortalHostTemplate(configuration);
 
         var roleNames = await StaffInviteRoleNames.LoadAsync(
             dbContext,
@@ -793,7 +814,13 @@ public sealed class TenantUserAdminService(
 
         var htmlBody = RolvixEmailLayout.Wrap(
             invite.FullName,
-            RolvixEmailLayout.InviteBody(inviteUrl, companyName, portalHost, roleNames: roleNames));
+            RolvixEmailLayout.InviteBody(
+                inviteUrl,
+                companyName,
+                portalHost,
+                roleNames: roleNames,
+                frontendBaseUrl: frontendBaseUrl,
+                tenantPortalHostTemplate: tenantPortalHostTemplate));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(

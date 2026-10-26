@@ -89,13 +89,23 @@ public sealed class ResourceVisualCatalogTests
             DefaultSchedulePolicy: SchedulePolicy.OpenHours,
             DefaultOpenTime: new(8, 0),
             DefaultCloseTime: new(22, 0),
-            DefaultAllowedDurationMinutes: " 120, 60, 120 ");
+            DefaultAllowedDurationMinutes: " 120, 60 ");
 
         var revision = await service.SaveRevisionAsync(template.Id, null, request, default);
 
         Assert.Equal("60,120", revision.DefaultAllowedDurationMinutes);
-        var invalid = request with { DefaultAllowedDurationMinutes = "60, nope" };
+        var invalid = request with { DefaultAllowedDurationMinutes = "60, 60" };
         Assert.Equal("VISUAL_TEMPLATE_INVALID", (await Assert.ThrowsAsync<ResourceVisualException>(() => service.SaveRevisionAsync(template.Id, revision.Id, invalid, default))).Code);
+
+        var exceedsWindow = request with
+        {
+            SuggestedSlotMinutes = 30,
+            DefaultOpenTime = new TimeOnly(8, 0),
+            DefaultCloseTime = new TimeOnly(16, 0),
+            DefaultAllowedDurationMinutes = "600",
+        };
+        var windowError = await Assert.ThrowsAsync<ResourceVisualException>(() => service.SaveRevisionAsync(template.Id, revision.Id, exceedsWindow, default));
+        Assert.Contains("600 excede a janela de funcionamento de 480 min", windowError.Message);
     }
     [Fact]
     public async Task Inherited_archived_segment_does_not_break_picker_but_explicit_archived_filter_is_rejected()

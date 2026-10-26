@@ -8,6 +8,7 @@ public static class FrontendBaseUrlResolver
 {
     public const string ProductionDefault = "https://rolvix.com.br";
     public const string DevelopmentDefault = "http://localhost:5173";
+    public const string TenantPortalHostTemplateDefault = "{subdomain}.rolvix.com.br";
 
     public static string Resolve(IConfiguration configuration, IHostEnvironment environment)
     {
@@ -25,6 +26,24 @@ public static class FrontendBaseUrlResolver
 
         return string.IsNullOrWhiteSpace(configured)
             ? DevelopmentDefault
+            : configured;
+    }
+
+    public static string ResolveTenantPortalHost(IConfiguration configuration, string subdomain)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subdomain);
+
+        return ResolveTenantPortalHostTemplate(configuration).Replace(
+            "{subdomain}",
+            subdomain.Trim().ToLowerInvariant(),
+            StringComparison.Ordinal);
+    }
+
+    public static string ResolveTenantPortalHostTemplate(IConfiguration configuration)
+    {
+        var configured = configuration["App:TenantPortalHostTemplate"]?.Trim();
+        return string.IsNullOrWhiteSpace(configured)
+            ? TenantPortalHostTemplateDefault
             : configured;
     }
 

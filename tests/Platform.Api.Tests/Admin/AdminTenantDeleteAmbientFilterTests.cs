@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -94,6 +95,30 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         var after = await scope.SnapshotAsync();
         Assert.False(after.ByTenant[scope.TargetId].TenantExists);
         Assert.Equal(2, scope.Storage.DeletedPrefixes.Count);
+    }
+
+    [DockerFact]
+    public async Task Purge_rolls_back_and_does_not_touch_storage_or_auth_when_a_self_reference_cycle_remains()
+    {
+        await using var scope = await SeedAsync(RequireFactory());
+        var before = await scope.SnapshotAsync();
+        var root = await scope.Db.TaxonomyCategories.IgnoreQueryFilters()
+            .SingleAsync(row => row.TenantId == scope.TargetId && row.Slug == "root");
+        var leaf = await scope.Db.TaxonomyCategories.IgnoreQueryFilters()
+            .SingleAsync(row => row.TenantId == scope.TargetId && row.Slug == "leaf");
+        root.ParentId = leaf.Id;
+        await scope.Db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            scope.Service.DeleteAsync(scope.TargetId, CancellationToken.None));
+
+        var after = await scope.SnapshotAsync();
+        AssertTenantUntouched(before, after, scope.TargetId);
+        AssertTenantUntouched(before, after, scope.EnteredId);
+        AssertTenantUntouched(before, after, scope.KeeperId);
+        AssertSharedRowsUntouched(before, after);
+        Assert.Empty(scope.Storage.DeletedPrefixes);
+        Assert.Empty(scope.Auth.DeletedIds);
     }
 
     private PostgresAppDbFactory RequireFactory()
@@ -215,11 +240,9 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
             new FakeTenantUserAdminService(),
             new FakePlatformAdminMembershipService(),
             new FakeTenantAccessBootstrapper(),
-            auth,
-            Options.Create(new PlatformAdminOptions()),
             NullLogger<AdminTenantService>.Instance,
-            Options.Create(new StorageOptions()),
-            storage);
+            new TenantProvisioner(db, NullLogger<TenantProvisioner>.Instance),
+            new TenantPurger(db, auth, Options.Create(new PlatformAdminOptions()), NullLogger<TenantPurger>.Instance, Options.Create(new StorageOptions()), storage));
 
         return new Scope(factory, db, tenantProvider, service, auth, storage, entered.Id, target.Id, keeper.Id, targetOnlyAuthId);
     }

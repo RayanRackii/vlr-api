@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
+using Platform.Api.DomainEvents;
 using Platform.Api.Authorization;
 using Platform.Api.Notifications;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -11,9 +13,11 @@ using NotificationEntity = Platform.Core.Domain.Entities.Notification;
 
 namespace Platform.Api.Modules.Catalog.Services;
 
-public interface ICatalogNotificationPublisher
+public interface ICatalogNotificationPublisher : IDomainEventHandler<CatalogOrderEvent>
 {
-    Task EnsureReadyAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> IDomainEventHandler<CatalogOrderEvent>.HandleAsync(
+        CatalogOrderEvent domainEvent, CancellationToken cancellationToken) =>
+        PublishOrderEventAsync(domainEvent.Order, domainEvent.EventType, cancellationToken);
 
     Task<IReadOnlyList<Guid>> PublishOrderEventAsync(
         CatalogOrder order,

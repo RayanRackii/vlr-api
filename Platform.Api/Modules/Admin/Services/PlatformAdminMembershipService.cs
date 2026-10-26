@@ -41,6 +41,7 @@ public sealed class PlatformAdminMembershipService(
         Guid tenantId,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "platform-admin-provision");
         var emails = platformAdminOptions.Value.Emails
             .Where(e => !string.IsNullOrWhiteSpace(e))
             .Select(e => e.Trim().ToLowerInvariant())
@@ -76,6 +77,7 @@ public sealed class PlatformAdminMembershipService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "platform-admin-ensure-membership");
         var email = ResolveEmail(principal)
             ?? throw new UnauthorizedAccessException("Authenticated email is required.");
 
@@ -96,6 +98,7 @@ public sealed class PlatformAdminMembershipService(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "platform-admin-enter-tenant");
         var tenantExists = await dbContext.Tenants
             .AsNoTracking()
             .AnyAsync(t => t.Id == tenantId && t.IsActive, cancellationToken);

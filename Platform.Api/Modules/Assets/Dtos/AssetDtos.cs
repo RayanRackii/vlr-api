@@ -48,7 +48,11 @@ public sealed record CreateAssetRequest
 
     public required string Name { get; init; }
 
-    public required string Tag { get; init; }
+    /// <summary>
+    /// Registry identifier. Optional: create generates one when blank and
+    /// update keeps the stored tag when blank.
+    /// </summary>
+    public string? Tag { get; init; }
 
     public string? Location { get; init; }
 
@@ -101,7 +105,11 @@ public sealed record UpdateAssetRequest
 
     public required string Name { get; init; }
 
-    public required string Tag { get; init; }
+    /// <summary>
+    /// Registry identifier. Optional: create generates one when blank and
+    /// update keeps the stored tag when blank.
+    /// </summary>
+    public string? Tag { get; init; }
 
     public string? Location { get; init; }
 

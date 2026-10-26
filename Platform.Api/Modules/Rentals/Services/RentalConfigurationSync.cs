@@ -82,6 +82,7 @@ public sealed class RentalConfigurationSync(AppDbContext dbContext) : IRentalCon
             StartTime = value.StartTime,
             EndTime = value.EndTime,
             PricePerHour = value.PricePerHour,
+            PricingUnit = PricingUnit.Hour,
             RequiresDeposit = value.RequiresDeposit,
             DepositPercentage = value.DepositPercentage,
         }).ToArray();
@@ -96,6 +97,7 @@ public sealed class RentalConfigurationSync(AppDbContext dbContext) : IRentalCon
                 StartTime = pricing.StartTime,
                 EndTime = pricing.EndTime,
                 PricePerHour = Math.Round(pricing.PricePerHour, 2, MidpointRounding.AwayFromZero),
+                PricingUnit = PricingUnit.Hour,
                 RequiresDeposit = pricing.RequiresDeposit,
                 DepositPercentage = Math.Round(pricing.DepositPercentage, 2, MidpointRounding.AwayFromZero),
             });

@@ -44,7 +44,7 @@ public class RentalAsset : Entity, ITenantScoped
     public bool QueueEnabled { get; set; }
 
     /// <summary>
-    /// Wall-clock opening T in America/Sao_Paulo. Required when <see cref="QueueEnabled"/> is true.
+    /// Wall-clock opening T in the tenant time zone. Required when <see cref="QueueEnabled"/> is true.
     /// </summary>
     public TimeOnly? QueueOpeningTime { get; set; }
 
@@ -53,6 +53,9 @@ public class RentalAsset : Entity, ITenantScoped
     /// start. Null inherits the tenant booking policy. The policy null means unlimited.
     /// </summary>
     public int? MaxAdvanceBookingDays { get; set; }
+
+    /// <summary>Customer cancellation cutoff in hours; null inherits the tenant policy.</summary>
+    public int? CancelCutoffHours { get; set; }
 
     /// <summary>Fixed published visual revision; null uses the generic resource presentation.</summary>
     public Guid? VisualTemplateRevisionId { get; set; }

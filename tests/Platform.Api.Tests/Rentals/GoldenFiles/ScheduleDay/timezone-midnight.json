@@ -31,7 +31,32 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "00:00:00",
+          "endTime": "01:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": false,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:crossesIntoDay>",
+          "isDerived": true,
+          "source": "WeeklyDefault",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "crossesIntoDay"
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -52,7 +77,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -73,7 +100,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -94,7 +123,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -115,7 +146,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -136,7 +169,32 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "20:30:00",
+          "endTime": "23:59:59",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": false,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:crossesOutOfDay>",
+          "isDerived": true,
+          "source": "WeeklyDefault",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false,
+          "quantity": 2,
+          "customerName": "crossesOutOfDay"
         }
       ]
     }
@@ -169,7 +227,8 @@
               "state": "Past",
               "reasonCode": "START_IN_THE_PAST",
               "availableQuantity": 0,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -179,7 +238,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -189,7 +249,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -199,7 +260,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -209,7 +271,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -219,7 +282,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 2,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -229,7 +293,8 @@
               "state": "Taken",
               "reasonCode": "INSUFFICIENT_CAPACITY",
               "availableQuantity": 0,
-              "totalAmount": 60
+              "totalAmount": 60,
+              "pricingUnit": "Hour"
             }
           ]
         }
@@ -257,7 +322,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -278,7 +345,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -299,7 +368,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -320,7 +391,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -341,7 +414,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         }
       ]
     },
@@ -367,7 +442,32 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "00:00:00",
+          "endTime": "01:00:00",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": false,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:crossesIntoDay>",
+          "isDerived": true,
+          "source": "WeeklyDefault",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "crossesIntoDay"
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -388,7 +488,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -409,7 +511,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -430,7 +534,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -451,7 +557,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -472,7 +580,32 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "rentalAssetId": "<rental:Resource A>",
+          "assetName": "Resource A",
+          "date": "2026-10-21",
+          "startTime": "20:30:00",
+          "endTime": "23:59:59",
+          "occupancyKindId": "<kind:open>",
+          "occupancyKindKey": "open",
+          "occupancyKindLabel": "Open",
+          "occupancyKindColorHex": null,
+          "isBookableByCustomer": false,
+          "label": null,
+          "status": "Booked",
+          "reservationId": "<reservation:crossesOutOfDay>",
+          "isDerived": true,
+          "source": "WeeklyDefault",
+          "sourceTemplateId": null,
+          "schedulePolicy": "OpenHours",
+          "supportsEntireRecurrence": false,
+          "quantity": 2,
+          "customerName": "crossesOutOfDay"
         }
       ]
     }

@@ -75,6 +75,7 @@ Set on the **production** Fly.io service (not implied by `ASPNETCORE_ENVIRONMENT
 | `Resend__FromEmail` | **yes** | Verified sender |
 | `Resend__FromName` | recommended | Default in code: `Rolvix` |
 | `App__FrontendBaseUrl` | **yes** | Invite/recovery links; must be `https://rolvix.com.br`, never localhost |
+| `App__TenantPortalHostTemplate` | optional | Public tenant portal host shown in staff invites; default `{subdomain}.rolvix.com.br` |
 | `Supabase__Url` | **yes** (existing Auth) | Same project URL for Auth **and** Storage HTTP / public/signed URL prefix. Do **not** set `Storage__SupabaseUrl`. |
 | `Supabase__ServiceRoleKey` | **yes** (existing Auth) | Same service role as Auth. Do **not** set `Storage__ServiceRoleKey`. |
 | `Storage__PublicBucket` | optional | Default `catalog-public` |

@@ -6,6 +6,7 @@ using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Common;
 using Platform.Api.Modules.Users.Dtos;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
 using Platform.Api.Services.Trial;
@@ -75,7 +76,8 @@ public sealed class UserDirectoryService(
                             WithPortalCustomersRead(permissions),
                             adminSession.TradeName,
                             adminSession.LegalName,
-                            membership.Phone);
+                            membership.Phone,
+                            adminSession.TimeZoneId);
                     }
                 }
 
@@ -96,7 +98,8 @@ public sealed class UserDirectoryService(
                     WithPortalCustomersRead(wildcard),
                     adminSession.TradeName,
                     adminSession.LegalName,
-                    null);
+                    null,
+                    adminSession.TimeZoneId);
             }
 
             return CreateCurrentUser(
@@ -158,7 +161,8 @@ public sealed class UserDirectoryService(
             effective.OrderBy(key => key).ToList(),
             session.TradeName,
             session.LegalName,
-            user.Phone);
+            user.Phone,
+            session.TimeZoneId);
     }
 
     public async Task<CurrentUserResponse> UpdateCurrentPhoneAsync(
@@ -444,7 +448,8 @@ public sealed class UserDirectoryService(
 
         var portalHost = string.IsNullOrWhiteSpace(tenant?.Subdomain)
             ? null
-            : $"{tenant.Subdomain.Trim().ToLowerInvariant()}.rolvix.com.br";
+            : FrontendBaseUrlResolver.ResolveTenantPortalHost(configuration, tenant.Subdomain);
+        var tenantPortalHostTemplate = FrontendBaseUrlResolver.ResolveTenantPortalHostTemplate(configuration);
 
         var roleNames = await StaffInviteRoleNames.LoadAsync(
             dbContext,
@@ -455,7 +460,13 @@ public sealed class UserDirectoryService(
 
         var htmlBody = RolvixEmailLayout.Wrap(
             invite.FullName,
-            RolvixEmailLayout.InviteBody(inviteUrl, companyName, portalHost, roleNames: roleNames));
+            RolvixEmailLayout.InviteBody(
+                inviteUrl,
+                companyName,
+                portalHost,
+                roleNames: roleNames,
+                frontendBaseUrl: frontendBaseUrl,
+                tenantPortalHostTemplate: tenantPortalHostTemplate));
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(
@@ -517,7 +528,8 @@ public sealed class UserDirectoryService(
                 tenant.IsTrialReadOnly(DateTimeOffset.UtcNow),
                 tenant.NotificationsEmailOnly),
             BlankToNull(tenant.TradeName),
-            BlankToNull(tenant.LegalName));
+            BlankToNull(tenant.LegalName),
+            await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(dbContext, tenantId, cancellationToken));
     }
 
     private static string? BlankToNull(string? value)
@@ -543,7 +555,8 @@ public sealed class UserDirectoryService(
         IReadOnlyList<string> permissions,
         string? tenantTradeName,
         string? tenantLegalName,
-        string? phone) =>
+        string? phone,
+        string timeZoneId = "America/Sao_Paulo") =>
         new(
             id,
             fullName,
@@ -561,7 +574,8 @@ public sealed class UserDirectoryService(
             permissions,
             tenantTradeName,
             tenantLegalName,
-            phone);
+            phone,
+            timeZoneId);
 
     private static IReadOnlyList<string> WithPortalCustomersRead(IEnumerable<string> permissions)
     {
@@ -652,8 +666,9 @@ public sealed class UserDirectoryService(
     private readonly record struct TenantSession(
         TrialFlags Trial,
         string? TradeName,
-        string? LegalName)
+        string? LegalName,
+        string TimeZoneId)
     {
-        public static TenantSession Empty { get; } = new(TrialFlags.Empty, null, null);
+        public static TenantSession Empty { get; } = new(TrialFlags.Empty, null, null, "America/Sao_Paulo");
     }
 }

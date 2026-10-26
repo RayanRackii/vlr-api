@@ -17,6 +17,37 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class ReservationReminderJobTests
 {
+    [Theory]
+    [InlineData(ReservationStatus.Confirmed, 1, false)]
+    [InlineData(ReservationStatus.Confirmed, 0, true)]
+    [InlineData(ReservationStatus.Confirmed, -1, true)]
+    [InlineData(ReservationStatus.PendingDeposit, 1, false)]
+    [InlineData(ReservationStatus.PendingDeposit, 0, true)]
+    public async Task Reminder_requires_booking_at_least_24_hours_before_start(
+        ReservationStatus status, long ticksAfterCutoff, bool shouldSend)
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        await EnableReminderEmailAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        var start = now.AddHours(12);
+        await SeedAsync(ctx, status, start);
+        var reservation = await ctx.Harness.Db.Reservations.SingleAsync();
+        ctx.Harness.Db.Entry(reservation).Property(r => r.CreatedAt).CurrentValue =
+            start.AddHours(-24).AddTicks(ticksAfterCutoff);
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(shouldSend ? 1 : 0, ctx.WhatsApp.SendCount);
+        Assert.Equal(shouldSend ? 1 : 0, ctx.Email.SendCount);
+        if (!shouldSend)
+        {
+            Assert.Empty(ctx.Scheduler.Scheduled);
+        }
+    }
+
     [Fact]
     public void Lead_window_is_24_hours_before_start()
     {
@@ -212,6 +243,41 @@ public sealed class ReservationReminderJobTests
         Assert.Equal(
             2,
             unfiltered.Notifications.Count(n => n.EventType == RentalEventTypes.ReservationReminder));
+    }
+
+    [Fact]
+    public async Task Tenant_sweep_is_platform_scope_and_per_tenant_work_is_not()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        await SeedAsync(ctx, ReservationStatus.Confirmed, now.AddHours(6));
+        var secondTenantId = await SeedSecondTenantReminderAsync(ctx, now.AddHours(8));
+        var reads = new List<(Guid? TenantId, string? PlatformScopeReason)>();
+        ctx.Clock.SetUtcNow(now);
+        var job = new ReservationReminderJob(
+            new ReminderJobTestScopeFactory(ctx.Harness.DatabaseName, ctx.Scheduler, reads),
+            ctx.Clock,
+            NullLogger<ReservationReminderJob>.Instance);
+
+        // Two runs: the second must not inherit the first run's scope.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            reads.Clear();
+            await job.ExecuteAsync(CancellationToken.None);
+
+            Assert.False(PlatformScope.IsActive);
+            Assert.Contains(reads, read => read.TenantId is null);
+            Assert.All(
+                reads.Where(read => read.TenantId is null),
+                read => Assert.Equal("reservation-reminder-tenant-sweep", read.PlatformScopeReason));
+            Assert.Equal(
+                new HashSet<Guid?> { ctx.Harness.TenantId, secondTenantId },
+                reads.Where(read => read.TenantId is not null).Select(read => read.TenantId).ToHashSet());
+            Assert.All(
+                reads.Where(read => read.TenantId is not null),
+                read => Assert.Null(read.PlatformScopeReason));
+        }
     }
 
     [Fact]
@@ -473,6 +539,11 @@ public sealed class ReservationReminderJobTests
         DateTimeOffset start)
     {
         ctx.Harness.SeedOverlappingReservation(status, start, start.AddHours(1));
+        foreach (var entry in ctx.Harness.Db.ChangeTracker.Entries<Reservation>()
+            .Where(entry => entry.State == EntityState.Added))
+        {
+            entry.Property(r => r.CreatedAt).CurrentValue = start.AddDays(-2);
+        }
         await ctx.Harness.Db.SaveChangesAsync();
     }
 
@@ -683,6 +754,7 @@ public sealed class ReservationReminderJobTests
         db.RentalAssets.Add(rental);
         db.Customers.Add(customer);
         db.Reservations.Add(reservation);
+        db.Entry(reservation).Property(r => r.CreatedAt).CurrentValue = start.AddDays(-2);
         await db.SaveChangesAsync();
 
         var publisher = new RentalsNotificationPublisher(
@@ -732,12 +804,13 @@ public sealed class ReservationReminderJobTests
 
     private sealed class ReminderJobTestScopeFactory(
         string databaseName,
-        RecordingOutboxScheduler scheduler) : IServiceScopeFactory
+        RecordingOutboxScheduler scheduler,
+        List<(Guid? TenantId, string? PlatformScopeReason)>? reads = null) : IServiceScopeFactory
     {
         public IServiceScope CreateScope()
         {
             var ambient = new AmbientTenantContext();
-            var tenantProvider = new AmbientBackedTenantProvider(ambient);
+            var tenantProvider = new AmbientBackedTenantProvider(ambient, reads);
             var db = InMemoryAppDb.Create(tenantProvider, databaseName);
             var publisher = new RentalsNotificationPublisher(
             db,
@@ -747,9 +820,19 @@ public sealed class ReservationReminderJobTests
         }
     }
 
-    private sealed class AmbientBackedTenantProvider(AmbientTenantContext ambient) : ITenantProvider
+    /// <summary>Optionally records each tenant read (EF filter) with the active PlatformScope.</summary>
+    private sealed class AmbientBackedTenantProvider(
+        AmbientTenantContext ambient,
+        List<(Guid? TenantId, string? PlatformScopeReason)>? reads) : ITenantProvider
     {
-        public Guid? TenantId => ambient.TenantId;
+        public Guid? TenantId
+        {
+            get
+            {
+                reads?.Add((ambient.TenantId, PlatformScope.CurrentReason));
+                return ambient.TenantId;
+            }
+        }
     }
 
     private sealed class ReminderJobTestScope(

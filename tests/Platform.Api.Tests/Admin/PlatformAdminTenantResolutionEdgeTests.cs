@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
@@ -25,6 +26,7 @@ using Platform.Api.Modules.Users.Controllers;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -414,6 +416,7 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
                     services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
                     services.AddSingleton<IHostEnvironment, FakeHostEnvironment>();
                     services.AddSingleton<ISupabaseAuthAdminClient>(auth);
+                    services.AddSingleton<IStorageProvider, RecordingStorageProvider>();
                     services.Configure<PlatformAdminOptions>(options => options.Emails = [AdminEmail]);
                     services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>();
                     services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
@@ -431,6 +434,8 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
                     services.AddScoped<IRbacGrantGuard, RbacGrantGuard>();
                     services.AddScoped<IRbacActorAccessor, RbacActorAccessor>();
                     services.AddScoped<IPlatformAdminMembershipService, PlatformAdminMembershipService>();
+                    services.AddScoped<ITenantProvisioner, TenantProvisioner>();
+                    services.AddScoped<ITenantPurger, TenantPurger>();
                     services.AddScoped<IAdminTenantService, AdminTenantService>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<ITenantCustomerDirectory, TenantCustomerDirectory>();

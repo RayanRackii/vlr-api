@@ -3,7 +3,6 @@ using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -61,6 +60,13 @@ internal sealed class AvailabilityReadModel(
         var persistedStarts = (await LoadPersistedStartsAsync(date, ids, cancellationToken))
             .ToHashSet();
 
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+        persistedEntities = persistedEntities
+            .Where(slot =>
+                TenantBookingClock.EndAtLocal(slot.Date, slot.EndTime, zone)
+                > TenantBookingClock.AtLocal(slot.Date, slot.StartTime, zone))
+            .ToList();
+
         var templateBySlot = await LoadTemplatesForSlotsAsync(
             date, persistedEntities, cancellationToken);
 
@@ -70,11 +76,16 @@ internal sealed class AvailabilityReadModel(
                 isDerived: false,
                 ResolvePersistedSource(s, templateBySlot.GetValueOrDefault(s.Id))))
             .ToList();
+        var persistedBookedReservations = persistedEntities
+            .Where(slot => slot.Status == SlotStatus.Booked && slot.ReservationId is not null)
+            .Select(slot => (slot.RentalAssetId, ReservationId: slot.ReservationId!.Value))
+            .ToHashSet();
 
         var derivedOpenHours = await DeriveOpenHoursSlotsAsync(
-            date, ids, persistedStarts, cancellationToken);
+            date, ids, persistedStarts, persistedBookedReservations, !customerFacing, zone, cancellationToken);
         var derivedSlotGrid = await DeriveSlotGridFromTemplatesAsync(
-            date, ids, persistedStarts, cancellationToken);
+            date, ids, persistedStarts, persistedBookedReservations, !customerFacing, zone, cancellationToken,
+            persistedEntities);
 
         IEnumerable<SlotResponseDto> all = persisted
             .Concat(derivedOpenHours)
@@ -82,11 +93,31 @@ internal sealed class AvailabilityReadModel(
 
         if (customerFacing)
         {
-            var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+            var reservedWindows = await LoadReservedWindowsAsync(
+                tenantId, date, persistedEntities.Select(s => s.RentalAssetId).Distinct().ToList(),
+                zone, cancellationToken);
+            var availablePersistedIds = persistedEntities.Where(slot =>
+            {
+                var reserved = reservedWindows.TryGetValue(slot.RentalAssetId, out var windows)
+                    ? SumOverlapping(windows,
+                        TenantBookingClock.AtLocal(slot.Date, slot.StartTime, zone),
+                        TenantBookingClock.EndAtLocal(slot.Date, slot.EndTime, zone))
+                    : 0;
+                return slot.RentalAsset.Type == RentalAssetType.Location
+                    ? reserved == 0
+                    : reserved < slot.RentalAsset.TotalQuantity;
+            }).Select(slot => slot.Id).ToHashSet();
+
             all = all.Where(s =>
                 s.Status == SlotStatus.Available && s.IsBookableByCustomer
+                && (s.IsDerived || availablePersistedIds.Contains(s.Id))
                 && !ReservationBookingRules.StartsBeforeNow(
                     TenantBookingClock.AtLocal(s.Date, s.StartTime, zone), timeProvider));
+        }
+
+        if (!customerFacing)
+        {
+            all = await AttachBookingDetailsAsync(tenantId, all.ToList(), cancellationToken);
         }
 
         var slots = all
@@ -95,6 +126,53 @@ internal sealed class AvailabilityReadModel(
             .ToList();
 
         return new DayScheduleResponseDto(date, slots);
+    }
+
+    /// <summary>
+    /// Staff day view: stamp booked cells with the reservation item quantity for that resource
+    /// and the customer name, so multi-unit occupancy counts units rather than bookings.
+    /// </summary>
+    private async Task<List<SlotResponseDto>> AttachBookingDetailsAsync(
+        Guid tenantId,
+        List<SlotResponseDto> slots,
+        CancellationToken cancellationToken)
+    {
+        var reservationIds = slots
+            .Where(s => s.Status == SlotStatus.Booked && s.ReservationId is not null)
+            .Select(s => s.ReservationId!.Value)
+            .Distinct()
+            .ToList();
+        if (reservationIds.Count == 0)
+        {
+            return slots;
+        }
+
+        var rows = await (
+            from item in dbContext.ReservationItems.AsNoTracking()
+            join reservation in dbContext.Reservations.AsNoTracking()
+                on item.ReservationId equals reservation.Id
+            where item.TenantId == tenantId
+                  && reservation.TenantId == tenantId
+                  && reservationIds.Contains(reservation.Id)
+            select new { reservation.Id, item.RentalAssetId, item.Quantity, reservation.CustomerName })
+            .ToListAsync(cancellationToken);
+
+        var quantities = rows
+            .GroupBy(r => (r.Id, r.RentalAssetId))
+            .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+        var names = rows
+            .GroupBy(r => r.Id)
+            .ToDictionary(g => g.Key, g => g.First().CustomerName);
+
+        return slots
+            .Select(s => s.Status == SlotStatus.Booked && s.ReservationId is { } rid
+                ? s with
+                {
+                    Quantity = quantities.TryGetValue((rid, s.RentalAssetId), out var q) ? q : null,
+                    CustomerName = names.GetValueOrDefault(rid),
+                }
+                : s)
+            .ToList();
     }
 
     private async Task<List<Slot>> LoadPersistedSlotEntitiesAsync(
@@ -228,6 +306,9 @@ internal sealed class AvailabilityReadModel(
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
         IReadOnlySet<(Guid RentalAssetId, TimeOnly StartTime)> persistedStarts,
+        IReadOnlySet<(Guid RentalAssetId, Guid ReservationId)> persistedBookedReservations,
+        bool includeBookedReservations,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         var rentablesQuery = dbContext.RentalAssets
@@ -259,7 +340,7 @@ internal sealed class AvailabilityReadModel(
         }
 
         var reservedWindows = await LoadReservedWindowsAsync(
-            EnsureTenant(), date, rentables.Select(r => r.Id).ToList(), cancellationToken);
+            EnsureTenant(), date, rentables.Select(r => r.Id).ToList(), zone, cancellationToken);
 
         var derived = new List<SlotResponseDto>();
 
@@ -282,8 +363,11 @@ internal sealed class AvailabilityReadModel(
                 var cursor = open;
                 while (true)
                 {
-                    var end = cursor.AddMinutes(minutes);
-                    if (end > close || end <= cursor)
+                    var endOffset = cursor.ToTimeSpan().Add(TimeSpan.FromMinutes(minutes));
+                    if (endOffset > TenantBookingClock.EndOfDayTime(close)) break;
+                    var end = endOffset == TimeSpan.FromDays(1)
+                        ? TenantBookingClock.DayClose : TimeOnly.FromTimeSpan(endOffset);
+                    if (end <= cursor)
                     {
                         break;
                     }
@@ -294,8 +378,14 @@ internal sealed class AvailabilityReadModel(
                         continue;
                     }
 
-                    var startDt = ToDateTime(date, cursor);
-                    var endDt = ToDateTime(date, end);
+                    var startDt = TenantBookingClock.AtLocal(date, cursor, zone);
+                    var endDt = TenantBookingClock.EndAtLocal(date, end, zone);
+                    if (endDt <= startDt)
+                    {
+                        cursor = end;
+                        continue;
+                    }
+
                     var reserved = SumOverlapping(windows, startDt, endDt);
 
                     var available = rental.Type == RentalAssetType.Location
@@ -329,6 +419,13 @@ internal sealed class AvailabilityReadModel(
                     cursor = end;
                 }
             }
+
+            if (includeBookedReservations)
+            {
+                AppendDerivedBookedReservations(
+                    derived, date, zone, rental.Id, rental.Asset.Name, windows, openKind,
+                    persistedBookedReservations, SchedulePolicy.OpenHours, supportsEntireRecurrence: false);
+            }
         }
 
         return derived;
@@ -343,7 +440,11 @@ internal sealed class AvailabilityReadModel(
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
         IReadOnlySet<(Guid RentalAssetId, TimeOnly StartTime)> persistedStarts,
-        CancellationToken cancellationToken)
+        IReadOnlySet<(Guid RentalAssetId, Guid ReservationId)> persistedBookedReservations,
+        bool includeBookedReservations,
+        TimeZoneInfo zone,
+        CancellationToken cancellationToken,
+        IReadOnlyList<Slot> persistedSlots)
     {
         var templatesQuery = dbContext.ScheduleTemplates
             .AsNoTracking()
@@ -369,20 +470,34 @@ internal sealed class AvailabilityReadModel(
             EnsureTenant(),
             date,
             templates.Select(t => t.RentalAssetId).Distinct().ToList(),
+            zone,
             cancellationToken);
+
+        var openKind = includeBookedReservations
+            ? await dbContext.OccupancyKinds
+                .AsNoTracking()
+                .FirstOrDefaultAsync(k => k.Key == "open" && k.IsActive, cancellationToken)
+            : null;
 
         var derived = new List<SlotResponseDto>();
         foreach (var group in templates.GroupBy(t => t.RentalAssetId))
         {
-            foreach (var window in OccupancyPrecedence.SplitWinningWindows(group.ToList()))
+            var rental = group.First().RentalAsset;
+            var templateWindows = OccupancyPrecedence.SplitWinningWindows(group.ToList());
+            foreach (var window in templateWindows)
             {
                 if (persistedStarts.Contains((window.Template.RentalAssetId, window.Start)))
                 {
                     continue;
                 }
 
-                var startDt = ToDateTime(date, window.Start);
-                var endDt = ToDateTime(date, window.End);
+                var startDt = TenantBookingClock.AtLocal(date, window.Start, zone);
+                var endDt = TenantBookingClock.EndAtLocal(date, window.End, zone);
+                if (endDt <= startDt)
+                {
+                    continue;
+                }
+
                 var windows = reservedWindows.TryGetValue(window.Template.RentalAssetId, out var found)
                     ? found
                     : [];
@@ -417,6 +532,22 @@ internal sealed class AvailabilityReadModel(
                     SchedulePolicy.SlotGrid,
                     SupportsEntireRecurrence: true));
             }
+
+            if (openKind is not null && includeBookedReservations)
+            {
+                var windows = reservedWindows.TryGetValue(rental.Id, out var found)
+                    ? found
+                    : [];
+                var gridCells = templateWindows
+                    .Where(w => !persistedStarts.Contains((rental.Id, w.Start)))
+                    .Select(w => (w.Start, w.End))
+                    .ToList();
+                AppendDerivedBookedReservations(
+                    derived, date, zone, rental.Id, rental.Asset.Name, windows, openKind,
+                    persistedBookedReservations, SchedulePolicy.SlotGrid, supportsEntireRecurrence: true,
+                    gridCells, persistedSlots.Where(s => s.RentalAssetId == rental.Id
+                        && s.Status == SlotStatus.Booked).ToList());
+            }
         }
 
         return derived;
@@ -430,6 +561,7 @@ internal sealed class AvailabilityReadModel(
         Guid tenantId,
         DateOnly date,
         IReadOnlyList<Guid> rentalAssetIds,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         if (rentalAssetIds.Count == 0)
@@ -437,8 +569,7 @@ internal sealed class AvailabilityReadModel(
             return [];
         }
 
-        var dayStart = BrazilTimeZone.StartOfCivilDay(date);
-        var dayEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(date);
+        var (dayStart, dayEnd) = TenantBookingClock.CivilDay(date, zone);
 
         var rows = await (
             from item in dbContext.ReservationItems.AsNoTracking()
@@ -453,6 +584,7 @@ internal sealed class AvailabilityReadModel(
             select new
             {
                 item.RentalAssetId,
+                reservation.Id,
                 reservation.StartDateTime,
                 reservation.EndDateTime,
                 item.Quantity,
@@ -464,8 +596,88 @@ internal sealed class AvailabilityReadModel(
                 group => group.Key,
                 group => group
                     .Select(row => new ReservedWindow(
-                        row.StartDateTime, row.EndDateTime, row.Quantity))
+                        row.Id, row.StartDateTime, row.EndDateTime, row.Quantity))
                     .ToList());
+    }
+
+    private static void AppendDerivedBookedReservations(
+        ICollection<SlotResponseDto> derived,
+        DateOnly date,
+        TimeZoneInfo zone,
+        Guid rentalAssetId,
+        string assetName,
+        IReadOnlyList<ReservedWindow> windows,
+        OccupancyKind openKind,
+        IReadOnlySet<(Guid RentalAssetId, Guid ReservationId)> persistedBookedReservations,
+        SchedulePolicy schedulePolicy,
+        bool supportsEntireRecurrence,
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)>? gridCells = null,
+        IReadOnlyList<Slot>? persistedBookedSlots = null)
+    {
+        var (dayStart, dayEnd) = TenantBookingClock.CivilDay(date, zone);
+        foreach (var window in windows)
+        {
+            if (gridCells is null && persistedBookedReservations.Contains((rentalAssetId, window.ReservationId)))
+            {
+                continue;
+            }
+
+            var start = window.Start > dayStart ? window.Start : dayStart;
+            var end = window.End < dayEnd ? window.End : dayEnd;
+            if (end <= start)
+            {
+                continue;
+            }
+
+            var startTimeOnly = TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(start, zone).DateTime);
+            var endTimeOnly = end >= dayEnd
+                ? TenantBookingClock.DayClose
+                : TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(end, zone).DateTime);
+
+            if (gridCells is not null)
+            {
+                var persistedCoverage = (persistedBookedSlots ?? [])
+                    .Where(s => s.ReservationId == window.ReservationId)
+                    .Select(s => (Start: s.StartTime, End: TenantBookingClock.NormalizeEndTime(s.EndTime)))
+                    .ToList();
+                var boundaries = gridCells.SelectMany(c => new[] { c.Start, TenantBookingClock.NormalizeEndTime(c.End) })
+                    .Concat(persistedCoverage.SelectMany(c => new[] { c.Start, c.End }))
+                    .Where(t => t > startTimeOnly && t < endTimeOnly)
+                    .Append(startTimeOnly).Append(endTimeOnly).Distinct().Order().ToList();
+                // Keep the whole reservation after template edits, subtracting persisted coverage.
+                for (var i = 1; i < boundaries.Count; i++)
+                {
+                    var cellStart = boundaries[i - 1];
+                    var cellEnd = boundaries[i];
+                    if (!persistedCoverage.Any(c => c.Start < cellEnd && c.End > cellStart))
+                        AppendBookedCell(cellStart, cellEnd);
+                }
+                continue;
+            }
+
+            AppendBookedCell(startTimeOnly, endTimeOnly);
+
+            void AppendBookedCell(TimeOnly cellStart, TimeOnly cellEnd) => derived.Add(new SlotResponseDto(
+                Guid.Empty,
+                rentalAssetId,
+                assetName,
+                date,
+                cellStart,
+                cellEnd,
+                openKind.Id,
+                openKind.Key,
+                openKind.Label,
+                openKind.ColorHex,
+                false,
+                null,
+                SlotStatus.Booked,
+                window.ReservationId,
+                true,
+                SlotOccurrenceSource.WeeklyDefault,
+                null,
+                schedulePolicy,
+                supportsEntireRecurrence));
+        }
     }
 
     private static int SumOverlapping(
@@ -486,6 +698,7 @@ internal sealed class AvailabilityReadModel(
     }
 
     private sealed record ReservedWindow(
+        Guid ReservationId,
         DateTimeOffset Start,
         DateTimeOffset End,
         int Quantity);
@@ -531,9 +744,6 @@ internal sealed class AvailabilityReadModel(
 
     internal static string? TrimLabel(string? label) =>
         string.IsNullOrWhiteSpace(label) ? null : label.Trim();
-
-    private static DateTimeOffset ToDateTime(DateOnly date, TimeOnly time) =>
-        BrazilTimeZone.AtLocal(date, time);
 
     internal static SlotResponseDto ToSlotDto(
         Slot s,

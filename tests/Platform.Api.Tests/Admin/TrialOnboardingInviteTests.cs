@@ -10,6 +10,8 @@ using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Api.Services.Tenancy;
+using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -21,6 +23,72 @@ namespace Platform.Api.Tests.Admin;
 
 public sealed class TrialOnboardingInviteTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Wizard_and_trial_share_seed_but_keep_trial_only_claim_invite_and_superadmin(bool failClosed)
+    {
+        await using var harness = await Harness.CreateAsync(failClosed: failClosed);
+        var trialResult = await harness.Handler.HandleAsync(
+            TrialRequest("seed@club.test", "11999998888"), CancellationToken.None);
+        Assert.Equal(StatusCodes.Status201Created, Status(trialResult));
+        var trialId = Body<CreateTenantResponse>(trialResult).TenantId;
+        var access = new TenantAccessBootstrapper(harness.Db, NullLogger<TenantAccessBootstrapper>.Instance);
+        var admin = new AdminTenantService(
+            harness.Db, harness.Invites, new FakePlatformAdminMembershipService(), access,
+            NullLogger<AdminTenantService>.Instance,
+            new TenantProvisioner(harness.Db, NullLogger<TenantProvisioner>.Instance),
+            null!); // This test never deletes a tenant.
+        var wizard = await admin.CreateAsync(new CreateTenantRequestDto
+        {
+            LegalName = "Wizard seed", TaxId = "wizard-seed", Subdomain = "wizard-seed",
+            ActiveModules = CreateTenantHandler.TrialModules,
+            AssetFamilyKeys = CreateTenantHandler.TrialFamilyKeys,
+        }, CancellationToken.None);
+
+        async Task<string[]> Seed(Guid tenantId)
+        {
+            var db = harness.Db;
+            var modules = await db.TenantModules.IgnoreQueryFilters().Where(x => x.TenantId == tenantId)
+                .Select(x => "module:" + x.ModuleName + ":" + x.IsActive).ToListAsync();
+            var families = await db.TenantAssetFamilies.IgnoreQueryFilters().Where(x => x.TenantId == tenantId)
+                .Join(db.AssetFamilies, x => x.FamilyId, x => x.Id, (_, f) => "family:" + f.Key).ToListAsync();
+            var categories = await db.AssetCategories.IgnoreQueryFilters().Where(x => x.TenantId == tenantId)
+                .Select(x => "category:" + x.Name + ":" + x.Manufacturer + ":" + x.Description).ToListAsync();
+            var units = await db.Units.IgnoreQueryFilters().Where(x => x.TenantId == tenantId)
+                .Select(x => "unit:" + x.Name + ":" + x.Code + ":" + x.IsActive).ToListAsync();
+            var policies = await db.BookingPolicies.IgnoreQueryFilters().Where(x => x.TenantId == tenantId)
+                .Select(x => "policy:" + x.ResourceType + ":" + x.MaxAdvanceBookingDays).ToListAsync();
+            var roles = await db.Roles.IgnoreQueryFilters().Include(x => x.RolePermissions)
+                .ThenInclude(x => x.Permission).Where(x => x.TenantId == tenantId).ToListAsync();
+            var accessSeed = roles.Where(x => x.Name != SystemRoles.SuperAdmin).SelectMany(x =>
+                new[] { "role:" + x.Name + ":" + x.IsSystemRole }.Concat(
+                    x.RolePermissions.Select(p => "permission:" + x.Name + ":" + p.Permission.Key)));
+            return modules.Concat(families).Concat(categories).Concat(units).Concat(policies)
+                .Concat(accessSeed).Order(StringComparer.Ordinal).ToArray();
+        }
+
+        var trialSeed = await Seed(trialId);
+        Assert.NotEmpty(trialSeed);
+        Assert.Equal(trialSeed, await Seed(wizard.Id));
+        Assert.Contains("policy::7", trialSeed);
+        Assert.Contains("unit:Matriz:HQ:True", trialSeed);
+        Assert.Contains(trialSeed, x => x.StartsWith("permission:"));
+        Assert.Contains(trialSeed, x => x.StartsWith("category:"));
+        var trial = await harness.Db.Tenants.SingleAsync(x => x.Id == trialId);
+        Assert.True(trial.IsTrial);
+        Assert.NotNull(trial.TrialEndsAt);
+        Assert.NotNull(trial.TrialPurgeAt);
+        Assert.False((await harness.Db.Tenants.SingleAsync(x => x.Id == wizard.Id)).IsTrial);
+        Assert.Equal(trialId, (await harness.Db.TrialSignupClaims.SingleAsync()).TenantId);
+        Assert.Equal(trialId, (await harness.Db.UserInvites.IgnoreQueryFilters().SingleAsync()).TenantId);
+        var superAdmin = await harness.Db.Roles.IgnoreQueryFilters().Include(x => x.RolePermissions)
+            .SingleAsync(x => x.TenantId == trialId && x.Name == SystemRoles.SuperAdmin);
+        Assert.NotEmpty(superAdmin.RolePermissions);
+        Assert.False(await harness.Db.Roles.IgnoreQueryFilters()
+            .AnyAsync(x => x.TenantId == wizard.Id && x.Name == SystemRoles.SuperAdmin));
+    }
+
     [Fact]
     public void Trial_json_without_admin_password_binds_as_omitted()
     {
@@ -135,6 +203,29 @@ public sealed class TrialOnboardingInviteTests
             suppliedPassword,
             string.Join('\n', harness.Logger.Messages),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Trial_provisions_tenant_and_invite_email_when_the_tenant_filter_is_fail_closed()
+    {
+        // Anonymous trial has no tenant: under Tenancy:FailClosed only a PlatformScope lets it read.
+        await using var harness = await Harness.CreateAsync(failClosed: true);
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("Ada@Club.test", "11999998888"),
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status201Created, Status(result));
+        var body = Body<CreateTenantResponse>(result);
+        var invite = await harness.Db.UserInvites.IgnoreQueryFilters().SingleAsync();
+        Assert.Equal(body.InviteId, invite.Id);
+        Assert.True(harness.Queue.TryRead(out var message));
+        Assert.Equal("ada@club.test", message.Recipient);
+
+        // Super-Admin in platform mode (no tenant) manages the new tenant's invites.
+        var bundle = await harness.Invites.ListUsersAndInvitesAsync(body.TenantId, CancellationToken.None);
+        Assert.Equal([invite.Id], bundle.Invites.Select(item => item.Id));
+        await harness.Invites.RevokeInviteAsync(body.TenantId, invite.Id, CancellationToken.None);
     }
 
     [Fact]
@@ -592,10 +683,11 @@ public sealed class TrialOnboardingInviteTests
 
         public static async Task<Harness> CreateAsync(
             IAnonymousTrialCreateGate? trialCreateGate = null,
-            ITenantUserAdminService? invites = null)
+            ITenantUserAdminService? invites = null,
+            bool failClosed = false)
         {
             var tenantProvider = new FakeTenantProvider { TenantId = null };
-            var db = InMemoryAppDb.Create(tenantProvider, ignoreInMemoryTransactions: true);
+            var db = InMemoryAppDb.Create(tenantProvider, ignoreInMemoryTransactions: true, failClosed: failClosed);
             db.AssetFamilies.AddRange(
                 Family(AssetFamilyKeys.Spaces, "Spaces", 1),
                 Family(AssetFamilyKeys.Electrical, "Electrical", 2),
@@ -625,7 +717,10 @@ public sealed class TrialOnboardingInviteTests
             var handlerLogger = new ListLogger<CreateTenantHandler>();
             var handler = new CreateTenantHandler(
                 db,
-                new TenantAccessBootstrapper(db),
+                new TenantProvisioner(db, NullLogger<TenantProvisioner>.Instance),
+                new TenantAccessBootstrapper(
+                    db,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<TenantAccessBootstrapper>.Instance),
                 inviteService,
                 trialCreateGate ?? new AnonymousTrialCreateGate(
                     new MemoryCache(new MemoryCacheOptions()),

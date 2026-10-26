@@ -43,7 +43,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 1,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             },
             {
               "slotId": null,
@@ -53,7 +54,8 @@
               "state": "Available",
               "reasonCode": null,
               "availableQuantity": 1,
-              "totalAmount": 20
+              "totalAmount": 20,
+              "pricingUnit": "Hour"
             }
           ]
         }
@@ -81,7 +83,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -102,7 +106,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         }
       ]
     },
@@ -128,7 +134,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -149,7 +157,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         }
       ]
     }

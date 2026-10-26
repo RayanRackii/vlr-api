@@ -7,6 +7,20 @@ namespace Platform.Api.Tests.Pmoc;
 
 public sealed class PmocDueCalculatorTests
 {
+    [Theory]
+    [InlineData("America/Manaus", 11)]
+    [InlineData("America/Sao_Paulo", 12)]
+    public void Completion_date_uses_tenant_civil_day(string zoneId, int expectedNovemberDay)
+    {
+        var completed = new DateTimeOffset(2026, 10, 13, 3, 30, 0, TimeSpan.Zero);
+        var result = PmocDueCalculator.Compute(
+            new PmocDueInput(30, new DateOnly(2026, 1, 1), new DateOnly(2026, 11, 12),
+                new PmocLastCompleted(completed, new DateOnly(2026, 10, 13), Guid.NewGuid())),
+            TimeZoneInfo.FindSystemTimeZoneById(zoneId));
+
+        Assert.Equal(new DateOnly(2026, 11, expectedNovemberDay), result.NextDueDate);
+    }
+
     [Fact]
     public void Never_executed_future_first_due_is_not_due()
     {

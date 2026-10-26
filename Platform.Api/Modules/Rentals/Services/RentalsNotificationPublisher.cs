@@ -2,19 +2,24 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Platform.Api.DomainEvents;
 using Platform.Api.Notifications;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
+using System.Globalization;
+using System.Text.Json;
 using NotificationEntity = Platform.Core.Domain.Entities.Notification;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
-public interface IRentalsNotificationPublisher
+public interface IRentalsNotificationPublisher : IDomainEventHandler<ReservationEvent>
 {
-    Task EnsureReadyAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Guid>> IDomainEventHandler<ReservationEvent>.HandleAsync(
+        ReservationEvent domainEvent, CancellationToken cancellationToken) =>
+        PublishReservationEventAsync(domainEvent.Reservation, domainEvent.EventType, cancellationToken);
 
     Task<IReadOnlyList<Guid>> PublishReservationEventAsync(
         Reservation reservation,
@@ -232,8 +237,35 @@ public sealed class RentalsNotificationPublisher(
             ? trade
             : tenant?.LegalName;
         var reference = FormatReservationReference(reservation);
-        var zone = TenantBookingClock.Resolve(
-            tenant is null ? null : TenantBookingClock.ReadConfiguredTimeZoneId(tenant));
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+        var pricing = await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken);
+        var items = reservation.Items.Where(i => i.TenantId == tenantId).ToList();
+        var hours = (decimal)(reservation.EndDateTime - reservation.StartDateTime).TotalHours;
+        var itemDetails = items.Select(item =>
+        {
+            var metadata = pricing.GetValueOrDefault(item.Id);
+            var unit = metadata?.Unit switch
+            {
+                PricingUnit.Hour => "/hora",
+                PricingUnit.Slot => "/horário",
+                PricingUnit.Day => "/dia",
+                PricingUnit.Fixed => "fixo",
+                _ => null,
+            };
+            var dimensions = ReservationCustomerEmail.FormatDimensions(item.Quantity, metadata?.Days ?? 1);
+            var name = item.RentalAsset?.Asset?.Name ?? "recurso";
+            var summary = string.Join(" ", new[]
+            {
+                name, unit,
+                dimensions.Length > 0 ? $"x {dimensions}" : null,
+            }.Where(part => part is not null));
+            return new ReservationEmailItem(name, item.Quantity, metadata?.Unit, item.UnitPrice,
+                metadata?.Unit is { } pricingUnit
+                    ? BookingOffer.Total(item.UnitPrice, pricingUnit, hours, item.Quantity)
+                    : null,
+                summary);
+        }).ToArray();
+        var itemSummary = string.Join("; ", itemDetails.Select(item => item.Summary));
         var schedule = ReservationCustomerEmail.FormatSchedule(
             reservation.StartDateTime,
             reservation.EndDateTime,
@@ -251,11 +283,20 @@ public sealed class RentalsNotificationPublisher(
             [ReservationCustomerEmail.CustomerNameKey] = reservation.CustomerName,
             [ReservationCustomerEmail.ReferenceKey] = reference,
             [ReservationCustomerEmail.StatusKey] = NotificationCustomerCopy.Label(reservation.Status),
-            [ReservationCustomerEmail.DateTimeKey] = BrazilTimeZone.FormatCivilDateTime(reservation.StartDateTime),
+            [ReservationCustomerEmail.DateTimeKey] = TimeZoneInfo.ConvertTime(reservation.StartDateTime, zone)
+                .ToString("dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("pt-BR")),
             [ReservationCustomerEmail.DateKey] = schedule.Date,
             [ReservationCustomerEmail.StartKey] = schedule.Start,
             [ReservationCustomerEmail.EndKey] = schedule.End,
+            [ReservationCustomerEmail.TimeZoneKey] = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId)
+                ? ianaId : zone.Id,
+            [ReservationCustomerEmail.StartInstantKey] = reservation.StartDateTime.ToString("O", CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.TotalKey] = ReservationCustomerEmail.FormatMoney(reservation.TotalAmount),
+            [ReservationCustomerEmail.ItemsKey] = itemSummary,
+            [ReservationCustomerEmail.ItemDetailsKey] = JsonSerializer.Serialize(itemDetails),
+            [ReservationCustomerEmail.QuantityKey] = items.Sum(i => i.Quantity).ToString(CultureInfo.InvariantCulture),
+            [ReservationCustomerEmail.DaysKey] = pricing.Values.Select(p => p.Days ?? 1).DefaultIfEmpty(1).Max()
+                .ToString(CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.DepositKey] = await ResolveDepositTextAsync(
                 reservation,
                 tenantId,
@@ -286,6 +327,7 @@ public sealed class RentalsNotificationPublisher(
         var date = DateOnly.FromDateTime(startLocal.Date);
         var startTime = TimeOnly.FromTimeSpan(startLocal.TimeOfDay);
         var endTime = TimeOnly.FromTimeSpan(endLocal.TimeOfDay);
+        var hours = (decimal)(reservation.EndDateTime - reservation.StartDateTime).TotalHours;
         decimal deposit = 0m;
         var counted = 0;
 
@@ -311,14 +353,19 @@ public sealed class RentalsNotificationPublisher(
                 continue;
             }
 
-            var percentage = await dbContext.RentalPricings
+            var prices = await dbContext.RentalPricings
                 .AsNoTracking()
                 .Where(pricing => pricing.TenantId == tenantId && pricing.RentalAssetId == item.RentalAssetId)
                 .Where(pricing => pricing.DayOfWeek == date.DayOfWeek)
                 .Where(pricing => pricing.StartTime <= startTime && pricing.EndTime >= endTime)
                 .OrderBy(pricing => pricing.PricePerHour)
-                .Select(pricing => (decimal?)pricing.DepositPercentage)
-                .FirstOrDefaultAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
+            // Prefer the row the booking actually priced with (same unit price and subtotal), so both
+            // booking routes (persisted slot / derived window) agree with the deposit row.
+            var booked = prices.Where(pricing => pricing.PricePerHour == item.UnitPrice
+                && BookingOffer.Total(pricing, hours, item.Quantity) == item.SubTotal).ToList();
+            var percentage = BookingOffer.ForDerivedWindow(booked.Count > 0 ? booked : prices, hours, item.Quantity)
+                ?.DepositPercentage;
 
             if (percentage is null)
             {

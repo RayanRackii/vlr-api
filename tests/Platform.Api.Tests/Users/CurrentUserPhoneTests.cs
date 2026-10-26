@@ -73,11 +73,30 @@ public sealed class CurrentUserPhoneTests
         using var doc = JsonDocument.Parse(body);
         Assert.Equal(seed.CallerId, doc.RootElement.GetProperty("id").GetGuid());
         Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("phone").ValueKind);
+        Assert.Equal("America/Sao_Paulo", doc.RootElement.GetProperty("timeZoneId").GetString());
         Assert.Equal(TradeA, doc.RootElement.GetProperty("tenantTradeName").GetString());
         Assert.Equal(LegalA, doc.RootElement.GetProperty("tenantLegalName").GetString());
         Assert.DoesNotContain(ColleaguePhone, body, StringComparison.Ordinal);
         Assert.DoesNotContain(OtherTenantPhone, body, StringComparison.Ordinal);
         AssertNoPhoneInLogs(logs);
+    }
+
+    [Fact]
+    public async Task Get_me_returns_only_the_current_tenants_effective_zone()
+    {
+        var seed = await SeedAsync();
+        await using (var db = InMemoryAppDb.Create(new FakeTenantProvider(), seed.DatabaseName))
+        {
+            db.TenantSettings.AddRange(
+                new TenantSetting { TenantId = seed.TenantA, Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = "Asia/Tokyo" },
+                new TenantSetting { TenantId = seed.TenantB, Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId, Value = "America/Manaus" });
+            await db.SaveChangesAsync();
+        }
+        using var host = await StartHostAsync(seed.DatabaseName, new LogCapture());
+        var response = await SendAsync(host, HttpMethod.Get, CallerEmail, seed.TenantA, body: null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Asia/Tokyo", document.RootElement.GetProperty("timeZoneId").GetString());
     }
 
     [Fact]

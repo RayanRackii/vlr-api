@@ -154,6 +154,32 @@ public sealed class StaffInviteEmailTests
     }
 
     [Fact]
+    public async Task Admin_invite_uses_configured_frontend_and_portal_hosts()
+    {
+        await using var fx = await Fixture.CreateAsync(new Dictionary<string, string?>
+        {
+            ["App:FrontendBaseUrl"] = "https://dev.example.test",
+            ["App:TenantPortalHostTemplate"] = "dev.example.test/t/{subdomain}",
+        });
+        await fx.Service.InviteAsync(
+            fx.TenantId,
+            new InviteTenantUserRequestDto
+            {
+                FullName = "Ada Admin",
+                Email = "ada-admin@estudio.test",
+                RoleName = SystemRoles.Admin,
+            },
+            CancellationToken.None);
+
+        Assert.True(fx.Queue.TryRead(out var message));
+        Assert.Contains("https://dev.example.test/invite?token=", message.Body, StringComparison.Ordinal);
+        Assert.Contains("<strong>dev.example.test</strong>", message.Body, StringComparison.Ordinal);
+        Assert.Contains("<strong>dev.example.test/t/estudio</strong>", message.Body, StringComparison.Ordinal);
+        Assert.Contains("<strong>https://dev.example.test/login</strong>", message.Body, StringComparison.Ordinal);
+        Assert.DoesNotContain("rolvix.com.br", message.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Role_from_another_tenant_is_not_copied_into_the_invite_wording()
     {
         var tenantProvider = new FakeTenantProvider();
@@ -204,7 +230,7 @@ public sealed class StaffInviteEmailTests
 
         public Guid TenantId { get; }
 
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(IReadOnlyDictionary<string, string?>? settings = null)
         {
             var tenantProvider = new FakeTenantProvider();
             var db = InMemoryAppDb.Create(tenantProvider);
@@ -217,7 +243,7 @@ public sealed class StaffInviteEmailTests
                 db,
                 new FakeSupabaseAuthAdminClient(),
                 queue,
-                new ConfigurationBuilder().Build(),
+                new ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
                 new FakeHostEnvironment(),
                 new FakeTrialGuard(),
                 new FakePlatformAdminChecker(),

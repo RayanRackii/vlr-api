@@ -20,7 +20,11 @@ public sealed record CreateRentableRequest
 {
     public required string Name { get; init; }
 
-    public required string Tag { get; init; }
+    /// <summary>
+    /// Registry identifier. Optional: create generates one when omitted and
+    /// update keeps the stored tag, because RentalAssetResponse does not expose it.
+    /// </summary>
+    public string? Tag { get; init; }
 
     public required Guid UnitId { get; init; }
 
@@ -55,6 +59,14 @@ public sealed record CreateRentableRequest
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
 
+    /// <summary>
+    /// Per-resource cancellation cutoff in hours (0..8760). Omitted keeps the stored override
+    /// (inherits on create); explicit null clears it so the resource inherits category/tenant policy.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CancelCutoffHours { get; init; }
+
     public Guid? VisualTemplateRevisionId { get; init; }
 
     public int? CapacityPeople { get; init; }
@@ -73,7 +85,11 @@ public sealed record UpdateRentableRequest
 {
     public required string Name { get; init; }
 
-    public required string Tag { get; init; }
+    /// <summary>
+    /// Registry identifier. Optional: create generates one when omitted and
+    /// update keeps the stored tag, because RentalAssetResponse does not expose it.
+    /// </summary>
+    public string? Tag { get; init; }
 
     public required Guid UnitId { get; init; }
 
@@ -99,6 +115,14 @@ public sealed record UpdateRentableRequest
     /// </summary>
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> MaxAdvanceBookingDays { get; init; }
+
+    /// <summary>
+    /// Per-resource cancellation cutoff in hours (0..8760). Omitted keeps the stored override
+    /// (inherits on create); explicit null clears it so the resource inherits category/tenant policy.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> CancelCutoffHours { get; init; }
 
     /// <summary>Omitted preserves the fixed revision; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

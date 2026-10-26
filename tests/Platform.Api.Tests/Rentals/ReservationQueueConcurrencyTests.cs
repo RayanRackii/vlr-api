@@ -150,7 +150,7 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider, time),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             time);
         var create = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -166,7 +166,7 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
             new UnusedOccupancyKindService(),
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider, time),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             time);
         var book = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -228,7 +228,7 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider, time),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             time);
         var created = await reservations.CreateReservationAsync(

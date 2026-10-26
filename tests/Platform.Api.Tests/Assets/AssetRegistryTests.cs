@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
@@ -96,6 +98,42 @@ public sealed class AssetRegistryTests
     }
 
     [Fact]
+    public async Task Inventory_create_without_tag_generates_one_and_update_keeps_it()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var service = harness.CreateService();
+        CreateAssetRequest NoTag(string name) => new()
+        {
+            UnitId = harness.UnitId,
+            CategoryId = harness.CategoryId,
+            FamilyId = harness.FamilyId,
+            Name = name,
+            Tag = "  ",
+            Status = AssetStatus.Active,
+            IsRentable = false,
+        };
+
+        var first = await service.CreateAsync(NoTag("A"), CancellationToken.None);
+        var second = await service.CreateAsync(NoTag("B"), CancellationToken.None);
+        var updated = await service.UpdateAsync(
+            first.Id,
+            new UpdateAssetRequest
+            {
+                UnitId = harness.UnitId,
+                CategoryId = harness.CategoryId,
+                FamilyId = harness.FamilyId,
+                Name = "A2",
+                Status = AssetStatus.Active,
+                IsRentable = false,
+            },
+            CancellationToken.None);
+
+        Assert.StartsWith("RES-", first.Tag);
+        Assert.NotEqual(first.Tag, second.Tag);
+        Assert.Equal(first.Tag, updated!.Tag);
+    }
+
+    [Fact]
     public async Task UpdateRentable_updates_existing_rentable_by_rental_asset_id()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
@@ -125,6 +163,143 @@ public sealed class AssetRegistryTests
         Assert.Equal("Bloco A", updated.Location);
         Assert.False(updated.RentalConfiguration!.RequiresDeposit);
         Assert.True(updated.IsRentable);
+    }
+
+    // Exact body the web drawer sends (R11 Bot4 repro): no "tag", because
+    // RentalAssetResponse does not expose it. Must deserialize, not 400.
+    private const string WebRentableBodyWithoutTag = """
+        {"name":"Sala Cancelamento","unitId":"66596a2c-82cc-4c0a-bf36-c3c7046a03b5",
+         "categoryId":"3ef7d7a1-1610-4770-8980-49f4e88f79b2","familyId":"11111111-1111-1111-1111-111111111101",
+         "rentalType":"Location","totalQuantity":1,"requiresDeposit":false,"queueEnabled":false,
+         "queueOpeningTime":null,"location":"x"}
+        """;
+
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    // QA R18 HIGH: drawer "Prazo de cancelamento" = 1h answered 200 but never persisted,
+    // because UpdateRentableRequest had no CancelCutoffHours and the field was dropped.
+    [Fact]
+    public async Task UpdateRentable_persists_cancel_cutoff_from_web_body_and_null_clears_it()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Projetor", tag: "PRJ-1"), CancellationToken.None);
+        var body = $$"""
+            {"name":"Projetor","unitId":"{{harness.UnitId}}","categoryId":"{{harness.CategoryId}}",
+             "familyId":"{{harness.FamilyId}}","rentalType":"Location","totalQuantity":1,
+             "requiresDeposit":true,"queueEnabled":false,"queueOpeningTime":null,"location":null,
+             "cancelCutoffHours":1}
+            """;
+        var request = JsonSerializer.Deserialize<UpdateRentableRequest>(body, WebJson)!;
+        Assert.True(request.CancelCutoffHours.IsSpecified);
+
+        var updated = await registry.UpdateRentableAsync(created.RentalConfiguration!.Id, request, CancellationToken.None);
+        Assert.Equal(1, updated.RentalConfiguration!.CancelCutoffHours);
+
+        var untouched = request with { CancelCutoffHours = default };
+        updated = await registry.UpdateRentableAsync(created.RentalConfiguration.Id, untouched, CancellationToken.None);
+        Assert.Equal(1, updated.RentalConfiguration!.CancelCutoffHours);
+
+        var cleared = JsonSerializer.Deserialize<UpdateRentableRequest>(body.Replace("\"cancelCutoffHours\":1", "\"cancelCutoffHours\":null"), WebJson)!;
+        updated = await registry.UpdateRentableAsync(created.RentalConfiguration.Id, cleared, CancellationToken.None);
+        Assert.Null(updated.RentalConfiguration!.CancelCutoffHours);
+
+        var invalid = JsonSerializer.Deserialize<UpdateRentableRequest>(body.Replace("\"cancelCutoffHours\":1", "\"cancelCutoffHours\":9000"), WebJson)!;
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            registry.UpdateRentableAsync(created.RentalConfiguration.Id, invalid, CancellationToken.None));
+    }
+
+    [Fact]
+    public void Web_rentable_body_without_tag_deserializes_for_create_and_update()
+    {
+        var update = JsonSerializer.Deserialize<UpdateRentableRequest>(WebRentableBodyWithoutTag, WebJson);
+        var create = JsonSerializer.Deserialize<CreateRentableRequest>(WebRentableBodyWithoutTag, WebJson);
+
+        Assert.NotNull(update);
+        Assert.Null(update.Tag);
+        Assert.Equal("x", update.Location);
+        Assert.NotNull(create);
+        Assert.Null(create.Tag);
+    }
+
+    [Fact]
+    public async Task UpdateRentable_without_tag_keeps_stored_tag()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Sala", tag: "SALA-1"),
+            CancellationToken.None);
+
+        var updated = await registry.UpdateRentableAsync(
+            created.RentalConfiguration!.Id,
+            new UpdateRentableRequest
+            {
+                Name = "Sala",
+                UnitId = harness.UnitId,
+                CategoryId = harness.CategoryId,
+                FamilyId = harness.FamilyId,
+                Location = "x",
+            },
+            CancellationToken.None);
+
+        Assert.Equal("SALA-1", updated.Tag);
+        Assert.Equal("x", updated.Location);
+    }
+
+    [Fact]
+    public async Task CreateRentable_without_tag_generates_distinct_tags()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        CreateRentableRequest NoTag(string name) => new()
+        {
+            Name = name,
+            UnitId = harness.UnitId,
+            CategoryId = harness.CategoryId,
+            FamilyId = harness.FamilyId,
+        };
+
+        var first = await registry.CreateRentableAsync(NoTag("A"), CancellationToken.None);
+        var second = await registry.CreateRentableAsync(NoTag("B"), CancellationToken.None);
+
+        Assert.StartsWith("RES-", first.Tag);
+        Assert.NotEqual(first.Tag, second.Tag);
+    }
+
+    [Fact]
+    public async Task UpdateRentable_location_round_trips_through_the_rental_asset_response()
+    {
+        // R11: drawer saved Localização, the PUT persisted it, but GET /api/rental-assets
+        // did not return it, so the drawer reopened empty and the next save wiped it.
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var rentals = new Platform.Api.Modules.Rentals.Services.RentalAssetService(harness.Db, harness.TenantProvider);
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Sala", tag: "SALA-LOC"),
+            CancellationToken.None);
+
+        await registry.UpdateRentableAsync(
+            created.RentalConfiguration!.Id,
+            new UpdateRentableRequest
+            {
+                Name = "Sala",
+                UnitId = harness.UnitId,
+                CategoryId = harness.CategoryId,
+                FamilyId = harness.FamilyId,
+                Location = "x",
+            },
+            CancellationToken.None);
+
+        var byAsset = await rentals.GetByAssetIdAsync(created.Id, CancellationToken.None);
+        var listed = await rentals.ListRentableAsync(CancellationToken.None);
+
+        Assert.Equal("x", byAsset!.Location);
+        Assert.Equal("x", Assert.Single(listed, r => r.AssetId == created.Id).Location);
     }
 
     [Fact]

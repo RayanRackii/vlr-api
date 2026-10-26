@@ -26,7 +26,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -36,7 +37,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           }
         ]
       },
@@ -59,7 +61,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -69,7 +72,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 20
+            "totalAmount": 20,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": "<slot:override 10-10:30>",
@@ -79,7 +83,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -89,7 +94,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -99,7 +105,8 @@
             "state": "Blocked",
             "reasonCode": "SCHEDULE_BLOCKED",
             "availableQuantity": 0,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           },
           {
             "slotId": null,
@@ -109,7 +116,8 @@
             "state": "Available",
             "reasonCode": null,
             "availableQuantity": 5,
-            "totalAmount": 10.0
+            "totalAmount": 10.0,
+            "pricingUnit": "Hour"
           }
         ]
       }
@@ -137,7 +145,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": null,
         "schedulePolicy": "OpenHours",
-        "supportsEntireRecurrence": false
+        "supportsEntireRecurrence": false,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -158,7 +168,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": null,
         "schedulePolicy": "OpenHours",
-        "supportsEntireRecurrence": false
+        "supportsEntireRecurrence": false,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "<slot:override 10-10:30>",
@@ -179,7 +191,9 @@
         "source": "DailyOverride",
         "sourceTemplateId": null,
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -200,7 +214,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": "<template:open 08-12>",
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       }
     ]
   },
@@ -226,7 +242,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": null,
         "schedulePolicy": "OpenHours",
-        "supportsEntireRecurrence": false
+        "supportsEntireRecurrence": false,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -247,7 +265,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": null,
         "schedulePolicy": "OpenHours",
-        "supportsEntireRecurrence": false
+        "supportsEntireRecurrence": false,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "<slot:tombstone 08-09>",
@@ -268,7 +288,9 @@
         "source": "DailyOverride",
         "sourceTemplateId": null,
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -289,7 +311,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": "<template:lesson 09-10>",
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "<slot:override 10-10:30>",
@@ -310,7 +334,9 @@
         "source": "DailyOverride",
         "sourceTemplateId": null,
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -331,7 +357,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": "<template:maintenance 10:30-11>",
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -352,7 +380,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": "<template:closed 11-11:30>",
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -373,7 +403,9 @@
         "source": "WeeklyDefault",
         "sourceTemplateId": "<template:open 08-12>",
         "schedulePolicy": "SlotGrid",
-        "supportsEntireRecurrence": true
+        "supportsEntireRecurrence": true,
+        "quantity": null,
+        "customerName": null
       }
     ]
   }

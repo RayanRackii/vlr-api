@@ -235,40 +235,56 @@ public sealed class ModuleRuntimeGateTests
             tenantBModules: [PlatformModules.Catalog]);
         var seed = host.Services.GetRequiredService<SeededGate>();
 
-        await AssertModuleInactiveAsync(
+        await AssertTenantMismatchAsync(
             await GetCustomerAsync(
                 host,
                 $"/api/public/tenants/{seed.TenantB.Subdomain}/rental-assets",
                 seed.CustomerAId,
-                seed.TenantA.Id));
+                seed.TenantA.Id),
+            seed);
     }
 
     [Fact]
-    public async Task Customer_jwt_for_tenant_A_cannot_open_availability_of_inactive_tenant_B()
+    public async Task Customer_jwt_for_tenant_A_cannot_open_availability_of_tenant_B()
     {
         using var host = await StartHostAsync(
             tenantAModules: [PlatformModules.Rentals],
-            tenantBModules: [PlatformModules.Catalog]);
+            tenantBModules: [PlatformModules.Rentals]);
         var seed = host.Services.GetRequiredService<SeededGate>();
         var client = host.GetTestClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.CustomerHeader, seed.CustomerAId.ToString());
         client.DefaultRequestHeaders.Add(TestAuthHandler.TenantHeader, seed.TenantA.Id.ToString());
         client.DefaultRequestHeaders.Add(TenantHeaders.Subdomain, seed.TenantB.Subdomain!);
 
-        await AssertModuleInactiveAsync(await client.GetAsync("/api/reservations/availability"));
+        await AssertTenantMismatchAsync(await client.GetAsync("/api/reservations/availability"), seed);
     }
 
     [Fact]
-    public async Task Customer_jwt_for_tenant_A_can_read_public_rentals_of_active_tenant_B()
+    public async Task Customer_jwt_for_tenant_A_cannot_read_public_rentals_of_active_tenant_B()
     {
         using var host = await StartHostAsync(
             tenantAModules: [PlatformModules.Rentals],
             tenantBModules: [PlatformModules.Rentals]);
         var seed = host.Services.GetRequiredService<SeededGate>();
 
+        await AssertTenantMismatchAsync(
+            await GetCustomerAsync(
+                host,
+                $"/api/public/tenants/{seed.TenantB.Subdomain}/rental-assets",
+                seed.CustomerAId,
+                seed.TenantA.Id),
+            seed);
+    }
+
+    [Fact]
+    public async Task Customer_jwt_for_tenant_A_can_read_public_rentals_of_own_tenant()
+    {
+        using var host = await StartHostAsync(tenantAModules: [PlatformModules.Rentals]);
+        var seed = host.Services.GetRequiredService<SeededGate>();
+
         var response = await GetCustomerAsync(
             host,
-            $"/api/public/tenants/{seed.TenantB.Subdomain}/rental-assets",
+            $"/api/public/tenants/{seed.TenantA.Subdomain}/rental-assets",
             seed.CustomerAId,
             seed.TenantA.Id);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -564,6 +580,16 @@ public sealed class ModuleRuntimeGateTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(InactiveError, doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal(RequireActiveModuleAttribute.InactiveModuleCode, doc.RootElement.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("module").GetString()));
+    }
+
+    private static async Task AssertTenantMismatchAsync(HttpResponseMessage response, SeededGate seed)
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(seed.TenantB.Id.ToString(), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(seed.TenantB.Subdomain!, body, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<HttpResponseMessage> GetB2BAsync(IHost host, string path)
@@ -681,8 +707,16 @@ public sealed class ModuleRuntimeGateTests
                             new AllowlistedPermissionHandler(allowedPermissions ?? []));
                     }
 
+                    // Mirrors the production JWT scheme router: Customer tokens authenticate on anonymous routes too.
                     services
-                        .AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme)
+                        .AddAuthentication("TestRouter")
+                        .AddPolicyScheme("TestRouter", "Test JWT router", options =>
+                        {
+                            options.ForwardDefaultSelector = context =>
+                                context.Request.Headers.ContainsKey(TestAuthHandler.CustomerHeader)
+                                    ? CustomerJwtBearerDefaults.AuthenticationScheme
+                                    : SupabaseJwtBearerDefaults.AuthenticationScheme;
+                        })
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                             SupabaseJwtBearerDefaults.AuthenticationScheme,
                             _ => { })
@@ -717,6 +751,7 @@ public sealed class ModuleRuntimeGateTests
                 });
                 web.Configure(app =>
                 {
+                    app.UsePlatformExceptionHandler();
                     app.UseRouting();
                     app.UseAuthentication();
                     app.UseAuthorization();

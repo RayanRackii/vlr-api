@@ -94,13 +94,13 @@ internal sealed class CatalogHarness : IAsyncDisposable
             TimeProvider.System);
         var products = new CatalogProductService(db, tenantProvider, storage, storageOptions);
         var http = new FakeHttpContextAccessor();
-        var orders = new CatalogOrderService(db, tenantProvider, http, publisher, scheduler);
+        var orders = new CatalogOrderService(db, tenantProvider, http, publisher.AsDomainEvents(), scheduler);
         var portal = new CatalogPortalService(
             db,
             tenantProvider,
             storage,
             storageOptions,
-            publisher,
+            publisher.AsDomainEvents(),
             scheduler);
         var notifications = new CatalogNotificationService(db, tenantProvider, publisher, processor);
 

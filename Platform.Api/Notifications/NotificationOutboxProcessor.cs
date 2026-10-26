@@ -45,6 +45,9 @@ public sealed class NotificationOutboxProcessor(
         Guid deliveryId,
         CancellationToken cancellationToken = default)
     {
+        // Hangfire runs this alone (no tenant). Lookup is by delivery id; the reminder check
+        // below still pins the notification's own tenant.
+        using var _ = PlatformScope.Begin(logger, "notification-outbox-delivery");
         var delivery = await dbContext.NotificationDeliveries
             .Include(d => d.Notification)
             .Include(d => d.Attempts)
@@ -78,20 +81,19 @@ public sealed class NotificationOutboxProcessor(
         }
 
         var attemptNumber = delivery.AttemptCount + 1;
-        delivery.AttemptCount = attemptNumber;
         var attempt = new NotificationDeliveryAttempt
         {
             DeliveryId = delivery.Id,
             AttemptNumber = attemptNumber,
             StartedAt = DateTimeOffset.UtcNow,
         };
-        delivery.AddAttempt(attempt);
 
         if (delivery.Channel == NotificationChannel.Sms)
         {
             const string smsError = "SMS channel is not available.";
             attempt.Finish(NotificationAttemptOutcome.PermanentFailure, providerResponse: null, smsError);
             delivery.MarkFailed(smsError);
+            RecordAttempt(delivery, attempt);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -101,6 +103,7 @@ public sealed class NotificationOutboxProcessor(
             const string skip = "Channel has no external provider.";
             attempt.Finish(NotificationAttemptOutcome.PermanentFailure, providerResponse: null, skip);
             delivery.MarkFailed(skip);
+            RecordAttempt(delivery, attempt);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -208,6 +211,7 @@ public sealed class NotificationOutboxProcessor(
                         providerResponse: Truncate(providerMessageId, 200),
                         errorMessage: null);
                     delivery.MarkSent(providerMessageId);
+                    RecordAttempt(delivery, attempt);
                     await dbContext.SaveChangesAsync(cancellationToken);
                     return;
                 default:
@@ -216,7 +220,17 @@ public sealed class NotificationOutboxProcessor(
 
             attempt.Finish(NotificationAttemptOutcome.Success, providerResponse: "ok", errorMessage: null);
             delivery.MarkSent(providerMessageId: null);
+            RecordAttempt(delivery, attempt);
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (EmailDeferredException) when (delivery.Channel == NotificationChannel.Email)
+        {
+            var nextMidnight = new DateTimeOffset(timeProvider.GetUtcNow().UtcDateTime.Date.AddDays(1), TimeSpan.Zero);
+            delivery.MarkQueuedForRetry(nextMidnight);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogWarning(
+                "Email delivery deferred: provider daily quota exceeded. Next attempt at {NextAttemptAt}.",
+                nextMidnight);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -227,6 +241,15 @@ public sealed class NotificationOutboxProcessor(
         {
             FinishFailedAttempt(delivery, attempt, attemptNumber, ex, IsTransient(ex));
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static void RecordAttempt(NotificationDelivery delivery, NotificationDeliveryAttempt attempt)
+    {
+        delivery.AttemptCount = attempt.AttemptNumber;
+        if (!delivery.Attempts.Contains(attempt))
+        {
+            delivery.AddAttempt(attempt);
         }
     }
 
@@ -243,6 +266,10 @@ public sealed class NotificationOutboxProcessor(
             NotificationAttemptOutcome.PermanentFailure,
             providerResponse: null,
             ReservationReminderSendGate.SkippedMessage);
+        if (attempt is not null)
+        {
+            RecordAttempt(delivery, attempt);
+        }
         delivery.MarkFailed(ReservationReminderSendGate.SkippedMessage);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -287,6 +314,7 @@ public sealed class NotificationOutboxProcessor(
             ? NotificationAttemptOutcome.TransientFailure
             : NotificationAttemptOutcome.PermanentFailure;
         attempt.Finish(outcome, providerResponse: Truncate(ex.Message, 200), ex.Message);
+        RecordAttempt(delivery, attempt);
 
         if (outcome == NotificationAttemptOutcome.PermanentFailure || attemptNumber >= MaxAttempts)
         {

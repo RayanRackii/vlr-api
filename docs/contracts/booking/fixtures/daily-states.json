@@ -24,7 +24,8 @@
           "state": "Past",
           "reasonCode": "START_IN_THE_PAST",
           "availableQuantity": 5,
-          "totalAmount": 20
+          "totalAmount": 20,
+          "pricingUnit": "Hour"
         },
         {
           "slotId": null,
@@ -34,7 +35,8 @@
           "state": "Available",
           "reasonCode": null,
           "availableQuantity": 5,
-          "totalAmount": 0
+          "totalAmount": 0,
+          "pricingUnit": "Hour"
         },
         {
           "slotId": null,
@@ -44,7 +46,8 @@
           "state": "Taken",
           "reasonCode": "INSUFFICIENT_CAPACITY",
           "availableQuantity": 0,
-          "totalAmount": 20
+          "totalAmount": 20,
+          "pricingUnit": "Hour"
         },
         {
           "slotId": "00000000-0000-4000-8000-000000000080",
@@ -54,7 +57,8 @@
           "state": "Blocked",
           "reasonCode": "SCHEDULE_BLOCKED",
           "availableQuantity": 0,
-          "totalAmount": 20
+          "totalAmount": 20,
+          "pricingUnit": "Hour"
         },
         {
           "slotId": null,
@@ -64,7 +68,8 @@
           "state": "Unpriced",
           "reasonCode": "PRICE_UNAVAILABLE",
           "availableQuantity": 5,
-          "totalAmount": null
+          "totalAmount": null,
+          "pricingUnit": null
         }
       ]
     }

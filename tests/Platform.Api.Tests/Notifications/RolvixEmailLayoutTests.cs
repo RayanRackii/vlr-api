@@ -45,6 +45,30 @@ public sealed class RolvixEmailLayoutTests
     }
 
     [Fact]
+    public void Invite_body_defaults_keep_the_current_panel_and_portal_text()
+    {
+        var html = RolvixEmailLayout.InviteBody("https://rolvix.com.br/invite?token=abc", "Clube");
+
+        Assert.Contains("<strong>rolvix.com.br</strong> (agenda e configurações). O site público (<em>seu-subdominio</em>.rolvix.com.br)", html, StringComparison.Ordinal);
+        Assert.Contains("<strong>https://rolvix.com.br/login</strong>", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Invite_body_uses_the_resolved_frontend_base_url_and_portal_template()
+    {
+        var html = RolvixEmailLayout.InviteBody(
+            "https://dev.example.test/invite?token=abc",
+            "Clube",
+            frontendBaseUrl: "https://dev.example.test",
+            tenantPortalHostTemplate: "dev.example.test/t/{subdomain}");
+
+        Assert.Contains("<strong>dev.example.test</strong>", html, StringComparison.Ordinal);
+        Assert.Contains("dev.example.test/t/<em>seu-subdominio</em>", html, StringComparison.Ordinal);
+        Assert.Contains("<strong>https://dev.example.test/login</strong>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("rolvix.com.br", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Wrap_invite_body_has_no_paragraph_as_direct_row_child()
     {
         var html = RolvixEmailLayout.Wrap(

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -32,6 +33,7 @@ public sealed class PmocEngineJob(
     public async Task<PmocEngineRunReport> RunAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        using var _ = PlatformScope.Begin(logger, "pmoc-engine-sweep");
         var asOfDate = BrazilTimeZone.GetToday(timeProvider);
 
         var plans = await dbContext.MaintenancePlans
@@ -48,9 +50,15 @@ public sealed class PmocEngineJob(
             .ToListAsync(cancellationToken);
 
         var reports = new List<PmocEnginePlanReport>(plans.Count);
-        foreach (var plan in plans)
+        var now = timeProvider.GetUtcNow();
+        foreach (var tenantPlans in plans.GroupBy(plan => plan.TenantId))
         {
-            reports.Add(await ProcessPlanAsync(plan, asOfDate, cancellationToken));
+            var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, tenantPlans.Key, cancellationToken);
+            var tenantDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+            foreach (var plan in tenantPlans)
+            {
+                reports.Add(await ProcessPlanAsync(plan, tenantDate, zone, cancellationToken));
+            }
         }
 
         logger.LogInformation(
@@ -65,6 +73,7 @@ public sealed class PmocEngineJob(
     private async Task<PmocEnginePlanReport> ProcessPlanAsync(
         CandidatePlan plan,
         DateOnly asOfDate,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         var assets = await PmocAssetEligibility.WhereEligible(
@@ -109,7 +118,7 @@ public sealed class PmocEngineJob(
                             workOrder.Id,
                             workOrder.Status,
                             workOrder.ScheduledDate,
-                            workOrder.CompletedDate)))));
+                            workOrder.CompletedDate)))), zone);
 
             if (due.DueStatus == PmocDueStatus.NotDue)
             {

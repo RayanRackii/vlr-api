@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -20,7 +22,7 @@ public sealed class ScheduleService(
     IOccupancyKindService occupancyKindService,
     ITrialGuard trialGuard,
     IReservationQueueService reservationQueueService,
-    IRentalsNotificationPublisher notificationPublisher,
+    IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
     TimeProvider timeProvider) : IScheduleService
 {
@@ -128,7 +130,7 @@ public sealed class ScheduleService(
     {
         var tenantId = EnsureTenant();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
 
         var customer = await dbContext.Customers
@@ -219,7 +221,19 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Slot does not belong to the given unit.");
             }
 
-            var end = TenantBookingClock.AtLocal(slot.Date, slot.EndTime, zone);
+            var end = TenantBookingClock.EndAtLocal(slot.Date, slot.EndTime, zone);
+            if (end <= start)
+            {
+                throw new ArgumentException("End time must be after start time.");
+            }
+
+            if (slot.RentalAsset.SchedulePolicy == SchedulePolicy.OpenHours
+                && OpenHoursRules.ValidateInterval(slot.RentalAsset, slot.StartTime, slot.EndTime,
+                    slot.RentalAsset.Asset.Name) is { } intervalError)
+            {
+                throw new InvalidOperationException(intervalError);
+            }
+
             var hours = (decimal)(end - start).TotalHours;
 
             var reservedQuantity = await GetReservedQuantityAsync(
@@ -236,14 +250,14 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Insufficient quantity for this slot.");
             }
 
-            var unitPrice = await ResolveHourlyPriceAsync(
+            var pricing = await ResolvePricingAsync(
                 slot.RentalAssetId,
                 slot.Date,
                 slot.StartTime,
                 slot.EndTime,
                 cancellationToken);
 
-            var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
+            var subTotal = BookingOffer.Total(pricing, hours, quantity);
             if (request.ExpectedTotalAmount is decimal expected && expected != subTotal)
             {
                 throw new PriceChangedException(subTotal);
@@ -271,7 +285,7 @@ public sealed class ScheduleService(
                 ReservationId = reservation.Id,
                 RentalAssetId = slot.RentalAssetId,
                 Quantity = quantity,
-                UnitPrice = unitPrice,
+                UnitPrice = pricing.PricePerHour,
                 SubTotal = subTotal,
             };
             reservation.AddItem(item);
@@ -290,11 +304,13 @@ public sealed class ScheduleService(
             var eventType = reservation.Status == ReservationStatus.PendingDeposit
                 ? RentalEventTypes.ReservationPendingDeposit
                 : RentalEventTypes.ReservationConfirmed;
-            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
-                reservation,
-                eventType,
+            var queuedDeliveries = await domainEvents.DispatchAsync(
+                new ReservationEvent(reservation, eventType),
                 cancellationToken);
 
+            var resolver = new PolicyResolver(dbContext);
+            var tenantPolicy = await resolver.ReadTenantAsync(tenantId, cancellationToken);
+            var categories = await resolver.ReadCategoriesAsync(tenantId, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
@@ -328,7 +344,9 @@ public sealed class ScheduleService(
                         item.Quantity,
                         item.UnitPrice,
                         item.SubTotal)
-                ]);
+                ],
+                PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime, [slot.RentalAsset],
+                    categories, tenantPolicy));
         }
         catch
         {
@@ -362,7 +380,7 @@ public sealed class ScheduleService(
         return await query.SumAsync(cancellationToken);
     }
 
-    private async Task<decimal> ResolveHourlyPriceAsync(
+    private async Task<RentalPricing> ResolvePricingAsync(
         Guid rentalAssetId,
         DateOnly date,
         TimeOnly startTime,
@@ -370,6 +388,7 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken)
     {
         var dayOfWeek = date.DayOfWeek;
+        endTime = TenantBookingClock.NormalizeEndTime(endTime);
         var pricing = await BookingOffer.ForPersistedSlot(dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId
@@ -380,7 +399,7 @@ public sealed class ScheduleService(
             ?? throw new InvalidOperationException(
                 "No pricing covers the requested interval for this rentable.");
 
-        return pricing.PricePerHour;
+        return pricing;
     }
 
     private Guid EnsureTenant() =>

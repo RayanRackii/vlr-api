@@ -131,9 +131,9 @@ public sealed class CompletedAndPastSlotAvailabilityTests
     private static ScheduleService Schedule(AvailabilityHarness h) =>
         new(h.Db, h.TenantProvider, new OccupancyKindService(h.Db, h.TenantProvider), new FakeTrialGuard(),
             TestReservationQueue.Create(h.Db, h.TenantProvider, h.Clock),
-            SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler, h.Clock);
+            SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, h.Clock);
 
     private static ReservationService Reservations(AvailabilityHarness h) =>
         new(h.Db, h.TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(h.Db, h.TenantProvider, h.Clock),
-            SilentRentalsNotifications.Publisher, SilentRentalsNotifications.Scheduler, h.Clock);
+            SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, h.Clock);
 }

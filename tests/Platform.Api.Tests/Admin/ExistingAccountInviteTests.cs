@@ -271,6 +271,22 @@ public sealed class ExistingAccountInviteTests(PostgresContainerFixture postgres
         Assert.Empty(harness.Auth.MetadataUpdates);
     }
 
+    [Fact]
+    public async Task Preview_after_accept_returns_typed_already_accepted_code()
+    {
+        await using var harness = await InviteHarness.CreateAsync();
+        await harness.AcceptAsync(
+            harness.Invite.Token,
+            password: null,
+            Staff(harness.VictimEmail, harness.VictimAuthId, harness.Home.Id));
+
+        var ex = await Assert.ThrowsAsync<InviteAcceptanceException>(() =>
+            harness.Service.PreviewInviteAsync(harness.Invite.Token, CancellationToken.None));
+
+        Assert.Equal(InviteAcceptanceCodes.AlreadyAccepted, ex.Code);
+        Assert.Equal(409, ex.StatusCode);
+    }
+
     [DockerFact]
     public Task New_account_and_existing_account_accepts_of_the_same_token_are_serialized() =>
         AssertConcurrentAcceptsAsync(sameToken: true);

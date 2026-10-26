@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Platform.Core.Domain.Common;
 using Platform.Core.Domain.Entities;
 
@@ -9,11 +10,16 @@ namespace Platform.Core.Infrastructure.Persistence;
 public class AppDbContext : DbContext
 {
     private readonly ITenantProvider _tenantProvider;
+    private readonly bool _failClosed;
 
-    public AppDbContext(DbContextOptions<AppDbContext> options, ITenantProvider tenantProvider)
+    public AppDbContext(
+        DbContextOptions<AppDbContext> options,
+        ITenantProvider tenantProvider,
+        IOptions<TenancyOptions>? tenancyOptions = null)
         : base(options)
     {
         _tenantProvider = tenantProvider;
+        _failClosed = tenancyOptions?.Value.FailClosed ?? false;
     }
 
     // --- Schema: core ---
@@ -26,6 +32,8 @@ public class AppDbContext : DbContext
     public DbSet<TenantResourceSegment> TenantResourceSegments => Set<TenantResourceSegment>();
 
     public DbSet<TenantModule> TenantModules => Set<TenantModule>();
+
+    public DbSet<TenantSetting> TenantSettings => Set<TenantSetting>();
 
     public DbSet<User> Users => Set<User>();
 
@@ -149,6 +157,11 @@ public class AppDbContext : DbContext
 
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
 
+    // Context members are re-read per query execution (EF parameterizes them).
+    private bool FailClosed => _failClosed;
+
+    private bool PlatformScopeActive => PlatformScope.IsActive;
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         ResourceVisualRevisionImmutability.Ensure(ChangeTracker);
@@ -198,6 +211,9 @@ public class AppDbContext : DbContext
     private Expression<Func<TEntity, bool>> CreateTenantFilter<TEntity>()
         where TEntity : class, ITenantScoped
     {
-        return entity => CurrentTenantId == null || entity.TenantId == CurrentTenantId;
+        // Off: null tenant = no filter (legacy). On: only a PlatformScope lifts the filter.
+        return entity => (!FailClosed && CurrentTenantId == null)
+            || (FailClosed && PlatformScopeActive)
+            || entity.TenantId == CurrentTenantId;
     }
 }

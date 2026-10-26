@@ -14,8 +14,11 @@ public interface IDailyAvailabilityService
 
 /// <summary>Read-only bulk projection. No seeding, materialization, queue mutation or capacity hold.</summary>
 public sealed class DailyAvailabilityService(
-    AppDbContext db, ITenantProvider tenantProvider, TimeProvider clock) : IDailyAvailabilityService
+    AppDbContext db, ITenantProvider tenantProvider, TimeProvider clock,
+    PolicyResolver? policyResolver = null) : IDailyAvailabilityService
 {
+    private readonly PolicyResolver policies = policyResolver ?? new(db);
+
     public const int MaxResources = 100;
     public const int MaxWindows = 10000;
 
@@ -34,7 +37,9 @@ public sealed class DailyAvailabilityService(
         var zone = await TenantBookingClock.ResolveForTenantAsync(db, tenantId, cancellationToken);
         var timeZoneId = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var ianaId) ? ianaId : zone.Id;
         var today = BookingHorizon.CivilToday(now, zone);
-        var tenantDays = await BookingHorizon.ReadTenantDaysAsync(db, tenantId, cancellationToken);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
+        var tenantDays = PolicyResolver.Resolve(null, null, tenantPolicy).MaxAdvanceBookingDays;
         var resourcesQuery = db.RentalAssets.AsNoTracking().Include(r => r.Asset)
             .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.Asset.Unit.TenantId == tenantId
                 && r.IsActive && r.Asset.IsRentable);
@@ -45,7 +50,7 @@ public sealed class DailyAvailabilityService(
         var resources = await resourcesQuery.OrderBy(r => r.Id).Take(MaxResources + 1).ToListAsync(cancellationToken);
         if (resources.Count > MaxResources) throw Limit("At most 100 resources may be returned. Narrow the scope.");
         if (resources.Count > 0 && resources.All(r =>
-                BookingHorizon.IsBeyond(date, today, BookingHorizon.Effective(r.MaxAdvanceBookingDays, tenantDays))))
+                BookingHorizon.IsBeyond(date, today, PolicyResolver.Resolve(r, categories.GetValueOrDefault(r.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays)))
             throw new BookingHorizonExceededException();
         if (resources.Count == 0)
         {
@@ -98,13 +103,16 @@ public sealed class DailyAvailabilityService(
             else if (resource.OpenTime is { } open && resource.CloseTime is { } close && close > open)
             {
                 var openKind = kinds.Values.FirstOrDefault(k => k.Key == "open" && k.IsActive);
-                foreach (var minutes in ParseDurations(resource.AllowedDurationMinutes))
+                foreach (var minutes in OpenHoursRules.ParseDurations(resource.AllowedDurationMinutes))
                 {
                     var cursor = open;
                     while (true)
                     {
-                        var end = cursor.AddMinutes(minutes);
-                        if (end <= cursor || end > close) break;
+                        var endOffset = cursor.ToTimeSpan().Add(TimeSpan.FromMinutes(minutes));
+                        if (endOffset > TenantBookingClock.EndOfDayTime(close)) break;
+                        var end = endOffset == TimeSpan.FromDays(1)
+                            ? TenantBookingClock.DayClose : TimeOnly.FromTimeSpan(endOffset);
+                        if (end <= cursor) break;
                         if (!persistedStarts.Contains(cursor))
                             candidates.Add(new(null, cursor, end, openKind, SlotStatus.Available));
                         cursor = end;
@@ -112,14 +120,15 @@ public sealed class DailyAvailabilityService(
                 }
             }
             var windows = new List<AvailabilityWindowDto>();
-            var effectiveDays = BookingHorizon.Effective(resource.MaxAdvanceBookingDays, tenantDays);
+            var effectiveDays = PolicyResolver.Resolve(resource, categories.GetValueOrDefault(resource.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays;
             foreach (var window in candidates.OrderBy(w => w.Start).ThenBy(w => w.End).ThenBy(w => w.Id))
             {
                 if (window.End <= window.Start || (durationMinutes.HasValue
-                        && (window.End - window.Start).TotalMinutes != durationMinutes.Value)) continue;
+                        && (TenantBookingClock.EndOfDayTime(window.End) - window.Start.ToTimeSpan()).TotalMinutes != durationMinutes.Value)) continue;
                 if (++windowCount > MaxWindows) throw Limit("At most 10000 windows may be returned. Narrow the scope.");
                 var start = TenantBookingClock.AtLocal(date, window.Start, zone);
-                var end = TenantBookingClock.AtLocal(date, window.End, zone);
+                var end = TenantBookingClock.EndAtLocal(date, window.End, zone);
+                if (end <= start) continue;
                 var reserved = reservations.Where(r => r.RentalAssetId == resource.Id && r.Start < end && r.End > start)
                     .Sum(r => (long)r.Quantity);
                 var totalQuantity = resource.Type == RentalAssetType.Location ? 1 : resource.TotalQuantity;
@@ -128,15 +137,19 @@ public sealed class DailyAvailabilityService(
                     && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, window.Start, window.End)
                     && (s.Status == SlotStatus.Cancelled || !kinds.TryGetValue(s.OccupancyKindId, out var kind)
                         || !kind.IsActive || (kind.BlocksCapacity && !kind.IsBookableByCustomer)));
+                var invalidOpenHours = resource.SchedulePolicy == SchedulePolicy.OpenHours
+                    && window.Status != SlotStatus.Booked
+                    && OpenHoursRules.ValidateInterval(resource, window.Start, window.End, resource.Asset.Name) is not null;
                 var blocked = window.Status == SlotStatus.Cancelled || window.Kind is not { IsActive: true, IsBookableByCustomer: true }
-                    || blockingOverlap;
-                if (blockingOverlap || window.Status == SlotStatus.Cancelled || start < now
+                    || blockingOverlap || invalidOpenHours;
+                if (blockingOverlap || invalidOpenHours || window.Status == SlotStatus.Cancelled || start < now
                     || window.Kind is { BlocksCapacity: true, IsBookableByCustomer: false }) available = 0;
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
-                    && p.StartTime <= window.Start && p.EndTime >= window.End).AsQueryable();
-                var hourly = (window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching) : BookingOffer.ForDerivedWindow(matching))
-                    .Select(p => (decimal?)p.PricePerHour).FirstOrDefault();
-                var amount = hourly.HasValue ? BookingOffer.Total(hourly.Value, (decimal)(end - start).TotalHours, quantity) : (decimal?)null;
+                    && p.StartTime <= window.Start && p.EndTime >= TenantBookingClock.NormalizeEndTime(window.End)).AsQueryable();
+                var hours = (decimal)(end - start).TotalHours;
+                var pricing = window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching).FirstOrDefault()
+                    : BookingOffer.ForDerivedWindow(matching, hours, quantity);
+                var amount = pricing is not null ? BookingOffer.Total(pricing, hours, quantity) : (decimal?)null;
                 var state = BookingHorizon.IsBeyond(date, today, effectiveDays) ? AvailabilityWindowState.OutsideHorizon
                     : start < now ? AvailabilityWindowState.Past
                     : blocked ? AvailabilityWindowState.Blocked
@@ -151,7 +164,8 @@ public sealed class DailyAvailabilityService(
                     AvailabilityWindowState.Unpriced => "PRICE_UNAVAILABLE",
                     _ => null,
                 };
-                windows.Add(new(window.Id, window.Start, window.End, !window.Id.HasValue, state, reason, available, amount));
+                windows.Add(new(window.Id, window.Start, window.End, !window.Id.HasValue, state, reason, available, amount,
+                    pricing?.PricingUnit));
             }
             result.Add(new(resource.Id, resource.AssetId, resource.Asset.UnitId, resource.Asset.Name,
                 resource.Type.ToString(), resource.Type == RentalAssetType.Location ? 1 : resource.TotalQuantity,
@@ -166,12 +180,5 @@ public sealed class DailyAvailabilityService(
         TenantId = tenantId, Key = "unconfigured", Label = "Unavailable", IsActive = false,
         BlocksCapacity = true, IsBookableByCustomer = false, SortOrder = 0,
     };
-    private static IEnumerable<int> ParseDurations(string? value)
-    {
-        var durations = (value ?? "").Split(',')
-            .Select(s => int.TryParse(s.Trim(), out var minutes) ? minutes : 0)
-            .Where(minutes => minutes is > 0 and < 1440).Distinct().Order().ToList();
-        return durations.Count == 0 ? [60] : durations;
-    }
     private sealed record Window(Guid? Id, TimeOnly Start, TimeOnly End, OccupancyKind? Kind, SlotStatus Status);
 }

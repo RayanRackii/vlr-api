@@ -15,6 +15,57 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class TeacherLessonServiceTests
 {
+    [Fact]
+    public async Task CreateAsync_rejects_interval_inverted_by_DST_gap_conversion()
+    {
+        var date = new DateOnly(2026, 3, 8);
+        var start = new TimeOnly(2, 30);
+        var end = new TimeOnly(3, 0);
+        await using var h = await TeacherLessonHarness.CreateAsync(
+            templateDay: date.DayOfWeek,
+            templateStart: start,
+            templateEnd: end,
+            timeProvider: new TestTimeProvider(
+                new DateTimeOffset(2026, 3, 7, 12, 0, 0, TimeSpan.Zero)));
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.TenantId,
+            Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+            Value = "America/New_York",
+        });
+        await h.Db.SaveChangesAsync();
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            h.Lessons.CreateAsync(
+                h.CreateRequest(date: date, start: start, end: end),
+                CancellationToken.None));
+
+        Assert.Equal(TeacherLessonMessages.EndAfterStart, error.Message);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("America/Manaus", false)]
+    public async Task Lesson_overlap_uses_tenant_civil_interval(string? zoneId, bool overlaps)
+    {
+        await using var h = await TeacherLessonHarness.CreateAsync();
+        if (zoneId is not null)
+            h.Db.TenantSettings.Add(new TenantSetting
+            {
+                TenantId = h.TenantId,
+                Key = Platform.Core.Domain.Constants.TenantSettingKeys.BookingTimeZoneId,
+                Value = zoneId,
+            });
+        h.SeedBlockingReservation(Tuesday, Ten, Eleven);
+        // Existing reservation ends at 14:00Z: 11:00 Sao Paulo / 10:00 Manaus.
+        await h.Db.SaveChangesAsync();
+        if (overlaps)
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                h.Lessons.CreateAsync(h.CreateRequest(), CancellationToken.None));
+        else
+            Assert.Equal("lesson", (await h.Lessons.CreateAsync(h.CreateRequest(), CancellationToken.None)).OccupancyKindKey);
+    }
+
     private static readonly DateOnly Tuesday = new(2026, 8, 25);
     private static readonly DateOnly NextTuesday = Tuesday.AddDays(7);
     private static readonly TimeOnly Ten = new(10, 0);
@@ -1044,7 +1095,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             new OccupancyKindService(db, tenantProvider),
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
     }
@@ -1216,7 +1267,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             TenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 

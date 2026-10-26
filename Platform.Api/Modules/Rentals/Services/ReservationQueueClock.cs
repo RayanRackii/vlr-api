@@ -1,5 +1,4 @@
 using Platform.Core.Domain.Enums;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -9,26 +8,27 @@ internal static class ReservationQueueClock
 
     public static readonly TimeSpan TurnDuration = TimeSpan.FromSeconds(90);
 
-    public static DateTimeOffset OpensAt(DateOnly openingDate, TimeOnly openingTime) =>
-        BrazilTimeZone.AtLocal(openingDate, openingTime);
+    public static DateTimeOffset OpensAt(DateOnly openingDate, TimeOnly openingTime, TimeZoneInfo? zone = null) =>
+        TenantBookingClock.AtLocal(openingDate, openingTime, zone ?? TenantBookingClock.Resolve(null));
 
-    public static DateTimeOffset WaitingRoomOpensAt(DateOnly openingDate, TimeOnly openingTime) =>
-        OpensAt(openingDate, openingTime) - WaitingRoomLead;
+    public static DateTimeOffset WaitingRoomOpensAt(DateOnly openingDate, TimeOnly openingTime, TimeZoneInfo? zone = null) =>
+        OpensAt(openingDate, openingTime, zone) - WaitingRoomLead;
 
     /// <summary>
     /// OpeningDate D for status/join: today's civil date while before its waiting room
     /// (phase Closed); otherwise the unique D where WR(D) ≤ now &lt; WR(D+1).
     /// </summary>
-    public static DateOnly ResolveOpeningDate(DateTimeOffset now, TimeOnly openingTime)
+    public static DateOnly ResolveOpeningDate(DateTimeOffset now, TimeOnly openingTime, TimeZoneInfo? zone = null)
     {
-        var today = BrazilTimeZone.GetCivilDate(now);
-        var waitingRoomToday = WaitingRoomOpensAt(today, openingTime);
+        zone ??= TenantBookingClock.Resolve(null);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+        var waitingRoomToday = WaitingRoomOpensAt(today, openingTime, zone);
         if (now < waitingRoomToday)
         {
             return today;
         }
 
-        var waitingRoomTomorrow = WaitingRoomOpensAt(today.AddDays(1), openingTime);
+        var waitingRoomTomorrow = WaitingRoomOpensAt(today.AddDays(1), openingTime, zone);
         if (now < waitingRoomTomorrow)
         {
             return today;

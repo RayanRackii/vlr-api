@@ -4,7 +4,7 @@ namespace Platform.Core.Domain.Entities;
 
 /// <summary>
 /// Daily opening session for a Location waiting queue. Schema: rentals.
-/// Keyed by (TenantId, RentalAssetId, OpeningDate) — the civil date of T in America/Sao_Paulo.
+/// Keyed by (TenantId, RentalAssetId, OpeningDate) — the civil date of T in the tenant time zone.
 /// </summary>
 public class ReservationQueueSession : Entity, ITenantScoped
 {

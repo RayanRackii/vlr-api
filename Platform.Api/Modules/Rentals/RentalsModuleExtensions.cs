@@ -1,5 +1,8 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Core.Domain.Events;
 
 namespace Platform.Api.Modules.Rentals;
 
@@ -22,8 +25,12 @@ public static class RentalsModuleExtensions
         services.AddScoped<IRentalLayoutService, RentalLayoutService>();
         services.AddScoped<IReservationQueueService, ReservationQueueService>();
         services.AddScoped<IBookingPolicyService, BookingPolicyService>();
+        services.AddScoped<PolicyResolver>();
         services.AddScoped<IRentalsReadinessService, RentalsReadinessService>();
         services.AddScoped<IRentalsNotificationPublisher, RentalsNotificationPublisher>();
+        services.TryAddScoped(typeof(IDomainEventDispatcher<>), typeof(DomainEventDispatcher<>));
+        services.AddScoped<IDomainEventHandler<ReservationEvent>>(sp =>
+            sp.GetRequiredService<IRentalsNotificationPublisher>());
 
         return services;
     }

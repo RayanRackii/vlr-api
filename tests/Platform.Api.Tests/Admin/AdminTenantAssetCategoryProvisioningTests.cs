@@ -1,3 +1,4 @@
+using Platform.Api.Services.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -322,6 +323,40 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
     }
 
     [Fact]
+    public async Task Create_rentals_adds_the_default_active_portal_menu_item()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("rentals-menu", [PlatformModules.Rentals], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        var item = await harness.Db.TenantModuleMenuItems
+            .IgnoreQueryFilters()
+            .SingleAsync(menuItem => menuItem.TenantId == created.Id);
+
+        Assert.Equal(PlatformModules.Rentals, item.ModuleName);
+        Assert.Equal("Reservar horário", item.Label);
+        Assert.Equal(0, item.SortOrder);
+        Assert.True(item.IsActive);
+        Assert.Null(item.RentalAssetId);
+    }
+
+    [Fact]
+    public async Task Create_catalog_only_adds_only_the_catalog_menu_item()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("catalog-menu", [PlatformModules.Catalog], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [(PlatformModules.Catalog, "Catálogo", 1)],
+            await MenuAsync(harness, created.Id));
+    }
+
+    [Fact]
     public async Task Create_catalog_only_is_valid_without_inventory_or_categories()
     {
         await using var harness = await Harness.CreateAsync();
@@ -411,6 +446,65 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
         Assert.DoesNotContain(updated.ActiveModules, m => m.ModuleName == PlatformModules.Inventory);
     }
 
+    private static async Task<List<(string Module, string Label, int Sort)>> MenuAsync(Harness h, Guid id) =>
+        (await h.Db.TenantModuleMenuItems.IgnoreQueryFilters()
+            .Where(i => i.TenantId == id)
+            .OrderBy(i => i.SortOrder)
+            .ToListAsync())
+        .Select(i => (i.ModuleName, i.Label, i.SortOrder)).ToList();
+
+    [Fact]
+    public async Task Create_with_catalog_and_rentals_adds_default_menu_items()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("menu-both", [PlatformModules.Rentals, PlatformModules.Catalog], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        Assert.Equal(
+            [(PlatformModules.Rentals, "Reservar horário", 0), (PlatformModules.Catalog, "Catálogo", 1)],
+            await MenuAsync(harness, created.Id));
+    }
+
+    [Fact]
+    public async Task Enabling_catalog_on_existing_tenant_adds_menu_item_once()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("menu-enable", [PlatformModules.Rentals], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+        Assert.Equal([(PlatformModules.Rentals, "Reservar horário", 0)], await MenuAsync(harness, created.Id));
+
+        var request = UpdateRequest(created, [PlatformModules.Rentals, PlatformModules.Catalog], [AssetFamilyKeys.Generic]);
+        await harness.Service.UpdateAsync(created.Id, request, CancellationToken.None);
+        await harness.Service.UpdateAsync(created.Id, request, CancellationToken.None);
+
+        Assert.Equal(
+            [(PlatformModules.Rentals, "Reservar horário", 0), (PlatformModules.Catalog, "Catálogo", 1)],
+            await MenuAsync(harness, created.Id));
+    }
+
+    [Fact]
+    public async Task Reenabling_catalog_with_existing_item_does_not_duplicate()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var created = await harness.Service.CreateAsync(
+            CreateRequest("menu-reenable", [PlatformModules.Rentals], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+        harness.Db.TenantModules.Add(new TenantModule(created.Id, PlatformModules.Catalog, isActive: false));
+        harness.Db.TenantModuleMenuItems.Add(
+            new TenantModuleMenuItem(created.Id, PlatformModules.Catalog, "Loja", sortOrder: 5));
+        await harness.Db.SaveChangesAsync();
+
+        await harness.Service.UpdateAsync(
+            created.Id,
+            UpdateRequest(created, [PlatformModules.Rentals, PlatformModules.Catalog], [AssetFamilyKeys.Generic]),
+            CancellationToken.None);
+
+        var catalogItems = (await MenuAsync(harness, created.Id)).Where(i => i.Module == PlatformModules.Catalog).ToList();
+        Assert.Equal([(PlatformModules.Catalog, "Loja", 5)], catalogItems);
+    }
+
     private static CreateTenantRequestDto CreateRequest(
         string slug,
         IReadOnlyList<string> modules,
@@ -464,11 +558,9 @@ public sealed class AdminTenantAssetCategoryProvisioningTests
                 new FakeTenantUserAdminService(),
                 new FakePlatformAdminMembershipService(),
                 new FakeTenantAccessBootstrapper(),
-                new FakeSupabaseAuthAdminClient(),
-                Options.Create(new PlatformAdminOptions()),
                 NullLogger<AdminTenantService>.Instance,
-                Options.Create(new StorageOptions()),
-                new RecordingStorageProvider());
+                new TenantProvisioner(db, NullLogger<TenantProvisioner>.Instance),
+                new TenantPurger(db, new FakeSupabaseAuthAdminClient(), Options.Create(new PlatformAdminOptions()), NullLogger<TenantPurger>.Instance, Options.Create(new StorageOptions()), new RecordingStorageProvider()));
 
             return new Harness(db, service);
         }

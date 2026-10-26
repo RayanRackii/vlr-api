@@ -9,6 +9,7 @@ public sealed class NotificationOutboxJob(
 {
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "notification-outbox-sweep");
         logger.LogInformation("Sweeping notification outbox.");
         await processor.ProcessDueAsync(cancellationToken);
     }

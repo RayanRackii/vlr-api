@@ -13,6 +13,7 @@ public sealed class ClientRoleDiagnosticHostedService(
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        using var _ = PlatformScope.Begin(logger, "client-role-diagnostic");
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 

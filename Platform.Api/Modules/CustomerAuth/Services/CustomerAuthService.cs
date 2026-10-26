@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Rentals;
+using Platform.Api.Services.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -446,7 +447,8 @@ public sealed class CustomerAuthService(
             tenant.PrimaryColor,
             tenant.AccentColor,
             tenant.WelcomeTagline,
-            bookingUiOptions?.Value.IsEnabled(tenant.Id) == true);
+            bookingUiOptions?.Value.IsEnabled(tenant.Id) == true,
+            await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(dbContext, tenant.Id, cancellationToken));
     }
 
     public async Task<CustomerProfileDto> GetCurrentAsync(

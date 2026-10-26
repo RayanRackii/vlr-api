@@ -34,14 +34,16 @@ public class BookingPolicy : Entity, ITenantScoped
     /// </summary>
     public RentalAssetType? ResourceType { get; set; }
 
+    /// <summary>Tenant-owned category override; null for tenant defaults and reserved type policies.</summary>
+    public Guid? AssetCategoryId { get; set; }
+
     /// <summary>Plain-text cancellation note. No refund calculation.</summary>
     public string? CancellationPolicyText { get; set; }
 
     /// <summary>
     /// Cap on a customer's <c>PendingDeposit</c> and <c>Confirmed</c> reservations
     /// whose start falls on one civil day. <c>Completed</c> and <c>Canceled</c> do
-    /// not count. Null means unlimited. The day uses the tenant timezone when the
-    /// tenant model has one; otherwise America/Sao_Paulo.
+    /// not count. Null means unlimited. The day uses the tenant timezone; an unset or invalid zone defaults to America/Sao_Paulo.
     /// </summary>
     public int? MaxActiveReservationsPerCustomerPerDay { get; set; }
 
@@ -51,6 +53,9 @@ public class BookingPolicy : Entity, ITenantScoped
     /// <see cref="RentalAsset.MaxAdvanceBookingDays"/> wins when it is set.
     /// </summary>
     public int? MaxAdvanceBookingDays { get; set; }
+
+    /// <summary>Customer cancellation cutoff in hours; null means no cutoff.</summary>
+    public int? CancelCutoffHours { get; set; }
 
     public void Replace(
         string? cancellationPolicyText,

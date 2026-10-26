@@ -1,90 +1,44 @@
-using Microsoft.EntityFrameworkCore;
-using Platform.Core.Domain.Entities;
+using Platform.Api.Services.Tenancy;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
-/// <summary>
-/// Civil day for the tenant booking-policy cap.
-/// <see cref="Tenant"/> has no timezone property. A missing, blank, or unknown
-/// id falls back to America/Sao_Paulo, the same clock that stores reservation
-/// instants, so the cap window matches <see cref="Reservation.StartDateTime"/>.
-/// </summary>
+/// <summary>Booking operations use the platform tenant time zone and civil-time conversions.</summary>
 internal static class TenantBookingClock
 {
-    public static async Task<TimeZoneInfo> ResolveForTenantAsync(
-        AppDbContext db,
-        Guid tenantId,
-        CancellationToken cancellationToken)
-    {
-        var tenant = await db.Tenants
-            .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.Id == tenantId, cancellationToken);
-        return Resolve(tenant is null ? null : ReadConfiguredTimeZoneId(tenant));
-    }
+    public static Task<TimeZoneInfo> ResolveForTenantAsync(
+        AppDbContext db, Guid tenantId, CancellationToken cancellationToken) =>
+        TenantTimeZoneProvider.ResolveForTenantAsync(db, tenantId, cancellationToken);
 
-    /// <summary>
-    /// Returns the tenant's configured timezone id when the model has one.
-    /// <see cref="Tenant"/> currently has no such property, so this is null.
-    /// </summary>
-    public static string? ReadConfiguredTimeZoneId(Tenant tenant)
-    {
-        ArgumentNullException.ThrowIfNull(tenant);
-        return null;
-    }
+    public static Task<string> ResolveIanaIdForTenantAsync(
+        AppDbContext db, Guid tenantId, CancellationToken cancellationToken) =>
+        TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(db, tenantId, cancellationToken);
 
-    public static TimeZoneInfo Resolve(string? configuredTimeZoneId)
-    {
-        if (!string.IsNullOrWhiteSpace(configuredTimeZoneId))
-        {
-            try
-            {
-                return TimeZoneInfo.FindSystemTimeZoneById(configuredTimeZoneId.Trim());
-            }
-            catch (TimeZoneNotFoundException)
-            {
-            }
-            catch (InvalidTimeZoneException)
-            {
-            }
-        }
+    public static Task<string?> ReadConfiguredTimeZoneIdAsync(
+        AppDbContext db, Guid tenantId, CancellationToken cancellationToken) =>
+        TenantTimeZoneProvider.ReadConfiguredTimeZoneIdAsync(db, tenantId, cancellationToken);
 
-        return BrazilTimeZone.Resolve();
-    }
+    public static TimeZoneInfo Resolve(string? configuredTimeZoneId) =>
+        TenantTimeZoneProvider.Resolve(configuredTimeZoneId);
 
     public static (DateTimeOffset Start, DateTimeOffset EndExclusive) CivilDay(
-        DateOnly date,
-        TimeZoneInfo zone)
-    {
-        var fallback = BrazilTimeZone.Resolve();
-        if (string.Equals(zone.Id, fallback.Id, StringComparison.Ordinal))
-        {
-            return (BrazilTimeZone.StartOfCivilDay(date), BrazilTimeZone.ExclusiveEndOfCivilDay(date));
-        }
+        DateOnly date, TimeZoneInfo zone) =>
+        TenantTimeZoneProvider.CivilDay(date, zone);
 
-        return (
-            AtLocal(date, TimeOnly.MinValue, zone),
-            AtLocal(date.AddDays(1), TimeOnly.MinValue, zone));
-    }
+    public static readonly TimeOnly DayClose = new(23, 59, 59);
 
-    /// <summary>
-    /// Civil <paramref name="date"/> and <paramref name="time"/> in <paramref name="zone"/>
-    /// as a UTC instant. The platform fallback zone uses
-    /// <see cref="BrazilTimeZone.AtLocal"/> so reservation storage and the past-start
-    /// check stay the same instant.
-    /// </summary>
-    public static DateTimeOffset AtLocal(DateOnly date, TimeOnly time, TimeZoneInfo zone)
-    {
-        ArgumentNullException.ThrowIfNull(zone);
-        var fallback = BrazilTimeZone.Resolve();
-        if (string.Equals(zone.Id, fallback.Id, StringComparison.Ordinal))
-        {
-            return BrazilTimeZone.AtLocal(date, time);
-        }
+    public static bool IsDayClose(TimeOnly endTime) => endTime >= DayClose;
 
-        var local = date.ToDateTime(time, DateTimeKind.Unspecified);
-        var utc = TimeZoneInfo.ConvertTimeToUtc(local, zone);
-        return new DateTimeOffset(utc, TimeSpan.Zero);
-    }
+    public static TimeOnly NormalizeEndTime(TimeOnly endTime) =>
+        IsDayClose(endTime) ? DayClose : endTime;
+
+    public static TimeSpan EndOfDayTime(TimeOnly endTime) =>
+        IsDayClose(endTime) ? TimeSpan.FromDays(1) : endTime.ToTimeSpan();
+
+    // TimeOnly cannot represent 24:00; the final second denotes the exclusive civil-day end.
+    public static DateTimeOffset EndAtLocal(DateOnly date, TimeOnly endTime, TimeZoneInfo zone) =>
+        IsDayClose(endTime) ? CivilDay(date, zone).EndExclusive : AtLocal(date, endTime, zone);
+
+    public static DateTimeOffset AtLocal(DateOnly date, TimeOnly time, TimeZoneInfo zone) =>
+        TenantTimeZoneProvider.AtLocal(date, time, zone);
 }

@@ -268,7 +268,7 @@ public sealed class ReservationPastStartTests
                 SchedulePolicy = SchedulePolicy.OpenHours,
                 OpenTime = TimeOnly.MinValue,
                 CloseTime = new TimeOnly(23, 59),
-                AllowedDurationMinutes = "60",
+                AllowedDurationMinutes = "30,60",
                 QueueEnabled = false,
             };
 
@@ -311,7 +311,7 @@ public sealed class ReservationPastStartTests
                 tenantProvider,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
             var schedule = new ScheduleService(
@@ -320,7 +320,7 @@ public sealed class ReservationPastStartTests
                 kinds,
                 new FakeTrialGuard(),
                 queue,
-                SilentRentalsNotifications.Publisher,
+                SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
                 clock);
 

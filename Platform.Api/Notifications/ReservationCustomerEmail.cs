@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Platform.Core.Domain.Constants;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Notifications;
 
@@ -18,7 +20,14 @@ public static class ReservationCustomerEmail
     public const string DateKey = "reservationDate";
     public const string StartKey = "reservationStart";
     public const string EndKey = "reservationEnd";
+    public const string TimeZoneKey = "reservationTimeZone";
+    public const string StartInstantKey = "reservationStartInstant";
     public const string TotalKey = "reservationTotal";
+    public const string ItemsKey = "reservationItems";
+    public const string ItemDetailsKey = "reservationItemDetails";
+    public const string LanguageKey = "language";
+    public const string QuantityKey = "reservationQuantity";
+    public const string DaysKey = "reservationDays";
     public const string DepositKey = "reservationDeposit";
     public const string UrlKey = "reservationUrl";
 
@@ -43,8 +52,14 @@ public static class ReservationCustomerEmail
     {
         var startLocal = TimeZoneInfo.ConvertTime(start, zone);
         var endLocal = TimeZoneInfo.ConvertTime(end, zone);
+        // Day-close end (legacy 23:59:59 or next-day 00:00) renders as 00:00 of the start's day, like the picker.
+        if (endLocal.TimeOfDay >= new TimeSpan(23, 59, 59))
+            endLocal = endLocal.Date.AddDays(1);
+        var endDay = endLocal.TimeOfDay == TimeSpan.Zero && endLocal.Date == startLocal.Date.AddDays(1)
+            ? startLocal
+            : endLocal;
         var startDate = startLocal.ToString("dd/MM/yyyy", Portuguese);
-        var endDate = endLocal.ToString("dd/MM/yyyy", Portuguese);
+        var endDate = endDay.ToString("dd/MM/yyyy", Portuguese);
         var date = startDate == endDate ? startDate : $"{startDate}–{endDate}";
         return (
             date,
@@ -65,11 +80,32 @@ public static class ReservationCustomerEmail
         var start = Text(payload, StartKey);
         var end = Text(payload, EndKey);
         var total = Text(payload, TotalKey);
+        var language = Text(payload, LanguageKey)?.Split('-')[0].ToLowerInvariant() ?? "pt";
+        var items = FormatItems(payload, language);
+        var dimensions = FormatDimensions(Count(payload, QuantityKey), Count(payload, DaysKey));
+        var totalLabel = (language, eventType == RentalEventTypes.ReservationCanceled) switch
+        {
+            ("en", true) => "Canceled reservation total",
+            ("en", false) => "Reservation total",
+            ("es", true) => "Total de la reserva cancelada",
+            ("es", false) => "Total de la reserva",
+            (_, true) => "Total da reserva cancelada",
+            _ => "Total da reserva",
+        };
+        if (dimensions.Length > 0)
+            totalLabel += $" ({dimensions})";
         var deposit = Text(payload, DepositKey);
         var url = Text(payload, UrlKey);
         var timeRange = string.IsNullOrWhiteSpace(start) || string.IsNullOrWhiteSpace(end)
             ? null
             : $"{start}–{end}";
+        var timeZoneId = Text(payload, TimeZoneKey);
+        if (timeRange is not null && timeZoneId is not null
+            && DateTimeOffset.TryParse(Text(payload, StartInstantKey), CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var startInstant))
+        {
+            timeRange += $" ({TenantTimeZoneLabel.Format(timeZoneId, startInstant)})";
+        }
 
         var inner = new StringBuilder();
         inner.Append(
@@ -80,7 +116,8 @@ public static class ReservationCustomerEmail
         AppendLabeledRow(inner, "Estabelecimento", tenantName);
         AppendLabeledRow(inner, "Data", date);
         AppendLabeledRow(inner, "Horário", timeRange);
-        AppendLabeledRow(inner, "Total", total);
+        AppendLabeledRow(inner, "Itens", items);
+        AppendLabeledRow(inner, totalLabel, total);
         AppendLabeledRow(inner, "Depósito", deposit);
         AppendLink(inner, url);
         inner.Append("</table>");
@@ -90,11 +127,33 @@ public static class ReservationCustomerEmail
             string.IsNullOrWhiteSpace(customerName) ? " " : customerName,
             inner.ToString(),
             brand);
+        var text = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(customerName))
+        {
+            text.AppendLine($"Olá {customerName},");
+        }
+        text.AppendLine(System.Net.WebUtility.HtmlDecode(
+            Intro(eventType, safeReference).Replace("<strong>", "").Replace("</strong>", "")));
+        foreach (var (label, value) in new[]
+        {
+            ("Estabelecimento", tenantName), ("Data", date), ("Horário", timeRange),
+            ("Itens", items), (totalLabel, total), ("Depósito", deposit),
+        })
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                text.AppendLine($"{label}: {value}");
+            }
+        }
+        if (IsSafeHttp(url))
+        {
+            text.AppendLine($"Ver reserva: {url}");
+        }
 
         return new ReservationEmailContent(
             SubjectFor(eventType, reference),
             html,
-            brand);
+            brand) { TextBody = text.ToString() };
     }
 
     public static string SubjectFor(string eventType, string? reference)
@@ -115,6 +174,66 @@ public static class ReservationCustomerEmail
             _ => $"Reserva {resource}",
         };
     }
+
+    internal static string FormatDimensions(int quantity, int days) =>
+        string.Join(" · ", new[]
+        {
+            quantity > 1 ? $"{quantity} unidades" : null,
+            days > 1 ? $"{days} dias" : null,
+        }.Where(part => part is not null));
+
+    private static string? FormatItems(IReadOnlyDictionary<string, string?> payload, string language)
+    {
+        var legacy = Text(payload, ItemsKey);
+        if (Text(payload, ItemDetailsKey) is not { } json)
+            return legacy;
+
+        ReservationEmailItem?[]? items;
+        try
+        {
+            items = JsonSerializer.Deserialize<ReservationEmailItem?[]>(json);
+        }
+        catch (JsonException)
+        {
+            return legacy;
+        }
+        if (items is not { Length: > 0 } || items.Any(item => item is null))
+            return legacy;
+
+        var summaries = items.Select(item =>
+        {
+            if (string.IsNullOrWhiteSpace(item!.Name)
+                || item.PricingUnit is not { } unit || !Enum.IsDefined(unit)
+                || item.UnitPrice is not >= 0m || item.LineTotal is not >= 0m || item.Quantity < 1)
+                return item.Summary;
+
+            var label = (language, unit) switch
+            {
+                ("en", PricingUnit.Hour) => "per hour",
+                ("en", PricingUnit.Slot) => "per slot",
+                ("en", PricingUnit.Day) => "per day",
+                ("en", _) => "fixed",
+                ("es", PricingUnit.Hour) => "por hora",
+                ("es", PricingUnit.Slot) => "por horario",
+                ("es", PricingUnit.Day) => "por día",
+                ("es", _) => "fijo",
+                (_, PricingUnit.Hour) => "por hora",
+                (_, PricingUnit.Slot) => "por horário",
+                (_, PricingUnit.Day) => "por dia",
+                _ => "fixo",
+            };
+            var price = item.UnitPrice.Value.ToString("C", Portuguese);
+            var total = item.LineTotal.Value.ToString("C", Portuguese);
+            return unit == PricingUnit.Fixed
+                ? $"{item.Name}: {price} {label} = {total}"
+                : $"{item.Name}: {item.Quantity} x {price} {label} = {total}";
+        }).ToArray();
+        return summaries.Any(string.IsNullOrWhiteSpace) ? legacy : string.Join("; ", summaries);
+    }
+
+    private static int Count(IReadOnlyDictionary<string, string?> payload, string key) =>
+        int.TryParse(Text(payload, key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? Math.Max(1, value) : 1;
 
     private static string Intro(string eventType, string safeReference) =>
         eventType switch
@@ -170,7 +289,6 @@ public static class ReservationCustomerEmail
         html.Append(
             $"""
             <tr><td style="padding:8px 0 8px;"><a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">Ver reserva</a></td></tr>
-            <tr><td style="padding:0;font-size:12px;line-height:1.55;color:#71717a;word-break:break-all;">{safeUrl}</td></tr>
             """);
     }
 
@@ -192,7 +310,18 @@ public static class ReservationCustomerEmail
     private static string CleanSubject(string? value) => EmailHeaderText.StripControls(value);
 }
 
+internal sealed record ReservationEmailItem(
+    string Name,
+    int Quantity,
+    PricingUnit? PricingUnit,
+    decimal? UnitPrice,
+    decimal? LineTotal,
+    string? Summary);
+
 public sealed record ReservationEmailContent(
     string Subject,
     string HtmlBody,
-    string? FromDisplayName);
+    string? FromDisplayName)
+{
+    public string TextBody { get; init; } = string.Empty;
+}

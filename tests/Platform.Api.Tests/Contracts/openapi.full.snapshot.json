@@ -510,6 +510,9 @@
           "isDerived": {
             "type": "boolean"
           },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
+          },
           "reasonCode": {
             "nullable": true,
             "type": "string"
@@ -575,6 +578,11 @@
       "BookingPolicyResponseDto": {
         "additionalProperties": false,
         "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "cancellationPolicyText": {
             "nullable": true,
             "type": "string"
@@ -744,6 +752,9 @@
             "format": "double",
             "type": "number"
           },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
+          },
           "requiresDeposit": {
             "type": "boolean"
           },
@@ -768,6 +779,11 @@
           "allowedDurationMinutes": {
             "nullable": true,
             "type": "string"
+          },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "closeTime": {
             "format": "time",
@@ -1187,6 +1203,30 @@
         },
         "type": "object"
       },
+      "CategoryBookingPolicyResponseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "categoryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "categoryName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CategoryDto": {
         "additionalProperties": false,
         "properties": {
@@ -1233,6 +1273,14 @@
           "isAvailable": {
             "type": "boolean"
           },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
+          },
+          "pricedUnits": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
           "reason": {
             "nullable": true,
             "type": "string"
@@ -1240,6 +1288,11 @@
           "requestedQuantity": {
             "format": "int32",
             "type": "integer"
+          },
+          "unitPrice": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           }
         },
         "type": "object"
@@ -1387,7 +1440,6 @@
           "categoryId",
           "familyId",
           "name",
-          "tag",
           "unitId"
         ],
         "type": "object"
@@ -1623,6 +1675,11 @@
           "applyTemplateDefaults": {
             "type": "boolean"
           },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "capacityPeople": {
             "format": "int32",
             "nullable": true,
@@ -1689,7 +1746,6 @@
           "categoryId",
           "familyId",
           "name",
-          "tag",
           "unitId"
         ],
         "type": "object"
@@ -1711,6 +1767,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "requiresDeposit": {
             "type": "boolean"
@@ -1750,6 +1809,11 @@
         "properties": {
           "date": {
             "format": "date",
+            "type": "string"
+          },
+          "endDate": {
+            "format": "date",
+            "nullable": true,
             "type": "string"
           },
           "endTime": {
@@ -2077,6 +2141,10 @@
             "type": "string"
           },
           "tenantTradeName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timeZoneId": {
             "nullable": true,
             "type": "string"
           },
@@ -3533,6 +3601,15 @@
         },
         "type": "object"
       },
+      "PricingUnit": {
+        "enum": [
+          "Hour",
+          "Slot",
+          "Day",
+          "Fixed"
+        ],
+        "type": "string"
+      },
       "ProductRequestFileDto": {
         "additionalProperties": false,
         "properties": {
@@ -3862,6 +3939,11 @@
             "format": "uuid",
             "type": "string"
           },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "capacityPeople": {
             "format": "int32",
             "nullable": true,
@@ -3885,10 +3967,20 @@
             "format": "date-time",
             "type": "string"
           },
+          "effectiveCancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "effectiveMaxAdvanceBookingDays": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
+          },
+          "familyId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -3896,6 +3988,10 @@
           },
           "isActive": {
             "type": "boolean"
+          },
+          "location": {
+            "nullable": true,
+            "type": "string"
           },
           "maxAdvanceBookingDays": {
             "format": "int32",
@@ -3924,6 +4020,11 @@
           },
           "schedulePolicy": {
             "$ref": "#/components/schemas/SchedulePolicy"
+          },
+          "scheduledDeletionAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
           },
           "tenantId": {
             "format": "uuid",
@@ -4065,6 +4166,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "rentalAssetId": {
             "format": "uuid",
@@ -4274,9 +4378,17 @@
             "nullable": true,
             "type": "string"
           },
+          "days": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "quantity": {
             "format": "int32",
@@ -4383,6 +4495,11 @@
       "ReservationResponseDto": {
         "additionalProperties": false,
         "properties": {
+          "cancelDeadlineUtc": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -5025,6 +5142,10 @@
             "nullable": true,
             "type": "string"
           },
+          "customerName": {
+            "nullable": true,
+            "type": "string"
+          },
           "date": {
             "format": "date",
             "type": "string"
@@ -5062,6 +5183,11 @@
           "occupancyKindLabel": {
             "nullable": true,
             "type": "string"
+          },
+          "quantity": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "rentalAssetId": {
             "format": "uuid",
@@ -5405,6 +5531,10 @@
             "nullable": true,
             "type": "string"
           },
+          "timeZoneId": {
+            "nullable": true,
+            "type": "string"
+          },
           "welcomeTagline": {
             "nullable": true,
             "type": "string"
@@ -5689,7 +5819,6 @@
           "familyId",
           "name",
           "status",
-          "tag",
           "unitId"
         ],
         "type": "object"
@@ -5891,6 +6020,11 @@
       "UpdateRentableRequest": {
         "additionalProperties": false,
         "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "capacityPeople": {
             "format": "int32",
             "nullable": true,
@@ -5956,7 +6090,6 @@
           "categoryId",
           "familyId",
           "name",
-          "tag",
           "unitId"
         ],
         "type": "object"
@@ -5978,6 +6111,9 @@
           "pricePerHour": {
             "format": "double",
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "requiresDeposit": {
             "type": "boolean"
@@ -6003,6 +6139,11 @@
           "allowedDurationMinutes": {
             "nullable": true,
             "type": "string"
+          },
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "closeTime": {
             "format": "time",
@@ -6123,6 +6264,11 @@
       "UpsertBookingPolicyRequestDto": {
         "additionalProperties": false,
         "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "cancellationPolicyText": {
             "nullable": true,
             "type": "string"
@@ -6188,6 +6334,22 @@
           "orderCancelableUpToStatus",
           "requestCancelableUpToStatus"
         ],
+        "type": "object"
+      },
+      "UpsertCategoryBookingPolicyRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelCutoffHours": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "UpsertModuleMenuItemRequestDto": {
@@ -14455,6 +14617,103 @@
         ]
       }
     },
+    "/api/rentals/booking-policy/categories": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BookingPolicy"
+        ]
+      }
+    },
+    "/api/rentals/booking-policy/categories/{categoryId}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "categoryId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCategoryBookingPolicyRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryBookingPolicyResponseDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BookingPolicy"
+        ]
+      }
+    },
     "/api/rentals/readiness": {
       "get": {
         "responses": {
@@ -14658,6 +14917,14 @@
             "in": "query",
             "name": "Date",
             "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "EndDate",
             "schema": {
               "format": "date",
               "type": "string"

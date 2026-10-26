@@ -202,6 +202,10 @@ public sealed class ReservationsController(
         {
             return NotFound(new { error = ex.Message });
         }
+        catch (CancelCutoffPassedException ex)
+        {
+            return Conflict(new { code = CancelCutoffPassedException.Code, cancelCutoffHours = ex.CancelCutoffHours });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });

@@ -46,7 +46,7 @@ internal static class BookingHorizon
     {
         return await db.BookingPolicies
             .AsNoTracking()
-            .Where(item => item.TenantId == tenantId && item.ResourceType == null)
+            .Where(item => item.TenantId == tenantId && item.ResourceType == null && item.AssetCategoryId == null)
             .Select(item => item.MaxAdvanceBookingDays)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -60,18 +60,20 @@ internal static class BookingHorizon
         int? tenantDays,
         CancellationToken cancellationToken)
     {
+        var categories = await new PolicyResolver(db).ReadCategoriesAsync(tenantId, cancellationToken);
         var overrides = await db.RentalAssets
             .AsNoTracking()
             .Where(item =>
                 item.TenantId == tenantId
                 && assetIds.Contains(item.AssetId)
                 && item.IsActive)
-            .Select(item => item.MaxAdvanceBookingDays)
+            .Select(item => new { item.MaxAdvanceBookingDays, item.Asset.CategoryId })
             .ToListAsync(cancellationToken);
 
-        foreach (var overrideDays in overrides)
+        foreach (var resource in overrides)
         {
-            Ensure(startDate, today, Effective(overrideDays, tenantDays));
+            Ensure(startDate, today, Effective(resource.MaxAdvanceBookingDays,
+                categories.GetValueOrDefault(resource.CategoryId)?.MaxAdvanceBookingDays ?? tenantDays));
         }
     }
 
@@ -86,13 +88,17 @@ internal static class BookingHorizon
         var zone = await TenantBookingClock.ResolveForTenantAsync(db, tenantId, cancellationToken);
         var today = CivilToday(clock.GetUtcNow(), zone);
         var tenantDays = await ReadTenantDaysAsync(db, tenantId, cancellationToken);
-        var overrideDays = await db.RentalAssets
+        var categories = await new PolicyResolver(db).ReadCategoriesAsync(tenantId, cancellationToken);
+        var resource = await db.RentalAssets
             .AsNoTracking()
             .Where(item => item.Id == rentalAssetId && item.TenantId == tenantId)
-            .Select(item => item.MaxAdvanceBookingDays)
+            .Select(item => new { item.MaxAdvanceBookingDays, item.Asset.CategoryId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        Ensure(startDate, today, Effective(overrideDays, tenantDays));
+        var categoryDays = resource is null
+            ? null
+            : categories.GetValueOrDefault(resource.CategoryId)?.MaxAdvanceBookingDays;
+        Ensure(startDate, today, Effective(resource?.MaxAdvanceBookingDays, categoryDays ?? tenantDays));
     }
 
     /// <summary>
@@ -115,6 +121,7 @@ internal static class BookingHorizon
         var today = CivilToday(clock.GetUtcNow(), zone);
         var tenantDays = await ReadTenantDaysAsync(db, tenantId, cancellationToken);
 
+        var categories = await new PolicyResolver(db).ReadCategoriesAsync(tenantId, cancellationToken);
         var query = db.RentalAssets
             .AsNoTracking()
             .Where(item => item.TenantId == tenantId && item.IsActive && item.Asset.IsRentable);
@@ -125,7 +132,7 @@ internal static class BookingHorizon
         }
 
         var rows = await query
-            .Select(item => new { item.Id, item.MaxAdvanceBookingDays })
+            .Select(item => new { item.Id, item.MaxAdvanceBookingDays, item.Asset.CategoryId })
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
@@ -139,7 +146,8 @@ internal static class BookingHorizon
         }
 
         var allowed = rows
-            .Where(item => !IsBeyond(date, today, Effective(item.MaxAdvanceBookingDays, tenantDays)))
+            .Where(item => !IsBeyond(date, today, Effective(item.MaxAdvanceBookingDays,
+                categories.GetValueOrDefault(item.CategoryId)?.MaxAdvanceBookingDays ?? tenantDays)))
             .Select(item => item.Id)
             .ToList();
 

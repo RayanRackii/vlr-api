@@ -1,13 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
-using Platform.Core.Infrastructure.Time;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -16,10 +17,13 @@ public sealed class ReservationService(
     ITenantProvider tenantProvider,
     ITrialGuard trialGuard,
     IReservationQueueService reservationQueueService,
-    IRentalsNotificationPublisher notificationPublisher,
+    IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
-    TimeProvider timeProvider) : IReservationService
+    TimeProvider timeProvider,
+    PolicyResolver? policyResolver = null) : IReservationService
 {
+    private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
+
     private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
 
     public async Task<CheckAvailabilityResponseDto> CheckAvailabilityAsync(
@@ -27,11 +31,12 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
+        ValidateTimeRange(request.Date, request.StartTime, request.EndTime, request.EndDate);
 
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
         var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
-        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
+        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone, request.EndDate);
+        var calendarDays = request.EndDate > request.Date ? request.EndDate.Value.DayNumber - request.Date.DayNumber + 1 : (int?)null;
 
         var rental = await dbContext.RentalAssets
             .AsNoTracking()
@@ -61,12 +66,35 @@ public sealed class ReservationService(
         }
 
         var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
-        var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-            dbContext, tenantId, cancellationToken);
+        var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
         BookingHorizon.Ensure(
             request.Date,
             today,
-            BookingHorizon.Effective(rental.MaxAdvanceBookingDays, tenantHorizon));
+            PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
+        BookingHorizon.Ensure(
+            request.EndDate ?? request.Date,
+            today,
+            PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
+
+        RentalPricing? multiDayPricing = null;
+        if (calendarDays.HasValue)
+        {
+            try
+            {
+                multiDayPricing = await ResolveMultiDayPricingAsync(rental, request.Date, request.EndDate!.Value,
+                    request.StartTime, request.EndTime, cancellationToken);
+            }
+            catch (MultiDayUnavailableException ex)
+            {
+                return new CheckAvailabilityResponseDto(
+                    IsAvailable: false,
+                    RequestedQuantity: quantity,
+                    AvailableQuantity: 0,
+                    EstimatedTotalAmount: null,
+                    Reason: ex.Message);
+            }
+        }
 
         var reservedQuantity = await GetReservedQuantityAsync(
             tenantId,
@@ -85,7 +113,11 @@ public sealed class ReservationService(
         };
 
         decimal? estimatedTotal = null;
+        PricingUnit? pricingUnit = null;
+        decimal? unitPrice = null;
+        decimal? pricedUnits = null;
         string? reason = null;
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)>? slotGridWindows = null;
 
         if (!isAvailable)
         {
@@ -93,29 +125,56 @@ public sealed class ReservationService(
                 ? "Location is already reserved for the requested interval."
                 : $"Insufficient quantity. Available: {availableQuantity}, requested: {quantity}.";
         }
-        else if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
-                 && !await IsSlotGridIntervalOpenAsync(
-                     rental.Id,
-                     request.Date,
-                     request.StartTime,
-                     request.EndTime,
-                     cancellationToken))
+        else if (!calendarDays.HasValue && rental.SchedulePolicy == SchedulePolicy.OpenHours
+                 && OpenHoursRules.ValidateInterval(
+                     rental, request.StartTime, request.EndTime, rental.Asset.Name) is { } openHoursError)
         {
             isAvailable = false;
-            reason = "This interval is not open for booking.";
+            reason = openHoursError;
         }
-        else
+        else if (rental.SchedulePolicy == SchedulePolicy.SlotGrid)
+        {
+            var plan = await ResolveSlotGridWindowsAsync(
+                rental, request.Date, request.StartTime, request.EndTime, cancellationToken);
+            if (!plan.IsOpen)
+            {
+                isAvailable = false;
+                reason = "This interval is not open for booking.";
+            }
+            else
+            {
+                slotGridWindows = plan.Windows;
+            }
+        }
+
+        if (isAvailable && reason is null)
         {
             try
             {
-                var unitPrice = await ResolveHourlyPriceAsync(
-                    rental.Id,
-                    request.Date,
-                    request.StartTime,
-                    request.EndTime,
-                    cancellationToken);
                 var hours = (decimal)(end - start).TotalHours;
-                estimatedTotal = RoundMoney(unitPrice * hours * quantity);
+                if (slotGridWindows is { Count: > 1 } windows)
+                {
+                    var (total, unit, _) = await ResolveSlotGridPricingAsync(
+                        rental.Id, request.Date, request.StartTime, request.EndTime,
+                        windows, hours, quantity, zone, cancellationToken);
+                    estimatedTotal = total;
+                    pricingUnit = unit;
+                }
+                else
+                {
+                    var pricing = multiDayPricing ?? await ResolvePricingAsync(
+                        rental.Id,
+                        request.Date,
+                        request.StartTime,
+                        request.EndTime,
+                        hours,
+                        quantity,
+                        cancellationToken);
+                    estimatedTotal = BookingOffer.Total(pricing, hours, quantity, calendarDays);
+                    pricingUnit = pricing.PricingUnit;
+                    unitPrice = pricing.PricePerHour;
+                    pricedUnits = BookingOffer.PricedUnits(pricing.PricingUnit, hours, quantity, calendarDays);
+                }
             }
             catch (InvalidOperationException ex)
             {
@@ -128,7 +187,10 @@ public sealed class ReservationService(
             RequestedQuantity: quantity,
             AvailableQuantity: availableQuantity,
             EstimatedTotalAmount: estimatedTotal,
-            Reason: isAvailable && estimatedTotal is not null ? null : reason);
+            Reason: isAvailable && estimatedTotal is not null ? null : reason,
+            PricingUnit: pricingUnit,
+            UnitPrice: unitPrice,
+            PricedUnits: pricedUnits);
     }
 
     public async Task<ReservationResponseDto> CreateReservationAsync(
@@ -138,8 +200,8 @@ public sealed class ReservationService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
-        ValidateTimeRange(request.Date, request.StartTime, request.EndTime);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
+        ValidateTimeRange(request.Date, request.StartTime, request.EndTime, request.EndDate);
 
         if (request.Items is null || request.Items.Count == 0)
         {
@@ -164,7 +226,8 @@ public sealed class ReservationService(
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
 
         var zone = await ResolveBookingZoneAsync(tenantId, cancellationToken);
-        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone);
+        var (start, end) = ToDateTimeRange(request.Date, request.StartTime, request.EndTime, zone, request.EndDate);
+        var calendarDays = request.EndDate > request.Date ? request.EndDate.Value.DayNumber - request.Date.DayNumber + 1 : (int?)null;
         ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
         var today = BookingHorizon.CivilToday(timeProvider.GetUtcNow(), zone);
         var hours = (decimal)(end - start).TotalHours;
@@ -179,6 +242,7 @@ public sealed class ReservationService(
 
         try
         {
+            // A multi-day reservation counts once, against its start civil date only.
             await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
                 dbContext,
                 tenantId,
@@ -208,7 +272,8 @@ public sealed class ReservationService(
                 dbContext,
                 tenantId,
                 request.Items.Select(item => item.AssetId).ToList(),
-                request.Date,
+                // The last day is at or after the start, so this enforces both endpoints.
+                request.EndDate ?? request.Date,
                 today,
                 tenantHorizon,
                 cancellationToken);
@@ -230,6 +295,7 @@ public sealed class ReservationService(
             decimal totalAmount = 0m;
             var requiresDeposit = false;
             var itemResponses = new List<(ReservationItem Item, Guid AssetId, string AssetName)>();
+            var validatedSlotIds = new List<Guid>();
             var queuedLocations = new List<RentalAsset>();
 
             foreach (var itemRequest in request.Items)
@@ -260,16 +326,34 @@ public sealed class ReservationService(
                     queuedLocations.Add(rental);
                 }
 
-                if (rental.SchedulePolicy == SchedulePolicy.SlotGrid
-                    && !await IsSlotGridIntervalOpenAsync(
-                        rental.Id,
-                        request.Date,
-                        request.StartTime,
-                        request.EndTime,
-                        cancellationToken))
+                var multiDayPricing = calendarDays.HasValue
+                    ? await ResolveMultiDayPricingAsync(rental, request.Date, request.EndDate!.Value,
+                        request.StartTime, request.EndTime, cancellationToken)
+                    : null;
+
+                if (!calendarDays.HasValue && rental.SchedulePolicy == SchedulePolicy.OpenHours
+                    && OpenHoursRules.ValidateInterval(
+                        rental, request.StartTime, request.EndTime, rental.Asset.Name) is { } openHoursError)
                 {
-                    throw new InvalidOperationException(
-                        $"'{rental.Asset.Name}' is not open for the requested interval.");
+                    throw new InvalidOperationException(openHoursError);
+                }
+
+                IReadOnlyList<(TimeOnly Start, TimeOnly End)>? slotGridWindows = null;
+                if (rental.SchedulePolicy == SchedulePolicy.SlotGrid)
+                {
+                    var plan = await ResolveSlotGridWindowsAsync(
+                        rental, request.Date, request.StartTime, request.EndTime, cancellationToken);
+                    if (!plan.IsOpen)
+                    {
+                        throw new InvalidOperationException(
+                            $"'{rental.Asset.Name}' is not open for the requested interval.");
+                    }
+
+                    slotGridWindows = plan.Windows;
+                    // Shared Goods keep schedule cells open; reservations account for quantity.
+                    // A Slot has only one ReservationId and cannot represent shared occupancy.
+                    if (rental.Type == RentalAssetType.Location || rental.TotalQuantity == 1)
+                        validatedSlotIds.AddRange(plan.PersistedSlotIds);
                 }
 
                 var reservedQuantity = await GetReservedQuantityAsync(
@@ -296,14 +380,30 @@ public sealed class ReservationService(
 
                 requiresDeposit |= rental.RequiresDeposit;
 
-                var unitPrice = await ResolveHourlyPriceAsync(
-                    rental.Id,
-                    request.Date,
-                    request.StartTime,
-                    request.EndTime,
-                    cancellationToken);
+                decimal subTotal;
+                decimal itemUnitPrice;
+                if (slotGridWindows is { Count: > 1 } windows)
+                {
+                    var (total, _, unitPrice) = await ResolveSlotGridPricingAsync(
+                        rental.Id, request.Date, request.StartTime, request.EndTime,
+                        windows, hours, quantity, zone, cancellationToken);
+                    subTotal = total;
+                    itemUnitPrice = unitPrice;
+                }
+                else
+                {
+                    var pricing = multiDayPricing ?? await ResolvePricingAsync(
+                        rental.Id,
+                        request.Date,
+                        request.StartTime,
+                        request.EndTime,
+                        hours,
+                        quantity,
+                        cancellationToken);
+                    subTotal = BookingOffer.Total(pricing, hours, quantity, calendarDays);
+                    itemUnitPrice = pricing.PricePerHour;
+                }
 
-                var subTotal = BookingOffer.Total(unitPrice, hours, quantity);
                 totalAmount += subTotal;
 
                 var item = new ReservationItem
@@ -312,7 +412,7 @@ public sealed class ReservationService(
                     ReservationId = reservation.Id,
                     RentalAssetId = rental.Id,
                     Quantity = quantity,
-                    UnitPrice = unitPrice,
+                    UnitPrice = itemUnitPrice,
                     SubTotal = subTotal,
                 };
 
@@ -331,6 +431,14 @@ public sealed class ReservationService(
 
             dbContext.Reservations.Add(reservation);
 
+            var coveredSlots = await dbContext.Slots
+                .Where(s => s.TenantId == tenantId && validatedSlotIds.Contains(s.Id))
+                .ToListAsync(cancellationToken);
+            foreach (var slot in coveredSlots)
+            {
+                slot.MarkBooked(reservation.Id);
+            }
+
             foreach (var queued in queuedLocations)
             {
                 await reservationQueueService.CompleteTurnAsync(
@@ -340,11 +448,15 @@ public sealed class ReservationService(
                     cancellationToken);
             }
 
-            var queuedDeliveries = await PublishOpeningNotificationAsync(
+            var queuedDeliveries = await DispatchOpeningEventAsync(
                 reservation,
                 cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = ToResponse(reservation, itemResponses,
+                await policies.ReadTenantAsync(tenantId, cancellationToken),
+                await policies.ReadCategoriesAsync(tenantId, cancellationToken),
+                await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -352,7 +464,7 @@ public sealed class ReservationService(
 
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponse(reservation, itemResponses);
+            return response;
         }
         catch
         {
@@ -380,6 +492,9 @@ public sealed class ReservationService(
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
+        var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);
+        var pricing = await ReservationItemPricing.ReadAsync(dbContext, reservations, cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -388,7 +503,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList()))
+                    .ToList(), tenantPolicy, categories, pricing))
             .ToList();
     }
 
@@ -400,6 +515,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
+        var zone = await ResolveBookingZoneAsync(tenantProvider.TenantId!.Value, cancellationToken);
 
         var query = dbContext.Reservations
             .AsNoTracking()
@@ -410,13 +526,13 @@ public sealed class ReservationService(
 
         if (from is DateOnly fromDate)
         {
-            var fromStart = BrazilTimeZone.StartOfCivilDay(fromDate);
+            var fromStart = TenantBookingClock.CivilDay(fromDate, zone).Start;
             query = query.Where(r => r.EndDateTime > fromStart);
         }
 
         if (to is DateOnly toDate)
         {
-            var toEnd = BrazilTimeZone.ExclusiveEndOfCivilDay(toDate);
+            var toEnd = TenantBookingClock.CivilDay(toDate, zone).EndExclusive;
             query = query.Where(r => r.StartDateTime < toEnd);
         }
 
@@ -435,6 +551,9 @@ public sealed class ReservationService(
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
+        var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
+        var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);
+        var pricing = await ReservationItemPricing.ReadAsync(dbContext, reservations, cancellationToken);
         return reservations
             .Select(r => ToResponse(
                 r,
@@ -443,7 +562,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList()))
+                    .ToList(), tenantPolicy, categories, pricing))
             .ToList();
     }
 
@@ -453,7 +572,7 @@ public sealed class ReservationService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -478,8 +597,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Confirmed)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status != ReservationStatus.PendingDeposit)
@@ -490,15 +610,15 @@ public sealed class ReservationService(
 
             reservation.Status = ReservationStatus.Confirmed;
             reservation.Touch();
-            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
-                reservation,
-                RentalEventTypes.ReservationConfirmed,
+            var queuedDeliveries = await domainEvents.DispatchAsync(
+                new ReservationEvent(reservation, RentalEventTypes.ReservationConfirmed),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -513,7 +633,7 @@ public sealed class ReservationService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -538,8 +658,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Completed)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status != ReservationStatus.Confirmed)
@@ -550,15 +671,15 @@ public sealed class ReservationService(
 
             reservation.Status = ReservationStatus.Completed;
             reservation.Touch();
-            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
-                reservation,
-                RentalEventTypes.ReservationCompleted,
+            var queuedDeliveries = await domainEvents.DispatchAsync(
+                new ReservationEvent(reservation, RentalEventTypes.ReservationCompleted),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -573,7 +694,7 @@ public sealed class ReservationService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -592,8 +713,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status == ReservationStatus.Completed)
@@ -602,15 +724,15 @@ public sealed class ReservationService(
             }
 
             await ReleaseOccupancyAsync(reservation, cancellationToken);
-            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
-                reservation,
-                RentalEventTypes.ReservationCanceled,
+            var queuedDeliveries = await domainEvents.DispatchAsync(
+                new ReservationEvent(reservation, RentalEventTypes.ReservationCanceled),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -626,7 +748,7 @@ public sealed class ReservationService(
     {
         var tenantId = EnsureTenantContext();
         await trialGuard.EnsureWritableAsync(cancellationToken);
-        await notificationPublisher.EnsureReadyAsync(cancellationToken);
+        await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -648,8 +770,9 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
                 await CommitIfPresentAsync(transaction, cancellationToken);
-                return ToResponseFromEntity(reservation);
+                return unchangedResponse;
             }
 
             if (reservation.Status == ReservationStatus.Completed)
@@ -657,22 +780,32 @@ public sealed class ReservationService(
                 throw new InvalidOperationException("Cannot cancel a completed reservation.");
             }
 
-            if (DateTimeOffset.UtcNow >= reservation.StartDateTime)
+            var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+            var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
+            var cutoff = PolicyResolver.StrictestCancelCutoffHours(
+                reservation.Items.Select(item => item.RentalAsset), categories, tenantPolicy);
+            var now = timeProvider.GetUtcNow();
+            if (cutoff is > 0 && now >= reservation.StartDateTime.AddHours(-cutoff.Value))
+            {
+                throw new CancelCutoffPassedException(cutoff.Value);
+            }
+
+            if (now >= reservation.StartDateTime)
             {
                 throw new InvalidOperationException(
                     "Cannot cancel a reservation that has already started.");
             }
 
             await ReleaseOccupancyAsync(reservation, cancellationToken);
-            var queuedDeliveries = await notificationPublisher.PublishReservationEventAsync(
-                reservation,
-                RentalEventTypes.ReservationCanceled,
+            var queuedDeliveries = await domainEvents.DispatchAsync(
+                new ReservationEvent(reservation, RentalEventTypes.ReservationCanceled),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
-            return ToResponseFromEntity(reservation);
+            return response;
         }
         catch
         {
@@ -711,7 +844,8 @@ public sealed class ReservationService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static ReservationResponseDto ToResponseFromEntity(Reservation reservation) =>
+    private async Task<ReservationResponseDto> ToResponseFromEntityAsync(
+        Reservation reservation, CancellationToken cancellationToken) =>
         ToResponse(
             reservation,
             reservation.Items
@@ -719,7 +853,10 @@ public sealed class ReservationService(
                     i,
                     i.RentalAsset.AssetId,
                     i.RentalAsset.Asset.Name))
-                .ToList());
+                .ToList(),
+            await policies.ReadTenantAsync(reservation.TenantId, cancellationToken),
+            await policies.ReadCategoriesAsync(reservation.TenantId, cancellationToken),
+            await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
 
     private Task<Reservation?> LoadReservationWithItemsAsync(
         Guid reservationId,
@@ -731,16 +868,15 @@ public sealed class ReservationService(
                     .ThenInclude(a => a.Asset)
             .FirstOrDefaultAsync(r => r.Id == reservationId, cancellationToken);
 
-    private async Task<IReadOnlyList<Guid>> PublishOpeningNotificationAsync(
+    private async Task<IReadOnlyList<Guid>> DispatchOpeningEventAsync(
         Reservation reservation,
         CancellationToken cancellationToken)
     {
         var eventType = reservation.Status == ReservationStatus.PendingDeposit
             ? RentalEventTypes.ReservationPendingDeposit
             : RentalEventTypes.ReservationConfirmed;
-        return await notificationPublisher.PublishReservationEventAsync(
-            reservation,
-            eventType,
+        return await domainEvents.DispatchAsync(
+            new ReservationEvent(reservation, eventType),
             cancellationToken);
     }
 
@@ -772,48 +908,207 @@ public sealed class ReservationService(
         }
     }
 
-    private async Task<bool> IsSlotGridIntervalOpenAsync(
-        Guid rentalAssetId,
+    /// <summary>
+    /// A SlotGrid interval is open iff it is exactly the union of one or more contiguous,
+    /// open windows (persisted slots take precedence over template winners by StartTime).
+    /// Bookings spanning more than one window additionally require the total duration to be
+    /// one of the rental's AllowedDurationMinutes; when that is unset, only a single window
+    /// may be booked (today's behavior).
+    /// </summary>
+    private async Task<SlotGridWindowPlan> ResolveSlotGridWindowsAsync(
+        RentalAsset rental,
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        var persisted = await dbContext.Slots
+        var persistedSlots = await dbContext.Slots
             .AsNoTracking()
             .Include(s => s.OccupancyKind)
-            .FirstOrDefaultAsync(
-                s => s.TenantId == tenantId
-                     && s.RentalAssetId == rentalAssetId
-                     && s.Date == date
-                     && s.StartTime == startTime,
-                cancellationToken);
-
-        if (persisted is not null)
-        {
-            return persisted.Status == SlotStatus.Available
-                   && persisted.EndTime == endTime
-                   && persisted.OccupancyKind.IsActive
-                   && persisted.OccupancyKind.IsBookableByCustomer;
-        }
+            .Where(s => s.TenantId == tenantId && s.RentalAssetId == rental.Id && s.Date == date)
+            .ToListAsync(cancellationToken);
 
         var templates = await dbContext.ScheduleTemplates
             .AsNoTracking()
             .Include(t => t.OccupancyKind)
             .Where(t => t.TenantId == tenantId
-                        && t.RentalAssetId == rentalAssetId
+                        && t.RentalAssetId == rental.Id
                         && t.IsActive
                         && t.DayOfWeek == date.DayOfWeek)
             .ToListAsync(cancellationToken);
+        var templateWindows = OccupancyPrecedence.SplitWinningWindows(templates);
 
-        var exactWinners = OccupancyPrecedence.SplitWinningWindows(templates)
-            .Where(window => window.Start == startTime && window.End == endTime)
-            .ToList();
+        var normalizedEnd = TenantBookingClock.NormalizeEndTime(endTime);
+        var windows = new List<(TimeOnly Start, TimeOnly End)>();
+        var persistedSlotIds = new List<Guid>();
+        if (persistedSlots.Any(s => s.StartTime < normalizedEnd
+            && TenantBookingClock.NormalizeEndTime(s.EndTime) > startTime
+            && (s.Status != SlotStatus.Available || !s.OccupancyKind.IsActive
+                || !s.OccupancyKind.IsBookableByCustomer)))
+        {
+            return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+        }
 
-        return exactWinners.Count == 1
-               && exactWinners[0].Template.OccupancyKind.IsActive
-               && exactWinners[0].Template.OccupancyKind.IsBookableByCustomer;
+        var cursor = startTime;
+
+        while (cursor < normalizedEnd)
+        {
+            bool open;
+            TimeOnly windowEnd;
+
+            var persisted = persistedSlots.FirstOrDefault(s => s.StartTime == cursor);
+            if (persisted is not null)
+            {
+                windowEnd = TenantBookingClock.NormalizeEndTime(persisted.EndTime);
+                open = persisted.Status == SlotStatus.Available
+                       && persisted.OccupancyKind.IsActive
+                       && persisted.OccupancyKind.IsBookableByCustomer;
+            }
+            else
+            {
+                var winner = templateWindows.FirstOrDefault(w => w.Start == cursor);
+                if (winner.Template is null)
+                {
+                    return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+                }
+
+                windowEnd = TenantBookingClock.NormalizeEndTime(winner.End);
+                open = winner.Template.OccupancyKind.IsActive
+                       && winner.Template.OccupancyKind.IsBookableByCustomer;
+            }
+
+            if (!open || windowEnd <= cursor)
+            {
+                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+            }
+
+            if (persisted is not null)
+                persistedSlotIds.Add(persisted.Id);
+            windows.Add((cursor, windowEnd));
+            cursor = windowEnd;
+        }
+
+        if (cursor != normalizedEnd)
+        {
+            return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+        }
+
+        if (windows.Count > 1)
+        {
+            if (string.IsNullOrWhiteSpace(rental.AllowedDurationMinutes))
+            {
+                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+            }
+
+            var totalMinutes = (TenantBookingClock.EndOfDayTime(normalizedEnd) - startTime.ToTimeSpan()).TotalMinutes;
+            if (!OpenHoursRules.ParseDurations(rental.AllowedDurationMinutes).Any(minutes => minutes == totalMinutes))
+            {
+                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
+            }
+        }
+
+        return new SlotGridWindowPlan(true, windows, persistedSlotIds);
+    }
+
+    private readonly record struct SlotGridWindowPlan(
+        bool IsOpen,
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)> Windows,
+        IReadOnlyList<Guid> PersistedSlotIds);
+
+    /// <summary>
+    /// Slot prices apply to each window; hourly bands use each window's elapsed time.
+    /// Day and Fixed offers cover the whole interval (Fixed once per item).
+    /// </summary>
+    private async Task<(decimal Total, PricingUnit Unit, decimal UnitPrice)> ResolveSlotGridPricingAsync(
+        Guid rentalAssetId,
+        DateOnly date,
+        TimeOnly overallStart,
+        TimeOnly overallEnd,
+        IReadOnlyList<(TimeOnly Start, TimeOnly End)> windows,
+        decimal overallHours,
+        int quantity,
+        TimeZoneInfo zone,
+        CancellationToken cancellationToken)
+    {
+        var prices = await dbContext.RentalPricings.AsNoTracking()
+            .Where(p => p.RentalAssetId == rentalAssetId && p.DayOfWeek == date.DayOfWeek)
+            .ToListAsync(cancellationToken);
+        var fullRangePricing = BookingOffer.ForDerivedWindow(
+            prices.Where(p => p.PricingUnit != PricingUnit.Slot
+                && p.StartTime <= overallStart
+                && p.EndTime >= TenantBookingClock.NormalizeEndTime(overallEnd)),
+            overallHours, quantity);
+
+        decimal? windowTotal = 0m;
+        RentalPricing? lastWindowPrice = null;
+        foreach (var window in windows)
+        {
+            var windowHours = (decimal)(TenantBookingClock.EndAtLocal(date, window.End, zone)
+                - TenantBookingClock.AtLocal(date, window.Start, zone)).TotalHours;
+            var pricing = BookingOffer.ForDerivedWindow(
+                prices.Where(p => p.PricingUnit == PricingUnit.Slot
+                    && p.StartTime <= window.Start
+                    && p.EndTime >= TenantBookingClock.NormalizeEndTime(window.End)),
+                windowHours, quantity);
+            decimal? cellTotal = pricing is null ? null : BookingOffer.Total(pricing, windowHours, quantity);
+
+            var hourlyPrices = prices.Where(p => p.PricingUnit == PricingUnit.Hour).ToList();
+            var boundaries = hourlyPrices.SelectMany(p => new[] { p.StartTime, p.EndTime })
+                .Where(t => t > window.Start && t < window.End)
+                .Append(window.Start).Append(window.End).Distinct().Order().ToList();
+            decimal? hourlyTotal = 0m;
+            RentalPricing? lastHourlyPrice = null;
+            for (var i = 1; i < boundaries.Count; i++)
+            {
+                var segmentStart = boundaries[i - 1];
+                var segmentEnd = boundaries[i];
+                var segmentHours = (decimal)(TenantBookingClock.EndAtLocal(date, segmentEnd, zone)
+                    - TenantBookingClock.AtLocal(date, segmentStart, zone)).TotalHours;
+                var hourlyPrice = BookingOffer.ForDerivedWindow(
+                    hourlyPrices.Where(p => p.StartTime <= segmentStart && p.EndTime >= segmentEnd),
+                    segmentHours, quantity);
+                if (hourlyPrice is null)
+                {
+                    hourlyTotal = null;
+                    break;
+                }
+                // Keep hourly fragments unrounded until the complete item total is known.
+                hourlyTotal += hourlyPrice.PricePerHour * segmentHours * quantity;
+                lastHourlyPrice = hourlyPrice;
+            }
+
+            if (hourlyTotal is not null && (cellTotal is null || hourlyTotal < cellTotal))
+            {
+                cellTotal = hourlyTotal;
+                pricing = lastHourlyPrice;
+            }
+            if (cellTotal is null)
+            {
+                windowTotal = null;
+                break;
+            }
+
+            windowTotal += cellTotal;
+            lastWindowPrice = pricing;
+        }
+
+        if (fullRangePricing is not null)
+        {
+            var total = BookingOffer.Total(fullRangePricing, overallHours, quantity);
+            if (windowTotal is null || total <= windowTotal.Value)
+            {
+                return (total, fullRangePricing.PricingUnit, fullRangePricing.PricePerHour);
+            }
+        }
+
+        if (windowTotal is not null && lastWindowPrice is not null)
+        {
+            return (RoundMoney(windowTotal.Value), lastWindowPrice.PricingUnit, lastWindowPrice.PricePerHour);
+        }
+
+        throw new InvalidOperationException(
+            "No rental pricing covers the requested day and time window.");
     }
 
     internal async Task<int> GetReservedQuantityAsync(
@@ -844,20 +1139,25 @@ public sealed class ReservationService(
         return await query.SumAsync(x => x.Quantity, cancellationToken);
     }
 
-    private async Task<decimal> ResolveHourlyPriceAsync(
+    private async Task<RentalPricing> ResolvePricingAsync(
         Guid rentalAssetId,
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
+        decimal hours,
+        int quantity,
         CancellationToken cancellationToken)
     {
         var dayOfWeek = date.DayOfWeek;
 
-        var pricing = await BookingOffer.ForDerivedWindow(dbContext.RentalPricings
+        endTime = TenantBookingClock.NormalizeEndTime(endTime);
+        var prices = await dbContext.RentalPricings
             .AsNoTracking()
             .Where(p => p.RentalAssetId == rentalAssetId && p.DayOfWeek == dayOfWeek)
-            .Where(p => p.StartTime <= startTime && p.EndTime >= endTime))
-            .FirstOrDefaultAsync(cancellationToken);
+            .Where(p => p.StartTime <= startTime && p.EndTime >= endTime)
+            .OrderBy(p => p.PricePerHour)
+            .ToListAsync(cancellationToken);
+        var pricing = BookingOffer.ForDerivedWindow(prices, hours, quantity);
 
         if (pricing is null)
         {
@@ -865,7 +1165,7 @@ public sealed class ReservationService(
                 "No rental pricing covers the requested day and time window.");
         }
 
-        return pricing.PricePerHour;
+        return pricing;
     }
 
     private async Task EnsureUnitExistsAsync(Guid unitId, CancellationToken cancellationToken)
@@ -886,11 +1186,63 @@ public sealed class ReservationService(
             ?? throw new UnauthorizedAccessException("Tenant context is required.");
     }
 
-    private static void ValidateTimeRange(DateOnly date, TimeOnly startTime, TimeOnly endTime)
-    {
-        _ = date;
+    private sealed class MultiDayUnavailableException(string message, Exception? innerException = null)
+        : ArgumentException(message, innerException);
 
-        if (endTime <= startTime)
+    private async Task<RentalPricing> ResolveMultiDayPricingAsync(
+        RentalAsset rental, DateOnly date, DateOnly endDate, TimeOnly startTime, TimeOnly endTime,
+        CancellationToken cancellationToken)
+    {
+        if (rental.SchedulePolicy == SchedulePolicy.SlotGrid)
+            throw new ArgumentException("Multi-day booking is not supported for SlotGrid resources.");
+
+        var slots = await dbContext.Slots.AsNoTracking().Include(s => s.OccupancyKind)
+            .Where(s => s.TenantId == rental.TenantId && s.RentalAssetId == rental.Id
+                && s.Date >= date && s.Date <= endDate)
+            .ToListAsync(cancellationToken);
+        RentalPricing? firstPricing = null;
+        for (var dayNumber = date.DayNumber; dayNumber <= endDate.DayNumber; dayNumber++)
+        {
+            var day = DateOnly.FromDayNumber(dayNumber);
+            var dayStart = day == date ? startTime : rental.OpenTime ?? TimeOnly.MinValue;
+            var dayEnd = day == endDate ? endTime : rental.CloseTime ?? TimeOnly.MinValue;
+            if (rental.SchedulePolicy == SchedulePolicy.OpenHours
+                && OpenHoursRules.ValidateInterval(rental, dayStart, dayEnd, rental.Asset.Name,
+                    enforceAllowedDurations: false) is { } error)
+                throw new MultiDayUnavailableException(error);
+            if (slots.Any(s => s.Date == day
+                && OccupancyPrecedence.IntervalsOverlap(s.StartTime, s.EndTime, dayStart, dayEnd)
+                && (s.Status == SlotStatus.Cancelled || s.OccupancyKind is not { IsActive: true }
+                    || s.OccupancyKind.TenantId != rental.TenantId
+                    || (s.OccupancyKind.BlocksCapacity && !s.OccupancyKind.IsBookableByCustomer))))
+                throw new MultiDayUnavailableException($"'{rental.Asset.Name}' is not open for the requested interval.");
+
+            RentalPricing pricing;
+            try
+            {
+                pricing = await ResolvePricingAsync(rental.Id, day, dayStart, dayEnd,
+                    (decimal)(TenantBookingClock.EndOfDayTime(dayEnd) - dayStart.ToTimeSpan()).TotalHours,
+                    1, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new MultiDayUnavailableException(ex.Message, ex);
+            }
+            if (pricing.PricingUnit != PricingUnit.Day)
+                throw new ArgumentException("Multi-day booking requires a per-day resource.");
+            firstPricing ??= pricing;
+        }
+
+        return firstPricing!;
+    }
+
+    private static void ValidateTimeRange(DateOnly date, TimeOnly startTime, TimeOnly endTime, DateOnly? endDate)
+    {
+        if ((endDate ?? date) < date)
+            throw new ArgumentException("EndDate must not be before Date.");
+        if ((endDate ?? date).DayNumber - date.DayNumber >= 31)
+            throw new ArgumentException("Reservations may span at most 31 civil days.");
+        if ((endDate ?? date) == date && endTime <= startTime)
         {
             throw new ArgumentException("EndTime must be greater than StartTime.");
         }
@@ -905,10 +1257,16 @@ public sealed class ReservationService(
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
-        TimeZoneInfo zone)
+        TimeZoneInfo zone,
+        DateOnly? endDate)
     {
         var start = TenantBookingClock.AtLocal(date, startTime, zone);
-        var end = TenantBookingClock.AtLocal(date, endTime, zone);
+        var end = TenantBookingClock.EndAtLocal(endDate ?? date, endTime, zone);
+        if (end <= start)
+        {
+            throw new ArgumentException("EndTime must be greater than StartTime.");
+        }
+
         return (start, end);
     }
 
@@ -917,7 +1275,9 @@ public sealed class ReservationService(
 
     private static ReservationResponseDto ToResponse(
         Reservation reservation,
-        IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items) =>
+        IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items,
+        BookingPolicy? tenantPolicy, IReadOnlyDictionary<Guid, BookingPolicy> categories,
+        IReadOnlyDictionary<Guid, ReservationItemPricing> pricing) =>
         new(
             reservation.Id,
             reservation.TenantId,
@@ -938,5 +1298,9 @@ public sealed class ReservationService(
                 x.AssetName,
                 x.Item.Quantity,
                 x.Item.UnitPrice,
-                x.Item.SubTotal)).ToList());
+                x.Item.SubTotal,
+                pricing.GetValueOrDefault(x.Item.Id)?.Unit,
+                pricing.GetValueOrDefault(x.Item.Id)?.Days)).ToList(),
+            PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime,
+                items.Select(x => x.Item.RentalAsset), categories, tenantPolicy));
 }

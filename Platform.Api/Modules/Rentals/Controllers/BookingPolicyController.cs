@@ -29,12 +29,53 @@ public sealed class BookingPolicyController(
         }
     }
 
+    [RequirePermission(Permissions.Rentals.BookingPolicyRead)]
+    [HttpGet("categories")]
+    public async Task<ActionResult<IReadOnlyList<CategoryBookingPolicyResponseDto>>> GetCategories(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await bookingPolicyService.GetCategoriesAsync(cancellationToken));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
+    [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
+    [HttpPut("categories/{categoryId:guid}")]
+    public async Task<ActionResult<CategoryBookingPolicyResponseDto>> UpsertCategory(
+        Guid categoryId, [FromBody] UpsertCategoryBookingPolicyRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await bookingPolicyService.UpsertCategoryAsync(categoryId, request, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails { Status = 404, Title = "Not Found", Detail = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Bad Request", Detail = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
     /// <summary>
     /// Replaces the tenant default booking policy.
     /// Omitted or null <c>cancellationPolicyText</c> and
     /// <c>maxActiveReservationsPerCustomerPerDay</c> clear those stored values.
     /// Omitted <c>maxAdvanceBookingDays</c> keeps the stored horizon.
     /// Explicit null clears it (unlimited).
+    /// Omitted <c>cancelCutoffHours</c> keeps the cutoff; explicit null clears it.
+    /// The cutoff must be between 0 and 8760 hours.
     /// </summary>
     [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
     [HttpPut]

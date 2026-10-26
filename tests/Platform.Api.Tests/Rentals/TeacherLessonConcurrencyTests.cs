@@ -1040,7 +1040,7 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
             tenantProvider,
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 
@@ -1053,7 +1053,7 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
             new OccupancyKindService(db, tenantProvider),
             new FakeTrialGuard(),
             TestReservationQueue.Create(db, tenantProvider),
-            SilentRentalsNotifications.Publisher,
+            SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
             BookingClock);
 

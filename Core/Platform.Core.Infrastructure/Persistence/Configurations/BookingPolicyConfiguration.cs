@@ -37,12 +37,24 @@ public sealed class BookingPolicyConfiguration : IEntityTypeConfiguration<Bookin
 
         builder.Property(policy => policy.MaxAdvanceBookingDays);
 
+        builder.Property(policy => policy.CancelCutoffHours);
+
         builder.Property(policy => policy.CreatedAt)
             .IsRequired();
 
+        builder.HasOne<AssetCategory>()
+            .WithMany()
+            .HasForeignKey(policy => policy.AssetCategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(policy => new { policy.TenantId, policy.AssetCategoryId })
+            .IsUnique()
+            .HasFilter("asset_category_id IS NOT NULL")
+            .HasDatabaseName("ux_booking_policies_tenant_category");
+
         builder.HasIndex(policy => policy.TenantId)
             .IsUnique()
-            .HasFilter("resource_type IS NULL")
+            .HasFilter("resource_type IS NULL AND asset_category_id IS NULL")
             .HasDatabaseName("ux_booking_policies_tenant_default");
 
         builder.HasIndex(policy => new { policy.TenantId, policy.ResourceType })

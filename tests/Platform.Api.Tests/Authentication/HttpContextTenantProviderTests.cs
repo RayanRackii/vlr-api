@@ -188,6 +188,100 @@ public sealed class HttpContextTenantProviderTests
             exception.Message);
     }
 
+    [Fact]
+    public void Customer_with_ambient_tenant_of_another_tenant_throws_without_naming_it()
+    {
+        var claimTenantId = Guid.NewGuid();
+        var ambientTenantId = Guid.NewGuid();
+        var provider = CreateProvider(
+            new ClaimsPrincipal(CustomerIdentity(claimTenantId)),
+            new AmbientTenantContext { TenantId = ambientTenantId });
+
+        var exception = Assert.Throws<TenantResolutionException>(() => provider.TenantId);
+        Assert.DoesNotContain(ambientTenantId.ToString(), exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(claimTenantId.ToString(), exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Customer_with_ambient_tenant_equal_to_claim_resolves()
+    {
+        var tenantId = Guid.NewGuid();
+        var provider = CreateProvider(
+            new ClaimsPrincipal(CustomerIdentity(tenantId)),
+            new AmbientTenantContext { TenantId = tenantId });
+
+        Assert.Equal(tenantId, provider.TenantId);
+    }
+
+    // Passo 6 follow-up (Sol): before the guard, a bad claim fell back to the ambient tenant.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-guid")]
+    public void Customer_with_missing_or_invalid_tenant_claim_and_ambient_tenant_throws(string? tenantClaim)
+    {
+        var claims = new List<Claim>
+        {
+            new(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+            new(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new(ClaimTypes.Role, AuthRoles.Customer),
+        };
+        if (tenantClaim is not null)
+        {
+            claims.Add(new Claim(CustomerClaimTypes.TenantId, tenantClaim));
+        }
+
+        var provider = CreateProvider(
+            new ClaimsPrincipal(new ClaimsIdentity(claims, CustomerJwtBearerDefaults.AuthenticationScheme)),
+            new AmbientTenantContext { TenantId = Guid.NewGuid() });
+
+        var exception = Assert.Throws<TenantResolutionException>(() => provider.TenantId);
+        Assert.Equal("The customer access token is missing a valid tenant_id claim.", exception.Message);
+    }
+
+    [Fact]
+    public void Staff_ambient_tenant_still_wins_over_app_metadata()
+    {
+        var ambientTenantId = Guid.NewGuid();
+        var provider = CreateProvider(
+            new ClaimsPrincipal(StaffIdentity(Guid.NewGuid())),
+            new AmbientTenantContext { TenantId = ambientTenantId });
+
+        Assert.Equal(ambientTenantId, provider.TenantId);
+    }
+
+    [Fact]
+    public void Ambient_tenant_without_http_context_is_used()
+    {
+        var ambientTenantId = Guid.NewGuid();
+        var provider = new HttpContextTenantProvider(
+            new FakeHttpContextAccessor(),
+            new AmbientTenantContext { TenantId = ambientTenantId },
+            new PlatformAdminChecker(Options.Create(new PlatformAdminOptions())),
+            new PlatformAdminTenantSession());
+
+        Assert.Equal(ambientTenantId, provider.TenantId);
+    }
+
+    private static ClaimsIdentity CustomerIdentity(Guid tenantId) =>
+        new(
+            [
+                new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+                new Claim(CustomerClaimTypes.TenantId, tenantId.ToString()),
+                new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+                new Claim(ClaimTypes.Role, AuthRoles.Customer),
+            ],
+            authenticationType: CustomerJwtBearerDefaults.AuthenticationScheme);
+
+    private static HttpContextTenantProvider CreateProvider(
+        ClaimsPrincipal user,
+        AmbientTenantContext ambient) =>
+        new(
+            new FakeHttpContextAccessor { HttpContext = new DefaultHttpContext { User = user } },
+            ambient,
+            new PlatformAdminChecker(Options.Create(new PlatformAdminOptions())),
+            new PlatformAdminTenantSession());
+
     private static ClaimsIdentity StaffIdentity(Guid tenantId) =>
         new(
             [

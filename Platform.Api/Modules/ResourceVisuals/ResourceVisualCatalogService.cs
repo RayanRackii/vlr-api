@@ -109,7 +109,7 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
         revision.DefaultCloseTime = request.DefaultCloseTime;
         revision.DefaultAllowedDurationMinutes = string.IsNullOrWhiteSpace(request.DefaultAllowedDurationMinutes)
             ? null
-            : rentalVisualDefaults.NormalizeAllowedDurations(request.DefaultAllowedDurationMinutes);
+            : NormalizeDefaultAllowedDurations(request);
         revision.DefaultPricings = request.DefaultPricings?.Select(ToDefaultPricing).ToList();
         revision.DefaultRequiresDeposit = request.DefaultRequiresDeposit;
         revision.DefaultMaxAdvanceBookingDays = request.DefaultMaxAdvanceBookingDays;
@@ -207,7 +207,7 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
             throw Invalid("Hours defaults require the OpenHours schedule policy.");
         if (!string.IsNullOrWhiteSpace(r.DefaultAllowedDurationMinutes))
         {
-            try { rentalVisualDefaults.NormalizeAllowedDurations(r.DefaultAllowedDurationMinutes); }
+            try { NormalizeDefaultAllowedDurations(r); }
             catch (ArgumentException ex) { throw Invalid(ex.Message); }
         }
         if (r.DefaultPricings is { Count: > 100 }) throw Invalid("At most 100 pricing defaults are allowed.");
@@ -223,6 +223,21 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
             if (r.NetSvg != null) ResourceSvgSanitizer.Sanitize(r.NetSvg, r.ViewBox!);
         }
         catch (ArgumentException ex) { throw new ResourceVisualException("SVG_UNSAFE", ex.Message); }
+    }
+    private string NormalizeDefaultAllowedDurations(RevisionRequest request)
+    {
+        var openingWindowMinutes = request.DefaultSchedulePolicy == Platform.Core.Domain.Enums.SchedulePolicy.OpenHours
+            && request.DefaultOpenTime is { } open && request.DefaultCloseTime is { } close
+            ? (int?)DailyWindowMinutes(open, close)
+            : null;
+        return rentalVisualDefaults.NormalizeAllowedDurations(
+            request.DefaultAllowedDurationMinutes!, request.SuggestedSlotMinutes ?? 60, openingWindowMinutes);
+    }
+
+    private static int DailyWindowMinutes(TimeOnly open, TimeOnly close)
+    {
+        var minutes = (int)(close - open).TotalMinutes;
+        return minutes <= 0 ? minutes + 1440 : minutes;
     }
     private static ResourceVisualDefaultPricing ToDefaultPricing(CreateRentalPricingDto value) => new()
     {

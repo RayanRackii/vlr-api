@@ -16,6 +16,7 @@ namespace Platform.Api.Authorization;
 public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, IAsyncAuthorizationFilter
 {
     public const string InactiveModuleError = "Module is not active for this tenant.";
+    public const string InactiveModuleCode = "module_inactive";
 
     public string ModuleKey { get; } = moduleKey;
 
@@ -33,6 +34,13 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
 
         if (tenantProvider.TenantId is null)
         {
+            // Fail closed: without a tenant, only platform-admin-only actions or an explicit
+            // PlatformScope may continue (null tenant turns the EF tenant filter off).
+            if (!PlatformScope.IsActive && !IsPlatformAdminOnly(context))
+            {
+                context.Result = Inactive();
+            }
+
             return;
         }
 
@@ -45,11 +53,19 @@ public sealed class RequireActiveModuleAttribute(string moduleKey) : Attribute, 
             return;
         }
 
-        context.Result = new ObjectResult(new { error = InactiveModuleError })
+        context.Result = Inactive();
+    }
+
+    private ObjectResult Inactive() =>
+        new(new { error = InactiveModuleError, code = InactiveModuleCode, module = ModuleKey.Trim().ToLowerInvariant() })
         {
             StatusCode = StatusCodes.Status403Forbidden,
         };
-    }
+
+    private static bool IsPlatformAdminOnly(AuthorizationFilterContext context) =>
+        context.ActionDescriptor.EndpointMetadata
+            .OfType<IAuthorizeData>()
+            .Any(data => data.Policy == SupabaseAuthenticationExtensions.PlatformAdminPolicy);
 
     private static string? ResolveResourceSubdomain(AuthorizationFilterContext context)
     {

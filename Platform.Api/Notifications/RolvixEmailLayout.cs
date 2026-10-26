@@ -98,21 +98,31 @@ public static class RolvixEmailLayout
         string companyName,
         string? portalHost = null,
         string? roleName = null,
-        IReadOnlyList<string>? roleNames = null)
+        IReadOnlyList<string>? roleNames = null,
+        string? frontendBaseUrl = null,
+        string? tenantPortalHostTemplate = null)
     {
         var safeUrl = EmailHtml.Encode(inviteUrl);
+        var frontendUrl = string.IsNullOrWhiteSpace(frontendBaseUrl)
+            ? FrontendBaseUrlResolver.ProductionDefault
+            : frontendBaseUrl.Trim().TrimEnd('/');
+        var panelHost = Uri.TryCreate(frontendUrl, UriKind.Absolute, out var frontendUri)
+            ? frontendUri.Authority
+            : frontendUrl;
+        var loginUrl = $"{frontendUrl}/login";
+        var genericPortalHost = FormatGenericPortalHost(tenantPortalHostTemplate);
         var lead = AccessSentence(
             companyName,
             roleNames ?? (string.IsNullOrWhiteSpace(roleName) ? null : [roleName]));
         var portalLine = string.IsNullOrWhiteSpace(portalHost)
-            ? """
+            ? $"""
               <tr>
-                <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">Este acesso é o <strong>painel operacional</strong> em <strong>rolvix.com.br</strong> (agenda e configurações). O site público (<em>seu-subdominio</em>.rolvix.com.br) é para clientes e usa outro login.</td>
+                <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">Este acesso é o <strong>painel operacional</strong> em <strong>{EmailHtml.Encode(panelHost)}</strong> (agenda e configurações). O site público ({genericPortalHost}) é para clientes e usa outro login.</td>
               </tr>
               """
             : $"""
               <tr>
-                <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">Este acesso é o <strong>painel operacional</strong> em <strong>rolvix.com.br</strong> (ativos, agenda, configurações).</td>
+                <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">Este acesso é o <strong>painel operacional</strong> em <strong>{EmailHtml.Encode(panelHost)}</strong> (ativos, agenda, configurações).</td>
               </tr>
               <tr>
                 <td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">O site público para clientes é <strong>{EmailHtml.Encode(portalHost)}</strong> — o login de cliente é outro.</td>
@@ -138,12 +148,27 @@ public static class RolvixEmailLayout
               </tr>
               <tr>
                 <td style="padding:16px 0 0;font-size:12px;line-height:1.55;color:#71717a;word-break:break-all;">
-                  Depois, entre em <strong>https://rolvix.com.br/login</strong> com este e-mail.<br /><br />
+                  Depois, entre em <strong>{EmailHtml.Encode(loginUrl)}</strong> com este e-mail.<br /><br />
                   Ou copie e cole o link no navegador:<br />{safeUrl}
                 </td>
               </tr>
             </table>
             """;
+    }
+
+    private static string FormatGenericPortalHost(string? template)
+    {
+        var resolvedTemplate = string.IsNullOrWhiteSpace(template)
+            ? FrontendBaseUrlResolver.TenantPortalHostTemplateDefault
+            : template.Trim();
+        const string placeholder = "{subdomain}";
+        var placeholderIndex = resolvedTemplate.IndexOf(placeholder, StringComparison.Ordinal);
+
+        return placeholderIndex < 0
+            ? EmailHtml.Encode(resolvedTemplate)
+            : EmailHtml.Encode(resolvedTemplate[..placeholderIndex])
+              + "<em>seu-subdominio</em>"
+              + EmailHtml.Encode(resolvedTemplate[(placeholderIndex + placeholder.Length)..]);
     }
 
     private static string AccessSentence(string companyName, IReadOnlyList<string>? roleNames)

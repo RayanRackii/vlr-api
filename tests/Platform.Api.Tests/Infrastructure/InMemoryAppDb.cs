@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Options;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Tests.Infrastructure;
@@ -10,7 +11,8 @@ internal static class InMemoryAppDb
         ITenantProvider tenantProvider,
         string? databaseName = null,
         bool ignoreInMemoryTransactions = false,
-        IEnumerable<IInterceptor>? interceptors = null)
+        IEnumerable<IInterceptor>? interceptors = null,
+        bool failClosed = false)
     {
         var builder = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(databaseName ?? $"trial-{Guid.NewGuid():N}");
@@ -26,6 +28,9 @@ internal static class InMemoryAppDb
             builder.AddInterceptors(interceptors);
         }
 
-        return new TestAppDbContext(builder.Options, tenantProvider);
+        return new TestAppDbContext(
+            builder.Options,
+            tenantProvider,
+            Options.Create(new TenancyOptions { FailClosed = failClosed }));
     }
 }

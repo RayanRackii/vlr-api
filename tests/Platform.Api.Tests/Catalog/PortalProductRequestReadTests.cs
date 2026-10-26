@@ -1,3 +1,5 @@
+using Platform.Core.Domain.Events;
+using Platform.Api.DomainEvents;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -434,6 +436,8 @@ public sealed class PortalProductRequestReadTests
                     services.AddSingleton(Options.Create(new StorageOptions()));
                     services.AddSingleton<IStorageProvider, DevStorageProvider>();
                     services.AddSingleton<ICatalogNotificationPublisher, NoOpCatalogNotificationPublisher>();
+                    services.AddScoped<IDomainEventDispatcher<CatalogOrderEvent>>(sp =>
+                        sp.GetRequiredService<ICatalogNotificationPublisher>().AsDomainEvents());
                     services.AddSingleton<INotificationOutboxScheduler, NoOpNotificationOutboxScheduler>();
                     services.AddScoped<ICatalogPortalService, CatalogPortalService>();
                     services.AddScoped<CatalogPolicyService>();
