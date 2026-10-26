@@ -10,6 +10,7 @@ using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 using System.Globalization;
+using System.Text.Json;
 using NotificationEntity = Platform.Core.Domain.Entities.Notification;
 
 namespace Platform.Api.Modules.Rentals.Services;
@@ -239,7 +240,8 @@ public sealed class RentalsNotificationPublisher(
         var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
         var pricing = await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken);
         var items = reservation.Items.Where(i => i.TenantId == tenantId).ToList();
-        var itemSummary = string.Join("; ", items.Select(item =>
+        var hours = (decimal)(reservation.EndDateTime - reservation.StartDateTime).TotalHours;
+        var itemDetails = items.Select(item =>
         {
             var metadata = pricing.GetValueOrDefault(item.Id);
             var unit = metadata?.Unit switch
@@ -251,12 +253,19 @@ public sealed class RentalsNotificationPublisher(
                 _ => null,
             };
             var dimensions = ReservationCustomerEmail.FormatDimensions(item.Quantity, metadata?.Days ?? 1);
-            return string.Join(" ", new[]
+            var name = item.RentalAsset?.Asset?.Name ?? "recurso";
+            var summary = string.Join(" ", new[]
             {
-                item.RentalAsset?.Asset?.Name ?? "recurso", unit,
+                name, unit,
                 dimensions.Length > 0 ? $"x {dimensions}" : null,
             }.Where(part => part is not null));
-        }));
+            return new ReservationEmailItem(name, item.Quantity, metadata?.Unit, item.UnitPrice,
+                metadata?.Unit is { } pricingUnit
+                    ? BookingOffer.Total(item.UnitPrice, pricingUnit, hours, item.Quantity)
+                    : null,
+                summary);
+        }).ToArray();
+        var itemSummary = string.Join("; ", itemDetails.Select(item => item.Summary));
         var schedule = ReservationCustomerEmail.FormatSchedule(
             reservation.StartDateTime,
             reservation.EndDateTime,
@@ -284,6 +293,7 @@ public sealed class RentalsNotificationPublisher(
             [ReservationCustomerEmail.StartInstantKey] = reservation.StartDateTime.ToString("O", CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.TotalKey] = ReservationCustomerEmail.FormatMoney(reservation.TotalAmount),
             [ReservationCustomerEmail.ItemsKey] = itemSummary,
+            [ReservationCustomerEmail.ItemDetailsKey] = JsonSerializer.Serialize(itemDetails),
             [ReservationCustomerEmail.QuantityKey] = items.Sum(i => i.Quantity).ToString(CultureInfo.InvariantCulture),
             [ReservationCustomerEmail.DaysKey] = pricing.Values.Select(p => p.Days ?? 1).DefaultIfEmpty(1).Max()
                 .ToString(CultureInfo.InvariantCulture),

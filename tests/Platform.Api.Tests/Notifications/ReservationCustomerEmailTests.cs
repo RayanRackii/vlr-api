@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Modules.Rentals.Dtos;
@@ -18,12 +19,90 @@ namespace Platform.Api.Tests.Notifications;
 public sealed class ReservationCustomerEmailTests
 {
     [Theory]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 1, 10, 1, 1, "Total")]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 10, 24, 2, "Total (2 unidades · 2 dias)")]
-    [InlineData(RentalEventTypes.ReservationCanceled, 1, 10, 25, 2, "Total (2 dias)")]
-    [InlineData(RentalEventTypes.ReservationCanceled, 2, 10, 49, 3, "Total (2 unidades · 3 dias)")]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 16, 42, 3, "Total (2 unidades · 3 dias)")]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 12, 48, 3, "Total (2 unidades · 3 dias)")]
+    [InlineData(null)]
+    [InlineData("[{\"Name\":\"Sala 2\",\"Quantity\":2}]")]
+    [InlineData("invalid json")]
+    public void Old_or_incomplete_payload_preserves_item_summary(string? details)
+    {
+        var payload = Payload(total: "R$ 100,00", deposit: null, url: null);
+        payload[ReservationCustomerEmail.ItemsKey] = "Sala 2 /hora x 2 unidades";
+        if (details is not null)
+            payload[ReservationCustomerEmail.ItemDetailsKey] = details;
+
+        var rendered = ReservationCustomerEmail.Render(RentalEventTypes.ReservationConfirmed, payload);
+
+        Assert.Contains("Itens: Sala 2 /hora x 2 unidades", rendered.TextBody, StringComparison.Ordinal);
+        Assert.Contains("Sala 2 /hora x 2 unidades", rendered.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(" = ", rendered.TextBody, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("pt-BR", PricingUnit.Hour, "por hora", "Total da reserva cancelada", "Total da reserva")]
+    [InlineData("pt-BR", PricingUnit.Slot, "por horário", "Total da reserva cancelada", "Total da reserva")]
+    [InlineData("pt-BR", PricingUnit.Day, "por dia", "Total da reserva cancelada", "Total da reserva")]
+    [InlineData("pt-BR", PricingUnit.Fixed, "fixo", "Total da reserva cancelada", "Total da reserva")]
+    [InlineData("en", PricingUnit.Hour, "per hour", "Canceled reservation total", "Reservation total")]
+    [InlineData("en", PricingUnit.Slot, "per slot", "Canceled reservation total", "Reservation total")]
+    [InlineData("en", PricingUnit.Day, "per day", "Canceled reservation total", "Reservation total")]
+    [InlineData("en", PricingUnit.Fixed, "fixed", "Canceled reservation total", "Reservation total")]
+    [InlineData("es", PricingUnit.Hour, "por hora", "Total de la reserva cancelada", "Total de la reserva")]
+    [InlineData("es", PricingUnit.Slot, "por horario", "Total de la reserva cancelada", "Total de la reserva")]
+    [InlineData("es", PricingUnit.Day, "por día", "Total de la reserva cancelada", "Total de la reserva")]
+    [InlineData("es", PricingUnit.Fixed, "fijo", "Total de la reserva cancelada", "Total de la reserva")]
+    public void Item_prices_and_reservation_totals_use_localized_labels_without_refund_claims(
+        string language, PricingUnit unit, string label, string canceledTotal, string activeTotal)
+    {
+        var payload = Payload(total: "R$ 100,00", deposit: null, url: null);
+        payload[ReservationCustomerEmail.LanguageKey] = language;
+        payload[ReservationCustomerEmail.ItemDetailsKey] = JsonSerializer.Serialize(new[]
+        {
+            new { Name = "Kit <Norte>", Quantity = 2, PricingUnit = unit.ToString(), UnitPrice = 100m, LineTotal = 100m },
+        });
+
+        foreach (var eventType in new[] { RentalEventTypes.ReservationConfirmed,
+                     RentalEventTypes.ReservationCanceled, RentalEventTypes.ReservationReminder })
+        {
+            var rendered = ReservationCustomerEmail.Render(eventType, payload);
+            var quantity = unit == PricingUnit.Fixed ? "" : "2 x ";
+            var expected = $"Kit <Norte>: {quantity}{ReservationCustomerEmail.FormatMoney(100m)} {label} = {ReservationCustomerEmail.FormatMoney(100m)}";
+            Assert.Contains(expected, rendered.TextBody, StringComparison.Ordinal);
+            Assert.Contains(expected, System.Net.WebUtility.HtmlDecode(rendered.HtmlBody), StringComparison.Ordinal);
+            Assert.DoesNotContain("<Norte>", rendered.HtmlBody, StringComparison.Ordinal);
+            var totalLabel = eventType == RentalEventTypes.ReservationCanceled ? canceledTotal : activeTotal;
+            Assert.Contains(totalLabel + ":", rendered.TextBody, StringComparison.Ordinal);
+            Assert.Contains(totalLabel + ":", rendered.HtmlBody, StringComparison.Ordinal);
+            Assert.DoesNotContain("refund", rendered.TextBody, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("reembolso", rendered.TextBody, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task Published_hour_email_shows_quantity_unit_price_and_quoted_line_total()
+    {
+        await using var seeded = await PublisherSeed.CreateAsync(localWindowCovers: true);
+        var item = seeded.Reservation.Items.Single(i => i.TenantId == seeded.TenantId);
+        item.Quantity = 2;
+        seeded.Reservation.EndDateTime = seeded.Reservation.StartDateTime.AddHours(3);
+        var publisher = new RentalsNotificationPublisher(
+            seeded.Db, seeded.TenantProvider, NullLogger<RentalsNotificationPublisher>.Instance);
+
+        await publisher.PublishReservationEventAsync(seeded.Reservation, RentalEventTypes.ReservationPendingDeposit);
+        await seeded.Db.SaveChangesAsync();
+        var notification = await seeded.Db.Notifications.SingleAsync();
+        var rendered = ReservationCustomerEmail.Render(notification.EventType, notification.Payload);
+
+        var expected = $"Sala 2: 2 x {ReservationCustomerEmail.FormatMoney(100m)} por hora = {ReservationCustomerEmail.FormatMoney(600m)}";
+        Assert.True(rendered.TextBody.Contains(expected, StringComparison.Ordinal), rendered.TextBody);
+        Assert.Contains(expected, System.Net.WebUtility.HtmlDecode(rendered.HtmlBody), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 1, 10, 1, 1, "Total da reserva")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 10, 24, 2, "Total da reserva (2 unidades · 2 dias)")]
+    [InlineData(RentalEventTypes.ReservationCanceled, 1, 10, 25, 2, "Total da reserva cancelada (2 dias)")]
+    [InlineData(RentalEventTypes.ReservationCanceled, 2, 10, 49, 3, "Total da reserva cancelada (2 unidades · 3 dias)")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 16, 42, 3, "Total da reserva (2 unidades · 3 dias)")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 12, 48, 3, "Total da reserva (2 unidades · 3 dias)")]
     public async Task Published_day_email_counts_inclusive_civil_days_and_excludes_foreign_items(
         string eventType, int quantity, int startHour, int hours, int days, string expectedLabel)
     {
@@ -54,7 +133,8 @@ public sealed class ReservationCustomerEmailTests
         var rendered = ReservationCustomerEmail.Render(eventType, notification.Payload);
         Assert.Contains(expectedLabel + ":", rendered.TextBody, StringComparison.Ordinal);
         Assert.Contains(expectedLabel + ":", rendered.HtmlBody, StringComparison.Ordinal);
-        Assert.Contains("Sala 2 /dia", rendered.TextBody, StringComparison.Ordinal);
+        Assert.Contains("Sala 2:", rendered.TextBody, StringComparison.Ordinal);
+        Assert.Contains("por dia =", rendered.TextBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Quadra Alheia", rendered.TextBody, StringComparison.Ordinal);
     }
 
@@ -92,16 +172,33 @@ public sealed class ReservationCustomerEmailTests
     }
 
     [Theory]
-    [InlineData(PricingUnit.Hour, "/hora")]
-    [InlineData(PricingUnit.Slot, "/horário")]
-    [InlineData(PricingUnit.Day, "/dia")]
-    [InlineData(PricingUnit.Fixed, "fixo")]
-    public async Task Publisher_adds_item_pricing_wording_and_quantity(PricingUnit unit, string wording)
+    [InlineData(PricingUnit.Hour, 3, "por hora", 600)]
+    [InlineData(PricingUnit.Slot, 3, "por horário", 200)]
+    [InlineData(PricingUnit.Day, 3, "por dia", 200)]
+    [InlineData(PricingUnit.Day, 24, "por dia", 200)]
+    [InlineData(PricingUnit.Day, 25, "por dia", 400)]
+    [InlineData(PricingUnit.Day, 49, "por dia", 600)]
+    [InlineData(PricingUnit.Fixed, 3, "fixo", 100)]
+    [InlineData(PricingUnit.Fixed, 49, "fixo", 100)]
+    public async Task Publisher_adds_item_prices_and_quoted_totals_for_each_unit(
+        PricingUnit unit, int hours, string wording, int expectedTotal)
     {
         await using var seeded = await PublisherSeed.CreateAsync(localWindowCovers: true);
-        (await seeded.Db.RentalPricings.SingleAsync()).PricingUnit = unit;
+        var rule = await seeded.Db.RentalPricings.SingleAsync();
+        rule.PricingUnit = unit;
+        rule.StartTime = TimeOnly.MinValue;
+        rule.EndTime = new TimeOnly(23, 59, 59);
+        foreach (var day in Enum.GetValues<DayOfWeek>().Where(d => d != rule.DayOfWeek))
+            seeded.Db.RentalPricings.Add(new RentalPricing
+            {
+                TenantId = seeded.TenantId, RentalAssetId = rule.RentalAssetId,
+                DayOfWeek = day, StartTime = rule.StartTime, EndTime = rule.EndTime,
+                PricingUnit = unit, PricePerHour = 999m,
+                RequiresDeposit = false, DepositPercentage = 0,
+            });
         (await seeded.Db.TenantNotificationChannelConfigs.SingleAsync()).EventType = RentalEventTypes.ReservationConfirmed;
         seeded.Reservation.Items.Single(i => i.TenantId == seeded.TenantId).Quantity = 2;
+        seeded.Reservation.EndDateTime = seeded.Reservation.StartDateTime.AddHours(hours);
         await seeded.Db.SaveChangesAsync();
         var publisher = new RentalsNotificationPublisher(
             seeded.Db, seeded.TenantProvider, NullLogger<RentalsNotificationPublisher>.Instance);
@@ -110,19 +207,26 @@ public sealed class ReservationCustomerEmailTests
         await seeded.Db.SaveChangesAsync();
 
         var notification = await seeded.Db.Notifications.SingleAsync();
-        var rendered = ReservationCustomerEmail.Render(notification.EventType, notification.Payload);
-        Assert.Contains($"Sala 2 {wording} x 2 unidades", rendered.TextBody, StringComparison.Ordinal);
-        Assert.Contains("Total (2 unidades):", rendered.TextBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("Quadra Alheia", rendered.TextBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("1 dia", rendered.TextBody, StringComparison.Ordinal);
+        foreach (var eventType in new[] { RentalEventTypes.ReservationConfirmed,
+                     RentalEventTypes.ReservationCanceled, RentalEventTypes.ReservationReminder })
+        {
+            var rendered = ReservationCustomerEmail.Render(eventType, notification.Payload);
+            var quantity = unit == PricingUnit.Fixed ? "" : "2 x ";
+            var expected = $"Sala 2: {quantity}{ReservationCustomerEmail.FormatMoney(100m)} {wording} = {ReservationCustomerEmail.FormatMoney(expectedTotal)}";
+            Assert.Contains(expected, rendered.TextBody, StringComparison.Ordinal);
+            Assert.Contains(expected, System.Net.WebUtility.HtmlDecode(rendered.HtmlBody), StringComparison.Ordinal);
+            Assert.DoesNotContain("Quadra Alheia", rendered.TextBody, StringComparison.Ordinal);
+            if (unit == PricingUnit.Fixed)
+                Assert.DoesNotContain("2 x", rendered.TextBody, StringComparison.Ordinal);
+        }
     }
 
     [Theory]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 3, "Total (2 unidades · 3 dias)")]
-    [InlineData(RentalEventTypes.ReservationCanceled, 2, 3, "Total (2 unidades · 3 dias)")]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 1, "Total (2 unidades)")]
-    [InlineData(RentalEventTypes.ReservationCanceled, 1, 3, "Total (3 dias)")]
-    [InlineData(RentalEventTypes.ReservationConfirmed, 1, 1, "Total")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 3, "Total da reserva (2 unidades · 3 dias)")]
+    [InlineData(RentalEventTypes.ReservationCanceled, 2, 3, "Total da reserva cancelada (2 unidades · 3 dias)")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 2, 1, "Total da reserva (2 unidades)")]
+    [InlineData(RentalEventTypes.ReservationCanceled, 1, 3, "Total da reserva cancelada (3 dias)")]
+    [InlineData(RentalEventTypes.ReservationConfirmed, 1, 1, "Total da reserva")]
     public void Email_labels_total_with_only_multiple_units_and_days(
         string eventType, int quantity, int days, string expected)
     {
@@ -199,7 +303,7 @@ public sealed class ReservationCustomerEmailTests
         Assert.Contains("Estúdio Norte", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("01/09/2026", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("10:00–11:00", rendered.HtmlBody, StringComparison.Ordinal);
-        Assert.Contains("Total:", rendered.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Total da reserva:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains(ReservationCustomerEmail.FormatMoney(80m)!, rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Ver reserva", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Equal(1, rendered.HtmlBody.Split(url, StringSplitOptions.None).Length - 1);
@@ -240,7 +344,7 @@ public sealed class ReservationCustomerEmailTests
         Assert.Contains("está aguardando depósito", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Data:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("Horário:", rendered.HtmlBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("Total:", rendered.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Total da reserva:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Depósito:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Ver reserva", rendered.HtmlBody, StringComparison.Ordinal);
     }
@@ -624,7 +728,7 @@ public sealed class ReservationCustomerEmailTests
         var rendered = ReservationCustomerEmail.Render(
             RentalEventTypes.ReservationPendingDeposit,
             notification.Payload);
-        Assert.DoesNotContain("Total:", rendered.HtmlBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Total da reserva:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.DoesNotContain("Depósito:", rendered.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("10:00–11:00", rendered.HtmlBody, StringComparison.Ordinal);
     }
