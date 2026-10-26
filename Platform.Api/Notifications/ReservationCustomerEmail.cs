@@ -224,11 +224,31 @@ public static class ReservationCustomerEmail
             };
             var price = item.UnitPrice.Value.ToString("C", Portuguese);
             var total = item.LineTotal.Value.ToString("C", Portuguese);
-            return unit == PricingUnit.Fixed
-                ? $"{item.Name}: {price} {label} = {total}"
-                : $"{item.Name}: {item.Quantity} x {price} {label} = {total}";
+            if (unit == PricingUnit.Fixed)
+                return $"{item.Name}: {price} {label} = {total}";
+            var line = $"{item.Name}: {item.Quantity} x {price} {label} = {total}";
+            return unit == PricingUnit.Hour && FormatDuration(item.Hours) is { } duration
+                ? $"{line} ({duration})"
+                : line;
         }).ToArray();
         return summaries.Any(string.IsNullOrWhiteSpace) ? legacy : string.Join("; ", summaries);
+    }
+
+    /// <summary>Booked length for hourly items, e.g. <c>30 min</c>, <c>2 h</c>, <c>1 h 30 min</c>.</summary>
+    internal static string? FormatDuration(decimal? hours)
+    {
+        if (hours is not > 0m)
+            return null;
+        var minutes = (int)Math.Round(hours.Value * 60m, MidpointRounding.AwayFromZero);
+        if (minutes <= 0)
+            return null;
+        var (h, m) = (minutes / 60, minutes % 60);
+        return (h, m) switch
+        {
+            (0, _) => $"{m} min",
+            (_, 0) => $"{h} h",
+            _ => $"{h} h {m} min",
+        };
     }
 
     private static int Count(IReadOnlyDictionary<string, string?> payload, string key) =>
@@ -316,7 +336,8 @@ internal sealed record ReservationEmailItem(
     PricingUnit? PricingUnit,
     decimal? UnitPrice,
     decimal? LineTotal,
-    string? Summary);
+    string? Summary,
+    decimal? Hours = null);
 
 public sealed record ReservationEmailContent(
     string Subject,

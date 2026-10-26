@@ -263,7 +263,8 @@ public sealed class RentalsNotificationPublisher(
                 metadata?.Unit is { } pricingUnit
                     ? BookingOffer.Total(item.UnitPrice, pricingUnit, hours, item.Quantity)
                     : null,
-                summary);
+                summary,
+                hours > 0m ? hours : null);
         }).ToArray();
         var itemSummary = string.Join("; ", itemDetails.Select(item => item.Summary));
         var schedule = ReservationCustomerEmail.FormatSchedule(
@@ -275,7 +276,8 @@ public sealed class RentalsNotificationPublisher(
             : CustomerPortalLinks.ReservationAgenda(
                 FrontendBaseUrlResolver.Resolve(configuration, environment),
                 tenant?.Subdomain,
-                reservation.Id);
+                reservation.Id,
+                FrontendBaseUrlResolver.ResolveTenantPortalHostTemplate(configuration));
 
         return new Dictionary<string, string?>(StringComparer.Ordinal)
         {
