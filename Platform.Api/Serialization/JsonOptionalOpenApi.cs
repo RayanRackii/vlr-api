@@ -26,6 +26,10 @@ public static class JsonOptionalOpenApi
         {
             Type = JsonSchemaType.Boolean | JsonSchemaType.Null,
         });
+        options.MapType<JsonOptionalString>(() => new OpenApiSchema
+        {
+            Type = JsonSchemaType.String | JsonSchemaType.Null,
+        });
         options.SchemaFilter<JsonOptionalIntSchemaFilter>();
         options.SchemaFilter<JsonOptionalPropertySchemaFilter>();
     }
@@ -92,6 +96,13 @@ public static class JsonOptionalOpenApi
                     replacement = new OpenApiSchema
                     {
                         Type = JsonSchemaType.Boolean | JsonSchemaType.Null,
+                    };
+                }
+                else if (property.PropertyType == typeof(JsonOptionalString))
+                {
+                    replacement = new OpenApiSchema
+                    {
+                        Type = JsonSchemaType.String | JsonSchemaType.Null,
                     };
                 }
                 else

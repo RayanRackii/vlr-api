@@ -4,11 +4,17 @@ namespace Platform.Api.Modules.Rentals.Services;
 
 internal static class OpenHoursRules
 {
+    internal static int DailyWindowMinutes(TimeOnly open, TimeOnly close)
+    {
+        var minutes = (int)(close - open).TotalMinutes;
+        return minutes <= 0 ? minutes + 1440 : minutes;
+    }
+
     internal static IReadOnlyList<int> ParseDurations(string? value)
     {
         var durations = (value ?? "").Split(',')
             .Select(s => int.TryParse(s.Trim(), out var minutes) ? minutes : 0)
-            .Where(minutes => minutes is > 0 and < 1440).Distinct().Order().ToList();
+            .Where(minutes => minutes is > 0 and <= 1440).Distinct().Order().ToList();
         return durations.Count == 0 ? [60] : durations;
     }
 

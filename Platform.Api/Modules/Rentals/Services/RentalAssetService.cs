@@ -84,9 +84,8 @@ public sealed class RentalAssetService(
             rental.SchedulePolicy = request.SchedulePolicy;
             rental.OpenTime = request.OpenTime;
             rental.CloseTime = request.CloseTime;
-            rental.AllowedDurationMinutes = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
-                ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-                : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
+            rental.AllowedDurationMinutes = NormalizeAllowedDurations(request, rental.AllowedDurationMinutes,
+                await SlotGranularityMinutesAsync(tenantId, rental.Id, request.SchedulePolicy, cancellationToken));
             rental.Touch();
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -147,10 +146,6 @@ public sealed class RentalAssetService(
                 throw new KeyNotFoundException("One or more rentables were not found.");
             }
 
-            var allowed = string.IsNullOrWhiteSpace(request.AllowedDurationMinutes)
-                ? (request.SchedulePolicy == SchedulePolicy.OpenHours ? "60" : null)
-                : RentalAllowedDurations.Normalize(request.AllowedDurationMinutes);
-
             var cutoff = request.CancelCutoffHours.IsSpecified
                 ? PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours.Value) : null;
             foreach (var rental in rentals)
@@ -160,7 +155,8 @@ public sealed class RentalAssetService(
                 rental.SchedulePolicy = request.SchedulePolicy;
                 rental.OpenTime = request.OpenTime;
                 rental.CloseTime = request.CloseTime;
-                rental.AllowedDurationMinutes = allowed;
+                rental.AllowedDurationMinutes = NormalizeAllowedDurations(request, rental.AllowedDurationMinutes,
+                await SlotGranularityMinutesAsync(tenantId, rental.Id, request.SchedulePolicy, cancellationToken));
                 rental.Touch();
             }
 
@@ -239,6 +235,72 @@ public sealed class RentalAssetService(
         {
             throw new ArgumentException("CloseTime must be after OpenTime.");
         }
+    }
+
+    private static string? NormalizeAllowedDurations(
+        UpdateRentalSchedulePolicyRequestDto request,
+        string? storedAllowedDurationMinutes,
+        int slotMinutes)
+    {
+        var value = request.AllowedDurationMinutes.IsSpecified
+            ? request.AllowedDurationMinutes.Value
+            : storedAllowedDurationMinutes;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var openingWindowMinutes = request.SchedulePolicy == SchedulePolicy.OpenHours
+            ? (int?)OpenHoursRules.DailyWindowMinutes(request.OpenTime!.Value, request.CloseTime!.Value)
+            : null;
+        return RentalAllowedDurations.Normalize(value, slotMinutes, openingWindowMinutes);
+    }
+
+    private static string? NormalizeAllowedDurations(
+        BulkUpdateRentalSchedulePolicyRequestDto request,
+        string? storedAllowedDurationMinutes,
+        int slotMinutes)
+    {
+        var value = request.AllowedDurationMinutes.IsSpecified
+            ? request.AllowedDurationMinutes.Value
+            : storedAllowedDurationMinutes;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var openingWindowMinutes = request.SchedulePolicy == SchedulePolicy.OpenHours
+            ? (int?)OpenHoursRules.DailyWindowMinutes(request.OpenTime!.Value, request.CloseTime!.Value)
+            : null;
+        return RentalAllowedDurations.Normalize(value, slotMinutes, openingWindowMinutes);
+    }
+
+    /// <summary>
+    /// Booking granularity for duration validation: SlotGrid resources use the GCD of their
+    /// active weekly template window lengths; OpenHours (or no templates) has no slot multiple (1).
+    /// </summary>
+    private async Task<int> SlotGranularityMinutesAsync(
+        Guid tenantId, Guid rentalAssetId, SchedulePolicy policy, CancellationToken cancellationToken)
+    {
+        if (policy != SchedulePolicy.SlotGrid)
+        {
+            return 1;
+        }
+
+        var windows = await dbContext.ScheduleTemplates.AsNoTracking()
+            .Where(t => t.TenantId == tenantId && t.RentalAssetId == rentalAssetId && t.IsActive)
+            .Select(t => new { t.StartTime, t.EndTime })
+            .ToListAsync(cancellationToken);
+        var gcd = 0;
+        foreach (var w in windows)
+        {
+            var minutes = OpenHoursRules.DailyWindowMinutes(w.StartTime, w.EndTime);
+            gcd = Gcd(gcd, minutes);
+        }
+
+        return gcd > 0 ? gcd : 1;
+
+        static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
     }
 
     private Guid EnsureTenantContext()
