@@ -87,8 +87,11 @@ public sealed class AssetRegistry(
         var tenantId = EnsureTenantContext();
 
         var cutoff = ValidateCutoff(request.CancelCutoffHours);
+        // One transaction for the asset write and the cutoff write (AssetService joins an ambient one).
+        await using var transaction = await BeginCutoffTransactionAsync(request.CancelCutoffHours, cancellationToken);
         var created = await assetService.CreateRentableAsync(request, cancellationToken);
         await ApplyCancelCutoffAsync(created.Id, request.CancelCutoffHours, cutoff, cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return await LoadRentableAssetAsync(created.Id, cancellationToken);
     }
 
@@ -108,10 +111,18 @@ public sealed class AssetRegistry(
             ?? throw new KeyNotFoundException("Rentable was not found.");
 
         var cutoff = ValidateCutoff(request.CancelCutoffHours);
+        await using var transaction = await BeginCutoffTransactionAsync(request.CancelCutoffHours, cancellationToken);
         await assetService.UpdateRentableAsync(rental.AssetId, request, cancellationToken);
         await ApplyCancelCutoffAsync(rental.AssetId, request.CancelCutoffHours, cutoff, cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return await LoadRentableAssetAsync(rental.AssetId, cancellationToken);
     }
+
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginCutoffTransactionAsync(
+        JsonOptional<int> requested, CancellationToken cancellationToken) =>
+        requested.IsSpecified && dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
     private static int? ValidateCutoff(JsonOptional<int> requested) =>
         !requested.IsSpecified ? null
