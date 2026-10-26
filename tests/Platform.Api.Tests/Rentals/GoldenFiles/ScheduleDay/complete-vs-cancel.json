@@ -93,7 +93,9 @@
           "source": "DailyOverride",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "slotThenCompleted"
         },
         {
           "id": "<slot:booked 09-10>",
@@ -114,7 +116,9 @@
           "source": "DailyOverride",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "slotThenCanceled"
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -135,7 +139,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "derivedThenCompleted"
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -156,7 +162,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "derivedThenCanceled"
         }
       ]
     }
@@ -261,7 +269,9 @@
           "source": "DailyOverride",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -282,7 +292,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         }
       ]
     },
@@ -308,7 +320,9 @@
           "source": "DailyOverride",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "slotThenCompleted"
         },
         {
           "id": "<slot:booked 09-10>",
@@ -329,7 +343,9 @@
           "source": "DailyOverride",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -350,7 +366,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": 1,
+          "customerName": "derivedThenCompleted"
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -371,7 +389,9 @@
           "source": "WeeklyDefault",
           "sourceTemplateId": null,
           "schedulePolicy": "OpenHours",
-          "supportsEntireRecurrence": false
+          "supportsEntireRecurrence": false,
+          "quantity": null,
+          "customerName": null
         }
       ]
     }

@@ -5127,6 +5127,10 @@
             "nullable": true,
             "type": "string"
           },
+          "customerName": {
+            "nullable": true,
+            "type": "string"
+          },
           "date": {
             "format": "date",
             "type": "string"
@@ -5164,6 +5168,11 @@
           "occupancyKindLabel": {
             "nullable": true,
             "type": "string"
+          },
+          "quantity": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "rentalAssetId": {
             "format": "uuid",

@@ -35,6 +35,27 @@ public sealed class DerivedBookedScheduleRowsTests
     }
 
     [Fact]
+    public async Task Staff_day_booked_cell_carries_item_quantity_and_customer_name()
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        h.Primary.TotalQuantity = 2;
+        h.Primary.OpenTime = new TimeOnly(8, 0);
+        h.Primary.CloseTime = new TimeOnly(10, 0);
+        var reservation = await h.ReserveAsync(h.Primary, 2, new(8, 0), new(9, 0));
+
+        var schedule = CreateSchedule(h);
+        var staffDay = await schedule.GetDayAsync(AvailabilityHarness.Day, h.Primary.Id, customerFacing: false, default);
+        var booked = Assert.Single(staffDay.Slots, slot => slot.Status == SlotStatus.Booked);
+
+        Assert.Equal(reservation.Id, booked.ReservationId);
+        Assert.Equal(2, booked.Quantity);
+        Assert.Equal(reservation.CustomerName, booked.CustomerName);
+        var customerSlots = (await schedule.GetDayAsync(
+            AvailabilityHarness.Day, h.Primary.Id, customerFacing: true, default)).Slots;
+        Assert.All(customerSlots, slot => Assert.Null(slot.CustomerName));
+    }
+
+    [Fact]
     public async Task OpenHours_fully_booked_goods_include_each_booking_without_available_window()
     {
         await using var h = await AvailabilityHarness.CreateAsync();
