@@ -1498,6 +1498,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("provider_message_id");
 
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
                     b.Property<string>("RecipientEmail")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
@@ -1550,6 +1554,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "Status", "NextAttemptAt")
                         .HasDatabaseName("ix_notification_deliveries_tenant_id_status_next_attempt_at");
+
+                    b.HasIndex("TenantId", "RecipientId", "Channel", "ReadAt", "CreatedAt")
+                        .IsDescending(false, false, false, false, true)
+                        .HasDatabaseName("ix_notification_deliveries_inapp_inbox")
+                        .HasFilter("channel = 'InApp'");
 
                     b.ToTable("notification_deliveries", "core");
                 });

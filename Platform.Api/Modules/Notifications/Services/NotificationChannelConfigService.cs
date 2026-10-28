@@ -3,6 +3,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Modules.Notifications.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Notifications;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;

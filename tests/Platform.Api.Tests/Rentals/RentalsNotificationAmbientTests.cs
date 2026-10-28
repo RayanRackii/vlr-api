@@ -424,6 +424,92 @@ public sealed class RentalsNotificationAmbientTests
         Assert.DoesNotContain(configs, config => config.TenantId != tenantA.Id && config.TenantId != tenantB.Id);
     }
 
+    [Fact]
+    public async Task Reservation_event_notifies_staff_with_reservations_read_in_app()
+    {
+        var tenantProvider = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(tenantProvider);
+        var tenant = new Tenant("Staff Rentals", "36363636000191");
+        db.Tenants.Add(tenant);
+        var staff = new User(tenant.Id, Guid.NewGuid().ToString("N"), "Ops", "ops@club.test");
+        var noPerm = new User(tenant.Id, Guid.NewGuid().ToString("N"), "Front", "front@club.test");
+        db.Users.AddRange(staff, noPerm);
+        db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+        {
+            TenantId = tenant.Id,
+            EventType = RentalEventTypes.ReservationConfirmed,
+            Channel = NotificationChannel.InApp,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var permissions = new Platform.Api.Tests.Catalog.FakePermissionResolver();
+        permissions.Grant(staff.Id, Permissions.Rentals.ReservationsRead);
+
+        tenantProvider.TenantId = tenant.Id;
+        using var loggerFactory = LoggerFactory.Create(_ => { });
+        var publisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            loggerFactory.CreateLogger<RentalsNotificationPublisher>(),
+            configuration: null,
+            environment: null,
+            staffRecipients: new Platform.Api.Notifications.StaffRecipientResolver(db, permissions));
+        var reservation = ReservationFor(tenant.Id);
+
+        await publisher.PublishReservationEventAsync(reservation, RentalEventTypes.ReservationConfirmed);
+        await db.SaveChangesAsync();
+
+        var staffDeliveries = db.NotificationDeliveries
+            .Where(d => d.RecipientKind == NotificationRecipientKind.B2BUser)
+            .ToList();
+        var delivery = Assert.Single(staffDeliveries);
+        Assert.Equal(staff.Id, delivery.RecipientId);
+        Assert.Equal(NotificationChannel.InApp, delivery.Channel);
+        Assert.Equal(NotificationDeliveryStatus.Delivered, delivery.Status);
+        Assert.Null(delivery.ReadAt);
+    }
+
+    [Fact]
+    public async Task Reservation_reminder_does_not_notify_staff()
+    {
+        var tenantProvider = new FakeTenantProvider();
+        await using var db = InMemoryAppDb.Create(tenantProvider);
+        var tenant = new Tenant("No Staff Reminder", "37373737000191");
+        db.Tenants.Add(tenant);
+        var staff = new User(tenant.Id, Guid.NewGuid().ToString("N"), "Ops", "ops@club.test");
+        db.Users.Add(staff);
+        db.TenantNotificationChannelConfigs.Add(new TenantNotificationChannelConfig
+        {
+            TenantId = tenant.Id,
+            EventType = RentalEventTypes.ReservationReminder,
+            Channel = NotificationChannel.InApp,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var permissions = new Platform.Api.Tests.Catalog.FakePermissionResolver();
+        permissions.Grant(staff.Id, Permissions.Rentals.ReservationsRead);
+
+        tenantProvider.TenantId = tenant.Id;
+        using var loggerFactory = LoggerFactory.Create(_ => { });
+        var publisher = new RentalsNotificationPublisher(
+            db,
+            tenantProvider,
+            loggerFactory.CreateLogger<RentalsNotificationPublisher>(),
+            configuration: null,
+            environment: null,
+            staffRecipients: new Platform.Api.Notifications.StaffRecipientResolver(db, permissions));
+        var reservation = ReservationFor(tenant.Id);
+
+        await publisher.PublishReservationEventAsync(reservation, RentalEventTypes.ReservationReminder);
+        await db.SaveChangesAsync();
+
+        Assert.DoesNotContain(
+            db.NotificationDeliveries.ToList(),
+            d => d.RecipientKind == NotificationRecipientKind.B2BUser);
+    }
+
     private static readonly NotificationChannel[] DefaultChannels =
     [
         NotificationChannel.InApp,

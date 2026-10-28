@@ -312,16 +312,52 @@ public sealed class CatalogPortalService(
             throw new InvalidCatalogOrderTransitionException("O tenant não permite cancelamento de pedidos pelo cliente.");
         order.Cancel(CatalogActorType.Customer, reason: null, customerId, policy.OrderCancelableUpToStatus);
 
+        await domainEvents.EnsureReadyAsync(cancellationToken);
+
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
         try
         {
+            // Customer cancelled their own order, so there is no customer-facing notice; staff get an
+            // in-app heads-up via the dedicated event.
+            var queued = await domainEvents.DispatchAsync(
+                new CatalogOrderEvent(order, CatalogEventTypes.OrderCancelledByCustomer),
+                cancellationToken);
+
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            foreach (var deliveryId in queued)
+            {
+                outboxScheduler.Schedule(deliveryId);
+            }
+
+            return CatalogOrderService.MapOrder(order);
         }
         catch (DbUpdateConcurrencyException)
         {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
             throw new InvalidCatalogOrderTransitionException("The order was modified by another user.");
         }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
 
-        return CatalogOrderService.MapOrder(order);
+            throw;
+        }
     }
 
     public async Task<ProductRequestResponse> CancelProductRequestAsync(

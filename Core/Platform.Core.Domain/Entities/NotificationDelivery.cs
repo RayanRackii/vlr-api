@@ -21,6 +21,12 @@ public class NotificationDelivery : Entity, ITenantScoped
 
     public string? RecipientPhone { get; set; }
 
+    /// <summary>
+    /// When an InApp delivery was read by its recipient. Null means unread. Only meaningful for
+    /// <see cref="NotificationChannel.InApp"/> deliveries; external channels leave it null.
+    /// </summary>
+    public DateTimeOffset? ReadAt { get; set; }
+
     public NotificationDeliveryStatus Status { get; set; } = NotificationDeliveryStatus.Queued;
 
     public string? ProviderMessageId { get; set; }
@@ -68,6 +74,17 @@ public class NotificationDelivery : Entity, ITenantScoped
         ProviderMessageId = providerMessageId;
         ErrorMessage = null;
         NextAttemptAt = null;
+        Touch();
+    }
+
+    public void MarkRead(DateTimeOffset readAt)
+    {
+        if (ReadAt is not null)
+        {
+            return;
+        }
+
+        ReadAt = readAt;
         Touch();
     }
 

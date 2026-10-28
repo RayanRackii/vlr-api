@@ -1273,13 +1273,13 @@
           "isAvailable": {
             "type": "boolean"
           },
-          "pricingUnit": {
-            "$ref": "#/components/schemas/PricingUnit"
-          },
           "pricedUnits": {
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "pricingUnit": {
+            "$ref": "#/components/schemas/PricingUnit"
           },
           "reason": {
             "nullable": true,
@@ -3025,6 +3025,141 @@
           },
           "updatedAt": {
             "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MarkNotificationsReadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "eventType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MarkNotificationsReadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "updated": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MeNotificationGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "eventType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "latestAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "module": {
+            "nullable": true,
+            "type": "string"
+          },
+          "targetRoute": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MeNotificationItem": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "aggregateType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "eventType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "module": {
+            "nullable": true,
+            "type": "string"
+          },
+          "readAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "targetRoute": {
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MeNotificationSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/MeNotificationGroup"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "unreadTotal": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MeNotificationsListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MeNotificationItem"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "nextCursor": {
             "nullable": true,
             "type": "string"
           }
@@ -12534,6 +12669,136 @@
         ]
       }
     },
+    "/api/me/notifications": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unreadOnly",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeNotificationsListResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeNotificationsListResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeNotificationsListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "MeNotifications"
+        ]
+      }
+    },
+    "/api/me/notifications/read": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "MeNotifications"
+        ]
+      }
+    },
+    "/api/me/notifications/summary": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeNotificationSummaryResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeNotificationSummaryResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeNotificationSummaryResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "MeNotifications"
+        ]
+      }
+    },
     "/api/module-menu-items": {
       "get": {
         "responses": {
@@ -17612,6 +17877,9 @@
     },
     {
       "name": "MaintenancePlans"
+    },
+    {
+      "name": "MeNotifications"
     },
     {
       "name": "ModuleMenuItems"
