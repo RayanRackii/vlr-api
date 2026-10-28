@@ -22,6 +22,7 @@ public static class NotificationsServiceCollectionExtensions
         services.AddHostedService<NotificationDispatcherService>();
         services.AddScoped<INotificationOutboxProcessor, NotificationOutboxProcessor>();
         services.AddScoped<INotificationOutboxScheduler, HangfireNotificationOutboxScheduler>();
+        services.AddScoped<IStaffRecipientResolver, StaffRecipientResolver>();
 
         services.Configure<NotificationsOptions>(configuration.GetSection(NotificationsOptions.SectionName));
         services.Configure<ResendOptions>(configuration.GetSection(ResendOptions.SectionName));

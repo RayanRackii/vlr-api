@@ -25,12 +25,28 @@ public interface ICatalogNotificationPublisher : IDomainEventHandler<CatalogOrde
         CancellationToken cancellationToken = default);
 }
 
-public sealed class CatalogNotificationPublisher(
-    AppDbContext dbContext,
-    ITenantProvider tenantProvider,
-    IPermissionResolver permissionResolver,
-    ILogger<CatalogNotificationPublisher> logger) : ICatalogNotificationPublisher
+public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
 {
+    private readonly AppDbContext dbContext;
+    private readonly ITenantProvider tenantProvider;
+    private readonly ILogger<CatalogNotificationPublisher> logger;
+    private readonly IStaffRecipientResolver staffRecipients;
+
+    public CatalogNotificationPublisher(
+        AppDbContext dbContext,
+        ITenantProvider tenantProvider,
+        IPermissionResolver permissionResolver,
+        ILogger<CatalogNotificationPublisher> logger,
+        IStaffRecipientResolver? staffRecipients = null)
+    {
+        this.dbContext = dbContext;
+        this.tenantProvider = tenantProvider;
+        this.logger = logger;
+        // Fall back to the shared resolver built on the same permission resolver so tests that
+        // construct this publisher directly keep working without wiring extra services.
+        this.staffRecipients = staffRecipients ?? new StaffRecipientResolver(dbContext, permissionResolver);
+    }
+
     public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
         var tenantId = tenantProvider.TenantId
@@ -134,8 +150,13 @@ public sealed class CatalogNotificationPublisher(
             return [];
         }
 
-        var recipients = await ResolveRecipientsAsync(order, eventType, cancellationToken);
-        if (recipients.Count == 0)
+        // Customer gets every active channel; staff only get the in-app inbox entry. Resolving staff
+        // through the shared resolver means every order transition (not just creation) can notify
+        // the back office, with the required permission declared once in the capability registry.
+        var customer = ResolveCustomerRecipient(order, eventType);
+        var staff = await ResolveStaffRecipientsAsync(tenantId, eventType, cancellationToken);
+
+        if (customer is null && staff.Count == 0)
         {
             return [];
         }
@@ -151,7 +172,7 @@ public sealed class CatalogNotificationPublisher(
 
         var queuedExternal = new List<Guid>();
 
-        foreach (var recipient in recipients)
+        if (customer is not null)
         {
             foreach (var config in configs)
             {
@@ -160,11 +181,11 @@ public sealed class CatalogNotificationPublisher(
                     TenantId = tenantId,
                     NotificationId = notification.Id,
                     Channel = config.Channel,
-                    RecipientKind = recipient.Kind,
-                    RecipientId = recipient.Id,
-                    RecipientName = recipient.Name,
-                    RecipientEmail = recipient.Email,
-                    RecipientPhone = recipient.Phone,
+                    RecipientKind = NotificationRecipientKind.Customer,
+                    RecipientId = customer.Id,
+                    RecipientName = customer.Name,
+                    RecipientEmail = customer.Email,
+                    RecipientPhone = customer.Phone,
                     Status = NotificationDeliveryStatus.Queued,
                     NextAttemptAt = DateTimeOffset.UtcNow,
                 };
@@ -182,62 +203,57 @@ public sealed class CatalogNotificationPublisher(
             }
         }
 
+        if (staff.Count > 0 && configs.Any(c => c.Channel == NotificationChannel.InApp))
+        {
+            foreach (var recipient in staff)
+            {
+                var delivery = new NotificationDelivery
+                {
+                    TenantId = tenantId,
+                    NotificationId = notification.Id,
+                    Channel = NotificationChannel.InApp,
+                    RecipientKind = NotificationRecipientKind.B2BUser,
+                    RecipientId = recipient.UserId,
+                    RecipientName = recipient.FullName,
+                    RecipientEmail = recipient.Email,
+                    Status = NotificationDeliveryStatus.Queued,
+                    NextAttemptAt = DateTimeOffset.UtcNow,
+                };
+                delivery.MarkDelivered();
+                notification.AddDelivery(delivery);
+            }
+        }
+
         dbContext.Notifications.Add(notification);
         return queuedExternal;
     }
 
-    private async Task<IReadOnlyList<Recipient>> ResolveRecipientsAsync(
-        CatalogOrder order,
-        string eventType,
-        CancellationToken cancellationToken)
-    {
-        var list = new List<Recipient>();
-
-        if (eventType is CatalogEventTypes.OrderCreated
+    private static Recipient? ResolveCustomerRecipient(CatalogOrder order, string eventType) =>
+        eventType is CatalogEventTypes.OrderCreated
             or CatalogEventTypes.OrderApproved
             or CatalogEventTypes.OrderReady
             or CatalogEventTypes.OrderRejected
-            or CatalogEventTypes.OrderCancelledBySupplier)
-        {
-            list.Add(new Recipient(
+            or CatalogEventTypes.OrderCancelledBySupplier
+            ? new Recipient(
                 NotificationRecipientKind.Customer,
                 order.CustomerId,
                 order.CustomerNameSnapshot,
                 order.CustomerEmailSnapshot,
-                order.CustomerPhoneSnapshot));
-        }
+                order.CustomerPhoneSnapshot)
+            : null;
 
-        if (eventType == CatalogEventTypes.OrderCreated)
+    private async Task<IReadOnlyList<StaffRecipient>> ResolveStaffRecipientsAsync(
+        Guid tenantId,
+        string eventType,
+        CancellationToken cancellationToken)
+    {
+        if (!NotificationChannelCapability.TryGetEvent(eventType, out var capability)
+            || capability.StaffPermission is not { Length: > 0 } permission)
         {
-            if (tenantProvider.TenantId is not Guid tenantId)
-            {
-                return list;
-            }
-
-            var users = await dbContext.Users
-                .AsNoTracking()
-                .Where(u => u.IsActive && u.TenantId == tenantId)
-                .ToListAsync(cancellationToken);
-
-            foreach (var user in users)
-            {
-                if (await permissionResolver.HasPermissionAsync(
-                    tenantId,
-                    user.Id,
-                    Permissions.Catalog.OrdersManage,
-                    cancellationToken))
-                {
-                    list.Add(new Recipient(
-                        NotificationRecipientKind.B2BUser,
-                        user.Id,
-                        user.FullName,
-                        user.Email,
-                        Phone: null));
-                }
-            }
+            return [];
         }
 
-        return list;
+        return await staffRecipients.ResolveAsync(tenantId, permission, cancellationToken);
     }
 
     private async Task EnsurePlatformTemplatesAsync(CancellationToken cancellationToken)
@@ -374,5 +390,9 @@ internal static class CatalogNotificationTemplates
         new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.InApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}"),
         new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi cancelado. Motivo: {{cancellationReason}}", "Pedido {{orderNumber}} cancelado"),
         new(CatalogEventTypes.OrderCancelledBySupplier, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} cancelado: {{cancellationReason}}", WhatsAppTemplateName: "catalog_order_status_update"),
+        // Customer-initiated cancellation. Staff-only in-app notice; external channels seeded for completeness.
+        new(CatalogEventTypes.OrderCancelledByCustomer, NotificationChannel.InApp, "Pedido {{orderNumber}} cancelado pelo cliente."),
+        new(CatalogEventTypes.OrderCancelledByCustomer, NotificationChannel.Email, "O pedido {{orderNumber}} foi cancelado pelo cliente {{customerName}}.", "Pedido {{orderNumber}} cancelado pelo cliente"),
+        new(CatalogEventTypes.OrderCancelledByCustomer, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} cancelado pelo cliente.", WhatsAppTemplateName: "catalog_order_status_update"),
     ];
 }

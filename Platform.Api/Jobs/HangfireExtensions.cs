@@ -16,6 +16,8 @@ public static class HangfireExtensions
 
     public const string NotificationOutboxJobId = "notification-outbox";
 
+    public const string NotificationRetentionJobId = "notification-inapp-retention";
+
     public const string ReservationReminderJobId = ReservationReminderSchedule.HangfireJobId;
 
     private const int HangfireMaxPoolSize = 3;
@@ -95,6 +97,13 @@ public static class HangfireExtensions
             NotificationOutboxJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "* * * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<NotificationRetentionJob>(
+            NotificationRetentionJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            // Daily, just after the asset/data retention sweep.
+            "30 0 * * *",
             recurringJobOptions);
 
         RecurringJob.AddOrUpdate<ReservationReminderJob>(

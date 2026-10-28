@@ -44,7 +44,8 @@ public sealed class RentalsNotificationPublisher(
     ITenantProvider tenantProvider,
     ILogger<RentalsNotificationPublisher> logger,
     IConfiguration? configuration = null,
-    IHostEnvironment? environment = null) : IRentalsNotificationPublisher
+    IHostEnvironment? environment = null,
+    IStaffRecipientResolver? staffRecipients = null) : IRentalsNotificationPublisher
 {
     public async Task EnsureReadyAsync(CancellationToken cancellationToken = default)
     {
@@ -206,8 +207,49 @@ public sealed class RentalsNotificationPublisher(
             notification.AddDelivery(delivery);
         }
 
+        await AddStaffInAppDeliveriesAsync(notification, tenantId, eventType, configs, cancellationToken);
+
         dbContext.Notifications.Add(notification);
         return queuedExternal;
+    }
+
+    // Staff inbox: reservations managers get an in-app entry for every meaningful transition. The
+    // per-customer reminder is not a back-office event, so it is excluded. The required permission is
+    // declared once in the shared capability registry; no rentals-specific permission logic lives here.
+    private async Task AddStaffInAppDeliveriesAsync(
+        NotificationEntity notification,
+        Guid tenantId,
+        string eventType,
+        IReadOnlyList<TenantNotificationChannelConfig> configs,
+        CancellationToken cancellationToken)
+    {
+        if (staffRecipients is null
+            || eventType == RentalEventTypes.ReservationReminder
+            || !configs.Any(c => c.Channel == NotificationChannel.InApp)
+            || !NotificationChannelCapability.TryGetEvent(eventType, out var capability)
+            || capability.StaffPermission is not { Length: > 0 } permission)
+        {
+            return;
+        }
+
+        var staff = await staffRecipients.ResolveAsync(tenantId, permission, cancellationToken);
+        foreach (var recipient in staff)
+        {
+            var delivery = new NotificationDelivery
+            {
+                TenantId = tenantId,
+                NotificationId = notification.Id,
+                Channel = NotificationChannel.InApp,
+                RecipientKind = NotificationRecipientKind.B2BUser,
+                RecipientId = recipient.UserId,
+                RecipientName = recipient.FullName,
+                RecipientEmail = recipient.Email,
+                Status = NotificationDeliveryStatus.Queued,
+                NextAttemptAt = DateTimeOffset.UtcNow,
+            };
+            delivery.MarkDelivered();
+            notification.AddDelivery(delivery);
+        }
     }
 
     private async Task<string?> ResolveRecipientEmailAsync(

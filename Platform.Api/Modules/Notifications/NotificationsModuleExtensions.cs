@@ -7,6 +7,7 @@ public static class NotificationsModuleExtensions
     public static IServiceCollection AddTenantNotificationsModule(this IServiceCollection services)
     {
         services.AddScoped<INotificationChannelConfigService, NotificationChannelConfigService>();
+        services.AddScoped<IMeNotificationsService, MeNotificationsService>();
         return services;
     }
 }

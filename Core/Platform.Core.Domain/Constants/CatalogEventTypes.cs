@@ -8,6 +8,7 @@ public static class CatalogEventTypes
     public const string OrderReady = "catalog.order.ready";
     public const string OrderRejected = "catalog.order.rejected";
     public const string OrderCancelledBySupplier = "catalog.order.cancelled_by_supplier";
+    public const string OrderCancelledByCustomer = "catalog.order.cancelled_by_customer";
 
     public static readonly string[] All =
     [
@@ -17,6 +18,7 @@ public static class CatalogEventTypes
         OrderReady,
         OrderRejected,
         OrderCancelledBySupplier,
+        OrderCancelledByCustomer,
     ];
 
     public static readonly string[] Notifying =
@@ -26,5 +28,6 @@ public static class CatalogEventTypes
         OrderReady,
         OrderRejected,
         OrderCancelledBySupplier,
+        OrderCancelledByCustomer,
     ];
 }
