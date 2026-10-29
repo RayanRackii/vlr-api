@@ -51,6 +51,30 @@ public sealed class CatalogOrderStateMachineTests
     }
 
     [Fact]
+    public void Customer_cannot_cancel_terminal_orders_even_with_widest_policy()
+    {
+        var rejected = NewOrder();
+        rejected.Reject("sem estoque", CatalogActorType.B2BUser, Guid.NewGuid());
+
+        var cancelled = NewOrder();
+        cancelled.Cancel(CatalogActorType.Customer, reason: null, Guid.NewGuid());
+
+        var completed = NewOrder();
+        completed.Approve(CatalogActorType.B2BUser, Guid.NewGuid());
+        completed.StartPreparing(CatalogActorType.B2BUser, Guid.NewGuid());
+        completed.MarkReady(CatalogActorType.B2BUser, Guid.NewGuid());
+        completed.Complete(CatalogActorType.B2BUser, Guid.NewGuid());
+
+        foreach (var order in new[] { rejected, cancelled, completed })
+        {
+            var before = order.Status;
+            Assert.Throws<InvalidCatalogOrderTransitionException>(
+                () => order.Cancel(CatalogActorType.Customer, reason: null, Guid.NewGuid(), CatalogOrderStatus.Ready));
+            Assert.Equal(before, order.Status);
+        }
+    }
+
+    [Fact]
     public void B2B_can_cancel_preparing_and_ready()
     {
         var preparing = NewOrder();
