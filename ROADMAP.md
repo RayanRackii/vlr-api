@@ -9,6 +9,10 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Customer inbox — review Lows (2026-10-29, código local)
+
+- [x] `CustomerNotificationsService`: mark-read/read-all usam `ExecuteUpdateAsync` relacional com `ReadAt IS NULL` e os mesmos filtros de tenant/customer/kind/channel; fallback InMemory serializado entre contextos. Summary agrega counts no banco e carrega apenas o payload mais recente por evento, preservando ordem, módulo e rota. Regressões de contexto antigo e chamadas sobrepostas adicionadas. Build passou; Notifications + Catalog em processo: **311 passed / 0 failed / 15 skipped** (PostgreSQL/Docker indisponível). Tradução Npgsql de UPDATEs e summary validada sem conexão. Sem migration ou Git. Próxima API: validar concorrência em PostgreSQL; web: seguir portal B2C/agenda por Slot conforme roadmap irmão.
+
 ## R8 — correções de API (2026-10-24, fix/r8-api-batch)
 
 - [x] H1: reserva e consulta de disponibilidade em recurso `OpenHours` validam expediente (`OpenTime`/`CloseTime`, hora civil do tenant) e duração permitida (`AllowedDurationMinutes`, fallback 60 min); SlotGrid inalterado. Regras em `OpenHoursRules`.
@@ -195,6 +199,9 @@ Decisões (2026-08-18): DTO próprio; PATCH só Nome + Foto; identidade (e-mail/
 
 ## 3. Notificações reais (Resend + WhatsApp) — EMAIL OK; WHATSAPP CLOSED_DEV
 
+- [x] **2026-10-29, código local:** inbox B2C genérico em `/api/me/customer-notifications` (summary, lista por cursor, leitura individual e read-all), exclusivo para Customer JWT. Isolamento por tenant + customer + recipient kind; ID alheio retorna 404. Catalog cria InApp de cliente independentemente dos canais ativos, inclusive preparando, com título pt-BR e rota `/t/{subdomain}/pedidos/{orderId}`. Sem migration. Plano: [`customer-notifications`](docs/plans/active/2026-10-29-customer-notifications.md).
+- [ ] **Próximos passos API/web:** executar CI com PostgreSQL e smoke em DEV; no `vlr-web`, integrar o inbox/sino B2C aos novos endpoints e validar navegação ao detalhe do pedido. Frontend apenas consultado nesta entrega.
+
 Runbook: [`docs/runbooks/whatsapp-notifications.md`](./docs/runbooks/whatsapp-notifications.md). Spec: [`docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md`](./docs/plans/active/2026-09-07-notifications-whatsapp-catalog-rentals.md).
 
 - [x] Providers Resend / Meta / Dev + webhook WhatsApp.
@@ -358,6 +365,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-10-29 | **API, código local:** inbox Customer JWT em `/api/me/customer-notifications`, isolado por tenant/cliente/kind, leitura individual com 404 para ID alheio e read-all. InApp de pedidos obrigatório, incluindo preparando; rota real do portal no payload. Sem migration ou edição web. Build OK; xUnit em processo: 2102 passaram, 130 skipped, 0 falhas (2232 casos); VSTest bloqueado por socket no sandbox. Review `SAFE_WITH_FOLLOWUP`, sem Critical/High/Medium; falta CI PostgreSQL + smoke DEV e integração do inbox B2C no web. |
 | 2026-10-25 | **Fix (API, PR #286, local):** atualizações concorrentes de módulos do mesmo tenant tomam advisory transaction lock PostgreSQL antes de carregar módulos/itens de menu; dois enables concorrentes agora preservam um único menu padrão por módulo. Caminho InMemory sem alteração, sem migration. Regressão relacional (Postgres) adicionada; testes AdminTenant 90/90. |
 | 2026-10-24 | **Fix (API, PR #280, local):** agenda admin/pública omite também Slots persistidos cujo intervalo fica invertido após conversão civil→UTC; regressões cobrem slot materializado e CreateReservation sem persistência no gap DST de Nova York. Suíte completa: 1882 passed, 0 failed, 1 skipped. Sem migration. |
 | 2026-10-24 | **Refactor (API, passo 11, local):** dispatcher de eventos in-process sobre o outbox atual; publishers de Catalog/Rentals atuam como handlers, com preparação antes da transação e entregas após commit nos pontos existentes. Testes adicionados; execução pendente por ausência do SDK .NET. |

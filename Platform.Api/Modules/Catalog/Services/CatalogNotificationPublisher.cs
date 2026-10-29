@@ -113,11 +113,6 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
             return [];
         }
 
-        if (eventType == CatalogEventTypes.OrderPreparing)
-        {
-            return [];
-        }
-
         var tenant = await dbContext.Tenants
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
@@ -130,6 +125,8 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
             ["orderStatus"] = NotificationCustomerCopy.Label(order.Status),
             ["rejectionReason"] = order.RejectedReason,
             ["cancellationReason"] = order.CancelledReason,
+            ["targetRoute"] = $"/t/{tenant?.Subdomain}/pedidos/{order.Id}",
+            ["module"] = PlatformModules.Catalog,
         };
 
         var configs = await dbContext.TenantNotificationChannelConfigs
@@ -145,18 +142,14 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
             }
         }
 
-        if (configs.Count == 0)
-        {
-            return [];
-        }
-
-        // Customer gets every active channel; staff only get the in-app inbox entry. Resolving staff
+        // Customer always gets InApp plus configured external channels; staff only get the configured
+        // in-app inbox entry. Resolving staff
         // through the shared resolver means every order transition (not just creation) can notify
         // the back office, with the required permission declared once in the capability registry.
         var customer = ResolveCustomerRecipient(order, eventType);
         var staff = await ResolveStaffRecipientsAsync(tenantId, eventType, cancellationToken);
 
-        if (customer is null && staff.Count == 0)
+        if (customer is null && (staff.Count == 0 || !configs.Any(c => c.Channel == NotificationChannel.InApp)))
         {
             return [];
         }
@@ -174,13 +167,14 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
 
         if (customer is not null)
         {
-            foreach (var config in configs)
+            var channels = configs.Select(c => c.Channel).Append(NotificationChannel.InApp).Distinct();
+            foreach (var channel in channels)
             {
                 var delivery = new NotificationDelivery
                 {
                     TenantId = tenantId,
                     NotificationId = notification.Id,
-                    Channel = config.Channel,
+                    Channel = channel,
                     RecipientKind = NotificationRecipientKind.Customer,
                     RecipientId = customer.Id,
                     RecipientName = customer.Name,
@@ -190,7 +184,7 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
                     NextAttemptAt = DateTimeOffset.UtcNow,
                 };
 
-                if (config.Channel == NotificationChannel.InApp)
+                if (channel == NotificationChannel.InApp)
                 {
                     delivery.MarkDelivered();
                 }
@@ -231,6 +225,7 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
     private static Recipient? ResolveCustomerRecipient(CatalogOrder order, string eventType) =>
         eventType is CatalogEventTypes.OrderCreated
             or CatalogEventTypes.OrderApproved
+            or CatalogEventTypes.OrderPreparing
             or CatalogEventTypes.OrderReady
             or CatalogEventTypes.OrderRejected
             or CatalogEventTypes.OrderCancelledBySupplier
@@ -379,6 +374,7 @@ internal static class CatalogNotificationTemplates
         new(CatalogEventTypes.OrderCreated, NotificationChannel.Email, "Olá {{customerName}}, recebemos o pedido {{orderNumber}}.", "Pedido {{orderNumber}}"),
         new(CatalogEventTypes.OrderCreated, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} recebido.", WhatsAppTemplateName: "catalog_order_status_update"),
         new(CatalogEventTypes.OrderApproved, NotificationChannel.InApp, "Pedido {{orderNumber}} aprovado."),
+        new(CatalogEventTypes.OrderPreparing, NotificationChannel.InApp, "Pedido {{orderNumber}} em preparação."),
         new(CatalogEventTypes.OrderApproved, NotificationChannel.Email, "Olá {{customerName}}, o pedido {{orderNumber}} foi aprovado.", "Pedido {{orderNumber}} aprovado"),
         new(CatalogEventTypes.OrderApproved, NotificationChannel.WhatsApp, "Pedido {{orderNumber}} aprovado.", WhatsAppTemplateName: "catalog_order_status_update"),
         new(CatalogEventTypes.OrderReady, NotificationChannel.InApp, "Pedido {{orderNumber}} está pronto."),
