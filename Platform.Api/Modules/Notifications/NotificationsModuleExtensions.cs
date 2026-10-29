@@ -8,6 +8,7 @@ public static class NotificationsModuleExtensions
     {
         services.AddScoped<INotificationChannelConfigService, NotificationChannelConfigService>();
         services.AddScoped<IMeNotificationsService, MeNotificationsService>();
+        services.AddScoped<ICustomerNotificationsService, CustomerNotificationsService>();
         return services;
     }
 }
