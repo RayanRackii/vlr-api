@@ -1,16 +1,19 @@
 namespace Platform.Api.Notifications;
 
 /// <summary>
-/// Customer-portal links built from the web origin the API already resolves
-/// (<see cref="FrontendBaseUrlResolver"/>). Path mode matches the portal routes
-/// on that origin: <c>/t/{subdomain}/agenda</c>.
+/// Customer-portal links. With a tenant host template (<c>App:TenantPortalHostTemplate</c>,
+/// default <c>{subdomain}.rolvix.com.br</c>) the link targets the tenant's own host in
+/// host mode (<c>https://{subdomain}.base/agenda</c>), which is the route the web serves on
+/// tenant hosts. Without a template it falls back to path mode on the web origin
+/// (<c>/t/{subdomain}/agenda</c>). Scheme always comes from the resolved web origin.
 /// </summary>
 public static class CustomerPortalLinks
 {
     public static string? ReservationAgenda(
         string? frontendBaseUrl,
         string? subdomain,
-        Guid reservationId)
+        Guid reservationId,
+        string? tenantPortalHostTemplate = null)
     {
         if (string.IsNullOrWhiteSpace(frontendBaseUrl) || string.IsNullOrWhiteSpace(subdomain))
         {
@@ -30,10 +33,39 @@ public static class CustomerPortalLinks
             return null;
         }
 
+        var query = $"reservation={reservationId:D}";
+        if (!string.IsNullOrWhiteSpace(tenantPortalHostTemplate))
+        {
+            var template = tenantPortalHostTemplate.Trim();
+            if (!template.Contains("{subdomain}", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            // Path-style templates (e.g. "web.example.app/t/{subdomain}") carry a path
+            // prefix after the host; only the host part is validated as DNS.
+            var resolved = template.Replace("{subdomain}", sub, StringComparison.Ordinal).ToLowerInvariant();
+            var slash = resolved.IndexOf('/');
+            var host = slash < 0 ? resolved : resolved[..slash];
+            var prefix = slash < 0 ? string.Empty : resolved[slash..].TrimEnd('/');
+            if (Uri.CheckHostName(host) != UriHostNameType.Dns
+                || prefix.Contains("..", StringComparison.Ordinal)
+                || prefix.IndexOfAny(['?', '#', '\\']) >= 0)
+            {
+                return null;
+            }
+
+            return new UriBuilder(baseUri.Scheme, host)
+            {
+                Path = $"{prefix}/agenda",
+                Query = query,
+            }.Uri.AbsoluteUri;
+        }
+
         var builder = new UriBuilder(baseUri)
         {
             Path = $"/t/{Uri.EscapeDataString(sub)}/agenda",
-            Query = $"reservation={reservationId:D}",
+            Query = query,
             Fragment = string.Empty,
         };
         return builder.Uri.AbsoluteUri;

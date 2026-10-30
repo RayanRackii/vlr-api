@@ -35,6 +35,7 @@ public sealed class NotificationChannelConfigServiceTests
                 "catalog.events.orderReady",
                 "catalog.events.orderRejected",
                 "catalog.events.orderCancelledBySupplier",
+                "catalog.events.orderCancelledByCustomer",
             ],
             catalog.Events.Select(item => item.DisplayKey));
 

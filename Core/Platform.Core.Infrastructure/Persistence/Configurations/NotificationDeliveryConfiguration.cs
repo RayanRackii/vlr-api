@@ -64,6 +64,13 @@ public sealed class NotificationDeliveryConfiguration : IEntityTypeConfiguration
 
         builder.HasIndex(d => new { d.TenantId, d.Channel });
 
+        // Inbox query: current user's unread/recent InApp deliveries in their tenant, newest first.
+        // Partial on InApp keeps the index small since only InApp deliveries carry read state.
+        builder.HasIndex(d => new { d.TenantId, d.RecipientId, d.Channel, d.ReadAt, d.CreatedAt })
+            .HasDatabaseName("ix_notification_deliveries_inapp_inbox")
+            .IsDescending(false, false, false, false, true)
+            .HasFilter("channel = 'InApp'");
+
         builder.HasMany(d => d.Attempts)
             .WithOne(a => a.Delivery)
             .HasForeignKey(a => a.DeliveryId)
