@@ -22,12 +22,32 @@ public sealed class UnsupportedWorkWindowException(string message) : ArgumentExc
     public const string Code = WorkWindowValidation.UnsupportedWorkWindowCode;
 }
 
+/// <summary>
+/// H5 Phase 0 decision: only a single schedulable requirement per product/order is supported.
+/// Batch allocation across more than one line is out of scope — raised both when a product
+/// config would activate more than one requirement (400) and when approving an order whose items
+/// carry more than one requirement snapshot needing planning (409); each controller maps the
+/// status code for its own endpoint.
+/// </summary>
+public sealed class UnsupportedRequirementScopeException(string message) : InvalidOperationException(message)
+{
+    public const string Code = "unsupported_requirement_scope";
+}
+
 public interface ICatalogOrderAllocationService
 {
     Task<CatalogOrderResponse> ApproveWithPlanningAsync(
         Guid orderId,
         CatalogOrderApprovePlanningRequest? planningRequest,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// True when the order has at least one resource-requirement snapshot — i.e. approving or
+    /// starting production on it affects planning, so the caller must additionally hold
+    /// catalog.orders.allocate (H2: orders.manage alone must not be sufficient for a planning
+    /// transition). Resource-free orders return false and keep their pre-Phase-0 permission set.
+    /// </summary>
+    Task<bool> HasSchedulableRequirementAsync(Guid orderId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -50,6 +70,25 @@ public sealed class CatalogOrderAllocationService(
         PlatformModules.ResourcePlanning,
     ];
 
+    public async Task<bool> HasSchedulableRequirementAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        var itemIds = await dbContext.CatalogOrderItems
+            .AsNoTracking()
+            .Where(i => i.TenantId == tenantId && i.OrderId == orderId)
+            .Select(i => i.Id)
+            .ToListAsync(cancellationToken);
+
+        if (itemIds.Count == 0)
+        {
+            return false;
+        }
+
+        return await dbContext.CatalogOrderItemResourceRequirements
+            .AsNoTracking()
+            .AnyAsync(r => r.TenantId == tenantId && itemIds.Contains(r.OrderItemId), cancellationToken);
+    }
+
     public async Task<CatalogOrderResponse> ApproveWithPlanningAsync(
         Guid orderId,
         CatalogOrderApprovePlanningRequest? planningRequest,
@@ -70,9 +109,15 @@ public sealed class CatalogOrderAllocationService(
                 .Where(r => itemIds.Contains(r.OrderItemId))
                 .ToListAsync(cancellationToken);
 
-        // Phase 0 scope: "one scheduled line per order". More than one snapshot would be a
-        // data/logic bug from a later phase, not a crash here — only the first is planned.
-        var requirement = requirements.OrderBy(r => r.Id).FirstOrDefault();
+        // H5 Phase 0 decision: "one scheduled line per order" — more than one requirement
+        // snapshot is rejected outright rather than silently planning only the first one.
+        if (requirements.Count > 1)
+        {
+            throw new UnsupportedRequirementScopeException(
+                "This order has more than one resource-requirement line; batch allocation is not supported yet.");
+        }
+
+        var requirement = requirements.FirstOrDefault();
 
         if (requirement is null)
         {
@@ -172,9 +217,9 @@ public sealed class CatalogOrderAllocationService(
             // Step 4: validate the work window and compute the buffered interval.
             var orderItem = order.Items.First(i => i.Id == requirement.OrderItemId);
             var workStart = planningRequest.WorkStart.Value;
-            var workEnd = workStart + TimeSpan.FromMinutes((double)requirement.DurationMinutesPerUnit * orderItem.Quantity);
-            var occupiedStart = workStart - TimeSpan.FromMinutes(requirement.PrepMinutes);
-            var occupiedEnd = workEnd + TimeSpan.FromMinutes(requirement.CleanupMinutes);
+            var (workEnd, occupiedStart, occupiedEnd) = CatalogPlanningWindow.Calculate(
+                workStart, requirement.DurationMinutesPerUnit, orderItem.Quantity,
+                requirement.PrepMinutes, requirement.CleanupMinutes);
 
             var windowValidation = await occupancy.ValidateWorkWindowAsync(
                 dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, cancellationToken);

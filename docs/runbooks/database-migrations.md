@@ -92,6 +92,8 @@ Anything else fails closed. Do not dispatch production apply by accident.
 
 Rollback is **not** `dotnet ef database update` to a previous migration. That can destroy data. Restore from a Supabase backup / point-in-time recovery, or ship a new forward migration.
 
+`AddResourcePlanningPhase0.Down()` refuses rollback before any destructive step if any `InternalUse` reservation exists, because the previous schema requires a customer. Do not assign a synthetic customer or `Guid.Empty` to bypass this guard. Prefer backup recovery or a forward fix; any archival/removal of internal-use records requires an explicit, reviewed data recovery procedure and human approval before retrying rollback.
+
 ## Local developer machine
 
 Do not run `dotnet ef database update` or `railway run` against DEV/PROD from an implementation laptop. Use this workflow.

@@ -11,6 +11,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "fk_reservations_units_unit_id",
+                schema: "rentals",
+                table: "reservations");
+
+            migrationBuilder.DropIndex(
+                name: "ix_reservations_unit_id",
+                schema: "rentals",
+                table: "reservations");
+
             migrationBuilder.AlterColumn<string>(
                 name: "customer_whats_app",
                 schema: "rentals",
@@ -184,6 +194,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     reservation_item_id = table.Column<Guid>(type: "uuid", nullable: false),
                     sequence = table.Column<int>(type: "integer", nullable: false),
                     planning_revision = table.Column<int>(type: "integer", nullable: false),
+                    row_version = table.Column<byte[]>(type: "bytea", nullable: false),
                     is_current = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
                     allocated_quantity = table.Column<int>(type: "integer", nullable: false),
                     rental_asset_id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -230,6 +241,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 schema: "rentals",
                 table: "reservations",
                 columns: new[] { "tenant_id", "purpose", "status", "end_date_time" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_reservations_tenant_id_unit_id",
+                schema: "rentals",
+                table: "reservations",
+                columns: new[] { "tenant_id", "unit_id" });
 
             migrationBuilder.AddCheckConstraint(
                 name: "ck_reservations_customer_booking_requires_customer",
@@ -287,11 +304,38 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 schema: "catalog",
                 table: "product_resource_requirements",
                 columns: new[] { "tenant_id", "rental_asset_id" });
+
+            migrationBuilder.AddForeignKey(
+                name: "fk_reservations_units_tenant_id_unit_id",
+                schema: "rentals",
+                table: "reservations",
+                columns: new[] { "tenant_id", "unit_id" },
+                principalSchema: "core",
+                principalTable: "units",
+                principalColumns: new[] { "tenant_id", "id" },
+                onDelete: ReferentialAction.Restrict);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // The previous schema cannot represent customerless InternalUse reservations.
+            // Stop before any destructive step. Release/archive these records and remove them
+            // through an explicitly approved recovery procedure before retrying rollback.
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM rentals.reservations WHERE purpose = 'InternalUse') THEN
+                        RAISE EXCEPTION 'Cannot roll back resource planning while InternalUse reservations exist; archive and remove them through the approved recovery procedure first.';
+                    END IF;
+                END $$;
+                """);
+
+            migrationBuilder.DropForeignKey(
+                name: "fk_reservations_units_tenant_id_unit_id",
+                schema: "rentals",
+                table: "reservations");
+
             migrationBuilder.DropTable(
                 name: "order_item_resource_allocations",
                 schema: "catalog");
@@ -306,6 +350,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropIndex(
                 name: "ix_reservations_tenant_id_purpose_status_end_date_time",
+                schema: "rentals",
+                table: "reservations");
+
+            migrationBuilder.DropIndex(
+                name: "ix_reservations_tenant_id_unit_id",
                 schema: "rentals",
                 table: "reservations");
 
@@ -376,10 +425,25 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 table: "reservations",
                 type: "uuid",
                 nullable: false,
-                defaultValue: new Guid("00000000-0000-0000-0000-000000000000"),
                 oldClrType: typeof(Guid),
                 oldType: "uuid",
                 oldNullable: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_reservations_unit_id",
+                schema: "rentals",
+                table: "reservations",
+                column: "unit_id");
+
+            migrationBuilder.AddForeignKey(
+                name: "fk_reservations_units_unit_id",
+                schema: "rentals",
+                table: "reservations",
+                column: "unit_id",
+                principalSchema: "core",
+                principalTable: "units",
+                principalColumn: "id",
+                onDelete: ReferentialAction.Restrict);
         }
     }
 }

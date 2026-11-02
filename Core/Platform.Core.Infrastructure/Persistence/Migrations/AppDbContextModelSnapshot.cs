@@ -649,6 +649,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("reservation_item_id");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("row_version");
+
                     b.Property<int>("Sequence")
                         .HasColumnType("integer")
                         .HasColumnName("sequence");
@@ -2748,14 +2754,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("CustomerId")
                         .HasDatabaseName("ix_reservations_customer_id");
 
-                    b.HasIndex("UnitId")
-                        .HasDatabaseName("ix_reservations_unit_id");
-
                     b.HasIndex("TenantId", "CustomerId")
                         .HasDatabaseName("ix_reservations_tenant_id_customer_id");
 
                     b.HasIndex("TenantId", "Status")
                         .HasDatabaseName("ix_reservations_tenant_id_status");
+
+                    b.HasIndex("TenantId", "UnitId")
+                        .HasDatabaseName("ix_reservations_tenant_id_unit_id");
 
                     b.HasIndex("TenantId", "StartDateTime", "EndDateTime")
                         .HasDatabaseName("ix_reservations_tenant_id_start_date_time_end_date_time");
@@ -4935,10 +4941,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasOne("Platform.Core.Domain.Entities.Unit", "Unit")
                         .WithMany()
-                        .HasForeignKey("UnitId")
+                        .HasForeignKey("TenantId", "UnitId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
-                        .HasConstraintName("fk_reservations_units_unit_id");
+                        .HasConstraintName("fk_reservations_units_tenant_id_unit_id");
 
                     b.Navigation("Customer");
 

@@ -375,7 +375,11 @@ public sealed class ScheduleService(
                   && item.RentalAssetId == rentalAssetId
                   && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
-                  && reservation.EndDateTime > start
+                  // H4: mirrors ResourceOccupancyService.FindPersistedConflictAsync — an unreleased
+                  // InternalUse occupancy blocks past its planned end until explicitly released.
+                  && (reservation.EndDateTime > start
+                      || (reservation.Purpose == ReservationPurpose.InternalUse
+                          && reservation.Status == ReservationStatus.Confirmed))
             select item.Quantity;
 
         return await query.SumAsync(cancellationToken);

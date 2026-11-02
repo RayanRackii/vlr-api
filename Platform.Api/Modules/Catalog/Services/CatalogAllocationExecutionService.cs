@@ -18,26 +18,29 @@ internal static class CatalogAllocationExecutionService
 {
     /// <summary>Preparing: any pending (Scheduled) allocation starts running.</summary>
     public static async Task StartPendingAllocationHook(
+        IResourceOccupancyService occupancy,
         AppDbContext db,
         CatalogOrder order,
         CancellationToken cancellationToken)
     {
-        var allocations = await LoadCurrentAllocationsAsync(db, order, cancellationToken);
+        var allocations = await LoadCurrentAllocationsAsync(occupancy, db, order, cancellationToken);
         foreach (var allocation in allocations.Where(a => a.Status == AllocationStatus.Scheduled))
         {
             allocation.Status = AllocationStatus.Running;
             allocation.ActualStartAt = DateTimeOffset.UtcNow;
+            allocation.RowVersion = Guid.NewGuid().ToByteArray();
             allocation.Touch();
         }
     }
 
     /// <summary>Ready requires every required item's allocation to have at least finished work.</summary>
     public static async Task RequireWorkFinishedHook(
+        IResourceOccupancyService occupancy,
         AppDbContext db,
         CatalogOrder order,
         CancellationToken cancellationToken)
     {
-        var allocations = await LoadCurrentAllocationsAsync(db, order, cancellationToken);
+        var allocations = await LoadCurrentAllocationsAsync(occupancy, db, order, cancellationToken);
         var notFinished = allocations
             .Where(a => a.Status is AllocationStatus.Scheduled or AllocationStatus.Running)
             .ToList();
@@ -60,7 +63,7 @@ internal static class CatalogAllocationExecutionService
         CatalogOrder order,
         CancellationToken cancellationToken)
     {
-        var allocations = await LoadCurrentAllocationsAsync(db, order, cancellationToken);
+        var allocations = await LoadCurrentAllocationsAsync(occupancy, db, order, cancellationToken);
 
         foreach (var allocation in allocations.Where(a => a.Status == AllocationStatus.Scheduled))
         {
@@ -68,11 +71,13 @@ internal static class CatalogAllocationExecutionService
                 db, order.TenantId, allocation.ReservationItemId, cancellationToken);
             allocation.Status = AllocationStatus.Cancelled;
             allocation.ActualReleaseAt = DateTimeOffset.UtcNow;
+            allocation.RowVersion = Guid.NewGuid().ToByteArray();
             allocation.Touch();
         }
     }
 
     private static async Task<List<CatalogOrderItemResourceAllocation>> LoadCurrentAllocationsAsync(
+        IResourceOccupancyService occupancy,
         AppDbContext db,
         CatalogOrder order,
         CancellationToken cancellationToken)
@@ -93,8 +98,21 @@ internal static class CatalogAllocationExecutionService
             return [];
         }
 
-        return await db.CatalogOrderItemResourceAllocations
+        // Discover resources without trusting tracked allocation state, then reload under the
+        // same resource locks used by approval and standalone usage actions.
+        var resourceIds = await db.CatalogOrderItemResourceAllocations.AsNoTracking()
+            .Where(a => requirementIds.Contains(a.RequirementId) && a.IsCurrent)
+            .Select(a => a.RentalAssetId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        await occupancy.LockResourcesAsync(db, order.TenantId, resourceIds, cancellationToken);
+        var allocations = await db.CatalogOrderItemResourceAllocations
             .Where(a => requirementIds.Contains(a.RequirementId) && a.IsCurrent)
             .ToListAsync(cancellationToken);
+        foreach (var allocation in allocations)
+        {
+            await db.Entry(allocation).ReloadAsync(cancellationToken);
+        }
+        return allocations;
     }
 }

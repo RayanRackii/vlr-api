@@ -245,6 +245,10 @@ public sealed class CatalogProductsController(
         {
             return BadRequest(new { error = ex.Message, code = NotSupportedYetException.Code });
         }
+        catch (UnsupportedRequirementScopeException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = UnsupportedRequirementScopeException.Code });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });

@@ -81,7 +81,12 @@ public sealed class DailyAvailabilityService(
             where item.TenantId == tenantId && reservation.TenantId == tenantId
                 && ids.Contains(item.RentalAssetId)
                 && AvailabilityReadModel.BlockingStatuses.Contains(reservation.Status)
-                && reservation.StartDateTime < dayEnd && reservation.EndDateTime > dayStart
+                && reservation.StartDateTime < dayEnd
+                // H4: mirrors ResourceOccupancyService.FindPersistedConflictAsync — an unreleased
+                // InternalUse occupancy blocks past its planned end until explicitly released.
+                && (reservation.EndDateTime > dayStart
+                    || (reservation.Purpose == ReservationPurpose.InternalUse
+                        && reservation.Status == ReservationStatus.Confirmed))
             select new { item.RentalAssetId, item.Quantity, Start = reservation.StartDateTime, End = reservation.EndDateTime })
             .ToListAsync(cancellationToken);
 

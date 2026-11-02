@@ -32,6 +32,11 @@ public sealed class CatalogOrderItemResourceAllocationConfiguration
         builder.Property(a => a.PlanningRevision)
             .IsRequired();
 
+        builder.Property(a => a.RowVersion)
+            .IsConcurrencyToken()
+            .HasColumnType("bytea")
+            .IsRequired();
+
         builder.Property(a => a.IsCurrent)
             .HasDefaultValue(true)
             .IsRequired();

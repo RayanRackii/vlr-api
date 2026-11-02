@@ -140,7 +140,7 @@ public sealed class CatalogOrderService(
             // (order-equipment-link-codex §5: "Existing preparing and ready actions invoke the
             // internal execution operations"). Staff can still call the standalone usage endpoint
             // out-of-band (e.g. production actually starts later than the commercial status).
-            planningHook: CatalogAllocationExecutionService.StartPendingAllocationHook,
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.StartPendingAllocationHook(occupancy, db, order, ct),
             cancellationToken);
 
     public Task<CatalogOrderResponse> MarkReadyAsync(Guid id, CancellationToken cancellationToken) =>
@@ -151,7 +151,7 @@ public sealed class CatalogOrderService(
             // Ready requires work already finished (allocation at least Cleaning) across every
             // required item; the hook throws InvalidCatalogOrderTransitionException otherwise so the
             // whole transition rolls back before the commercial status is touched.
-            planningHook: CatalogAllocationExecutionService.RequireWorkFinishedHook,
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.RequireWorkFinishedHook(occupancy, db, order, ct),
             cancellationToken);
 
     public Task<CatalogOrderResponse> CompleteAsync(Guid id, CancellationToken cancellationToken) =>

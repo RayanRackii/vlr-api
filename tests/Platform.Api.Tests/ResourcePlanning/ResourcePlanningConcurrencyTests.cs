@@ -31,7 +31,7 @@ namespace Platform.Api.Tests.ResourcePlanning;
 /// <see cref="AdminTenantService"/>'s module lock) or real row-level UPDATE conflicts these
 /// scenarios depend on.
 /// </summary>
-public sealed class ResourcePlanningConcurrencyTests : IClassFixture<PostgresContainerFixture>
+public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<PostgresContainerFixture>
 {
     private static readonly DateOnly Date = new(2026, 9, 1);
 
@@ -288,7 +288,7 @@ public sealed class ResourcePlanningConcurrencyTests : IClassFixture<PostgresCon
 
         await using var seedDb = factory.Create(tenantProvider);
         var occupancy = new ResourceOccupancyService();
-        await occupancy.CreateInternalUseOccupancyAsync(
+        var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
             seedDb, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, occupiedStart, occupiedEnd, CancellationToken.None);
         await seedDb.SaveChangesAsync();
 
@@ -297,6 +297,12 @@ public sealed class ResourcePlanningConcurrencyTests : IClassFixture<PostgresCon
             seedDb, seed.TenantId, seed.RentalAssetId,
             occupiedStart, occupiedStart.AddMinutes(10), tentativeBatch: [], CancellationToken.None);
         Assert.False(bufferConflict.IsAvailable);
+
+        // Explicitly release (H4: an unreleased InternalUse occupancy now blocks indefinitely past
+        // its planned end, so this buffer-boundary assertion needs the occupancy released first to
+        // isolate "outside the buffer" from "still unreleased").
+        await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId, CancellationToken.None);
+        await seedDb.SaveChangesAsync();
 
         // Entirely outside the buffered interval must be available.
         var clear = await occupancy.CheckAvailabilityAsync(
@@ -317,7 +323,7 @@ public sealed class ResourcePlanningConcurrencyTests : IClassFixture<PostgresCon
 
         await using var seedDb = factory.Create(tenantProvider);
         var occupancy = new ResourceOccupancyService();
-        await occupancy.CreateInternalUseOccupancyAsync(
+        var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
             seedDb, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, pastStart, pastEnd, CancellationToken.None);
         await seedDb.SaveChangesAsync();
 
@@ -326,6 +332,23 @@ public sealed class ResourcePlanningConcurrencyTests : IClassFixture<PostgresCon
         var result = await occupancy.CheckAvailabilityAsync(
             seedDb, seed.TenantId, seed.RentalAssetId, pastStart, pastEnd, tentativeBatch: [], CancellationToken.None);
         Assert.False(result.IsAvailable);
+
+        // H2 (query security review finding): a brand-new request that starts strictly *after* the
+        // overdue reservation's planned end must still be rejected while it remains unreleased —
+        // the old EndDateTime-bounded overlap check would have wrongly freed the resource here.
+        var afterPlannedEnd = await occupancy.CheckAvailabilityAsync(
+            seedDb, seed.TenantId, seed.RentalAssetId,
+            pastEnd.AddDays(1), pastEnd.AddDays(1).AddHours(1), tentativeBatch: [], CancellationToken.None);
+        Assert.False(afterPlannedEnd.IsAvailable);
+
+        // Explicit release now frees it — a later request is available again.
+        await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId, CancellationToken.None);
+        await seedDb.SaveChangesAsync();
+
+        var afterRelease = await occupancy.CheckAvailabilityAsync(
+            seedDb, seed.TenantId, seed.RentalAssetId,
+            pastEnd.AddDays(1), pastEnd.AddDays(1).AddHours(1), tentativeBatch: [], CancellationToken.None);
+        Assert.True(afterRelease.IsAvailable);
     }
 
     [DockerFact]

@@ -50,17 +50,14 @@ public sealed class CatalogOrderAllocationUsageService(
             .Select(r => r.Id)
             .ToListAsync(cancellationToken);
 
-        var allocation = await dbContext.CatalogOrderItemResourceAllocations
-            .FirstOrDefaultAsync(
-                a => a.Id == allocationId && a.TenantId == tenantId && requirementIds.Contains(a.RequirementId),
-                cancellationToken)
+        // Pre-lock lookup only to find which resource to lock; never trusted for the actual
+        // transition — the allocation is reloaded fresh once the lock is held, below.
+        var rentalAssetId = await dbContext.CatalogOrderItemResourceAllocations
+            .AsNoTracking()
+            .Where(a => a.Id == allocationId && a.TenantId == tenantId && requirementIds.Contains(a.RequirementId))
+            .Select(a => (Guid?)a.RentalAssetId)
+            .FirstOrDefaultAsync(cancellationToken)
             ?? throw new KeyNotFoundException("Allocation not found for this order.");
-
-        if (allocation.PlanningRevision != request.ExpectedVersion)
-        {
-            throw new PlanningVersionConflictException(
-                "The allocation changed since this action was prepared; reload and retry.");
-        }
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -68,6 +65,26 @@ public sealed class CatalogOrderAllocationUsageService(
 
         try
         {
+            // H3: serialize concurrent usage actions on the same allocation (e.g. cancel vs start)
+            // through the same resource-row lock the approval flow already uses, rather than
+            // relying on the PlanningRevision check alone — then reload the allocation under that
+            // lock so the check below sees the latest committed state, not a stale pre-lock read.
+            await occupancy.LockResourcesAsync(dbContext, tenantId, [rentalAssetId], cancellationToken);
+
+            var allocation = await dbContext.CatalogOrderItemResourceAllocations
+                .FirstOrDefaultAsync(
+                    a => a.Id == allocationId && a.TenantId == tenantId && requirementIds.Contains(a.RequirementId),
+                    cancellationToken)
+                ?? throw new KeyNotFoundException("Allocation not found for this order.");
+
+            await dbContext.Entry(allocation).ReloadAsync(cancellationToken);
+
+            if (allocation.PlanningRevision != request.ExpectedVersion)
+            {
+                throw new PlanningVersionConflictException(
+                    "The allocation changed since this action was prepared; reload and retry.");
+            }
+
             switch (request.Action.Trim().ToLowerInvariant())
             {
                 case "start":
@@ -84,10 +101,20 @@ public sealed class CatalogOrderAllocationUsageService(
             }
 
             order.PlanningRevision += 1;
+            order.RowVersion = Guid.NewGuid().ToByteArray();
             allocation.PlanningRevision = order.PlanningRevision;
+            allocation.RowVersion = Guid.NewGuid().ToByteArray();
             allocation.Touch();
 
-            await dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                throw new PlanningVersionConflictException(
+                    "The allocation changed since this action was prepared; reload and retry.");
+            }
 
             if (transaction is not null)
             {

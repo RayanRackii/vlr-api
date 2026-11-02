@@ -22,6 +22,15 @@ public class CatalogOrderItemResourceAllocation : Entity, ITenantScoped
     /// <summary>The <see cref="CatalogOrder.PlanningRevision"/> value at creation time.</summary>
     public required int PlanningRevision { get; set; }
 
+    /// <summary>
+    /// Database-enforced optimistic concurrency token (H3: PlanningRevision alone is an
+    /// application-level check, not atomic with the write — two usage actions reading the same
+    /// PlanningRevision could otherwise both commit). Re-rolled on every mutation alongside
+    /// PlanningRevision; EF maps this with <c>IsConcurrencyToken()</c> so a stale write throws
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>.
+    /// </summary>
+    public byte[] RowVersion { get; set; } = Guid.NewGuid().ToByteArray();
+
     /// <summary>True for the active/current occurrence; false once superseded (Phase 1 reschedule).</summary>
     public bool IsCurrent { get; set; } = true;
 

@@ -60,10 +60,12 @@ public sealed class CatalogProductResourceRequirementService(
             .FirstOrDefaultAsync(p => p.Id == productId && p.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Product not found.");
 
-        if (request.ExpectedVersion != product.ResourceRequirementsVersion)
+        // H5 Phase 0 decision: a product config may activate at most one requirement — batch
+        // allocation across more than one line is not supported yet.
+        if (request.Requirements.Count > 1)
         {
-            throw new PlanningVersionConflictArgumentException(
-                "The product's resource-requirements configuration changed since this edit was prepared; reload and retry.");
+            throw new UnsupportedRequirementScopeException(
+                "A product may have at most one active resource requirement; batch allocation is not supported yet.");
         }
 
         var rentalAssetIds = request.Requirements
@@ -110,9 +112,9 @@ public sealed class CatalogProductResourceRequirementService(
                 throw new ArgumentException("resourceQuantity must be at least 1.");
             }
 
-            if (row.DurationMinutesPerUnit < 1)
+            if (row.DurationMinutesPerUnit is < 1 or > CatalogPlanningWindow.MaxMinutes)
             {
-                throw new ArgumentException("durationMinutesPerUnit must be at least 1.");
+                throw new ArgumentException("durationMinutesPerUnit must be between 1 and 1440.");
             }
 
             if (row.PrepMinutes < 0 || row.CleanupMinutes < 0)
@@ -127,6 +129,26 @@ public sealed class CatalogProductResourceRequirementService(
 
         try
         {
+            // M3: ExpectedVersion was read before this transaction/lock and CatalogProduct has no
+            // concurrency token, so two concurrent replaces could otherwise both pass the same
+            // check and both write an "active" set — lock the product row, reload its current
+            // value under that lock, and only then compare. The loser gets a real 409, not a race.
+            if (dbContext.Database.IsRelational())
+            {
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                    SELECT 1 FROM catalog.catalog_products WHERE id = {productId} AND tenant_id = {tenantId} FOR UPDATE
+                    """,
+                    cancellationToken);
+                await dbContext.Entry(product).ReloadAsync(cancellationToken);
+            }
+
+            if (request.ExpectedVersion != product.ResourceRequirementsVersion)
+            {
+                throw new PlanningVersionConflictArgumentException(
+                    "The product's resource-requirements configuration changed since this edit was prepared; reload and retry.");
+            }
+
             // Soft-deactivate the current active set rather than deleting, so historical order-item
             // snapshots that point at a SourceRequirementId keep resolving (Restrict delete behavior
             // on that FK would otherwise block this very call). The new version's rows are freshly

@@ -10,9 +10,12 @@ namespace Platform.Api.Modules.Rentals.Services;
 /// Implements <see cref="IResourceOccupancyService"/> on top of the existing
 /// <see cref="RentalAssetLocks"/> advisory-lock helper and the same half-open overlap query used by
 /// <see cref="ReservationService"/>/<see cref="ScheduleService"/> (<c>start &lt; otherEnd &amp;&amp;
-/// end &gt; otherStart</c>), filtered to <see cref="AvailabilityReadModel.BlockingStatuses"/>. No
-/// Purpose filter is applied anywhere in this service — CustomerBooking and InternalUse reservations
-/// block identically, by design (see Order-Resource Planning spec §3). This service is stateless
+/// end &gt; otherStart</c>), filtered to <see cref="AvailabilityReadModel.BlockingStatuses"/>.
+/// CustomerBooking and InternalUse reservations block identically by design (see Order-Resource
+/// Planning spec §3), with one exception (H4): an unreleased (Confirmed, not yet Completed)
+/// InternalUse reservation blocks past its planned EndDateTime — "now" is never an implicit
+/// release — until <see cref="ReleaseInternalUseOccupancyAsync"/> explicitly closes it. This
+/// service is stateless
 /// (no injected AppDbContext of its own) so it can be called against whichever AppDbContext/
 /// transaction the caller (e.g. Catalog's approval flow) is already inside.
 /// </summary>
@@ -98,8 +101,23 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
         }
 
         var rentalAsset = await db.RentalAssets
+            .Include(r => r.Asset)
             .FirstOrDefaultAsync(r => r.Id == rentalAssetId && r.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException($"Rental asset '{rentalAssetId}' was not found.");
+
+        // The caller-supplied unitId must resolve inside the current tenant (global query filter
+        // on Unit) and must match the resource's own unit — otherwise a planning request could
+        // stamp an InternalUse reservation with a foreign or mismatched unit id, which the FK alone
+        // (tenant-qualified, see ReservationConfiguration) can only reject at a different layer.
+        var unit = await db.Units
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == unitId && u.TenantId == tenantId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Unit '{unitId}' was not found.");
+
+        if (rentalAsset.Asset.UnitId != unit.Id)
+        {
+            throw new KeyNotFoundException("Resource not found for this unit.");
+        }
 
         // InternalUse never needs a deposit and is constructed already Confirmed — it must never
         // go through ReservationService.CreateReservationAsync's customer pricing/deposit pipeline
@@ -168,6 +186,13 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
                 $"Cannot release a canceled InternalUse reservation '{reservation.Id}'.");
         }
 
+        // Release closes the open-ended block above (reservation.Status flips away from Confirmed)
+        // but deliberately leaves EndDateTime untouched — the exact historically-planned interval
+        // still blocks forever once Completed, identical to existing CustomerBooking behavior
+        // ("Completing a reservation never releases its time"). The actual release moment is
+        // recorded separately on the allocation (CatalogOrderItemResourceAllocation.ActualReleaseAt),
+        // not here.
+
         // "Released" means the resource is physically free again from this point forward — the
         // same terminal meaning ReservationStatus.Completed already carries for CustomerBooking
         // (completion does not retroactively change the blocked interval; it only stops the
@@ -219,8 +244,8 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
 
         var zone = await TenantBookingClock.ResolveForTenantAsync(db, tenantId, cancellationToken);
         var zoneId = await TenantBookingClock.ResolveIanaIdForTenantAsync(db, tenantId, cancellationToken);
-        var error = ResourceWorkWindowValidator.Validate(
-            rentalAsset, occupiedStart, occupiedEnd, zone, rentalAsset.Asset.Name);
+        var error = await ResourceWorkWindowValidator.ValidateAsync(
+            db, tenantId, rentalAsset, occupiedStart, occupiedEnd, zone, rentalAsset.Asset.Name, cancellationToken);
 
         return new WorkWindowValidation(zone, zoneId, error);
     }
@@ -250,7 +275,15 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
                   && item.RentalAssetId == rentalAssetId
                   && AvailabilityReadModel.BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
-                  && reservation.EndDateTime > start
+                  && (
+                      reservation.EndDateTime > start
+                      // An unreleased InternalUse occupancy stays blocking past its planned end —
+                      // "now" is never an implicit release — until ReleaseInternalUseOccupancyAsync
+                      // explicitly marks it Completed (at which point its (now bounded) EndDateTime
+                      // governs again, same as CustomerBooking).
+                      || (reservation.Purpose == ReservationPurpose.InternalUse
+                          && reservation.Status == ReservationStatus.Confirmed)
+                  )
             select reservation.Id;
 
         if (excludeReservationId is Guid excludedId)

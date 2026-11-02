@@ -84,9 +84,9 @@ public sealed class CatalogOrderAllocationPreviewService(
 
         var orderItem = order.Items.First(i => i.Id == requirement.OrderItemId);
         var workStart = workStartRequest.WorkStart;
-        var workEnd = workStart + TimeSpan.FromMinutes((double)requirement.DurationMinutesPerUnit * orderItem.Quantity);
-        var occupiedStart = workStart - TimeSpan.FromMinutes(requirement.PrepMinutes);
-        var occupiedEnd = workEnd + TimeSpan.FromMinutes(requirement.CleanupMinutes);
+        var (workEnd, occupiedStart, occupiedEnd) = CatalogPlanningWindow.Calculate(
+            workStart, requirement.DurationMinutesPerUnit, orderItem.Quantity,
+            requirement.PrepMinutes, requirement.CleanupMinutes);
 
         var windowValidation = await occupancy.ValidateWorkWindowAsync(
             dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, cancellationToken);

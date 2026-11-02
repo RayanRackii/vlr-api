@@ -76,9 +76,12 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
         // Internal reservation scan: used to find active internal-use occupancy windows.
         builder.HasIndex(r => new { r.TenantId, r.Purpose, r.Status, r.EndDateTime });
 
+        // Tenant-qualified composite FK: application checks alone (ResourceOccupancyService) must
+        // not be the only thing standing between a caller-supplied unitId and a cross-tenant unit.
         builder.HasOne(r => r.Unit)
             .WithMany()
-            .HasForeignKey(r => r.UnitId)
+            .HasForeignKey(r => new { r.TenantId, r.UnitId })
+            .HasPrincipalKey(u => new { u.TenantId, u.Id })
             .OnDelete(DeleteBehavior.Restrict);
 
         // Cross-schema FK to core.customers is allowed (isolation rule is rentals ↛ inventory/maintenance).

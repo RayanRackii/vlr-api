@@ -1,5 +1,6 @@
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
+using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
@@ -7,15 +8,11 @@ namespace Platform.Api.Modules.Rentals.Services;
 /// Validates that a planning request's buffered interval is an existing offerable booking window
 /// for the target resource — never rounding (order-equipment-link-codex §3: "accepts only
 /// buffered intervals expressible by existing booking windows and allowed durations"). Reuses
-/// <see cref="OpenHoursRules.ValidateInterval"/>, the same narrow predicate
-/// <c>ReservationService.CreateReservationAsync</c> already applies for OpenHours resources.
-/// Phase 0 limitation: SlotGrid resources (weekly-template-derived bookable windows) are not
-/// validated against persisted Slots/ScheduleTemplates here — that derivation is only reachable
-/// through ReservationService's private slot-grid resolution, which is not practical to extract
-/// generically within Phase 0's scope. A SlotGrid resource used for planning is only checked
-/// against its <see cref="RentalAsset.AllowedDurationMinutes"/> (duration-only check); a later
-/// phase should extract the full SlotGrid window predicate if production scheduling against
-/// SlotGrid resources becomes a real requirement.
+/// <see cref="OpenHoursRules.ValidateInterval"/> for OpenHours resources and
+/// <see cref="SlotGridWindowResolver"/> for SlotGrid resources — the same predicates
+/// <c>ReservationService.CreateReservationAsync</c> applies for a customer booking, so planning
+/// can never approve a window booking itself would reject (M1: dated overrides, cancelled cells
+/// and persisted-slot boundaries all apply here exactly as they do for a customer booking).
 ///
 /// Consumed cross-module only through
 /// <see cref="Platform.Api.Modules.Rentals.Contracts.IResourceOccupancyService.ValidateWorkWindowAsync"/>
@@ -29,14 +26,19 @@ internal static class ResourceWorkWindowValidator
     /// <summary>
     /// Returns null when [workStart, workEnd) (after prep/cleanup buffers are applied) is an
     /// expressible booking window for <paramref name="rental"/>; otherwise a human-readable reason.
-    /// All timestamps must already be in <paramref name="zone"/>.
+    /// All timestamps must already be in <paramref name="zone"/>. Must run under the caller's
+    /// resource lock (the same convention <see cref="ResourceOccupancyService"/> already requires
+    /// for availability checks) so the calendar it reads cannot change underneath it.
     /// </summary>
-    public static string? Validate(
+    public static async Task<string?> ValidateAsync(
+        AppDbContext dbContext,
+        Guid tenantId,
         RentalAsset rental,
         DateTimeOffset occupiedStart,
         DateTimeOffset occupiedEnd,
         TimeZoneInfo zone,
-        string resourceName)
+        string resourceName,
+        CancellationToken cancellationToken)
     {
         if (occupiedEnd <= occupiedStart)
         {
@@ -61,11 +63,14 @@ internal static class ResourceWorkWindowValidator
             return OpenHoursRules.ValidateInterval(rental, startTime, endTime, resourceName);
         }
 
-        // SlotGrid: Phase 0 simplification (documented above) — only an allowed-duration check,
-        // not a full persisted-slot/template derivation.
-        var minutes = (int)(occupiedEnd - occupiedStart).TotalMinutes;
-        return OpenHoursRules.ParseDurations(rental.AllowedDurationMinutes).Any(allowed => allowed == minutes)
+        // SlotGrid: the same persisted-Slot/ScheduleTemplate derivation booking itself uses,
+        // including dated overrides, cancelled cells and exact slot boundaries (M1).
+        var date = DateOnly.FromDateTime(localStart.DateTime);
+        var plan = await SlotGridWindowResolver.ResolveAsync(
+            dbContext, tenantId, rental, date, startTime, endTime, cancellationToken);
+
+        return plan.IsOpen
             ? null
-            : $"'{resourceName}' requested duration is not an existing offerable booking window.";
+            : $"'{resourceName}' requested interval is not an existing offerable booking window.";
     }
 }

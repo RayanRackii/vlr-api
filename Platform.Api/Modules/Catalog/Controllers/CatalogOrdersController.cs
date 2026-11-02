@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -14,8 +15,10 @@ namespace Platform.Api.Modules.Catalog.Controllers;
 [Route("api/catalog")]
 public sealed class CatalogOrdersController(
     ICatalogOrderService orderService,
+    ICatalogOrderAllocationService allocationService,
     ICatalogOrderAllocationPreviewService previewService,
-    ICatalogOrderAllocationUsageService usageService) : ControllerBase
+    ICatalogOrderAllocationUsageService usageService,
+    IAuthorizationService authorizationService) : ControllerBase
 {
     [HttpGet("product-requests")]
     [RequirePermission(Permissions.Catalog.ProductsRead)]
@@ -63,11 +66,18 @@ public sealed class CatalogOrdersController(
 
     [HttpPost("orders/{id:guid}/approve")]
     [RequirePermission(Permissions.Catalog.OrdersManage)]
-    public Task<ActionResult<CatalogOrderResponse>> Approve(
+    public async Task<ActionResult<CatalogOrderResponse>> Approve(
         Guid id,
         [FromBody] CatalogOrderApprovePlanningRequest? request,
-        CancellationToken cancellationToken) =>
-        ExecuteTransition(() => orderService.ApproveAsync(id, request, cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        if (await RequiresAllocatePermissionButLacksItAsync(id, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        return await ExecuteTransition(() => orderService.ApproveAsync(id, request, cancellationToken));
+    }
 
     /// <summary>Read-only; reserves nothing, holds no lock. A preview is never a booking guarantee.</summary>
     [HttpPost("orders/{id:guid}/allocation-preview")]
@@ -78,6 +88,13 @@ public sealed class CatalogOrdersController(
         [FromBody] CatalogOrderAllocationPreviewRequest request,
         CancellationToken cancellationToken)
     {
+        var canReadSchedule = await authorizationService.AuthorizeAsync(
+            User, PermissionPolicies.Name(Permissions.Rentals.ScheduleRead));
+        if (!canReadSchedule.Succeeded)
+        {
+            return Forbid();
+        }
+
         try
         {
             return Ok(await previewService.PreviewAsync(id, request, cancellationToken));
@@ -134,10 +151,17 @@ public sealed class CatalogOrdersController(
 
     [HttpPost("orders/{id:guid}/preparing")]
     [RequirePermission(Permissions.Catalog.OrdersManage)]
-    public Task<ActionResult<CatalogOrderResponse>> Preparing(
+    public async Task<ActionResult<CatalogOrderResponse>> Preparing(
         Guid id,
-        CancellationToken cancellationToken) =>
-        ExecuteTransition(() => orderService.StartPreparingAsync(id, cancellationToken));
+        CancellationToken cancellationToken)
+    {
+        if (await RequiresAllocatePermissionButLacksItAsync(id, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        return await ExecuteTransition(() => orderService.StartPreparingAsync(id, cancellationToken));
+    }
 
     [HttpPost("orders/{id:guid}/ready")]
     [RequirePermission(Permissions.Catalog.OrdersManage)]
@@ -161,6 +185,24 @@ public sealed class CatalogOrdersController(
         CancellationToken cancellationToken) =>
         ExecuteTransition(() => orderService.CancelAsync(id, request.Reason, cancellationToken));
 
+    /// <summary>
+    /// H2: orders.manage alone must not be sufficient to approve/start-production an order whose
+    /// transition actually allocates or starts a resource — only orders with a schedulable
+    /// requirement require the extra catalog.orders.allocate permission; resource-free orders keep
+    /// their pre-Phase-0 permission set unchanged.
+    /// </summary>
+    private async Task<bool> RequiresAllocatePermissionButLacksItAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        if (!await allocationService.HasSchedulableRequirementAsync(orderId, cancellationToken))
+        {
+            return false;
+        }
+
+        var canAllocate = await authorizationService.AuthorizeAsync(
+            User, PermissionPolicies.Name(Permissions.Catalog.OrdersAllocate));
+        return !canAllocate.Succeeded;
+    }
+
     private async Task<ActionResult<CatalogOrderResponse>> ExecuteTransition(
         Func<Task<CatalogOrderResponse>> action)
     {
@@ -171,6 +213,10 @@ public sealed class CatalogOrdersController(
         catch (PlanningVersionConflictException ex)
         {
             return Conflict(new { error = ex.Message, code = PlanningVersionConflictException.Code });
+        }
+        catch (UnsupportedRequirementScopeException ex)
+        {
+            return Conflict(new { error = ex.Message, code = UnsupportedRequirementScopeException.Code });
         }
         catch (ResourceUnavailableException ex)
         {

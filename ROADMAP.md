@@ -9,6 +9,15 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Resource Planning Phase 0 — security fixes (2026-11-02, código local)
+
+- [x] Completar validação de unidade (404), autorização de planejamento/preview e regressões H1/H2/H5/M3 sobre as correções existentes.
+- [x] Serializar hooks comerciais e usage nos mesmos locks de recurso, recarregar allocations e renovar versões; regressão H3 em Postgres real para preparing e usage start concorrentes com cancel.
+- [x] Limitar duração/quantidade ao escopo diário Phase 0, calcular intervalos com aritmética checked e retornar 400 para valores/datas inválidos (L1).
+- [x] Proteger Down antes de operações destrutivas quando existir InternalUse; sem Guid.Empty no FK de customer; Up preservado (M4).
+- [ ] Validação final dos testes filtrados pelo orquestrador: build passou; EF sem mudanças pendentes; VSTest bloqueado pelo sandbox ao abrir socket local (`Test Run Aborted.`).
+- Próximo API: executar o filtro ResourcePlanning/ModuleGate fora da restrição de sockets e concluir revisão de segurança. Próximo web: validar a integração de planejamento existente com a API após esses checks; repo irmão não alterado.
+
 ## Customer inbox — review Lows (2026-10-29, código local)
 
 - [x] `CustomerNotificationsService`: mark-read/read-all usam `ExecuteUpdateAsync` relacional com `ReadAt IS NULL` e os mesmos filtros de tenant/customer/kind/channel; fallback InMemory serializado entre contextos. Summary agrega counts no banco e carrega apenas o payload mais recente por evento, preservando ordem, módulo e rota. Regressões de contexto antigo e chamadas sobrepostas adicionadas. Build passou; Notifications + Catalog em processo: **311 passed / 0 failed / 15 skipped** (PostgreSQL/Docker indisponível). Tradução Npgsql de UPDATEs e summary validada sem conexão. Sem migration ou Git. Próxima API: validar concorrência em PostgreSQL; web: seguir portal B2C/agenda por Slot conforme roadmap irmão.
