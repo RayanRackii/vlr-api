@@ -17,6 +17,8 @@ public static class PlatformModules
 
     public const string Catalog = "catalog";
 
+    public const string ResourcePlanning = "resource-planning";
+
     /// <summary>
     /// Maps API / UI module labels (e.g. "Rentals", "PMOC") to canonical keys.
     /// </summary>

@@ -139,6 +139,7 @@ internal sealed class LocationBookingHarness : IAsyncDisposable
     {
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = TenantId,
             UnitId = UnitId,
             CustomerId = customerId ?? CustomerId,

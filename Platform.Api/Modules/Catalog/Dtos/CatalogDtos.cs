@@ -3,6 +3,104 @@ using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Catalog.Dtos;
 
+// --- Order-resource planning (Phase 0) ---
+
+/// <summary>One row of a product's resource-requirement configuration (read or write).</summary>
+public sealed record CatalogProductResourceRequirementDto
+{
+    public Guid? Id { get; init; }
+
+    public Guid? RentalAssetId { get; init; }
+
+    public Guid? AssetCategoryId { get; init; }
+
+    public required int ResourceQuantity { get; init; }
+
+    public required int DurationMinutesPerUnit { get; init; }
+
+    public int PrepMinutes { get; init; }
+
+    public int CleanupMinutes { get; init; }
+}
+
+public sealed record CatalogProductResourceRequirementsResponse(
+    int ExpectedVersion,
+    IReadOnlyList<CatalogProductResourceRequirementDto> Requirements);
+
+public sealed record ReplaceCatalogProductResourceRequirementsRequest
+{
+    public required int ExpectedVersion { get; init; }
+
+    public required IReadOnlyList<CatalogProductResourceRequirementDto> Requirements { get; init; }
+}
+
+/// <summary>Per-order-item production state, derived from its allocation (if any).</summary>
+public enum ProductionSummaryStatus
+{
+    NotRequired = 0,
+    Unscheduled = 1,
+    Scheduled = 2,
+    InProgress = 3,
+    Done = 4,
+    Blocked = 5,
+    Cancelled = 6,
+}
+
+public sealed record AllocationPreviewWorkStart
+{
+    public required Guid OrderItemId { get; init; }
+
+    public required DateTimeOffset WorkStart { get; init; }
+}
+
+public sealed record CatalogOrderAllocationPreviewRequest
+{
+    public required Guid UnitId { get; init; }
+
+    public required IReadOnlyList<AllocationPreviewWorkStart> WorkStarts { get; init; }
+}
+
+public sealed record CatalogOrderAllocationPreviewResponse(
+    bool IsFeasible,
+    Guid? OrderItemId,
+    Guid? RentalAssetId,
+    DateTimeOffset? WorkStart,
+    DateTimeOffset? WorkEnd,
+    DateTimeOffset? OccupiedStart,
+    DateTimeOffset? OccupiedEnd,
+    DateTimeOffset? EstimatedReadyAt,
+    string? ConflictCode,
+    string? Reason);
+
+public sealed record CatalogOrderApprovePlanningRequest
+{
+    public Guid? UnitId { get; init; }
+
+    public DateTimeOffset? WorkStart { get; init; }
+
+    public int? ExpectedVersion { get; init; }
+}
+
+public sealed record CatalogOrderAllocationUsageRequest
+{
+    public required string Action { get; init; }
+
+    public required int ExpectedVersion { get; init; }
+}
+
+public sealed record CatalogOrderItemAllocationResponse(
+    Guid Id,
+    Guid RequirementId,
+    Guid RentalAssetId,
+    AllocationStatus Status,
+    DateTimeOffset PlannedWorkStart,
+    DateTimeOffset PlannedWorkEnd,
+    string TimeZoneId,
+    DateTimeOffset? ActualStartAt,
+    DateTimeOffset? ActualWorkFinishedAt,
+    DateTimeOffset? ActualReleaseAt,
+    int PlanningRevision);
+
 public sealed record CatalogProductListQuery(
     string? Name,
     string? Code,
@@ -78,7 +176,9 @@ public sealed record CatalogOrderItemResponse(
     decimal? UnitPrice,
     string Currency,
     int Quantity,
-    decimal? SubTotal);
+    decimal? SubTotal,
+    ProductionSummaryStatus ProductionSummary,
+    CatalogOrderItemAllocationResponse? Allocation);
 
 public sealed record CatalogOrderHistoryResponse(
     Guid Id,
@@ -104,7 +204,28 @@ public sealed record CatalogOrderResponse(
     string? CancelledReason,
     DateTimeOffset CreatedAt,
     IReadOnlyList<CatalogOrderItemResponse> Items,
-    IReadOnlyList<CatalogOrderHistoryResponse> History);
+    IReadOnlyList<CatalogOrderHistoryResponse> History,
+    string OrderVersion,
+    int PlanningRevision,
+    ProductionSummaryStatus ProductionSummary,
+    DateTimeOffset? EstimatedReadyAt);
+
+/// <summary>Portal-facing order shape: no equipment/capacity/allocation identifiers, ever.</summary>
+public sealed record PortalCatalogOrderResponse(
+    Guid Id,
+    string DisplayNumber,
+    int OrderNumber,
+    CatalogOrderStatus Status,
+    string? CustomerNote,
+    decimal? TotalAmount,
+    string Currency,
+    string? RejectedReason,
+    string? CancelledReason,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<CatalogOrderItemResponse> Items,
+    IReadOnlyList<CatalogOrderHistoryResponse> History,
+    ProductionSummaryStatus ProductionSummary,
+    DateTimeOffset? EstimatedReadyAt);
 
 public sealed record CatalogReasonRequest
 {

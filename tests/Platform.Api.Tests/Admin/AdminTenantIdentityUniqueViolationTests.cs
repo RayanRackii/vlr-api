@@ -114,25 +114,22 @@ public sealed class AdminTenantIdentityUniqueViolationTests : IClassFixture<Post
         await InstallUpdateDelayAsync(factory);
         try
         {
-            for (var attempt = 1; attempt <= OverlapAttempts; attempt++)
-            {
-                var created = await CreateTenantAsync(factory, [PlatformModules.Catalog]);
-                var request = UpdateRequest(
-                    created,
-                    modules: [PlatformModules.Catalog, PlatformModules.Rentals]);
-                var outcomes = await Task.WhenAll(
-                    CaptureUpdateAsync(factory, created.Id, request),
-                    CaptureUpdateAsync(factory, created.Id, request));
+            // InstallUpdateDelayAsync makes the overlap deterministic, so a single attempt always
+            // exercises the race (unlike AssertConcurrentIdentityConflictAsync below, where the
+            // retry loop is load-bearing).
+            var created = await CreateTenantAsync(factory, [PlatformModules.Catalog]);
+            var request = UpdateRequest(
+                created,
+                modules: [PlatformModules.Catalog, PlatformModules.Rentals]);
+            var outcomes = await Task.WhenAll(
+                CaptureUpdateAsync(factory, created.Id, request),
+                CaptureUpdateAsync(factory, created.Id, request));
 
-                Assert.All(outcomes, outcome => Assert.True(outcome.Succeeded, outcome.Error?.ToString()));
-                Assert.Equal(created.TaxId, await TaxIdAsync(factory, created.Id));
-                Assert.Equal(created.Subdomain, await SubdomainAsync(factory, created.Id));
-                Assert.Equal(2, await ModuleCountAsync(factory, created.Id));
-                Assert.Equal(2, await MenuItemCountAsync(factory, created.Id));
-                return;
-            }
-
-            Assert.Fail("Concurrent module enable requests did not overlap.");
+            Assert.All(outcomes, outcome => Assert.True(outcome.Succeeded, outcome.Error?.ToString()));
+            Assert.Equal(created.TaxId, await TaxIdAsync(factory, created.Id));
+            Assert.Equal(created.Subdomain, await SubdomainAsync(factory, created.Id));
+            Assert.Equal(2, await ModuleCountAsync(factory, created.Id));
+            Assert.Equal(2, await MenuItemCountAsync(factory, created.Id));
         }
         finally
         {

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Domain.Exceptions;
@@ -11,7 +12,10 @@ namespace Platform.Api.Modules.Catalog.Controllers;
 [ApiController]
 [RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog")]
-public sealed class CatalogOrdersController(ICatalogOrderService orderService) : ControllerBase
+public sealed class CatalogOrdersController(
+    ICatalogOrderService orderService,
+    ICatalogOrderAllocationPreviewService previewService,
+    ICatalogOrderAllocationUsageService usageService) : ControllerBase
 {
     [HttpGet("product-requests")]
     [RequirePermission(Permissions.Catalog.ProductsRead)]
@@ -61,8 +65,64 @@ public sealed class CatalogOrdersController(ICatalogOrderService orderService) :
     [RequirePermission(Permissions.Catalog.OrdersManage)]
     public Task<ActionResult<CatalogOrderResponse>> Approve(
         Guid id,
+        [FromBody] CatalogOrderApprovePlanningRequest? request,
         CancellationToken cancellationToken) =>
-        ExecuteTransition(() => orderService.ApproveAsync(id, cancellationToken));
+        ExecuteTransition(() => orderService.ApproveAsync(id, request, cancellationToken));
+
+    /// <summary>Read-only; reserves nothing, holds no lock. A preview is never a booking guarantee.</summary>
+    [HttpPost("orders/{id:guid}/allocation-preview")]
+    [RequireActiveModule(PlatformModules.ResourcePlanning)]
+    [RequirePermission(Permissions.Catalog.OrdersRead)]
+    public async Task<ActionResult<CatalogOrderAllocationPreviewResponse>> AllocationPreview(
+        Guid id,
+        [FromBody] CatalogOrderAllocationPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await previewService.PreviewAsync(id, request, cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("orders/{id:guid}/allocations/{allocationId:guid}/usage")]
+    [RequireActiveModule(PlatformModules.ResourcePlanning)]
+    [RequirePermission(Permissions.Catalog.OrdersManage)]
+    [RequirePermission(Permissions.Catalog.OrdersAllocate)]
+    public async Task<ActionResult<CatalogOrderResponse>> AllocationUsage(
+        Guid id,
+        Guid allocationId,
+        [FromBody] CatalogOrderAllocationUsageRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await usageService.ApplyUsageActionAsync(id, allocationId, request, cancellationToken));
+        }
+        catch (PlanningVersionConflictException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PlanningVersionConflictException.Code });
+        }
+        catch (InvalidCatalogOrderTransitionException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
 
     [HttpPost("orders/{id:guid}/reject")]
     [RequirePermission(Permissions.Catalog.OrdersManage)]
@@ -107,6 +167,18 @@ public sealed class CatalogOrdersController(ICatalogOrderService orderService) :
         try
         {
             return Ok(await action());
+        }
+        catch (PlanningVersionConflictException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PlanningVersionConflictException.Code });
+        }
+        catch (ResourceUnavailableException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ResourceUnavailableException.Code });
+        }
+        catch (UnsupportedWorkWindowException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = UnsupportedWorkWindowException.Code });
         }
         catch (ArgumentException ex)
         {

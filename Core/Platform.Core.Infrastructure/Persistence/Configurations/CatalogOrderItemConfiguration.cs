@@ -11,6 +11,7 @@ public sealed class CatalogOrderItemConfiguration : IEntityTypeConfiguration<Cat
         builder.ToTable("catalog_order_items", "catalog");
 
         builder.HasKey(i => i.Id);
+        builder.HasAlternateKey(i => new { i.TenantId, i.Id });
 
         builder.Property(i => i.Id)
             .ValueGeneratedNever();

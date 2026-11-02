@@ -282,6 +282,7 @@ public sealed class ReservationService(
             {
                 TenantId = tenantId,
                 UnitId = request.UnitId,
+                Purpose = ReservationPurpose.CustomerBooking,
                 CustomerId = customer.Id,
                 CustomerName = customer.Name,
                 CustomerWhatsApp = whatsAppSnapshot,
@@ -488,7 +489,7 @@ public sealed class ReservationService(
             .Include(r => r.Items)
                 .ThenInclude(i => i.RentalAsset)
                     .ThenInclude(a => a.Asset)
-            .Where(r => r.CustomerId == customerId)
+            .Where(r => r.Purpose == ReservationPurpose.CustomerBooking && r.CustomerId == customerId)
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
@@ -588,6 +589,7 @@ public sealed class ReservationService(
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+            EnsureNotInternalUse(reservation);
 
             if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
             {
@@ -649,6 +651,7 @@ public sealed class ReservationService(
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+            EnsureNotInternalUse(reservation);
 
             if (reservation.Status is ReservationStatus.PendingDeposit or ReservationStatus.Canceled)
             {
@@ -710,6 +713,7 @@ public sealed class ReservationService(
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+            EnsureNotInternalUse(reservation);
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
@@ -763,8 +767,11 @@ public sealed class ReservationService(
                 cancellationToken);
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken);
-            if (reservation is null || reservation.CustomerId != customerId)
+            if (reservation is null
+                || reservation.Purpose != ReservationPurpose.CustomerBooking
+                || reservation.CustomerId != customerId)
             {
+                // A customer must never be able to reference an InternalUse reservation, even by id.
                 throw new KeyNotFoundException("Reservation not found.");
             }
 
@@ -811,6 +818,19 @@ public sealed class ReservationService(
         {
             await RollbackIfPresentAsync(transaction, cancellationToken);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Staff Rentals mutations (confirm/complete/cancel by id) must reject InternalUse
+    /// reservations: those are owned by a catalog order's allocation lifecycle and must only be
+    /// mutated through that order's allocation-usage workflow.
+    /// </summary>
+    private static void EnsureNotInternalUse(Reservation reservation)
+    {
+        if (reservation.Purpose == ReservationPurpose.InternalUse)
+        {
+            throw new InternalUseRequiresOrderWorkflowException(reservation.Id);
         }
     }
 
@@ -1282,9 +1302,9 @@ public sealed class ReservationService(
             reservation.Id,
             reservation.TenantId,
             reservation.UnitId,
-            reservation.CustomerId,
-            reservation.CustomerName,
-            reservation.CustomerWhatsApp,
+            reservation.CustomerId!.Value,
+            reservation.CustomerName!,
+            reservation.CustomerWhatsApp!,
             reservation.StartDateTime,
             reservation.EndDateTime,
             reservation.Status,

@@ -132,7 +132,28 @@ public sealed record SlotResponseDto(
     SchedulePolicy SchedulePolicy,
     bool SupportsEntireRecurrence,
     int? Quantity = null,
-    string? CustomerName = null);
+    string? CustomerName = null,
+    /// <summary>
+    /// Staff-only: true when this booked cell is backed by an InternalUse (order-resource-planning)
+    /// reservation rather than a customer booking. Always false on public/portal projections,
+    /// which never populate this field (order-equipment-link-codex §4: public day projections show
+    /// plain unavailability only — no purpose, no badge, no link).
+    /// </summary>
+    bool IsInternalUseOrigin = false,
+    /// <summary>
+    /// Staff-only, and only when the viewer has catalog.orders.view/OrdersRead: the owning catalog
+    /// order id for an internal-use cell. Omitted (left null) when the viewer lacks that
+    /// permission, mirroring how other permission-gated optional fields behave in this codebase.
+    /// </summary>
+    Guid? OwningCatalogOrderId = null,
+    /// <summary>
+    /// Staff-only: the allocation's actual work window within this InternalUse cell, excluding
+    /// prep/cleanup buffers, so the UI can shade [StartTime,WorkStartTime) and
+    /// [WorkEndTime,EndTime) as buffer time (order-equipment-link-codex §4). Null whenever
+    /// <see cref="IsInternalUseOrigin"/> is false, and always null on public/portal projections.
+    /// </summary>
+    TimeOnly? WorkStartTime = null,
+    TimeOnly? WorkEndTime = null);
 
 public sealed record DayScheduleResponseDto(
     DateOnly Date,

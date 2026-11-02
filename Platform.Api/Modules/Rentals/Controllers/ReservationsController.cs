@@ -105,6 +105,10 @@ public sealed class ReservationsController(
         {
             return NotFound(new { error = ex.Message });
         }
+        catch (InternalUseRequiresOrderWorkflowException ex)
+        {
+            return Conflict(new { error = ex.Message, code = InternalUseRequiresOrderWorkflowException.Code });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });
@@ -130,6 +134,10 @@ public sealed class ReservationsController(
         {
             return NotFound(new { error = ex.Message });
         }
+        catch (InternalUseRequiresOrderWorkflowException ex)
+        {
+            return Conflict(new { error = ex.Message, code = InternalUseRequiresOrderWorkflowException.Code });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });
@@ -154,6 +162,10 @@ public sealed class ReservationsController(
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (InternalUseRequiresOrderWorkflowException ex)
+        {
+            return Conflict(new { error = ex.Message, code = InternalUseRequiresOrderWorkflowException.Code });
         }
         catch (InvalidOperationException ex)
         {

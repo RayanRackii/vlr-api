@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Notifications;
 using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
@@ -21,6 +22,11 @@ public interface ICatalogOrderService
     Task<CatalogOrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
     Task<CatalogOrderResponse> ApproveAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<CatalogOrderResponse> ApproveAsync(
+        Guid id,
+        CatalogOrderApprovePlanningRequest? planningRequest,
+        CancellationToken cancellationToken);
 
     Task<CatalogOrderResponse> RejectAsync(Guid id, string? reason, CancellationToken cancellationToken);
 
@@ -43,7 +49,9 @@ public sealed class CatalogOrderService(
     ITenantProvider tenantProvider,
     IHttpContextAccessor httpContextAccessor,
     IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
-    INotificationOutboxScheduler outboxScheduler) : ICatalogOrderService
+    INotificationOutboxScheduler outboxScheduler,
+    ICatalogOrderAllocationService allocationService,
+    IResourceOccupancyService occupancy) : ICatalogOrderService
 {
     public async Task<IReadOnlyList<CatalogOrderResponse>> ListAsync(
         CatalogOrderListQuery query,
@@ -85,7 +93,7 @@ public sealed class CatalogOrderService(
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        return list.Select(MapOrder).ToList();
+        return await CatalogOrderPlanningMapper.EnrichAsync(dbContext, list, includeAllocationDetail: true, cancellationToken);
     }
 
     public async Task<CatalogOrderResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -97,15 +105,19 @@ public sealed class CatalogOrderService(
             .Include(o => o.History)
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
 
-        return order is null ? null : MapOrder(order);
+        return order is null
+            ? null
+            : await CatalogOrderPlanningMapper.EnrichOneAsync(dbContext, order, includeAllocationDetail: true, cancellationToken);
     }
 
     public Task<CatalogOrderResponse> ApproveAsync(Guid id, CancellationToken cancellationToken) =>
-        TransitionAsync(
-            id,
-            CatalogEventTypes.OrderApproved,
-            (order, actorType, actorId) => order.Approve(actorType, actorId),
-            cancellationToken);
+        ApproveAsync(id, planningRequest: null, cancellationToken);
+
+    public Task<CatalogOrderResponse> ApproveAsync(
+        Guid id,
+        CatalogOrderApprovePlanningRequest? planningRequest,
+        CancellationToken cancellationToken) =>
+        allocationService.ApproveWithPlanningAsync(id, planningRequest, cancellationToken);
 
     public Task<CatalogOrderResponse> RejectAsync(
         Guid id,
@@ -115,6 +127,7 @@ public sealed class CatalogOrderService(
             id,
             CatalogEventTypes.OrderRejected,
             (order, actorType, actorId) => order.Reject(reason ?? string.Empty, actorType, actorId),
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(occupancy, db, order, ct),
             cancellationToken);
 
     public Task<CatalogOrderResponse> StartPreparingAsync(Guid id, CancellationToken cancellationToken) =>
@@ -122,6 +135,12 @@ public sealed class CatalogOrderService(
             id,
             CatalogEventTypes.OrderPreparing,
             (order, actorType, actorId) => order.StartPreparing(actorType, actorId),
+            // Existing `preparing` action also drives the internal execution operation: any pending
+            // (Scheduled) allocation starts running at the same moment the order is marked Preparing
+            // (order-equipment-link-codex §5: "Existing preparing and ready actions invoke the
+            // internal execution operations"). Staff can still call the standalone usage endpoint
+            // out-of-band (e.g. production actually starts later than the commercial status).
+            planningHook: CatalogAllocationExecutionService.StartPendingAllocationHook,
             cancellationToken);
 
     public Task<CatalogOrderResponse> MarkReadyAsync(Guid id, CancellationToken cancellationToken) =>
@@ -129,6 +148,10 @@ public sealed class CatalogOrderService(
             id,
             CatalogEventTypes.OrderReady,
             (order, actorType, actorId) => order.MarkReady(actorType, actorId),
+            // Ready requires work already finished (allocation at least Cleaning) across every
+            // required item; the hook throws InvalidCatalogOrderTransitionException otherwise so the
+            // whole transition rolls back before the commercial status is touched.
+            planningHook: CatalogAllocationExecutionService.RequireWorkFinishedHook,
             cancellationToken);
 
     public Task<CatalogOrderResponse> CompleteAsync(Guid id, CancellationToken cancellationToken) =>
@@ -136,6 +159,7 @@ public sealed class CatalogOrderService(
             id,
             eventType: null,
             (order, actorType, actorId) => order.Complete(actorType, actorId),
+            planningHook: null,
             cancellationToken);
 
     public Task<CatalogOrderResponse> CancelAsync(
@@ -146,6 +170,10 @@ public sealed class CatalogOrderService(
             id,
             CatalogEventTypes.OrderCancelledBySupplier,
             (order, actorType, actorId) => order.Cancel(CatalogActorType.B2BUser, reason, actorId),
+            // Unstarted (Scheduled) allocations are released transactionally on cancel/reject; an
+            // already-started (Running/Cleaning) allocation keeps the resource occupied until
+            // explicit release via the usage endpoint, even though the order is now terminal.
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(occupancy, db, order, ct),
             cancellationToken);
 
     public async Task<IReadOnlyList<ProductRequestResponse>> ListProductRequestsAsync(
@@ -178,6 +206,7 @@ public sealed class CatalogOrderService(
         Guid id,
         string? eventType,
         Action<CatalogOrder, CatalogActorType, Guid?> mutate,
+        Func<AppDbContext, CatalogOrder, CancellationToken, Task>? planningHook,
         CancellationToken cancellationToken)
     {
         EnsureTenant();
@@ -198,6 +227,13 @@ public sealed class CatalogOrderService(
 
         try
         {
+            // The planning hook runs before the commercial mutation so a failure (e.g. "ready"
+            // without work finished) never touches order.Status — the whole transaction rolls back.
+            if (planningHook is not null)
+            {
+                await planningHook(dbContext, order, cancellationToken);
+            }
+
             mutate(order, actorType, actorId);
 
             IReadOnlyList<Guid> queued = [];
@@ -228,7 +264,7 @@ public sealed class CatalogOrderService(
                 outboxScheduler.Schedule(deliveryId);
             }
 
-            return MapOrder(order);
+            return await CatalogOrderPlanningMapper.EnrichOneAsync(dbContext, order, includeAllocationDetail: true, cancellationToken);
         }
         catch
         {
@@ -288,7 +324,9 @@ public sealed class CatalogOrderService(
                     i.UnitPriceSnapshot,
                     i.Currency,
                     i.Quantity,
-                    i.SubTotal))
+                    i.SubTotal,
+                    ProductionSummaryStatus.NotRequired,
+                    null))
                 .ToList(),
             order.History
                 .OrderBy(h => h.CreatedAt)
@@ -299,7 +337,11 @@ public sealed class CatalogOrderService(
                     h.ActorId,
                     h.Reason,
                     h.CreatedAt))
-                .ToList());
+                .ToList(),
+            Convert.ToBase64String(order.RowVersion),
+            order.PlanningRevision,
+            ProductionSummaryStatus.NotRequired,
+            null);
 
     internal static ProductRequestResponse MapProductRequest(ProductRequest request) =>
         new(

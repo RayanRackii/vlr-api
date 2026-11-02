@@ -444,10 +444,22 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("order_number");
 
+                    b.Property<int>("PlanningRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("planning_revision");
+
                     b.Property<string>("RejectedReason")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("rejected_reason");
+
+                    b.Property<int>("ResourceRequirementsVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("resource_requirements_version");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -557,6 +569,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_catalog_order_items");
 
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_catalog_order_items_tenant_id_id");
+
                     b.HasIndex("OrderId")
                         .HasDatabaseName("ix_catalog_order_items_order_id");
 
@@ -567,6 +582,186 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_catalog_order_items_tenant_id_order_id");
 
                     b.ToTable("catalog_order_items", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItemResourceAllocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_id");
+
+                    b.Property<DateTimeOffset?>("ActualReleaseAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_release_at");
+
+                    b.Property<DateTimeOffset?>("ActualStartAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_start_at");
+
+                    b.Property<DateTimeOffset?>("ActualWorkFinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_work_finished_at");
+
+                    b.Property<int>("AllocatedQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("allocated_quantity");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_current");
+
+                    b.Property<DateTimeOffset>("PlannedWorkEnd")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("planned_work_end");
+
+                    b.Property<DateTimeOffset>("PlannedWorkStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("planned_work_start");
+
+                    b.Property<int>("PlanningRevision")
+                        .HasColumnType("integer")
+                        .HasColumnName("planning_revision");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RentalAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rental_asset_id");
+
+                    b.Property<Guid>("RequirementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requirement_id");
+
+                    b.Property<Guid>("ReservationItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reservation_item_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Scheduled")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("time_zone_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_order_item_resource_allocations");
+
+                    b.HasIndex("TenantId", "RentalAssetId")
+                        .HasDatabaseName("ix_order_item_resource_allocations_tenant_id_rental_asset_id");
+
+                    b.HasIndex("TenantId", "ReservationItemId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_order_item_resource_allocations_tenant_id_reservation_item_");
+
+                    b.HasIndex("TenantId", "RequirementId", "Sequence")
+                        .IsUnique()
+                        .HasDatabaseName("ux_order_item_resource_allocations_current_occurrence")
+                        .HasFilter("is_current = true");
+
+                    b.ToTable("order_item_resource_allocations", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItemResourceRequirement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssetCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_category_id");
+
+                    b.Property<int>("CleanupMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("cleanup_minutes");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DurationMinutesPerUnit")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_minutes_per_unit");
+
+                    b.Property<Guid>("OrderItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("order_item_id");
+
+                    b.Property<int>("PrepMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("prep_minutes");
+
+                    b.Property<Guid?>("RentalAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rental_asset_id");
+
+                    b.Property<int>("ResourceQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("resource_quantity");
+
+                    b.Property<Guid?>("SourceRequirementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_requirement_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_order_item_resource_requirements");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_catalog_order_item_resource_requirements_tenant_id_id");
+
+                    b.HasIndex("TenantId", "OrderItemId")
+                        .HasDatabaseName("ix_order_item_resource_requirements_tenant_id_order_item_id");
+
+                    b.HasIndex("TenantId", "RentalAssetId")
+                        .HasDatabaseName("ix_order_item_resource_requirements_tenant_id_rental_asset_id");
+
+                    b.HasIndex("TenantId", "SourceRequirementId")
+                        .HasDatabaseName("ix_order_item_resource_requirements_tenant_id_source_requireme");
+
+                    b.ToTable("order_item_resource_requirements", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("ck_order_item_resource_requirements_exactly_one_selector", "(rental_asset_id IS NOT NULL AND asset_category_id IS NULL) OR (rental_asset_id IS NULL AND asset_category_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderNumberSequence", b =>
@@ -741,6 +936,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("price");
 
+                    b.Property<int>("ResourceRequirementsVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("resource_requirements_version");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
@@ -856,6 +1057,84 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_catalog_product_files_tenant_id_storage_key");
 
                     b.ToTable("catalog_product_files", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductResourceRequirement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssetCategoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_category_id");
+
+                    b.Property<int>("CleanupMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("cleanup_minutes");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DurationMinutesPerUnit")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_minutes_per_unit");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("PrepMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("prep_minutes");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<Guid?>("RentalAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rental_asset_id");
+
+                    b.Property<int>("ResourceQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("resource_quantity");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_product_resource_requirements");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_catalog_product_resource_requirements_tenant_id_id");
+
+                    b.HasIndex("TenantId", "RentalAssetId")
+                        .HasDatabaseName("ix_product_resource_requirements_tenant_id_rental_asset_id");
+
+                    b.HasIndex("TenantId", "ProductId", "IsActive")
+                        .HasDatabaseName("ix_product_resource_requirements_tenant_id_product_id_is_active");
+
+                    b.ToTable("product_resource_requirements", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("ck_product_resource_requirements_exactly_one_selector", "(rental_asset_id IS NOT NULL AND asset_category_id IS NULL) OR (rental_asset_id IS NULL AND asset_category_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductTag", b =>
@@ -2405,18 +2684,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<Guid>("CustomerId")
+                    b.Property<Guid?>("CustomerId")
                         .HasColumnType("uuid")
                         .HasColumnName("customer_id");
 
                     b.Property<string>("CustomerName")
-                        .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("customer_name");
 
                     b.Property<string>("CustomerWhatsApp")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("customer_whats_app");
@@ -2428,6 +2705,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("EndDateTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("end_date_time");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("CustomerBooking")
+                        .HasColumnName("purpose");
 
                     b.Property<DateTimeOffset>("StartDateTime")
                         .HasColumnType("timestamp with time zone")
@@ -2475,7 +2760,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "StartDateTime", "EndDateTime")
                         .HasDatabaseName("ix_reservations_tenant_id_start_date_time_end_date_time");
 
-                    b.ToTable("reservations", "rentals");
+                    b.HasIndex("TenantId", "Purpose", "Status", "EndDateTime")
+                        .HasDatabaseName("ix_reservations_tenant_id_purpose_status_end_date_time");
+
+                    b.ToTable("reservations", "rentals", t =>
+                        {
+                            t.HasCheckConstraint("ck_reservations_customer_booking_requires_customer", "purpose = 'InternalUse' OR (customer_id IS NOT NULL AND customer_name IS NOT NULL AND customer_whats_app IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.ReservationItem", b =>
@@ -2518,6 +2809,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_reservation_items");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_reservation_items_tenant_id_id");
 
                     b.HasIndex("RentalAssetId")
                         .HasDatabaseName("ix_reservation_items_rental_asset_id");
@@ -4250,6 +4544,66 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItemResourceAllocation", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.RentalAsset", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RentalAssetId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_order_item_resource_allocations_rental_assets_tenant_id_ren");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogOrderItemResourceRequirement", "Requirement")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RequirementId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_order_item_resource_allocations_catalog_order_item_resource");
+
+                    b.HasOne("Platform.Core.Domain.Entities.ReservationItem", "ReservationItem")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ReservationItemId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_order_item_resource_allocations_reservation_items_tenant_id");
+
+                    b.Navigation("Requirement");
+
+                    b.Navigation("ReservationItem");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItemResourceRequirement", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogOrderItem", "OrderItem")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "OrderItemId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_order_item_resource_requirements_catalog_order_items_tenant");
+
+                    b.HasOne("Platform.Core.Domain.Entities.RentalAsset", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RentalAssetId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_order_item_resource_requirements_rental_assets_tenant_id_re");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProductResourceRequirement", "SourceRequirement")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "SourceRequirementId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_order_item_resource_requirements_catalog_product_resource_r");
+
+                    b.Navigation("OrderItem");
+
+                    b.Navigation("SourceRequirement");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderStatusHistory", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.CatalogOrder", "Order")
@@ -4306,6 +4660,26 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_catalog_product_files_catalog_products_product_id");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductResourceRequirement", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", "Product")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_product_resource_requirements_catalog_products_tenant_id_pr");
+
+                    b.HasOne("Platform.Core.Domain.Entities.RentalAsset", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "RentalAssetId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_product_resource_requirements_rental_assets_tenant_id_renta");
 
                     b.Navigation("Product");
                 });
@@ -4557,7 +4931,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("CustomerId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_reservations_customers_customer_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.Unit", "Unit")

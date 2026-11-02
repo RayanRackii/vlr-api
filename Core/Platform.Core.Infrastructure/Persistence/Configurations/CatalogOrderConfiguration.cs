@@ -63,6 +63,14 @@ public sealed class CatalogOrderConfiguration : IEntityTypeConfiguration<Catalog
             .HasColumnType("bytea")
             .IsRequired();
 
+        builder.Property(o => o.ResourceRequirementsVersion)
+            .HasDefaultValue(0)
+            .IsRequired();
+
+        builder.Property(o => o.PlanningRevision)
+            .HasDefaultValue(0)
+            .IsRequired();
+
         builder.Property(o => o.CreatedAt)
             .IsRequired();
 

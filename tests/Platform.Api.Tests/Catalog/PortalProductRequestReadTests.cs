@@ -439,6 +439,8 @@ public sealed class PortalProductRequestReadTests
                     services.AddScoped<IDomainEventDispatcher<CatalogOrderEvent>>(sp =>
                         sp.GetRequiredService<ICatalogNotificationPublisher>().AsDomainEvents());
                     services.AddSingleton<INotificationOutboxScheduler, NoOpNotificationOutboxScheduler>();
+                    services.AddScoped<Platform.Api.Modules.Rentals.Contracts.IResourceOccupancyService,
+                        Platform.Api.Modules.Rentals.Services.ResourceOccupancyService>();
                     services.AddScoped<ICatalogPortalService, CatalogPortalService>();
                     services.AddScoped<CatalogPolicyService>();
                     services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();

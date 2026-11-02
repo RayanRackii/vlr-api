@@ -112,6 +112,7 @@ public sealed class DomainEventOutboxTests(PostgresContainerFixture postgres)
         await events.EnsureReadyAsync();
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = mismatchedTenant ? Guid.NewGuid() : harness.TenantId,
             UnitId = harness.UnitId,
             CustomerId = harness.CustomerId,

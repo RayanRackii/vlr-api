@@ -1012,6 +1012,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
 
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = seed.TenantId,
             UnitId = seed.UnitId,
             CustomerId = seed.CustomerId,
@@ -1148,6 +1149,7 @@ public sealed class ReservationConcurrencyTests : IClassFixture<PostgresContaine
         await using var db = factory.Create(tenantProvider);
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = seed.TenantId,
             UnitId = seed.UnitId,
             CustomerId = seed.CustomerId,

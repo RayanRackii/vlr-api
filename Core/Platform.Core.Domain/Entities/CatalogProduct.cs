@@ -18,6 +18,12 @@ public class CatalogProduct : Entity, ITenantScoped
 
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Concurrency token for the product's resource-requirements configuration.
+    /// Orders capture this value at creation time into <see cref="CatalogOrder.ResourceRequirementsVersion"/>.
+    /// </summary>
+    public int ResourceRequirementsVersion { get; set; }
+
     private readonly List<CatalogProductFile> _files = [];
 
     public IReadOnlyCollection<CatalogProductFile> Files => _files.AsReadOnly();

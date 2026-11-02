@@ -43,6 +43,10 @@ internal static class BookingPolicyEnforcement
         var activeCount = await db.Reservations
             .Where(reservation =>
                 reservation.TenantId == tenantId
+                // Defensive and explicit: only CustomerBooking reservations count against the
+                // customer's daily quota. InternalUse has no CustomerId to match in practice, but
+                // this filter does not rely on that incidental fact.
+                && reservation.Purpose == ReservationPurpose.CustomerBooking
                 && reservation.CustomerId == customerId
                 && (reservation.Status == ReservationStatus.PendingDeposit
                     || reservation.Status == ReservationStatus.Confirmed)

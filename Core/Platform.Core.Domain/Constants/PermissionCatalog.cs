@@ -69,6 +69,7 @@ public static class PermissionCatalog
         Define(Permissions.Catalog.ProductsManage, "Manage catalog products", "Create, update, and deactivate catalog products and files."),
         Define(Permissions.Catalog.OrdersRead, "Read catalog orders", "List and view catalog orders."),
         Define(Permissions.Catalog.OrdersManage, "Manage catalog orders", "Approve, reject, fulfill, and cancel catalog orders."),
+        Define(Permissions.Catalog.OrdersAllocate, "Allocate catalog order resources", "Allocate, start, finish, and release resources for catalog order items."),
         Define(Permissions.Catalog.NotificationsRead, "Read catalog notifications", "List catalog notification deliveries and channel config."),
         Define(Permissions.Catalog.NotificationsResend, "Resend catalog notifications", "Resend failed deliveries and update catalog channel config."),
     ];

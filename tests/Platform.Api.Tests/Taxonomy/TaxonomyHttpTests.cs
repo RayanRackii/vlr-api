@@ -172,6 +172,7 @@ public sealed class TaxonomyHttpTests
             services.AddScoped<CatalogTaxonomyOptionsService>();
             services.AddSingleton<ICatalogProductService>(h.Products);
             services.AddSingleton<ICatalogPortalService>(h.Portal);
+            services.AddScoped<ICatalogProductResourceRequirementService, CatalogProductResourceRequirementService>();
             services.AddSingleton<IAuthorizationHandler, ClaimPermissionHandler>();
             services.AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme)
                 .AddScheme<AuthenticationSchemeOptions, TestAuth>(SupabaseJwtBearerDefaults.AuthenticationScheme, _ => { })

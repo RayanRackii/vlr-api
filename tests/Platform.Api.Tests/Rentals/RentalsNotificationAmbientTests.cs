@@ -523,6 +523,7 @@ public sealed class RentalsNotificationAmbientTests
         var customerId = Guid.NewGuid();
         return new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenantId,
             UnitId = Guid.NewGuid(),
             CustomerId = customerId,
@@ -548,7 +549,10 @@ public sealed class RentalsNotificationAmbientTests
         Assert.DoesNotContain("Ana", message, StringComparison.Ordinal);
         Assert.DoesNotContain("ana@club.test", message, StringComparison.Ordinal);
         Assert.DoesNotContain("11988887777", message, StringComparison.Ordinal);
-        Assert.DoesNotContain(reservation.CustomerId.ToString(), message, StringComparison.Ordinal);
+        if (reservation.CustomerId is { } customerId)
+        {
+            Assert.DoesNotContain(customerId.ToString(), message, StringComparison.Ordinal);
+        }
         Assert.DoesNotContain(reservation.Id.ToString(), message, StringComparison.Ordinal);
         foreach (var tenantId in tenantIds)
         {

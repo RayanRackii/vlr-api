@@ -112,7 +112,9 @@ public sealed class ReservationReminderJob(
 
         var dueIds = await dbContext.Reservations
             .Where(r =>
-                (r.Status == ReservationStatus.PendingDeposit
+                // InternalUse reservations must never receive a WhatsApp/email reminder.
+                r.Purpose == ReservationPurpose.CustomerBooking
+                && (r.Status == ReservationStatus.PendingDeposit
                     || r.Status == ReservationStatus.Confirmed)
                 && r.StartDateTime > now
                 && r.StartDateTime <= windowEnd

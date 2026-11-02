@@ -82,6 +82,7 @@ public static class Permissions
         public const string ProductsManage = "catalog.products.manage";
         public const string OrdersRead = "catalog.orders.read";
         public const string OrdersManage = "catalog.orders.manage";
+        public const string OrdersAllocate = "catalog.orders.allocate";
         public const string NotificationsRead = "catalog.notifications.read";
         public const string NotificationsResend = "catalog.notifications.resend";
     }

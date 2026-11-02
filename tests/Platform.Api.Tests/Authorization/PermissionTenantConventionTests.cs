@@ -313,8 +313,12 @@ public sealed class PermissionTenantConventionTests
 
     private static bool HasAttribute<TAttribute>(ControllerActionDescriptor action)
         where TAttribute : Attribute =>
-        action.MethodInfo.GetCustomAttribute<TAttribute>(inherit: true) is not null
-        || action.ControllerTypeInfo.GetCustomAttribute<TAttribute>(inherit: true) is not null
+        // Two or more stacked [RequirePermission]/[RequireAnyPermission] on the same action are
+        // legitimate (AND-combined ASP.NET authorize policies, e.g. OrdersManage + OrdersAllocate
+        // on the planning usage endpoint) — GetCustomAttributes (plural) never throws on multiple
+        // matches, unlike the singular GetCustomAttribute used here previously.
+        action.MethodInfo.GetCustomAttributes(typeof(TAttribute), inherit: true).Length > 0
+        || action.ControllerTypeInfo.GetCustomAttributes(typeof(TAttribute), inherit: true).Length > 0
         || action.EndpointMetadata.OfType<TAttribute>().Any();
 
     private static bool IsAllowAnonymous(ControllerActionDescriptor action) =>

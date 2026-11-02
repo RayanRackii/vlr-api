@@ -744,6 +744,7 @@ public sealed class ReservationCustomerEmailTests
 
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenant.Id,
             UnitId = Guid.NewGuid(),
             CustomerId = Guid.NewGuid(),
@@ -1129,6 +1130,7 @@ public sealed class ReservationCustomerEmailTests
 
             var reservation = new Reservation
             {
+                Purpose = ReservationPurpose.CustomerBooking,
                 TenantId = tenant.Id,
                 UnitId = unit.Id,
                 CustomerId = customer.Id,

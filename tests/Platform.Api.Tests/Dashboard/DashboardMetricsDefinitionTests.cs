@@ -273,6 +273,7 @@ public sealed class DashboardMetricsDefinitionTests
     {
         harness.Db.Reservations.Add(new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = harness.TenantProvider.TenantId!.Value,
             UnitId = harness.UnitId,
             CustomerId = customerId,

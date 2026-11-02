@@ -485,7 +485,7 @@ internal sealed class AvailabilityHarness : IAsyncDisposable
         ReservationStatus status = ReservationStatus.Confirmed)
     {
         var customer = new Customer { TenantId = resource.TenantId, Name = "Private customer", Phone = "5511000000000" };
-        var reservation = new Reservation { TenantId = resource.TenantId, UnitId = Unit.Id, CustomerId = customer.Id,
+        var reservation = new Reservation { Purpose = ReservationPurpose.CustomerBooking, TenantId = resource.TenantId, UnitId = Unit.Id, CustomerId = customer.Id,
             CustomerName = "Private customer", CustomerWhatsApp = "Private phone", Status = status,
             StartDateTime = BrazilTimeZone.AtLocal(Day, start), EndDateTime = BrazilTimeZone.AtLocal(Day, end),
             TotalAmount = 20, DepositPaid = 0 };
