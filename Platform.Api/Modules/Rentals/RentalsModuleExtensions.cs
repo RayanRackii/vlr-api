@@ -18,6 +18,7 @@ public static class RentalsModuleExtensions
         services.AddScoped<Platform.Core.Domain.Contracts.ResourceVisuals.IRentalVisualDefaults, RentalVisualDefaults>();
         services.AddScoped<IRentalPricingService, RentalPricingService>();
         services.AddScoped<IReservationService, ReservationService>();
+        services.AddScoped<IResourceOccupancyService, ResourceOccupancyService>();
         services.AddScoped<IOccupancyKindService, OccupancyKindService>();
         services.AddScoped<IScheduleService, ScheduleService>();
         services.AddScoped<ITeacherLessonService, TeacherLessonService>();

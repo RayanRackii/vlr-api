@@ -10,7 +10,16 @@ public sealed record PlatformModuleDescriptor(
     bool IsLegacy,
     IReadOnlyList<string> Provides,
     IReadOnlyList<string> RequiredCapabilities,
-    IReadOnlyList<string> Aliases);
+    IReadOnlyList<string> Aliases,
+    IReadOnlyList<string>? RequiredModules = null)
+{
+    /// <summary>
+    /// Other commercial tenant_modules keys that must already be active for this module to
+    /// activate (distinct from <see cref="RequiredCapabilities"/>, which is capability-based).
+    /// Enforced by <see cref="PlatformModuleCatalog.NormalizeEntitlements"/>.
+    /// </summary>
+    public IReadOnlyList<string> RequiredModules { get; init; } = RequiredModules ?? [];
+}
 
 /// <summary>
 /// Canonical module catalog (boring static data, not a plugin framework).
@@ -64,6 +73,14 @@ public static class PlatformModuleCatalog
             Provides: [],
             RequiredCapabilities: [],
             Aliases: ["manutencao", "manutenção"]),
+        new(
+            PlatformModules.ResourcePlanning,
+            IsCommercial: true,
+            IsLegacy: false,
+            Provides: [],
+            RequiredCapabilities: [],
+            Aliases: [],
+            RequiredModules: [PlatformModules.Catalog, PlatformModules.Rentals]),
     ];
 
     private static readonly Dictionary<string, string> AliasToKey = BuildAliasIndex();
@@ -144,7 +161,48 @@ public static class PlatformModuleCatalog
             commercial.Add(canonical);
         }
 
+        ValidateModuleDependencies(commercial, existingActive);
+
         return commercial.OrderBy(m => m, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// Enforces module-to-module activation dependencies (<see cref="PlatformModuleDescriptor.RequiredModules"/>),
+    /// distinct from capability-based <see cref="PlatformModuleDescriptor.RequiredCapabilities"/>:
+    /// a module cannot activate unless its required modules are in the resulting desired set, and a
+    /// required module already active cannot be dropped from the desired set while the dependent remains.
+    /// The business rule "deny disabling while unreleased allocations exist" is enforced by the
+    /// allocation service at the call site (module lock serializes it with allocation admission);
+    /// this method only validates static module-to-module composition.
+    /// </summary>
+    private static void ValidateModuleDependencies(
+        HashSet<string> desiredCommercial,
+        HashSet<string> existingActive)
+    {
+        foreach (var module in All)
+        {
+            if (module.RequiredModules.Count == 0)
+            {
+                continue;
+            }
+
+            var isDesired = desiredCommercial.Contains(module.Key);
+            var wasActive = existingActive.Contains(module.Key);
+
+            if (!isDesired && !wasActive)
+            {
+                continue;
+            }
+
+            foreach (var required in module.RequiredModules)
+            {
+                if (!desiredCommercial.Contains(required))
+                {
+                    throw new ArgumentException(
+                        $"Module {module.Key} requires {required} to be active.");
+                }
+            }
+        }
     }
 
     /// <summary>

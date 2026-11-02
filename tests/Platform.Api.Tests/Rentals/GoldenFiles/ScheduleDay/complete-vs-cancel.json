@@ -95,7 +95,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "slotThenCompleted"
+          "customerName": "slotThenCompleted",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "<slot:booked 09-10>",
@@ -118,7 +122,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "slotThenCanceled"
+          "customerName": "slotThenCanceled",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -141,7 +149,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "derivedThenCompleted"
+          "customerName": "derivedThenCompleted",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -164,7 +176,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "derivedThenCanceled"
+          "customerName": "derivedThenCanceled",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         }
       ]
     }
@@ -271,7 +287,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -294,7 +314,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         }
       ]
     },
@@ -322,7 +346,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "slotThenCompleted"
+          "customerName": "slotThenCompleted",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "<slot:booked 09-10>",
@@ -345,7 +373,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -368,7 +400,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "derivedThenCompleted"
+          "customerName": "derivedThenCompleted",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -391,7 +427,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         }
       ]
     }

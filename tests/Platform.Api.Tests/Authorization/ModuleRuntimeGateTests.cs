@@ -693,6 +693,8 @@ public sealed class ModuleRuntimeGateTests
                     services.AddSingleton<IWorkOrderGenerationService, StubWorkOrderGenerationService>();
                     services.AddSingleton<ICatalogPortalService, StubCatalogPortalService>();
                     services.AddSingleton<ICatalogProductService, StubCatalogProductService>();
+                    services.AddScoped<Platform.Api.Modules.Catalog.Services.ICatalogProductResourceRequirementService,
+                        Platform.Api.Modules.Catalog.Services.CatalogProductResourceRequirementService>();
                     services.AddSingleton<IUserDirectoryService, StubUserDirectoryService>();
                     services.AddSingleton<IRbacActorAccessor, StubRbacActorAccessor>();
 

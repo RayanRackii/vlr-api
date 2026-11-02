@@ -81,7 +81,7 @@ public sealed class RentalsWhatsAppNotificationTests
         await ProcessQueuedAsync(ctx);
 
         Assert.Equal(1, ctx.WhatsApp.SendCount);
-        AssertStatusSend(ctx, "Confirmada", reservation.CustomerWhatsApp);
+        AssertStatusSend(ctx, "Confirmada", reservation.CustomerWhatsApp!);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class RentalsWhatsAppNotificationTests
         await ctx.Reservations.CancelAsync(staffTarget.Id, CancellationToken.None);
         await ProcessQueuedAsync(ctx);
         Assert.Equal(1, ctx.WhatsApp.SendCount);
-        AssertStatusSend(ctx, "Cancelada", staffTarget.CustomerWhatsApp);
+        AssertStatusSend(ctx, "Cancelada", staffTarget.CustomerWhatsApp!);
 
         ctx.WhatsApp.Reset();
         var futureStart = DateTimeOffset.UtcNow.AddDays(2);
@@ -129,7 +129,7 @@ public sealed class RentalsWhatsAppNotificationTests
         await ctx.Reservations.CompleteAsync(reservation.Id, CancellationToken.None);
         await ProcessQueuedAsync(ctx);
 
-        AssertStatusSend(ctx, "Concluída", reservation.CustomerWhatsApp);
+        AssertStatusSend(ctx, "Concluída", reservation.CustomerWhatsApp!);
 
         ctx.WhatsApp.Reset();
         await ctx.Reservations.CompleteAsync(reservation.Id, CancellationToken.None);

@@ -32,6 +32,12 @@ public class CatalogOrder : Entity, ITenantScoped
 
     public byte[] RowVersion { get; set; } = Guid.NewGuid().ToByteArray();
 
+    /// <summary>Resource-requirements configuration version captured at order creation. 0 = legacy order, never allocates.</summary>
+    public int ResourceRequirementsVersion { get; set; }
+
+    /// <summary>Incremented on every allocation, execution, release, reschedule or ETA mutation (owned by the allocation service).</summary>
+    public int PlanningRevision { get; set; }
+
     private readonly List<CatalogOrderItem> _items = [];
 
     private readonly List<CatalogOrderStatusHistory> _history = [];

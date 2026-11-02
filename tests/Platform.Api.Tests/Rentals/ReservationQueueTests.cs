@@ -220,6 +220,7 @@ public sealed class ReservationQueueTests
 
         var overlapping = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = harness.TenantId,
             UnitId = harness.UnitId,
             CustomerId = harness.CustomerB,

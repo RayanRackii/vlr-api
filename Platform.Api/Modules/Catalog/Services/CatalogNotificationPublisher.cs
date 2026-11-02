@@ -117,6 +117,16 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
 
+        // estimatedReadyAt is added where trivial (approval/ready/cancel) per
+        // order-equipment-link-codex §5: "Add readiness/ETA to supported notification payloads."
+        // No new templates render it yet — it is passed as payload metadata for a later phase/UI
+        // to consume; this never blocks delivery when it is null (ordinary, resource-free orders).
+        var estimatedReadyAt = eventType is CatalogEventTypes.OrderApproved
+                or CatalogEventTypes.OrderReady
+                or CatalogEventTypes.OrderCancelledBySupplier
+            ? await ResolveEstimatedReadyAtAsync(order, cancellationToken)
+            : null;
+
         var payload = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["tenantName"] = tenant?.TradeName is { Length: > 0 } trade ? trade : tenant?.LegalName,
@@ -127,6 +137,7 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
             ["cancellationReason"] = order.CancelledReason,
             ["targetRoute"] = $"/t/{tenant?.Subdomain}/pedidos/{order.Id}",
             ["module"] = PlatformModules.Catalog,
+            ["estimatedReadyAt"] = estimatedReadyAt?.ToString("O"),
         };
 
         var configs = await dbContext.TenantNotificationChannelConfigs
@@ -220,6 +231,45 @@ public sealed class CatalogNotificationPublisher : ICatalogNotificationPublisher
 
         dbContext.Notifications.Add(notification);
         return queuedExternal;
+    }
+
+    private async Task<DateTimeOffset?> ResolveEstimatedReadyAtAsync(
+        CatalogOrder order,
+        CancellationToken cancellationToken)
+    {
+        var itemIds = order.Items.Select(i => i.Id).ToList();
+        if (itemIds.Count == 0)
+        {
+            return null;
+        }
+
+        var requirementIds = await dbContext.CatalogOrderItemResourceRequirements
+            .Where(r => itemIds.Contains(r.OrderItemId))
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        if (requirementIds.Count == 0)
+        {
+            return null;
+        }
+
+        // Latest required item's planned work end, excluding cleanup (order-equipment-link-codex
+        // §5: "Calculate readiness from the latest required work end, excluding resource cleanup").
+        var relevantStatuses = new[]
+        {
+            AllocationStatus.Scheduled,
+            AllocationStatus.Running,
+            AllocationStatus.Cleaning,
+            AllocationStatus.Released,
+        };
+
+        return await dbContext.CatalogOrderItemResourceAllocations
+            .Where(a => requirementIds.Contains(a.RequirementId)
+                && a.IsCurrent
+                && relevantStatuses.Contains(a.Status))
+            .OrderByDescending(a => a.PlannedWorkEnd)
+            .Select(a => (DateTimeOffset?)a.PlannedWorkEnd)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static Recipient? ResolveCustomerRecipient(CatalogOrder order, string eventType) =>

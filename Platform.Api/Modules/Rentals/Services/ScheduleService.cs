@@ -269,6 +269,7 @@ public sealed class ScheduleService(
             {
                 TenantId = tenantId,
                 UnitId = request.UnitId,
+                Purpose = ReservationPurpose.CustomerBooking,
                 CustomerId = customer.Id,
                 CustomerName = customer.Name,
                 CustomerWhatsApp = whatsApp,
@@ -326,9 +327,9 @@ public sealed class ScheduleService(
                 reservation.Id,
                 reservation.TenantId,
                 reservation.UnitId,
-                reservation.CustomerId,
-                reservation.CustomerName,
-                reservation.CustomerWhatsApp,
+                reservation.CustomerId!.Value,
+                reservation.CustomerName!,
+                reservation.CustomerWhatsApp!,
                 reservation.StartDateTime,
                 reservation.EndDateTime,
                 reservation.Status,
@@ -367,12 +368,12 @@ public sealed class ScheduleService(
     {
         var query =
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && item.RentalAssetId == rentalAssetId
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
                   && reservation.EndDateTime > start
             select item.Quantity;

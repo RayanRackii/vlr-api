@@ -147,7 +147,11 @@
         "schedulePolicy": "OpenHours",
         "supportsEntireRecurrence": false,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -170,7 +174,11 @@
         "schedulePolicy": "OpenHours",
         "supportsEntireRecurrence": false,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "<slot:override 10-10:30>",
@@ -193,7 +201,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -216,7 +228,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       }
     ]
   },
@@ -244,7 +260,11 @@
         "schedulePolicy": "OpenHours",
         "supportsEntireRecurrence": false,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -267,7 +287,11 @@
         "schedulePolicy": "OpenHours",
         "supportsEntireRecurrence": false,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "<slot:tombstone 08-09>",
@@ -290,7 +314,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -313,7 +341,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "<slot:override 10-10:30>",
@@ -336,7 +368,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -359,7 +395,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -382,7 +422,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       },
       {
         "id": "00000000-0000-0000-0000-000000000000",
@@ -405,7 +449,11 @@
         "schedulePolicy": "SlotGrid",
         "supportsEntireRecurrence": true,
         "quantity": null,
-        "customerName": null
+        "customerName": null,
+        "isInternalUseOrigin": false,
+        "owningCatalogOrderId": null,
+        "workStartTime": null,
+        "workEndTime": null
       }
     ]
   }

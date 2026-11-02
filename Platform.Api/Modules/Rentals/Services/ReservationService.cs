@@ -24,8 +24,6 @@ public sealed class ReservationService(
 {
     private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
 
-    private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
-
     public async Task<CheckAvailabilityResponseDto> CheckAvailabilityAsync(
         CheckAvailabilityRequestDto request,
         CancellationToken cancellationToken)
@@ -282,6 +280,7 @@ public sealed class ReservationService(
             {
                 TenantId = tenantId,
                 UnitId = request.UnitId,
+                Purpose = ReservationPurpose.CustomerBooking,
                 CustomerId = customer.Id,
                 CustomerName = customer.Name,
                 CustomerWhatsApp = whatsAppSnapshot,
@@ -488,7 +487,7 @@ public sealed class ReservationService(
             .Include(r => r.Items)
                 .ThenInclude(i => i.RentalAsset)
                     .ThenInclude(a => a.Asset)
-            .Where(r => r.CustomerId == customerId)
+            .Where(r => r.Purpose == ReservationPurpose.CustomerBooking && r.CustomerId == customerId)
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
@@ -522,7 +521,10 @@ public sealed class ReservationService(
             .Include(r => r.Items)
                 .ThenInclude(i => i.RentalAsset)
                     .ThenInclude(a => a.Asset)
-            .AsQueryable();
+            // M2: this is a customer-booking projection (ToResponse dereferences CustomerId/
+            // CustomerName/CustomerWhatsApp as non-null) — InternalUse rows have none of those and
+            // must never reach it, or every call 500s once any InternalUse reservation exists.
+            .Where(r => r.Purpose == ReservationPurpose.CustomerBooking);
 
         if (from is DateOnly fromDate)
         {
@@ -588,6 +590,7 @@ public sealed class ReservationService(
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+            EnsureNotInternalUse(reservation);
 
             if (reservation.Status is ReservationStatus.Canceled or ReservationStatus.Completed)
             {
@@ -649,6 +652,7 @@ public sealed class ReservationService(
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+            EnsureNotInternalUse(reservation);
 
             if (reservation.Status is ReservationStatus.PendingDeposit or ReservationStatus.Canceled)
             {
@@ -710,6 +714,7 @@ public sealed class ReservationService(
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
                 ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+            EnsureNotInternalUse(reservation);
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
@@ -763,8 +768,11 @@ public sealed class ReservationService(
                 cancellationToken);
 
             var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken);
-            if (reservation is null || reservation.CustomerId != customerId)
+            if (reservation is null
+                || reservation.Purpose != ReservationPurpose.CustomerBooking
+                || reservation.CustomerId != customerId)
             {
+                // A customer must never be able to reference an InternalUse reservation, even by id.
                 throw new KeyNotFoundException("Reservation not found.");
             }
 
@@ -811,6 +819,19 @@ public sealed class ReservationService(
         {
             await RollbackIfPresentAsync(transaction, cancellationToken);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Staff Rentals mutations (confirm/complete/cancel by id) must reject InternalUse
+    /// reservations: those are owned by a catalog order's allocation lifecycle and must only be
+    /// mutated through that order's allocation-usage workflow.
+    /// </summary>
+    private static void EnsureNotInternalUse(Reservation reservation)
+    {
+        if (reservation.Purpose == ReservationPurpose.InternalUse)
+        {
+            throw new InternalUseRequiresOrderWorkflowException(reservation.Id);
         }
     }
 
@@ -915,106 +936,14 @@ public sealed class ReservationService(
     /// one of the rental's AllowedDurationMinutes; when that is unset, only a single window
     /// may be booked (today's behavior).
     /// </summary>
-    private async Task<SlotGridWindowPlan> ResolveSlotGridWindowsAsync(
+    private Task<SlotGridWindowPlan> ResolveSlotGridWindowsAsync(
         RentalAsset rental,
         DateOnly date,
         TimeOnly startTime,
         TimeOnly endTime,
-        CancellationToken cancellationToken)
-    {
-        var tenantId = EnsureTenantContext();
-        var persistedSlots = await dbContext.Slots
-            .AsNoTracking()
-            .Include(s => s.OccupancyKind)
-            .Where(s => s.TenantId == tenantId && s.RentalAssetId == rental.Id && s.Date == date)
-            .ToListAsync(cancellationToken);
-
-        var templates = await dbContext.ScheduleTemplates
-            .AsNoTracking()
-            .Include(t => t.OccupancyKind)
-            .Where(t => t.TenantId == tenantId
-                        && t.RentalAssetId == rental.Id
-                        && t.IsActive
-                        && t.DayOfWeek == date.DayOfWeek)
-            .ToListAsync(cancellationToken);
-        var templateWindows = OccupancyPrecedence.SplitWinningWindows(templates);
-
-        var normalizedEnd = TenantBookingClock.NormalizeEndTime(endTime);
-        var windows = new List<(TimeOnly Start, TimeOnly End)>();
-        var persistedSlotIds = new List<Guid>();
-        if (persistedSlots.Any(s => s.StartTime < normalizedEnd
-            && TenantBookingClock.NormalizeEndTime(s.EndTime) > startTime
-            && (s.Status != SlotStatus.Available || !s.OccupancyKind.IsActive
-                || !s.OccupancyKind.IsBookableByCustomer)))
-        {
-            return new SlotGridWindowPlan(false, windows, persistedSlotIds);
-        }
-
-        var cursor = startTime;
-
-        while (cursor < normalizedEnd)
-        {
-            bool open;
-            TimeOnly windowEnd;
-
-            var persisted = persistedSlots.FirstOrDefault(s => s.StartTime == cursor);
-            if (persisted is not null)
-            {
-                windowEnd = TenantBookingClock.NormalizeEndTime(persisted.EndTime);
-                open = persisted.Status == SlotStatus.Available
-                       && persisted.OccupancyKind.IsActive
-                       && persisted.OccupancyKind.IsBookableByCustomer;
-            }
-            else
-            {
-                var winner = templateWindows.FirstOrDefault(w => w.Start == cursor);
-                if (winner.Template is null)
-                {
-                    return new SlotGridWindowPlan(false, windows, persistedSlotIds);
-                }
-
-                windowEnd = TenantBookingClock.NormalizeEndTime(winner.End);
-                open = winner.Template.OccupancyKind.IsActive
-                       && winner.Template.OccupancyKind.IsBookableByCustomer;
-            }
-
-            if (!open || windowEnd <= cursor)
-            {
-                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
-            }
-
-            if (persisted is not null)
-                persistedSlotIds.Add(persisted.Id);
-            windows.Add((cursor, windowEnd));
-            cursor = windowEnd;
-        }
-
-        if (cursor != normalizedEnd)
-        {
-            return new SlotGridWindowPlan(false, windows, persistedSlotIds);
-        }
-
-        if (windows.Count > 1)
-        {
-            if (string.IsNullOrWhiteSpace(rental.AllowedDurationMinutes))
-            {
-                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
-            }
-
-            var totalMinutes = (TenantBookingClock.EndOfDayTime(normalizedEnd) - startTime.ToTimeSpan()).TotalMinutes;
-            if (!OpenHoursRules.ParseDurations(rental.AllowedDurationMinutes).Any(minutes => minutes == totalMinutes))
-            {
-                return new SlotGridWindowPlan(false, windows, persistedSlotIds);
-            }
-        }
-
-        return new SlotGridWindowPlan(true, windows, persistedSlotIds);
-    }
-
-    private readonly record struct SlotGridWindowPlan(
-        bool IsOpen,
-        IReadOnlyList<(TimeOnly Start, TimeOnly End)> Windows,
-        IReadOnlyList<Guid> PersistedSlotIds);
+        CancellationToken cancellationToken) =>
+        SlotGridWindowResolver.ResolveAsync(
+            dbContext, EnsureTenantContext(), rental, date, startTime, endTime, cancellationToken);
 
     /// <summary>
     /// Slot prices apply to each window; hourly bands use each window's elapsed time.
@@ -1121,12 +1050,12 @@ public sealed class ReservationService(
     {
         var query =
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && item.RentalAssetId == rentalAssetId
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
                   && reservation.EndDateTime > start
             select new { item.Quantity, reservation.Id };
@@ -1282,9 +1211,9 @@ public sealed class ReservationService(
             reservation.Id,
             reservation.TenantId,
             reservation.UnitId,
-            reservation.CustomerId,
-            reservation.CustomerName,
-            reservation.CustomerWhatsApp,
+            reservation.CustomerId!.Value,
+            reservation.CustomerName!,
+            reservation.CustomerWhatsApp!,
             reservation.StartDateTime,
             reservation.EndDateTime,
             reservation.Status,

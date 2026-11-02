@@ -94,14 +94,18 @@ internal sealed class CatalogHarness : IAsyncDisposable
             TimeProvider.System);
         var products = new CatalogProductService(db, tenantProvider, storage, storageOptions);
         var http = new FakeHttpContextAccessor();
-        var orders = new CatalogOrderService(db, tenantProvider, http, publisher.AsDomainEvents(), scheduler);
+        var occupancy = new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService();
+        var allocationService = new CatalogOrderAllocationService(
+            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler);
+        var orders = new CatalogOrderService(db, tenantProvider, http, publisher.AsDomainEvents(), scheduler, allocationService, occupancy);
         var portal = new CatalogPortalService(
             db,
             tenantProvider,
             storage,
             storageOptions,
             publisher.AsDomainEvents(),
-            scheduler);
+            scheduler,
+            occupancy);
         var notifications = new CatalogNotificationService(db, tenantProvider, publisher, processor);
 
         return new CatalogHarness(

@@ -215,9 +215,15 @@ public sealed class TenantPurger(
 
         if (selfReferences.Length > 0)
         {
+            // Interpolated segments are schema-derived identifiers (table/alias names), not user
+            // input; tenantId is passed as a real SqlQueryRaw parameter, not interpolated. False
+            // positive surfaced by -warnaserror once this file is recompiled (pre-existing, unrelated
+            // to resource planning).
+#pragma warning disable EF1002
             var count = await dbContext.Database.SqlQueryRaw<int>(
                     $"SELECT CAST(COUNT(*) AS INTEGER) AS {dbContext.GetService<ISqlGenerationHelper>().DelimitIdentifier("Value")} FROM {Table(entity)} AS target WHERE {scope}", tenantId)
                 .SingleAsync(cancellationToken);
+#pragma warning restore EF1002
             if (count > 0)
                 throw new InvalidOperationException($"Cannot purge cyclic or externally referenced rows in {entity.Name}.");
         }

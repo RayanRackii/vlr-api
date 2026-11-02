@@ -364,6 +364,7 @@ public sealed class TenantScopedForUpdateLockTests : IClassFixture<PostgresConta
         };
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenant.Id,
             UnitId = unit.Id,
             CustomerId = customer.Id,

@@ -15,7 +15,9 @@ namespace Platform.Api.Modules.Catalog.Controllers;
 [TaxonomyErrors]
 [RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog/products")]
-public sealed class CatalogProductsController(ICatalogProductService productService) : ControllerBase
+public sealed class CatalogProductsController(
+    ICatalogProductService productService,
+    ICatalogProductResourceRequirementService requirementService) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Catalog.ProductsRead)]
@@ -203,6 +205,57 @@ public sealed class CatalogProductsController(ICatalogProductService productServ
         catch (HttpRequestException)
         {
             return StorageProviderActionResults.FromHttpRequestException();
+        }
+    }
+
+    [HttpGet("{id:guid}/resource-requirements")]
+    [RequireActiveModule(PlatformModules.ResourcePlanning)]
+    [RequirePermission(Permissions.Catalog.ProductsManage)]
+    public async Task<ActionResult<CatalogProductResourceRequirementsResponse>> GetResourceRequirements(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await requirementService.GetAsync(id, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:guid}/resource-requirements")]
+    [RequireActiveModule(PlatformModules.ResourcePlanning)]
+    [RequirePermission(Permissions.Catalog.ProductsManage)]
+    public async Task<ActionResult<CatalogProductResourceRequirementsResponse>> ReplaceResourceRequirements(
+        Guid id,
+        [FromBody] ReplaceCatalogProductResourceRequirementsRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await requirementService.ReplaceAsync(id, request, cancellationToken));
+        }
+        catch (PlanningVersionConflictArgumentException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PlanningVersionConflictArgumentException.Code });
+        }
+        catch (NotSupportedYetException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = NotSupportedYetException.Code });
+        }
+        catch (UnsupportedRequirementScopeException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = UnsupportedRequirementScopeException.Code });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
     }
 }

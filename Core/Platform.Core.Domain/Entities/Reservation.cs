@@ -12,13 +12,21 @@ public class Reservation : Entity, ITenantScoped
 
     public required Guid UnitId { get; set; }
 
-    public required Guid CustomerId { get; set; }
+    /// <summary>
+    /// Distinguishes a customer-facing booking from an internal (operational) resource use.
+    /// CustomerBooking requires <see cref="CustomerId"/>, <see cref="CustomerName"/> and
+    /// <see cref="CustomerWhatsApp"/> to be set (enforced by a DB CHECK constraint);
+    /// InternalUse has no customer identity.
+    /// </summary>
+    public required ReservationPurpose Purpose { get; set; }
 
-    /// <summary>Historical snapshot of the customer name at booking time.</summary>
-    public required string CustomerName { get; set; }
+    public Guid? CustomerId { get; set; }
 
-    /// <summary>Historical snapshot of the customer WhatsApp/phone at booking time.</summary>
-    public required string CustomerWhatsApp { get; set; }
+    /// <summary>Historical snapshot of the customer name at booking time. Required for CustomerBooking.</summary>
+    public string? CustomerName { get; set; }
+
+    /// <summary>Historical snapshot of the customer WhatsApp/phone at booking time. Required for CustomerBooking.</summary>
+    public string? CustomerWhatsApp { get; set; }
 
     public required DateTimeOffset StartDateTime { get; set; }
 
@@ -32,7 +40,7 @@ public class Reservation : Entity, ITenantScoped
 
     public Unit Unit { get; set; } = null!;
 
-    public Customer Customer { get; set; } = null!;
+    public Customer? Customer { get; set; }
 
     private readonly List<ReservationItem> _items = [];
 

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Common;
 using Platform.Api.Modules.Catalog.Dtos;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Notifications;
 using Platform.Api.Storage;
 using Platform.Core.Domain.Events;
@@ -80,7 +81,8 @@ public sealed class CatalogPortalService(
     IStorageProvider storageProvider,
     IOptions<StorageOptions> storageOptions,
     IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
-    INotificationOutboxScheduler outboxScheduler) : ICatalogPortalService
+    INotificationOutboxScheduler outboxScheduler,
+    IResourceOccupancyService occupancy) : ICatalogPortalService
 {
     public async Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
         string? search,
@@ -163,6 +165,17 @@ public sealed class CatalogPortalService(
             .Where(p => productIds.Contains(p.Id) && p.IsActive)
             .ToDictionaryAsync(p => p.Id, cancellationToken);
 
+        // Snapshot each product's currently-active resource requirement rows onto the order item at
+        // creation time (order-equipment-link-codex §1: "Capture when the order is created. Product
+        // edits affect subsequent orders only."). Products with no active requirement rows behave as
+        // ordinary (non-scheduled) products — nothing is snapshotted for them.
+        var activeRequirementsByProduct = await dbContext.CatalogProductResourceRequirements
+            .Where(r => productIds.Contains(r.ProductId) && r.IsActive)
+            .ToListAsync(cancellationToken);
+        var requirementsByProduct = activeRequirementsByProduct
+            .GroupBy(r => r.ProductId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -212,7 +225,7 @@ public sealed class CatalogPortalService(
                     total += subTotal;
                 }
 
-                order.AddItem(new CatalogOrderItem
+                var orderItem = new CatalogOrderItem
                 {
                     TenantId = tenantId,
                     OrderId = order.Id,
@@ -223,8 +236,38 @@ public sealed class CatalogPortalService(
                     Currency = product.Currency,
                     Quantity = line.Quantity,
                     SubTotal = subTotal,
-                });
+                };
+                order.AddItem(orderItem);
+                dbContext.CatalogOrderItems.Add(orderItem);
+
+                if (requirementsByProduct.TryGetValue(product.Id, out var activeRequirements))
+                {
+                    foreach (var requirement in activeRequirements)
+                    {
+                        dbContext.CatalogOrderItemResourceRequirements.Add(new CatalogOrderItemResourceRequirement
+                        {
+                            TenantId = tenantId,
+                            OrderItemId = orderItem.Id,
+                            SourceRequirementId = requirement.Id,
+                            RentalAssetId = requirement.RentalAssetId,
+                            AssetCategoryId = requirement.AssetCategoryId,
+                            ResourceQuantity = requirement.ResourceQuantity,
+                            DurationMinutesPerUnit = requirement.DurationMinutesPerUnit,
+                            PrepMinutes = requirement.PrepMinutes,
+                            CleanupMinutes = requirement.CleanupMinutes,
+                        });
+                    }
+                }
             }
+
+            // The order captures the product's requirement-configuration version at creation time so
+            // later product edits never retroactively change an already-placed order's plan (0 = no
+            // product in this order carried an active requirements version; Phase 0 has at most one
+            // schedulable item so a single order-level version is sufficient — see decisions list).
+            order.ResourceRequirementsVersion = request.Items
+                .Select(line => products.TryGetValue(line.ProductId, out var p) ? p.ResourceRequirementsVersion : 0)
+                .DefaultIfEmpty(0)
+                .Max();
 
             order.TotalAmount = anyOnRequest ? null : CatalogMoney.Round(total ?? 0m);
             order.RecordHistory(
@@ -251,7 +294,7 @@ public sealed class CatalogPortalService(
                 outboxScheduler.Schedule(deliveryId);
             }
 
-            return CatalogOrderService.MapOrder(order);
+            return await CatalogOrderPlanningMapper.EnrichOneAsync(dbContext, order, includeAllocationDetail: false, cancellationToken);
         }
         catch
         {
@@ -277,7 +320,7 @@ public sealed class CatalogPortalService(
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        return orders.Select(CatalogOrderService.MapOrder).ToList();
+        return await CatalogOrderPlanningMapper.EnrichAsync(dbContext, orders, includeAllocationDetail: false, cancellationToken);
     }
 
     public async Task<CatalogOrderResponse?> GetOrderAsync(
@@ -292,7 +335,9 @@ public sealed class CatalogPortalService(
             .Include(o => o.History)
             .FirstOrDefaultAsync(o => o.Id == orderId && o.CustomerId == customerId, cancellationToken);
 
-        return order is null ? null : CatalogOrderService.MapOrder(order);
+        return order is null
+            ? null
+            : await CatalogOrderPlanningMapper.EnrichOneAsync(dbContext, order, includeAllocationDetail: false, cancellationToken);
     }
 
     public async Task<CatalogOrderResponse> CancelOrderAsync(
@@ -320,6 +365,10 @@ public sealed class CatalogPortalService(
 
         try
         {
+            // Unstarted allocations are released transactionally on cancel regardless of actor
+            // (order-equipment-link-codex §3/§7); an already-started allocation stays occupied.
+            await CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(occupancy, dbContext, order, cancellationToken);
+
             // Customer cancelled their own order, so there is no customer-facing notice; staff get an
             // in-app heads-up via the dedicated event.
             var queued = await domainEvents.DispatchAsync(
@@ -338,7 +387,7 @@ public sealed class CatalogPortalService(
                 outboxScheduler.Schedule(deliveryId);
             }
 
-            return CatalogOrderService.MapOrder(order);
+            return await CatalogOrderPlanningMapper.EnrichOneAsync(dbContext, order, includeAllocationDetail: false, cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {

@@ -14,7 +14,8 @@ namespace Platform.Api.Modules.Rentals.Controllers;
 [Route("api/schedule")]
 public sealed class ScheduleController(
     IScheduleService scheduleService,
-    IPublicTenantBinder publicTenantBinder) : ControllerBase
+    IPublicTenantBinder publicTenantBinder,
+    IAuthorizationService authorizationService) : ControllerBase
 {
     [RequirePermission(Permissions.Rentals.ScheduleRead)]
     [HttpGet("templates")]
@@ -125,12 +126,28 @@ public sealed class ScheduleController(
         [FromQuery] Guid[]? rentalAssetIds,
         CancellationToken cancellationToken)
     {
-        return Ok(await scheduleService.GetDayAsync(
+        var result = await scheduleService.GetDayAsync(
             date,
             rentalAssetId,
             customerFacing: false,
             cancellationToken,
-            rentalAssetIds));
+            rentalAssetIds);
+
+        // The internal-use origin badge and buffer flag are always visible to any staff viewer who
+        // can see the agenda (schedule.read); the owning order *link* additionally requires
+        // catalog.orders.view (order-equipment-link-codex §4), so it is stripped here rather than
+        // ever resolved for an unauthorized viewer.
+        var canViewOrders = (await authorizationService.AuthorizeAsync(
+            User, PermissionPolicies.Name(Permissions.Catalog.OrdersRead))).Succeeded;
+        if (!canViewOrders && result.Slots.Any(s => s.OwningCatalogOrderId is not null))
+        {
+            result = result with
+            {
+                Slots = result.Slots.Select(s => s with { OwningCatalogOrderId = null }).ToList(),
+            };
+        }
+
+        return Ok(result);
     }
 
     [AllowAnonymous]

@@ -1300,6 +1300,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
     {
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = TenantId,
             UnitId = UnitId,
             CustomerId = CustomerId,

@@ -9,7 +9,15 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
 {
     public void Configure(EntityTypeBuilder<Reservation> builder)
     {
-        builder.ToTable("reservations", "rentals");
+        builder.ToTable("reservations", "rentals", table =>
+        {
+            // CustomerBooking requires customer identity; InternalUse has none. `purpose` is
+            // stored as its string enum name (HasConversion<string>() below), so the literal
+            // must be the string 'InternalUse', not the underlying int value.
+            table.HasCheckConstraint(
+                "ck_reservations_customer_booking_requires_customer",
+                "purpose = 'InternalUse' OR (customer_id IS NOT NULL AND customer_name IS NOT NULL AND customer_whats_app IS NOT NULL)");
+        });
 
         builder.HasKey(r => r.Id);
 
@@ -22,16 +30,19 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
         builder.Property(r => r.UnitId)
             .IsRequired();
 
-        builder.Property(r => r.CustomerId)
+        builder.Property(r => r.Purpose)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(ReservationPurpose.CustomerBooking)
             .IsRequired();
+
+        builder.Property(r => r.CustomerId);
 
         builder.Property(r => r.CustomerName)
-            .HasMaxLength(200)
-            .IsRequired();
+            .HasMaxLength(200);
 
         builder.Property(r => r.CustomerWhatsApp)
-            .HasMaxLength(32)
-            .IsRequired();
+            .HasMaxLength(32);
 
         builder.Property(r => r.StartDateTime)
             .IsRequired();
@@ -62,9 +73,15 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
 
         builder.HasIndex(r => new { r.TenantId, r.CustomerId });
 
+        // Internal reservation scan: used to find active internal-use occupancy windows.
+        builder.HasIndex(r => new { r.TenantId, r.Purpose, r.Status, r.EndDateTime });
+
+        // Tenant-qualified composite FK: application checks alone (ResourceOccupancyService) must
+        // not be the only thing standing between a caller-supplied unitId and a cross-tenant unit.
         builder.HasOne(r => r.Unit)
             .WithMany()
-            .HasForeignKey(r => r.UnitId)
+            .HasForeignKey(r => new { r.TenantId, r.UnitId })
+            .HasPrincipalKey(u => new { u.TenantId, u.Id })
             .OnDelete(DeleteBehavior.Restrict);
 
         // Cross-schema FK to core.customers is allowed (isolation rule is rentals ↛ inventory/maintenance).

@@ -76,6 +76,35 @@
         },
         "type": "object"
       },
+      "AllocationPreviewWorkStart": {
+        "additionalProperties": false,
+        "properties": {
+          "orderItemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "workStart": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderItemId",
+          "workStart"
+        ],
+        "type": "object"
+      },
+      "AllocationStatus": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
       "ApplyDailyOccurrenceRequestDto": {
         "additionalProperties": false,
         "properties": {
@@ -936,6 +965,118 @@
         },
         "type": "object"
       },
+      "CatalogOrderAllocationPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "unitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "workStarts": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationPreviewWorkStart"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "unitId",
+          "workStarts"
+        ],
+        "type": "object"
+      },
+      "CatalogOrderAllocationPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "conflictCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "estimatedReadyAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "isFeasible": {
+            "type": "boolean"
+          },
+          "occupiedEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "occupiedStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "orderItemId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "rentalAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "workEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatalogOrderAllocationUsageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "nullable": true,
+            "type": "string"
+          },
+          "expectedVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "expectedVersion"
+        ],
+        "type": "object"
+      },
+      "CatalogOrderApprovePlanningRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "unitId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "workStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CatalogOrderHistoryResponse": {
         "additionalProperties": false,
         "properties": {
@@ -965,9 +1106,64 @@
         },
         "type": "object"
       },
+      "CatalogOrderItemAllocationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "actualReleaseAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "actualStartAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "actualWorkFinishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "plannedWorkEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "plannedWorkStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "planningRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rentalAssetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requirementId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AllocationStatus"
+          },
+          "timeZoneId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CatalogOrderItemResponse": {
         "additionalProperties": false,
         "properties": {
+          "allocation": {
+            "$ref": "#/components/schemas/CatalogOrderItemAllocationResponse"
+          },
           "currency": {
             "nullable": true,
             "type": "string"
@@ -987,6 +1183,9 @@
           "productName": {
             "nullable": true,
             "type": "string"
+          },
+          "productionSummary": {
+            "$ref": "#/components/schemas/ProductionSummaryStatus"
           },
           "quantity": {
             "format": "int32",
@@ -1044,6 +1243,11 @@
             "nullable": true,
             "type": "string"
           },
+          "estimatedReadyAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/CatalogOrderHistoryResponse"
@@ -1065,6 +1269,17 @@
           "orderNumber": {
             "format": "int32",
             "type": "integer"
+          },
+          "orderVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "planningRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "productionSummary": {
+            "$ref": "#/components/schemas/ProductionSummaryStatus"
           },
           "rejectedReason": {
             "nullable": true,
@@ -1141,6 +1356,64 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/CatalogFileVisibility"
+          }
+        },
+        "type": "object"
+      },
+      "CatalogProductResourceRequirementDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetCategoryId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "cleanupMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "durationMinutesPerUnit": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "prepMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rentalAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "resourceQuantity": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "durationMinutesPerUnit",
+          "resourceQuantity"
+        ],
+        "type": "object"
+      },
+      "CatalogProductResourceRequirementsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogProductResourceRequirementDto"
+            },
+            "nullable": true,
+            "type": "array"
           }
         },
         "type": "object"
@@ -3815,6 +4088,19 @@
         "format": "int32",
         "type": "integer"
       },
+      "ProductionSummaryStatus": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
       "PromoteTenantUserRequestDto": {
         "additionalProperties": false,
         "properties": {
@@ -4406,6 +4692,27 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "ReplaceCatalogProductResourceRequirementsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogProductResourceRequirementDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "requirements"
+        ],
         "type": "object"
       },
       "ReplacePlanTaskDto": {
@@ -5299,6 +5606,9 @@
           "isDerived": {
             "type": "boolean"
           },
+          "isInternalUseOrigin": {
+            "type": "boolean"
+          },
           "label": {
             "nullable": true,
             "type": "string"
@@ -5316,6 +5626,11 @@
             "type": "string"
           },
           "occupancyKindLabel": {
+            "nullable": true,
+            "type": "string"
+          },
+          "owningCatalogOrderId": {
+            "format": "uuid",
             "nullable": true,
             "type": "string"
           },
@@ -5353,6 +5668,16 @@
           },
           "supportsEntireRecurrence": {
             "type": "boolean"
+          },
+          "workEndTime": {
+            "format": "time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workStartTime": {
+            "format": "time",
+            "nullable": true,
+            "type": "string"
           }
         },
         "type": "object"
@@ -10481,6 +10806,133 @@
         ]
       }
     },
+    "/api/catalog/orders/{id}/allocation-preview": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderAllocationPreviewRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderAllocationPreviewRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderAllocationPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOrderAllocationPreviewResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOrderAllocationPreviewResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOrderAllocationPreviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CatalogOrders"
+        ]
+      }
+    },
+    "/api/catalog/orders/{id}/allocations/{allocationId}/usage": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "allocationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderAllocationUsageRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderAllocationUsageRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderAllocationUsageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOrderResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOrderResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogOrderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CatalogOrders"
+        ]
+      }
+    },
     "/api/catalog/orders/{id}/approve": {
       "post": {
         "parameters": [
@@ -10494,6 +10946,25 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderApprovePlanningRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderApprovePlanningRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogOrderApprovePlanningRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -11916,6 +12387,103 @@
               "text/plain": {
                 "schema": {
                   "$ref": "#/components/schemas/CatalogFileUrlResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CatalogProducts"
+        ]
+      }
+    },
+    "/api/catalog/products/{id}/resource-requirements": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProductResourceRequirementsResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProductResourceRequirementsResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProductResourceRequirementsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CatalogProducts"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceCatalogProductResourceRequirementsRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceCatalogProductResourceRequirementsRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceCatalogProductResourceRequirementsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProductResourceRequirementsResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProductResourceRequirementsResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProductResourceRequirementsResponse"
                 }
               }
             },

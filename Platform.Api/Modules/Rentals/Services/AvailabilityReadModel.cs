@@ -117,7 +117,7 @@ internal sealed class AvailabilityReadModel(
 
         if (!customerFacing)
         {
-            all = await AttachBookingDetailsAsync(tenantId, all.ToList(), cancellationToken);
+            all = await AttachBookingDetailsAsync(tenantId, all.ToList(), zone, cancellationToken);
         }
 
         var slots = all
@@ -135,6 +135,7 @@ internal sealed class AvailabilityReadModel(
     private async Task<List<SlotResponseDto>> AttachBookingDetailsAsync(
         Guid tenantId,
         List<SlotResponseDto> slots,
+        TimeZoneInfo zone,
         CancellationToken cancellationToken)
     {
         var reservationIds = slots
@@ -154,7 +155,15 @@ internal sealed class AvailabilityReadModel(
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && reservationIds.Contains(reservation.Id)
-            select new { reservation.Id, item.RentalAssetId, item.Quantity, reservation.CustomerName })
+            select new
+            {
+                reservation.Id,
+                ReservationItemId = item.Id,
+                item.RentalAssetId,
+                item.Quantity,
+                reservation.CustomerName,
+                reservation.Purpose,
+            })
             .ToListAsync(cancellationToken);
 
         var quantities = rows
@@ -163,15 +172,71 @@ internal sealed class AvailabilityReadModel(
         var names = rows
             .GroupBy(r => r.Id)
             .ToDictionary(g => g.Key, g => g.First().CustomerName);
+        var reservationItemIdByKey = rows
+            .ToDictionary(r => (r.Id, r.RentalAssetId), r => r.ReservationItemId);
+        var purposeByKey = rows
+            .ToDictionary(r => (r.Id, r.RentalAssetId), r => r.Purpose);
+
+        var internalUseReservationItemIds = rows
+            .Where(r => r.Purpose == ReservationPurpose.InternalUse)
+            .Select(r => r.ReservationItemId)
+            .ToList();
+
+        // Staff-only badge: an InternalUse cell is backed by an order-resource-planning allocation.
+        // order-equipment-link-codex §4 — the owning order id and work window (for buffer shading)
+        // are attached here (staff read model); the controller strips the order id when the caller
+        // lacks catalog.orders.view/OrdersRead.
+        var allocationByReservationItemId = internalUseReservationItemIds.Count == 0
+            ? new Dictionary<Guid, (Guid OrderId, DateTimeOffset WorkStart, DateTimeOffset WorkEnd)>()
+            : await (
+                from allocation in dbContext.CatalogOrderItemResourceAllocations.AsNoTracking()
+                join requirement in dbContext.CatalogOrderItemResourceRequirements.AsNoTracking()
+                    on allocation.RequirementId equals requirement.Id
+                join orderItem in dbContext.CatalogOrderItems.AsNoTracking()
+                    on requirement.OrderItemId equals orderItem.Id
+                where allocation.TenantId == tenantId
+                      && internalUseReservationItemIds.Contains(allocation.ReservationItemId)
+                select new
+                {
+                    allocation.ReservationItemId,
+                    orderItem.OrderId,
+                    allocation.PlannedWorkStart,
+                    allocation.PlannedWorkEnd,
+                })
+                .ToDictionaryAsync(
+                    x => x.ReservationItemId,
+                    x => (x.OrderId, x.PlannedWorkStart, x.PlannedWorkEnd),
+                    cancellationToken);
 
         return slots
-            .Select(s => s.Status == SlotStatus.Booked && s.ReservationId is { } rid
-                ? s with
+            .Select(s =>
+            {
+                if (s.Status != SlotStatus.Booked || s.ReservationId is not { } rid)
+                {
+                    return s;
+                }
+
+                (Guid OrderId, DateTimeOffset WorkStart, DateTimeOffset WorkEnd)? allocation =
+                    reservationItemIdByKey.TryGetValue((rid, s.RentalAssetId), out var itemId)
+                    && allocationByReservationItemId.TryGetValue(itemId, out var found)
+                        ? found
+                        : null;
+
+                return s with
                 {
                     Quantity = quantities.TryGetValue((rid, s.RentalAssetId), out var q) ? q : null,
                     CustomerName = names.GetValueOrDefault(rid),
-                }
-                : s)
+                    IsInternalUseOrigin = purposeByKey.TryGetValue((rid, s.RentalAssetId), out var purpose)
+                        && purpose == ReservationPurpose.InternalUse,
+                    OwningCatalogOrderId = allocation?.OrderId,
+                    WorkStartTime = allocation is { } a1
+                        ? TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(a1.WorkStart, zone).DateTime)
+                        : null,
+                    WorkEndTime = allocation is { } a2
+                        ? TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(a2.WorkEnd, zone).DateTime)
+                        : null,
+                };
+            })
             .ToList();
     }
 
@@ -573,12 +638,12 @@ internal sealed class AvailabilityReadModel(
 
         var rows = await (
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && rentalAssetIds.Contains(item.RentalAssetId)
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < dayEnd
                   && reservation.EndDateTime > dayStart
             select new

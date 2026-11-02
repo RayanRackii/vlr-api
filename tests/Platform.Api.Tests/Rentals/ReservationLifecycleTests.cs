@@ -214,6 +214,7 @@ public sealed class ReservationLifecycleTests
             };
             var reservation = new Reservation
             {
+                Purpose = ReservationPurpose.CustomerBooking,
                 TenantId = tenantA.Id,
                 UnitId = unit.Id,
                 CustomerId = customer.Id,

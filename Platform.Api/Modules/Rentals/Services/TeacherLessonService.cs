@@ -16,8 +16,6 @@ public sealed class TeacherLessonService(
     TimeProvider timeProvider,
     ITeacherLessonScope teacherLessonScope) : ITeacherLessonService
 {
-    private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
-
     public async Task<SlotResponseDto> CreateAsync(
         CreateTeacherLessonRequestDto request,
         CancellationToken cancellationToken)
@@ -473,12 +471,12 @@ public sealed class TeacherLessonService(
 
         var blocking = await (
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && item.RentalAssetId == rentalAssetId
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
                   && reservation.EndDateTime > start
             select item.Id).AnyAsync(cancellationToken);
