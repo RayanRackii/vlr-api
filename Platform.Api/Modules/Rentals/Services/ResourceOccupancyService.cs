@@ -12,15 +12,17 @@ namespace Platform.Api.Modules.Rentals.Services;
 /// <see cref="ReservationService"/>/<see cref="ScheduleService"/> (<c>start &lt; otherEnd &amp;&amp;
 /// end &gt; otherStart</c>), filtered to <see cref="AvailabilityReadModel.BlockingStatuses"/>.
 /// CustomerBooking and InternalUse reservations block identically by design (see Order-Resource
-/// Planning spec §3), with one exception (H4): an unreleased (Confirmed, not yet Completed)
+/// Planning spec §3), with one exception: an overdue, unreleased (Confirmed, not yet Completed)
 /// InternalUse reservation blocks past its planned EndDateTime — "now" is never an implicit
 /// release — until <see cref="ReleaseInternalUseOccupancyAsync"/> explicitly closes it. This
 /// service is stateless
 /// (no injected AppDbContext of its own) so it can be called against whichever AppDbContext/
 /// transaction the caller (e.g. Catalog's approval flow) is already inside.
 /// </summary>
-public sealed class ResourceOccupancyService : IResourceOccupancyService
+public sealed class ResourceOccupancyService(TimeProvider? timeProvider = null) : IResourceOccupancyService
 {
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+
     public Task LockResourcesAsync(
         AppDbContext db,
         Guid tenantId,
@@ -186,12 +188,12 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
                 $"Cannot release a canceled InternalUse reservation '{reservation.Id}'.");
         }
 
-        // Release closes the open-ended block above (reservation.Status flips away from Confirmed)
-        // but deliberately leaves EndDateTime untouched — the exact historically-planned interval
-        // still blocks forever once Completed, identical to existing CustomerBooking behavior
-        // ("Completing a reservation never releases its time"). The actual release moment is
-        // recorded separately on the allocation (CatalogOrderItemResourceAllocation.ActualReleaseAt),
-        // not here.
+        // Preserve late occupancy in history after the open-ended block is closed.
+        var releasedAt = clock.GetUtcNow();
+        if (releasedAt > reservation.EndDateTime)
+        {
+            reservation.EndDateTime = releasedAt;
+        }
 
         // "Released" means the resource is physically free again from this point forward — the
         // same terminal meaning ReservationStatus.Completed already carries for CustomerBooking
@@ -257,7 +259,7 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
     /// reservation id, if any; exclusive resources (expected quantity 1 in Phase 0) only ever have
     /// zero or one conflict, but this still reports just one id even when more exist.
     /// </summary>
-    private static async Task<Guid?> FindPersistedConflictAsync(
+    private async Task<Guid?> FindPersistedConflictAsync(
         AppDbContext db,
         Guid tenantId,
         Guid rentalAssetId,
@@ -268,22 +270,14 @@ public sealed class ResourceOccupancyService : IResourceOccupancyService
     {
         var query =
             from item in db.ReservationItems.AsNoTracking()
-            join reservation in db.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                db.Reservations.AsNoTracking(), clock.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && item.RentalAssetId == rentalAssetId
-                  && AvailabilityReadModel.BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
-                  && (
-                      reservation.EndDateTime > start
-                      // An unreleased InternalUse occupancy stays blocking past its planned end —
-                      // "now" is never an implicit release — until ReleaseInternalUseOccupancyAsync
-                      // explicitly marks it Completed (at which point its (now bounded) EndDateTime
-                      // governs again, same as CustomerBooking).
-                      || (reservation.Purpose == ReservationPurpose.InternalUse
-                          && reservation.Status == ReservationStatus.Confirmed)
-                  )
+                  && reservation.EndDateTime > start
             select reservation.Id;
 
         if (excludeReservationId is Guid excludedId)

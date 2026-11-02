@@ -368,18 +368,14 @@ public sealed class ScheduleService(
     {
         var query =
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && item.RentalAssetId == rentalAssetId
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
-                  // H4: mirrors ResourceOccupancyService.FindPersistedConflictAsync — an unreleased
-                  // InternalUse occupancy blocks past its planned end until explicitly released.
-                  && (reservation.EndDateTime > start
-                      || (reservation.Purpose == ReservationPurpose.InternalUse
-                          && reservation.Status == ReservationStatus.Confirmed))
+                  && reservation.EndDateTime > start
             select item.Quantity;
 
         return await query.SumAsync(cancellationToken);

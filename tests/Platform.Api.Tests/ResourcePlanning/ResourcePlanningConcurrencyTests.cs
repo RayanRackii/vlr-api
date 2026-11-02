@@ -287,7 +287,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
         var occupiedEnd = WorkEnd + TimeSpan.FromMinutes(15);
 
         await using var seedDb = factory.Create(tenantProvider);
-        var occupancy = new ResourceOccupancyService();
+        var occupancy = new ResourceOccupancyService(BookingClock());
         var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
             seedDb, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, occupiedStart, occupiedEnd, CancellationToken.None);
         await seedDb.SaveChangesAsync();
@@ -298,9 +298,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
             occupiedStart, occupiedStart.AddMinutes(10), tentativeBatch: [], CancellationToken.None);
         Assert.False(bufferConflict.IsAvailable);
 
-        // Explicitly release (H4: an unreleased InternalUse occupancy now blocks indefinitely past
-        // its planned end, so this buffer-boundary assertion needs the occupancy released first to
-        // isolate "outside the buffer" from "still unreleased").
+        // Release before the planned end; the buffered interval remains occupied in history.
         await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId, CancellationToken.None);
         await seedDb.SaveChangesAsync();
 
@@ -318,11 +316,11 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
         var tenantProvider = new FakeTenantProvider();
         var seed = await SeedAsync(factory, tenantProvider);
 
-        var pastStart = DateTimeOffset.UtcNow.AddDays(-5);
+        var pastStart = BookingClock().GetUtcNow().AddDays(-5);
         var pastEnd = pastStart.AddHours(1);
 
         await using var seedDb = factory.Create(tenantProvider);
-        var occupancy = new ResourceOccupancyService();
+        var occupancy = new ResourceOccupancyService(BookingClock());
         var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
             seedDb, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, pastStart, pastEnd, CancellationToken.None);
         await seedDb.SaveChangesAsync();
@@ -341,13 +339,13 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
             pastEnd.AddDays(1), pastEnd.AddDays(1).AddHours(1), tentativeBatch: [], CancellationToken.None);
         Assert.False(afterPlannedEnd.IsAvailable);
 
-        // Explicit release now frees it — a later request is available again.
+        // Explicit release preserves the overrun; times after the release are free.
         await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId, CancellationToken.None);
         await seedDb.SaveChangesAsync();
 
         var afterRelease = await occupancy.CheckAvailabilityAsync(
             seedDb, seed.TenantId, seed.RentalAssetId,
-            pastEnd.AddDays(1), pastEnd.AddDays(1).AddHours(1), tentativeBatch: [], CancellationToken.None);
+            BookingClock().GetUtcNow(), BookingClock().GetUtcNow().AddHours(1), tentativeBatch: [], CancellationToken.None);
         Assert.True(afterRelease.IsAvailable);
     }
 
@@ -381,7 +379,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
 
         var reservation = await verify.Reservations.SingleAsync(r => r.TenantId == seed.TenantId && r.Purpose == ReservationPurpose.InternalUse);
         Assert.Equal(ReservationStatus.Confirmed, reservation.Status);
-        var stillBlocked = await new ResourceOccupancyService().CheckAvailabilityAsync(
+        var stillBlocked = await new ResourceOccupancyService(BookingClock()).CheckAvailabilityAsync(
             verify, seed.TenantId, seed.RentalAssetId, WorkStart, WorkEnd, tentativeBatch: [], CancellationToken.None);
         Assert.False(stillBlocked.IsAvailable);
 
@@ -389,7 +387,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
         await using var releaseDb = factory.Create(tenantProvider);
         var allocationBefore = await releaseDb.CatalogOrderItemResourceAllocations.SingleAsync(a => a.TenantId == seed.TenantId);
         // Work must finish before release is a valid transition from Running.
-        var usage = new CatalogOrderAllocationUsageService(releaseDb, tenantProvider, new ResourceOccupancyService());
+        var usage = new CatalogOrderAllocationUsageService(releaseDb, tenantProvider, new ResourceOccupancyService(BookingClock()));
         await usage.ApplyUsageActionAsync(
             seed.OrderId,
             allocationBefore.Id,
@@ -420,7 +418,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
 
         // A different, non-overlapping future interval on the same resource is free.
         var laterStart = WorkEnd.AddDays(1);
-        var freed = await new ResourceOccupancyService().CheckAvailabilityAsync(
+        var freed = await new ResourceOccupancyService(BookingClock()).CheckAvailabilityAsync(
             finalVerify, seed.TenantId, seed.RentalAssetId, laterStart, laterStart.AddHours(1), tentativeBatch: [], CancellationToken.None);
         Assert.True(freed.IsAvailable);
     }
@@ -480,7 +478,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
             tenantProvider,
             new FakePermissionResolver(),
             NullLogger<CatalogNotificationPublisher>.Instance);
-        var occupancy = new ResourceOccupancyService();
+        var occupancy = new ResourceOccupancyService(BookingClock());
         var scheduler = new RecordingOutboxScheduler();
         var allocationService = new CatalogOrderAllocationService(
             db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler);

@@ -24,8 +24,6 @@ public sealed class ReservationService(
 {
     private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
 
-    private static readonly ReservationStatus[] BlockingStatuses = AvailabilityReadModel.BlockingStatuses;
-
     public async Task<CheckAvailabilityResponseDto> CheckAvailabilityAsync(
         CheckAvailabilityRequestDto request,
         CancellationToken cancellationToken)
@@ -1052,20 +1050,14 @@ public sealed class ReservationService(
     {
         var query =
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && item.RentalAssetId == rentalAssetId
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < end
-                  // H4: an unreleased InternalUse occupancy blocks past its planned end — "now" is
-                  // never an implicit release — until ResourceOccupancyService.
-                  // ReleaseInternalUseOccupancyAsync explicitly marks it Completed. Mirrors
-                  // ResourceOccupancyService.FindPersistedConflictAsync.
-                  && (reservation.EndDateTime > start
-                      || (reservation.Purpose == ReservationPurpose.InternalUse
-                          && reservation.Status == ReservationStatus.Confirmed))
+                  && reservation.EndDateTime > start
             select new { item.Quantity, reservation.Id };
 
         if (excludeReservationId is Guid excludedId)

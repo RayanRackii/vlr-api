@@ -638,12 +638,12 @@ internal sealed class AvailabilityReadModel(
 
         var rows = await (
             from item in dbContext.ReservationItems.AsNoTracking()
-            join reservation in dbContext.Reservations.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                dbContext.Reservations.AsNoTracking(), timeProvider.GetUtcNow())
                 on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId
                   && reservation.TenantId == tenantId
                   && rentalAssetIds.Contains(item.RentalAssetId)
-                  && BlockingStatuses.Contains(reservation.Status)
                   && reservation.StartDateTime < dayEnd
                   && reservation.EndDateTime > dayStart
             select new

@@ -11,6 +11,7 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 ## Resource Planning Phase 0 — security fixes (2026-11-02, código local)
 
+- [x] Round 2: helper único limita planos futuros, prolonga somente InternalUse vencido não liberado e preserva overrun na liberação tardia; três regressões Postgres adicionadas (execução pelo orquestrador).
 - [x] Completar validação de unidade (404), autorização de planejamento/preview e regressões H1/H2/H5/M3 sobre as correções existentes.
 - [x] Serializar hooks comerciais e usage nos mesmos locks de recurso, recarregar allocations e renovar versões; regressão H3 em Postgres real para preparing e usage start concorrentes com cancel.
 - [x] Limitar duração/quantidade ao escopo diário Phase 0, calcular intervalos com aritmética checked e retornar 400 para valores/datas inválidos (L1).
