@@ -42,6 +42,10 @@ public sealed class CatalogProductConfiguration : IEntityTypeConfiguration<Catal
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(p => p.ResourceRequirementsVersion)
+            .HasDefaultValue(0)
+            .IsRequired();
+
         builder.Property(p => p.CreatedAt)
             .IsRequired();
 

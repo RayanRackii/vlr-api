@@ -610,6 +610,7 @@ public sealed class BookingPolicyTests
         });
         db.Reservations.Add(new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenantB,
             UnitId = Guid.NewGuid(),
             CustomerId = customerId,
@@ -632,6 +633,7 @@ public sealed class BookingPolicyTests
 
         db.Reservations.Add(new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenantA,
             UnitId = Guid.NewGuid(),
             CustomerId = customerId,
@@ -656,6 +658,49 @@ public sealed class BookingPolicyTests
     }
 
     [Fact]
+    public async Task InternalUse_reservation_does_not_count_toward_the_customer_daily_cap()
+    {
+        // Even when an InternalUse row carries the same CustomerId (not normally produced by
+        // ResourceOccupancyService, which always leaves it null, but nothing else forbids it at
+        // the DB level) the quota must exclude it by Purpose explicitly, not merely by CustomerId
+        // happening to be null.
+        var provider = new FakeTenantProvider { TenantId = null };
+        await using var db = InMemoryAppDb.Create(provider);
+        var tenantId = Guid.NewGuid();
+        var customerId = Guid.NewGuid();
+        db.BookingPolicies.Add(new BookingPolicy
+        {
+            TenantId = tenantId,
+            ResourceType = null,
+            MaxActiveReservationsPerCustomerPerDay = 1,
+        });
+        db.Reservations.Add(new Reservation
+        {
+            Purpose = ReservationPurpose.InternalUse,
+            TenantId = tenantId,
+            UnitId = Guid.NewGuid(),
+            CustomerId = customerId,
+            CustomerName = null,
+            CustomerWhatsApp = null,
+            StartDateTime = BrazilTimeZone.AtLocal(Day, Ten),
+            EndDateTime = BrazilTimeZone.AtLocal(Day, Eleven),
+            Status = ReservationStatus.Confirmed,
+            TotalAmount = 0m,
+            DepositPaid = 0m,
+        });
+        await db.SaveChangesAsync();
+
+        // Would have thrown DailyBookingLimitReachedException if the InternalUse row counted
+        // against the cap of 1.
+        await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
+            db,
+            tenantId,
+            customerId,
+            Day,
+            CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Resource_type_row_does_not_cap_any_resource()
     {
         var provider = new FakeTenantProvider { TenantId = null };
@@ -670,6 +715,7 @@ public sealed class BookingPolicyTests
         });
         db.Reservations.Add(new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenantId,
             UnitId = Guid.NewGuid(),
             CustomerId = customerId,

@@ -191,7 +191,7 @@ public sealed class ScheduleDayGoldenFileTests
         int quantity, DateTimeOffset start, DateTimeOffset end)
     {
         var customer = Customer(h, names, $"customer:{name}");
-        var reservation = new Reservation { TenantId = h.Tenant.Id, UnitId = h.Unit.Id, CustomerId = customer.Id,
+        var reservation = new Reservation { Purpose = ReservationPurpose.CustomerBooking, TenantId = h.Tenant.Id, UnitId = h.Unit.Id, CustomerId = customer.Id,
             CustomerName = name, CustomerWhatsApp = "5511000000000", Status = ReservationStatus.Confirmed,
             StartDateTime = start, EndDateTime = end, TotalAmount = 20, DepositPaid = 0 };
         reservation.AddItem(new ReservationItem { TenantId = h.Tenant.Id, ReservationId = reservation.Id,

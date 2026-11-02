@@ -6,6 +6,7 @@ using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 using Platform.Core.Infrastructure.Time;
 
@@ -34,6 +35,7 @@ public sealed class TenantTimeZoneSettingTests
             startInstant.AddMinutes(-30), startInstant, endInstant.AddMinutes(-30), endInstant,
         }.Select(instant => new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = h.TenantId, UnitId = h.UnitId, CustomerId = h.CustomerA,
             CustomerName = "TZ", CustomerWhatsApp = "5511000000000",
             Status = Core.Domain.Enums.ReservationStatus.Confirmed,
@@ -83,7 +85,7 @@ public sealed class TenantTimeZoneSettingTests
 
         // Tokyo 10:00-11:00 is 22:00-23:00 of the previous day in São Paulo.
         var customer = new Customer { TenantId = h.Tenant.Id, Name = "Ada", Phone = "5511000000000" };
-        var reservation = new Reservation { TenantId = h.Tenant.Id, UnitId = h.Unit.Id, CustomerId = customer.Id,
+        var reservation = new Reservation { Purpose = ReservationPurpose.CustomerBooking, TenantId = h.Tenant.Id, UnitId = h.Unit.Id, CustomerId = customer.Id,
             CustomerName = "Ada", CustomerWhatsApp = "5511000000000", Status = Core.Domain.Enums.ReservationStatus.Confirmed,
             StartDateTime = TenantBookingClock.AtLocal(Day, new(10, 0), tokyo),
             EndDateTime = TenantBookingClock.AtLocal(Day, new(11, 0), tokyo), TotalAmount = 20, DepositPaid = 0 };

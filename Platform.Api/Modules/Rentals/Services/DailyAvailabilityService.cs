@@ -77,11 +77,13 @@ public sealed class DailyAvailabilityService(
         var (dayStart, dayEnd) = TenantBookingClock.CivilDay(date, zone);
         var reservations = await (
             from item in db.ReservationItems.AsNoTracking()
-            join reservation in db.Reservations.AsNoTracking() on item.ReservationId equals reservation.Id
+            join reservation in ReservationOccupancy.BlockingWindows(
+                db.Reservations.AsNoTracking(), now)
+                on item.ReservationId equals reservation.Id
             where item.TenantId == tenantId && reservation.TenantId == tenantId
                 && ids.Contains(item.RentalAssetId)
-                && AvailabilityReadModel.BlockingStatuses.Contains(reservation.Status)
-                && reservation.StartDateTime < dayEnd && reservation.EndDateTime > dayStart
+                && reservation.StartDateTime < dayEnd
+                && reservation.EndDateTime > dayStart
             select new { item.RentalAssetId, item.Quantity, Start = reservation.StartDateTime, End = reservation.EndDateTime })
             .ToListAsync(cancellationToken);
 

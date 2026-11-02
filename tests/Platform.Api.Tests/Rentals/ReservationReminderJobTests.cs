@@ -61,6 +61,50 @@ public sealed class ReservationReminderJobTests
     }
 
     [Fact]
+    public async Task InternalUse_reservation_in_24h_window_never_gets_a_reminder()
+    {
+        await using var ctx = await CreateContextAsync();
+        await EnableReminderWhatsAppAsync(ctx);
+        await EnableReminderEmailAsync(ctx);
+        var now = DateTimeOffset.Parse("2026-09-08T12:00:00Z");
+        var start = now.AddHours(12);
+
+        var reservation = new Reservation
+        {
+            TenantId = ctx.Harness.TenantId,
+            UnitId = ctx.Harness.UnitId,
+            Purpose = ReservationPurpose.InternalUse,
+            CustomerId = null,
+            CustomerName = null,
+            CustomerWhatsApp = null,
+            StartDateTime = start,
+            EndDateTime = start.AddHours(1),
+            Status = ReservationStatus.Confirmed,
+            TotalAmount = 0m,
+            DepositPaid = 0m,
+        };
+        reservation.AddItem(new ReservationItem
+        {
+            TenantId = ctx.Harness.TenantId,
+            ReservationId = reservation.Id,
+            RentalAssetId = ctx.Harness.RentalAssetId,
+            Quantity = 1,
+            UnitPrice = 0m,
+            SubTotal = 0m,
+        });
+        ctx.Harness.Db.Reservations.Add(reservation);
+        await ctx.Harness.Db.SaveChangesAsync();
+        ctx.Harness.Db.Entry(reservation).Property(r => r.CreatedAt).CurrentValue = start.AddDays(-2);
+        await ctx.Harness.Db.SaveChangesAsync();
+
+        await CreateJob(ctx, now).ExecuteAsync(CancellationToken.None);
+        await ProcessQueuedAsync(ctx);
+
+        Assert.Equal(0, ctx.WhatsApp.SendCount);
+        Assert.Equal(0, ctx.Email.SendCount);
+    }
+
+    [Fact]
     public async Task Confirmed_reservation_in_24h_window_sends_reminder_once()
     {
         await using var ctx = await CreateContextAsync();
@@ -723,6 +767,7 @@ public sealed class ReservationReminderJobTests
         };
         var reservation = new Reservation
         {
+            Purpose = ReservationPurpose.CustomerBooking,
             TenantId = tenant.Id,
             UnitId = unit.Id,
             CustomerId = customer.Id,

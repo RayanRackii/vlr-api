@@ -449,6 +449,8 @@ public sealed class CustomerJwtBearerPipelineTests
                         return new TestAppDbContext(options, sp.GetRequiredService<ITenantProvider>());
                     });
                     services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
+                    services.AddScoped<Platform.Api.Modules.Rentals.Contracts.IResourceOccupancyService,
+                        Platform.Api.Modules.Rentals.Services.ResourceOccupancyService>();
                     services.AddScoped<ICatalogPortalService, CatalogPortalService>();
                     services.AddSingleton<IStorageProvider, NoOpStorageProvider>();
                     services.AddSingleton(Options.Create(new StorageOptions()));

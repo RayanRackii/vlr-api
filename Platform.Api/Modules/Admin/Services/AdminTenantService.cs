@@ -7,6 +7,7 @@ using Platform.Api.Services.Tenancy;
 using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Admin.Services;
@@ -20,6 +21,15 @@ public sealed class AdminTenantService(
     ITenantProvisioner tenantProvisioner,
     ITenantPurger tenantPurger) : IAdminTenantService
 {
+    // Scheduled/Running/Cleaning are "not yet physically released"; Released and Cancelled are
+    // terminal and never block a module disable.
+    private static readonly AllocationStatus[] UnreleasedAllocationStatuses =
+    [
+        AllocationStatus.Scheduled,
+        AllocationStatus.Running,
+        AllocationStatus.Cleaning,
+    ];
+
     public async Task<IReadOnlyList<TenantAdminResponseDto>> ListAsync(
         CancellationToken cancellationToken)
     {
@@ -276,6 +286,32 @@ public sealed class AdminTenantService(
             if (modules.Count == 0)
             {
                 throw new ArgumentException("At least one active module is required.");
+            }
+
+            // NormalizeEntitlements above already rejects statically-invalid module combinations
+            // (module-to-module RequiredModules dependency: resource-planning cannot remain desired
+            // without catalog+rentals also desired). The remaining case it cannot catch is
+            // resource-planning itself being dropped (disabled) while unreleased allocations exist;
+            // that is a business rule enforced here, inside the same LockTenantModulesAsync
+            // advisory-lock scope (see call above), so it serializes against concurrent allocation
+            // admission by a later phase's allocation/approval service.
+            var isResourcePlanningBeingDisabled = existingActive.Contains(PlatformModules.ResourcePlanning)
+                && !modules.Contains(PlatformModules.ResourcePlanning);
+            if (isResourcePlanningBeingDisabled)
+            {
+                // Admin operates across tenants by explicit id, not the ambient ITenantScoped
+                // filter (which may not match `id` at all, e.g. a platform-admin request) —
+                // without IgnoreQueryFilters this guard silently sees zero rows and never blocks.
+                var unreleasedCount = await dbContext.Set<CatalogOrderItemResourceAllocation>()
+                    .IgnoreQueryFilters()
+                    .Where(a => a.TenantId == id && UnreleasedAllocationStatuses.Contains(a.Status))
+                    .CountAsync(cancellationToken);
+                if (unreleasedCount > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot disable resource-planning: {unreleasedCount} unreleased resource " +
+                        "allocation(s) exist for this tenant.");
+                }
             }
 
             EnsurePmocHasProvisioningFamily(modules, families.Select(f => f.Key));

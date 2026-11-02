@@ -33,7 +33,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -56,7 +60,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "crossesIntoDay"
+          "customerName": "crossesIntoDay",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -79,7 +87,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -102,7 +114,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -125,7 +141,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -148,7 +168,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -171,7 +195,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -194,7 +222,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 2,
-          "customerName": "crossesOutOfDay"
+          "customerName": "crossesOutOfDay",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         }
       ]
     }
@@ -324,7 +356,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -347,7 +383,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -370,7 +410,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -393,7 +437,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -416,7 +464,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         }
       ]
     },
@@ -444,7 +496,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -467,7 +523,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 1,
-          "customerName": "crossesIntoDay"
+          "customerName": "crossesIntoDay",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -490,7 +550,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -513,7 +577,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -536,7 +604,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -559,7 +631,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -582,7 +658,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": null,
-          "customerName": null
+          "customerName": null,
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         },
         {
           "id": "00000000-0000-0000-0000-000000000000",
@@ -605,7 +685,11 @@
           "schedulePolicy": "OpenHours",
           "supportsEntireRecurrence": false,
           "quantity": 2,
-          "customerName": "crossesOutOfDay"
+          "customerName": "crossesOutOfDay",
+          "isInternalUseOrigin": false,
+          "owningCatalogOrderId": null,
+          "workStartTime": null,
+          "workEndTime": null
         }
       ]
     }

@@ -91,11 +91,30 @@ public sealed class ModuleGateConventionTests
             yield break;
         }
 
-        if (!string.Equals(declared, expected, StringComparison.Ordinal))
+        if (string.Equals(declared, expected, StringComparison.Ordinal))
         {
-            yield return
-                $"Commercial endpoint {endpoint} belongs to module {expected} but declares RequireActiveModule({declared}) instead of {expected}.";
+            yield break;
         }
+
+        // An action-level override is allowed when it narrows the namespace/permission module to a
+        // stricter dependent module (e.g. Catalog's order-resource-planning endpoints additionally
+        // require `resource-planning`, which already lists Catalog in its own RequiredModules — so
+        // `resource-planning` active implies `catalog` active, never a weaker/unrelated substitute).
+        if (IsStricterDependentModule(declared, expected))
+        {
+            yield break;
+        }
+
+        yield return
+            $"Commercial endpoint {endpoint} belongs to module {expected} but declares RequireActiveModule({declared}) instead of {expected}.";
+    }
+
+    private static bool IsStricterDependentModule(string declared, string expected)
+    {
+        var descriptor = PlatformModuleCatalog.All.FirstOrDefault(
+            m => string.Equals(m.Key, declared, StringComparison.Ordinal));
+        return descriptor is not null
+            && descriptor.RequiredModules.Contains(expected, StringComparer.Ordinal);
     }
 
     private static string? ResolveExpectedModule(ControllerActionDescriptor action, out string? conflict)

@@ -73,8 +73,15 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
     }
 
     [DockerFact]
-    public async Task Parallel_approve_and_cancel_allows_only_one_winner()
+    public async Task Parallel_approve_and_cancel_ends_in_one_consistent_terminal_state()
     {
+        // Cancel.EnsureStatus (CatalogOrder.cs) legitimately allows Requested, Approved, Preparing
+        // and Ready — unlike two concurrent approves, approve-then-cancel is a VALID sequential
+        // business transition (staff can cancel an order right after approving it), so both calls
+        // may legitimately succeed if they do not truly overlap at the row-version level. The
+        // invariant under race is not "exactly one wins": it is (a) no corrupted/unexpected error
+        // type ever surfaces, and (b) the persisted order ends in exactly one well-formed terminal
+        // status, never a torn/partial write.
         var factory = RequireFactory();
         var tenantProvider = new FakeTenantProvider();
         var seed = await SeedAsync(factory, tenantProvider, withOrder: true);
@@ -88,15 +95,17 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
             CaptureAsync(() => orders1.ApproveAsync(seed.OrderId!.Value, CancellationToken.None)),
             CaptureAsync(() => orders2.CancelAsync(seed.OrderId!.Value, "preflight race", CancellationToken.None)));
 
-        Assert.Single(captured, r => r.Error is null);
-        Assert.Contains(captured, r => r.Error is InvalidCatalogOrderTransitionException);
+        Assert.All(captured, r => Assert.True(
+            r.Error is null or InvalidCatalogOrderTransitionException,
+            $"Unexpected error type: {r.Error}"));
 
         await using var verify = factory.Create(tenantProvider);
-        var status = await verify.CatalogOrders
-            .Where(o => o.Id == seed.OrderId)
-            .Select(o => o.Status)
-            .SingleAsync();
-        Assert.True(status is CatalogOrderStatus.Approved or CatalogOrderStatus.Cancelled);
+        var order = await verify.CatalogOrders
+            .Include(o => o.History)
+            .SingleAsync(o => o.Id == seed.OrderId);
+        Assert.True(order.Status is CatalogOrderStatus.Approved or CatalogOrderStatus.Cancelled);
+        // Exactly one history row per status actually reached — no duplicate/torn transition.
+        Assert.Equal(1, order.History.Count(h => h.Status == order.Status));
     }
 
     private PostgresAppDbFactory RequireFactory()
@@ -120,7 +129,8 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
             storage,
             storageOptions,
             publisher.AsDomainEvents(),
-            new RecordingOutboxScheduler());
+            new RecordingOutboxScheduler(),
+            new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService());
     }
 
     private static CatalogOrderService CreateOrders(AppDbContext db, FakeTenantProvider tenantProvider)
@@ -130,12 +140,18 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
             tenantProvider,
             new FakePermissionResolver(),
             NullLogger<CatalogNotificationPublisher>.Instance);
+        var occupancy = new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService();
+        var scheduler = new RecordingOutboxScheduler();
+        var allocationService = new CatalogOrderAllocationService(
+            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler);
         return new CatalogOrderService(
             db,
             tenantProvider,
             new FakeHttpContextAccessor(),
             publisher.AsDomainEvents(),
-            new RecordingOutboxScheduler());
+            scheduler,
+            allocationService,
+            occupancy);
     }
 
     private static async Task<Seed> SeedAsync(

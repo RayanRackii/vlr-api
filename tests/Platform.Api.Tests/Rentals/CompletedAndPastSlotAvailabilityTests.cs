@@ -117,7 +117,7 @@ public sealed class CompletedAndPastSlotAvailabilityTests
         int startHour, int endHour)
     {
         var customer = new Customer { TenantId = resource.TenantId, Name = "Customer", Phone = "5511000000000" };
-        var reservation = new Reservation { TenantId = resource.TenantId, UnitId = h.Db.Assets.Local
+        var reservation = new Reservation { Purpose = ReservationPurpose.CustomerBooking, TenantId = resource.TenantId, UnitId = h.Db.Assets.Local
                 .Single(a => a.Id == resource.AssetId).UnitId, CustomerId = customer.Id,
             CustomerName = "Customer", CustomerWhatsApp = "5511000000000", Status = status,
             StartDateTime = BrazilTimeZone.AtLocal(Day, new(startHour, 0)),

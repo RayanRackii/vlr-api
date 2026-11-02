@@ -11,6 +11,7 @@ public sealed class ReservationItemConfiguration : IEntityTypeConfiguration<Rese
         builder.ToTable("reservation_items", "rentals");
 
         builder.HasKey(i => i.Id);
+        builder.HasAlternateKey(i => new { i.TenantId, i.Id });
 
         builder.Property(i => i.Id)
             .ValueGeneratedNever();

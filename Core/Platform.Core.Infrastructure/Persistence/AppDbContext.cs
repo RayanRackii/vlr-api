@@ -155,6 +155,15 @@ public class AppDbContext : DbContext
 
     public DbSet<ProductRequestFile> ProductRequestFiles => Set<ProductRequestFile>();
 
+    public DbSet<CatalogProductResourceRequirement> CatalogProductResourceRequirements =>
+        Set<CatalogProductResourceRequirement>();
+
+    public DbSet<CatalogOrderItemResourceRequirement> CatalogOrderItemResourceRequirements =>
+        Set<CatalogOrderItemResourceRequirement>();
+
+    public DbSet<CatalogOrderItemResourceAllocation> CatalogOrderItemResourceAllocations =>
+        Set<CatalogOrderItemResourceAllocation>();
+
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
 
     // Context members are re-read per query execution (EF parameterizes them).
