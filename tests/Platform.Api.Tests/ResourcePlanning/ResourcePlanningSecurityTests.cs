@@ -235,7 +235,7 @@ public sealed partial class ResourcePlanningConcurrencyTests
         var publisher = new CatalogNotificationPublisher(db, tenant, new FakePermissionResolver(),
             NullLogger<CatalogNotificationPublisher>.Instance);
         return new(CreateOrders(db, tenant),
-            new CatalogOrderAllocationService(db, tenant, occupancy, publisher.AsDomainEvents(), new RecordingOutboxScheduler()),
+            new CatalogOrderAllocationService(db, tenant, occupancy, publisher.AsDomainEvents(), new RecordingOutboxScheduler(), new FakeHttpContextAccessor()),
             new CatalogOrderAllocationPreviewService(db, tenant, occupancy),
             new CatalogOrderAllocationUsageService(db, tenant, occupancy), authorization ?? new SecurityAuthorization(true));
     }

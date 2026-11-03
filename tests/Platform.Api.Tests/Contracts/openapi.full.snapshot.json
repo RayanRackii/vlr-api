@@ -868,6 +868,107 @@
         "format": "int32",
         "type": "integer"
       },
+      "CatalogAgendaItemResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "allocationStatus": {
+            "$ref": "#/components/schemas/AllocationStatus"
+          },
+          "customerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "displayNumber": {
+            "nullable": true,
+            "type": "string"
+          },
+          "occupiedEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "occupiedStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orderStatus": {
+            "$ref": "#/components/schemas/CatalogOrderStatus"
+          },
+          "productId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "productName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "rentalAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "resourceName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timeZoneId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "workEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatalogAgendaResourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatalogAgendaResourcesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogAgendaItemResponse"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogAgendaResourceResponse"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "CatalogCancellationUpToStatus": {
         "additionalProperties": false,
         "properties": {
@@ -1082,6 +1183,10 @@
         "properties": {
           "actorId": {
             "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "actorName": {
             "nullable": true,
             "type": "string"
           },
@@ -10479,6 +10584,125 @@
         ]
       }
     },
+    "/api/catalog/agenda/products": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "productId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAgendaItemResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAgendaItemResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAgendaItemResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CatalogAgenda"
+        ]
+      }
+    },
+    "/api/catalog/agenda/resources": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rentalAssetId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogAgendaResourcesResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogAgendaResourcesResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogAgendaResourcesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ResourceAgenda"
+        ]
+      }
+    },
     "/api/catalog/notification-channels": {
       "get": {
         "responses": {
@@ -18561,6 +18785,9 @@
       "name": "BookingPolicy"
     },
     {
+      "name": "CatalogAgenda"
+    },
+    {
       "name": "CatalogNotifications"
     },
     {
@@ -18646,6 +18873,9 @@
     },
     {
       "name": "Reservations"
+    },
+    {
+      "name": "ResourceAgenda"
     },
     {
       "name": "ResourceVisualPicker"

@@ -27,3 +27,4 @@ WorkOrders -> Assets : Platform.Api/Modules/WorkOrders/Services/WorkOrderService
 WorkOrders -> Users : Platform.Api/Modules/WorkOrders/Services/WorkOrderExecution.cs
 WorkOrders -> Users : Platform.Api/Modules/WorkOrders/Services/WorkOrderService.cs
 WorkOrders -> Users : Platform.Api/Modules/WorkOrders/Services/WorkOrderTaskImageService.cs
+Rentals -> Catalog : Platform.Api/Modules/Rentals/Controllers/ResourceAgendaController.cs
