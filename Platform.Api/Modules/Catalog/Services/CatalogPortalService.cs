@@ -167,13 +167,15 @@ public sealed class CatalogPortalService(
         }
 
         var id = customerId.Value;
+        var tenantId = EnsureTenant();
         return products.Where(p =>
             p.Visibility == CatalogProductVisibility.Public
             || dbContext.CatalogProductAccess.Any(a =>
-                a.ProductId == p.Id
+                a.TenantId == tenantId
+                && a.ProductId == p.Id
                 && (a.CustomerId == id
                     || (a.GroupId != null && dbContext.CustomerGroupMembers.Any(m =>
-                        m.GroupId == a.GroupId && m.CustomerId == id)))));
+                        m.TenantId == tenantId && m.GroupId == a.GroupId && m.CustomerId == id)))));
     }
 
     public async Task<CatalogOrderResponse> CreateOrderAsync(
@@ -700,20 +702,27 @@ public sealed class CatalogPortalService(
     private async Task<IReadOnlyList<PortalProductResponse>> MapProductsAsync(IReadOnlyList<CatalogProduct> products, CancellationToken ct)
     {
         var assignments = await CatalogTaxonomy.LoadAsync(dbContext, EnsureTenant(), products.Select(x => x.Id), ct);
-        return products.Select(p => MapPortalProduct(p) with { Taxonomy = assignments[p.Id] }).ToArray();
+        var result = new List<PortalProductResponse>(products.Count);
+        foreach (var p in products)
+        {
+            result.Add(await MapPortalProductAsync(p, ct) with { Taxonomy = assignments[p.Id] });
+        }
+        return result;
     }
 
-    private PortalProductResponse MapPortalProduct(CatalogProduct product)
+    private async Task<PortalProductResponse> MapPortalProductAsync(CatalogProduct product, CancellationToken ct)
     {
-        var files = product.Files
-            .Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible)
-            .Select(f => new PortalProductFileDto(
-                f.Id,
-                f.FileName,
-                f.MimeType,
-                f.SizeBytes,
-                storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey)))
-            .ToList();
+        // Restricted products never expose a permanent public URL: their files get a short-lived
+        // signed URL, issued only after ApplyVisibility let the product through.
+        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var files = new List<PortalProductFileDto>();
+        foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible))
+        {
+            var url = product.Visibility == CatalogProductVisibility.Restricted
+                ? await storageProvider.CreateSignedUrlAsync(storageOptions.Value.PublicBucket, f.StorageKey, ttl, ct)
+                : storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
+            files.Add(new PortalProductFileDto(f.Id, f.FileName, f.MimeType, f.SizeBytes, url));
+        }
 
         return new PortalProductResponse(
             product.Id,

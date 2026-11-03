@@ -111,4 +111,38 @@ public sealed class CatalogPortalSearchPostgresTests(PostgresContainerFixture po
             Assert.Null(await portal.GetProductAsync(bia.Id, direct.Id, CancellationToken.None));
         }
     }
+
+    [DockerFact]
+    public async Task Group_service_on_postgres_locks_access_edit_enforces_case_insensitive_name_and_cascades()
+    {
+        var factory = postgres.Factory ?? throw new InvalidOperationException("PostgreSQL fixture was not started.");
+        var tenant = new Tenant("Catalog groups", "77777777000191", subdomain: "catalog-groups");
+        var provider = new FakeTenantProvider { TenantId = tenant.Id };
+        await using var db = factory.Create(provider);
+        db.Tenants.Add(tenant);
+        var product = new CatalogProduct { TenantId = tenant.Id, Name = "Item" };
+        var ana = new Customer { TenantId = tenant.Id, Name = "Ana", Email = "ana@grp.test", Phone = "+5511999990000" };
+        db.CatalogProducts.Add(product);
+        db.Customers.Add(ana);
+        await db.SaveChangesAsync();
+        var groups = new CustomerGroupService(db, provider);
+
+        var g = await groups.CreateAsync(new("Revenda", null), CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => groups.CreateAsync(new("REVENDA", null), CancellationToken.None));
+        db.ChangeTracker.Clear();
+        // DB-level guard even if the pre-check is bypassed.
+        db.CustomerGroups.Add(new CustomerGroup { TenantId = tenant.Id, Name = "revenda" });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        await groups.AddMembersAsync(g.Id, new([ana.Id]), CancellationToken.None);
+        var access = await groups.SetProductAccessAsync(product.Id, new("Restricted", [ana.Id], [g.Id]), CancellationToken.None);
+        Assert.False(access!.RestrictedWithoutGrants);
+        Assert.Equal(2, await db.CatalogProductAccess.CountAsync(a => a.ProductId == product.Id));
+
+        Assert.True(await groups.DeleteAsync(g.Id, CancellationToken.None));
+        Assert.Equal(0, await db.CustomerGroupMembers.CountAsync(m => m.GroupId == g.Id));
+        Assert.Equal(1, await db.CatalogProductAccess.CountAsync(a => a.ProductId == product.Id));
+        Assert.Equal(4, await db.CatalogAccessAudit.CountAsync(a => a.TenantId == tenant.Id));
+    }
 }

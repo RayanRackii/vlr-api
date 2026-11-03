@@ -50,7 +50,8 @@ public sealed class CatalogProductAccessConfiguration : IEntityTypeConfiguration
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne<Customer>().WithMany()
-            .HasForeignKey(a => a.CustomerId)
+            .HasForeignKey(a => new { a.TenantId, a.CustomerId })
+            .HasPrincipalKey(c => new { c.TenantId, c.Id })
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

@@ -859,6 +859,53 @@
         },
         "type": "object"
       },
+      "CatalogAccessAuditResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "nullable": true,
+            "type": "string"
+          },
+          "actorName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "actorType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "actorUserId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "afterJson": {
+            "nullable": true,
+            "type": "string"
+          },
+          "beforeJson": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entityId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "entityType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CatalogActorType": {
         "enum": [
           0,
@@ -1459,6 +1506,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "restrictedWithoutGrants": {
+            "type": "boolean"
+          },
           "visibility": {
             "nullable": true,
             "type": "string"
@@ -1579,6 +1629,14 @@
             "nullable": true,
             "type": "array"
           },
+          "grantedCustomerCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "grantedGroupCount": {
+            "format": "int32",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -1597,9 +1655,20 @@
           },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyResponse"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CatalogProductVisibility"
           }
         },
         "type": "object"
+      },
+      "CatalogProductVisibility": {
+        "enum": [
+          0,
+          1
+        ],
+        "format": "int32",
+        "type": "integer"
       },
       "CatalogReasonRequest": {
         "additionalProperties": false,
@@ -11024,6 +11093,55 @@
         ]
       }
     },
+    "/api/catalog/customer-groups/{id}/history": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAccessAuditResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAccessAuditResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAccessAuditResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CustomerGroups"
+        ]
+      }
+    },
     "/api/catalog/customer-groups/{id}/members": {
       "post": {
         "parameters": [
@@ -12910,6 +13028,55 @@
               "text/plain": {
                 "schema": {
                   "$ref": "#/components/schemas/CatalogProductAccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CustomerGroups"
+        ]
+      }
+    },
+    "/api/catalog/products/{id}/access/history": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAccessAuditResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAccessAuditResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogAccessAuditResponse"
+                  },
+                  "type": "array"
                 }
               }
             },

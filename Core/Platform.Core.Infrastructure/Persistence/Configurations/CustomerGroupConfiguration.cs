@@ -29,8 +29,8 @@ public sealed class CustomerGroupConfiguration : IEntityTypeConfiguration<Custom
         builder.Property(g => g.CreatedAt)
             .IsRequired();
 
-        builder.HasIndex(g => new { g.TenantId, g.Name })
-            .IsUnique();
+        // Case-insensitive uniqueness is enforced by ux_customer_groups_tenant_lower_name (migration SQL).
+        builder.HasIndex(g => new { g.TenantId, g.Name });
 
         builder.HasOne<Tenant>().WithMany()
             .HasForeignKey(g => g.TenantId)

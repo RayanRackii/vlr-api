@@ -101,4 +101,65 @@ public sealed class CustomerGroupVisibilityTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => s.Groups.CreateAsync(new("vip", null), CancellationToken.None));
         Assert.Equal(CatalogProductVisibility.Public, s.Pub.Visibility);
     }
+
+    [Fact]
+    public async Task Customer_of_another_tenant_sees_no_restricted_product()
+    {
+        var s = await SeedAsync();
+        await using var _ = s.H;
+        // A customer id from tenant B, even if granted in B, never unlocks tenant A's restricted products.
+        var foreignCustomerId = Guid.NewGuid();
+        s.H.Db.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = Guid.NewGuid(), ProductId = s.Direct.Id, CustomerId = foreignCustomerId });
+        await s.H.Db.SaveChangesAsync();
+        Assert.Equal(new[] { s.Pub.Id }, await ListIds(s, foreignCustomerId));
+        Assert.Null(await s.H.Portal.GetProductAsync(foreignCustomerId, s.Direct.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Deleting_group_removes_its_grants_and_writes_audit()
+    {
+        var s = await SeedAsync();
+        await using var _ = s.H;
+        var g = (await s.Groups.ListAsync(CancellationToken.None)).Single();
+        Assert.True(await s.Groups.DeleteAsync(g.Id, CancellationToken.None));
+        Assert.Equal(new[] { s.Pub.Id }, await ListIds(s, s.GroupMember.Id));
+        var history = await s.Groups.ListHistoryAsync("group", g.Id, CancellationToken.None);
+        Assert.Contains(history, h => h.Action == "group.deleted");
+        Assert.Contains(history, h => h.Action == "group.membersAdded");
+        Assert.NotEmpty(await s.Groups.ListHistoryAsync("product", s.Direct.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Access_response_flags_restricted_without_grants_and_staff_dto_has_counts()
+    {
+        var s = await SeedAsync();
+        await using var _ = s.H;
+        var r = await s.Groups.SetProductAccessAsync(s.Pub.Id, new("Restricted", null, null), CancellationToken.None);
+        Assert.True(r!.RestrictedWithoutGrants);
+        var staff = await s.H.Products.GetByIdAsync(s.Direct.Id, CancellationToken.None);
+        Assert.Equal(CatalogProductVisibility.Restricted, staff!.Visibility);
+        Assert.Equal(1, staff.GrantedCustomerCount);
+        Assert.Equal(0, staff.GrantedGroupCount);
+        await Assert.ThrowsAsync<ArgumentException>(() => s.Groups.AddMembersAsync(s.H.Db.CustomerGroups.First().Id,
+            new(Enumerable.Range(0, CustomerGroupService.MaxIdsPerRequest + 1).Select(_ => Guid.NewGuid()).ToList()), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Restricted_product_files_use_signed_urls_public_products_keep_public_urls()
+    {
+        var s = await SeedAsync();
+        await using var _ = s.H;
+        foreach (var p in new[] { s.Pub, s.Direct })
+        {
+            s.H.Db.Set<CatalogProductFile>().Add(new CatalogProductFile
+            {
+                TenantId = s.H.Tenant.Id, ProductId = p.Id, StorageKey = $"k/{p.Id}.png", FileName = "a.png",
+                MimeType = "image/png", SizeBytes = 1, Visibility = CatalogFileVisibility.CustomerVisible,
+            });
+        }
+        await s.H.Db.SaveChangesAsync();
+        var list = await s.H.Portal.ListProductsAsync(s.Allowed.Id, null, CancellationToken.None);
+        Assert.Contains("sig=", list.Single(p => p.Id == s.Direct.Id).Files.Single().Url);
+        Assert.DoesNotContain("sig=", list.Single(p => p.Id == s.Pub.Id).Files.Single().Url);
+    }
 }

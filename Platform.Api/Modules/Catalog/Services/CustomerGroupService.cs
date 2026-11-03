@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -18,6 +20,7 @@ public interface ICustomerGroupService
     Task<CustomerGroupResponse?> RemoveMemberAsync(Guid id, Guid customerId, CancellationToken ct);
     Task<CatalogProductAccessResponse?> GetProductAccessAsync(Guid productId, CancellationToken ct);
     Task<CatalogProductAccessResponse?> SetProductAccessAsync(Guid productId, UpdateCatalogProductAccessRequest request, CancellationToken ct);
+    Task<IReadOnlyList<CatalogAccessAuditResponse>> ListHistoryAsync(string entityType, Guid entityId, CancellationToken ct);
 }
 
 /// <summary>
@@ -25,8 +28,14 @@ public interface ICustomerGroupService
 /// client is resolved against the current tenant (explicit TenantId check on top of the global
 /// query filter); ids from another tenant are rejected with <see cref="ArgumentException"/> (400).
 /// </summary>
-public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider tenantProvider) : ICustomerGroupService
+public sealed class CustomerGroupService(
+    AppDbContext dbContext,
+    ITenantProvider tenantProvider,
+    IHttpContextAccessor? httpContextAccessor = null) : ICustomerGroupService
 {
+    public const int MaxIdsPerRequest = 500;
+    public const int NameMaxLength = 200;
+
     public async Task<IReadOnlyList<CustomerGroupResponse>> ListAsync(CancellationToken ct)
     {
         var tenantId = EnsureTenant();
@@ -52,7 +61,8 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
         await EnsureUniqueNameAsync(tenantId, name, null, ct);
         var group = new CustomerGroup { TenantId = tenantId, Name = name, Description = Trim(request.Description) };
         dbContext.CustomerGroups.Add(group);
-        await dbContext.SaveChangesAsync(ct);
+        await AuditAsync(tenantId, "group.created", "group", group.Id, null, new { group.Name, group.Description }, ct);
+        await SaveAsync(ct);
         return Map(group, []);
     }
 
@@ -63,8 +73,10 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
         if (group is null) return null;
         var name = NormalizeName(request.Name);
         await EnsureUniqueNameAsync(tenantId, name, id, ct);
+        var before = new { group.Name, group.Description };
         group.Rename(name, Trim(request.Description));
-        await dbContext.SaveChangesAsync(ct);
+        await AuditAsync(tenantId, "group.updated", "group", id, before, new { group.Name, group.Description }, ct);
+        await SaveAsync(ct);
         return await MapAsync(tenantId, group, ct);
     }
 
@@ -73,7 +85,10 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
         var tenantId = EnsureTenant();
         var group = await FindGroupAsync(tenantId, id, ct);
         if (group is null) return false;
+        var memberIds = await dbContext.CustomerGroupMembers
+            .Where(m => m.TenantId == tenantId && m.GroupId == id).Select(m => m.CustomerId).ToListAsync(ct);
         dbContext.CustomerGroups.Remove(group); // members and access grants cascade
+        await AuditAsync(tenantId, "group.deleted", "group", id, new { group.Name, MemberCustomerIds = memberIds }, null, ct);
         await dbContext.SaveChangesAsync(ct);
         return true;
     }
@@ -83,17 +98,22 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
         var tenantId = EnsureTenant();
         var group = await FindGroupAsync(tenantId, id, ct);
         if (group is null) return null;
-        var customerIds = (request.CustomerIds ?? []).Distinct().ToList();
+        var customerIds = Capped(request.CustomerIds, "customerIds");
         await EnsureCustomersInTenantAsync(tenantId, customerIds, ct);
         var existing = await dbContext.CustomerGroupMembers
             .Where(m => m.TenantId == tenantId && m.GroupId == id && customerIds.Contains(m.CustomerId))
             .Select(m => m.CustomerId).ToListAsync(ct);
-        foreach (var cid in customerIds.Except(existing))
+        var added = customerIds.Except(existing).ToList();
+        foreach (var cid in added)
         {
             dbContext.CustomerGroupMembers.Add(new CustomerGroupMember { TenantId = tenantId, GroupId = id, CustomerId = cid });
         }
-        group.Touch();
-        await dbContext.SaveChangesAsync(ct);
+        if (added.Count > 0)
+        {
+            group.Touch();
+            await AuditAsync(tenantId, "group.membersAdded", "group", id, null, new { CustomerIds = added }, ct);
+            await SaveAsync(ct);
+        }
         return await MapAsync(tenantId, group, ct);
     }
 
@@ -108,6 +128,7 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
         {
             dbContext.CustomerGroupMembers.Remove(member);
             group.Touch();
+            await AuditAsync(tenantId, "group.memberRemoved", "group", id, new { CustomerId = customerId }, null, ct);
             await dbContext.SaveChangesAsync(ct);
         }
         return await MapAsync(tenantId, group, ct);
@@ -131,12 +152,24 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
             throw new ArgumentException("Visibility must be Public or Restricted.");
         }
 
+        var customerIds = Capped(request.CustomerIds, "customerIds");
+        var groupIds = Capped(request.GroupIds, "groupIds");
+
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(ct)
+            : null;
+        if (dbContext.Database.IsRelational())
+        {
+            // Serialize concurrent access edits on the same product.
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM catalog.catalog_products WHERE tenant_id = {tenantId} AND id = {productId} FOR UPDATE", ct);
+        }
+
         var product = await dbContext.CatalogProducts
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == productId, ct);
         if (product is null) return null;
+        var before = await MapAccessAsync(tenantId, product, ct);
 
-        var customerIds = (request.CustomerIds ?? []).Distinct().ToList();
-        var groupIds = (request.GroupIds ?? []).Distinct().ToList();
         await EnsureCustomersInTenantAsync(tenantId, customerIds, ct);
         var validGroups = await dbContext.CustomerGroups
             .CountAsync(g => g.TenantId == tenantId && groupIds.Contains(g.Id), ct);
@@ -158,8 +191,14 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
         {
             dbContext.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = tenantId, ProductId = productId, GroupId = gid });
         }
+        var after = new CatalogProductAccessResponse(productId, visibility.ToString(), customerIds, groupIds)
+        {
+            RestrictedWithoutGrants = visibility == CatalogProductVisibility.Restricted && customerIds.Count + groupIds.Count == 0,
+        };
+        await AuditAsync(tenantId, "product.accessChanged", "product", productId, before, after, ct);
         await dbContext.SaveChangesAsync(ct);
-        return new CatalogProductAccessResponse(productId, visibility.ToString(), customerIds, groupIds);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return after;
     }
 
     private async Task<CatalogProductAccessResponse> MapAccessAsync(Guid tenantId, CatalogProduct product, CancellationToken ct)
@@ -170,7 +209,65 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
             product.Id,
             product.Visibility.ToString(),
             grants.Where(a => a.CustomerId != null).Select(a => a.CustomerId!.Value).ToList(),
-            grants.Where(a => a.GroupId != null).Select(a => a.GroupId!.Value).ToList());
+            grants.Where(a => a.GroupId != null).Select(a => a.GroupId!.Value).ToList())
+        {
+            RestrictedWithoutGrants = product.Visibility == CatalogProductVisibility.Restricted && grants.Count == 0,
+        };
+    }
+
+    public async Task<IReadOnlyList<CatalogAccessAuditResponse>> ListHistoryAsync(string entityType, Guid entityId, CancellationToken ct)
+    {
+        var tenantId = EnsureTenant();
+        if (entityType is not ("group" or "product")) throw new ArgumentException("entityType must be group or product.");
+        return await dbContext.CatalogAccessAudit.AsNoTracking()
+            .Where(a => a.TenantId == tenantId && a.EntityType == entityType && a.EntityId == entityId)
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(200)
+            .Select(a => new CatalogAccessAuditResponse(a.Id, a.Action, a.EntityType, a.EntityId,
+                a.ActorUserId == null ? "System" : "B2BUser", a.ActorUserId, a.ActorName, a.BeforeJson, a.AfterJson, a.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
+
+    private async Task AuditAsync(Guid tenantId, string action, string entityType, Guid entityId, object? before, object? after, CancellationToken ct)
+    {
+        var (_, actorId) = await CatalogOrderActorResolver.ResolveAsync(httpContextAccessor, dbContext, ct);
+        string? actorName = null;
+        if (actorId is not null)
+        {
+            actorName = await dbContext.Users.AsNoTracking().Where(u => u.Id == actorId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
+        }
+        dbContext.CatalogAccessAudit.Add(new CatalogAccessAuditEntry
+        {
+            TenantId = tenantId,
+            ActorUserId = actorId,
+            ActorName = actorName,
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            BeforeJson = before is null ? null : JsonSerializer.Serialize(before, AuditJson),
+            AfterJson = after is null ? null : JsonSerializer.Serialize(after, AuditJson),
+        });
+    }
+
+    private async Task SaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await dbContext.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            throw new InvalidOperationException("A group with this name already exists.");
+        }
+    }
+
+    private static List<Guid> Capped(IReadOnlyList<Guid>? ids, string field)
+    {
+        var list = (ids ?? []).Distinct().ToList();
+        if (list.Count > MaxIdsPerRequest) throw new ArgumentException($"{field} accepts at most {MaxIdsPerRequest} ids.");
+        return list;
     }
 
     private async Task EnsureCustomersInTenantAsync(Guid tenantId, IReadOnlyCollection<Guid> customerIds, CancellationToken ct)
@@ -211,7 +308,7 @@ public sealed class CustomerGroupService(AppDbContext dbContext, ITenantProvider
     private static string NormalizeName(string? name)
     {
         var trimmed = (name ?? string.Empty).Trim();
-        if (trimmed.Length is 0 or > 120) throw new ArgumentException("Name is required (max 120 characters).");
+        if (trimmed.Length == 0 || trimmed.Length > NameMaxLength) throw new ArgumentException($"Name is required (max {NameMaxLength} characters).");
         return trimmed;
     }
 

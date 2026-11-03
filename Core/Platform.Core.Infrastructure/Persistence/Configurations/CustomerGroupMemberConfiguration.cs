@@ -27,7 +27,8 @@ public sealed class CustomerGroupMemberConfiguration : IEntityTypeConfiguration<
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne<Customer>().WithMany()
-            .HasForeignKey(m => m.CustomerId)
+            .HasForeignKey(m => new { m.TenantId, m.CustomerId })
+            .HasPrincipalKey(c => new { c.TenantId, c.Id })
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

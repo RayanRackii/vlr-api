@@ -55,6 +55,16 @@ public sealed class CustomerGroupsController(ICustomerGroupService service) : Co
     public Task<ActionResult<CatalogProductAccessResponse>> SetAccess(Guid id, [FromBody] UpdateCatalogProductAccessRequest request, CancellationToken ct) =>
         Guard<CatalogProductAccessResponse>(async () => await service.SetProductAccessAsync(id, request, ct) is { } a ? Ok(a) : NotFound());
 
+    [HttpGet("api/catalog/customer-groups/{id:guid}/history")]
+    [RequirePermission(Permissions.Catalog.ProductsRead)]
+    public async Task<ActionResult<IReadOnlyList<CatalogAccessAuditResponse>>> GroupHistory(Guid id, CancellationToken ct) =>
+        Ok(await service.ListHistoryAsync("group", id, ct));
+
+    [HttpGet("api/catalog/products/{id:guid}/access/history")]
+    [RequirePermission(Permissions.Catalog.ProductsRead)]
+    public async Task<ActionResult<IReadOnlyList<CatalogAccessAuditResponse>>> AccessHistory(Guid id, CancellationToken ct) =>
+        Ok(await service.ListHistoryAsync("product", id, ct));
+
     private async Task<ActionResult<T>> Guard<T>(Func<Task<ActionResult>> action)
     {
         try { return await action(); }

@@ -13,7 +13,7 @@ using Platform.Core.Infrastructure.Persistence;
 namespace Platform.Core.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261103222809_AddCustomerGroupsAndProductVisibility")]
+    [Migration("20261103230116_AddCustomerGroupsAndProductVisibility")]
     partial class AddCustomerGroupsAndProductVisibility
     {
         /// <inheritdoc />
@@ -393,6 +393,66 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_booking_policies_daily_limit", "max_active_reservations_per_customer_per_day IS NULL OR (max_active_reservations_per_customer_per_day >= 1 AND max_active_reservations_per_customer_per_day <= 100)");
                         });
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogAccessAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("action");
+
+                    b.Property<string>("ActorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("actor_name");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("AfterJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("after_json");
+
+                    b.Property<string>("BeforeJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("before_json");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entity_id");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("entity_type");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_access_audit");
+
+                    b.HasIndex("TenantId", "EntityType", "EntityId", "CreatedAt")
+                        .HasDatabaseName("ix_catalog_access_audit_tenant_id_entity_type_entity_id_create");
+
+                    b.ToTable("catalog_access_audit", "catalog");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
@@ -1020,8 +1080,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_catalog_product_access");
 
-                    b.HasIndex("CustomerId")
-                        .HasDatabaseName("ix_catalog_product_access_customer_id");
+                    b.HasIndex("TenantId", "CustomerId")
+                        .HasDatabaseName("ix_catalog_product_access_tenant_id_customer_id");
 
                     b.HasIndex("TenantId", "GroupId")
                         .HasDatabaseName("ix_catalog_product_access_tenant_id_group_id");
@@ -1342,6 +1402,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_customers");
 
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_customers_tenant_id_id");
+
                     b.HasIndex("TenantId", "Cpf")
                         .IsUnique()
                         .HasDatabaseName("ix_customers_tenant_id_cpf")
@@ -1406,7 +1469,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasName("ak_customer_groups_tenant_id_id");
 
                     b.HasIndex("TenantId", "Name")
-                        .IsUnique()
                         .HasDatabaseName("ix_customer_groups_tenant_id_name");
 
                     b.ToTable("customer_groups", "catalog");
@@ -1428,9 +1490,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasKey("TenantId", "GroupId", "CustomerId")
                         .HasName("pk_customer_group_members");
-
-                    b.HasIndex("CustomerId")
-                        .HasDatabaseName("ix_customer_group_members_customer_id");
 
                     b.HasIndex("TenantId", "CustomerId")
                         .HasDatabaseName("ix_customer_group_members_tenant_id_customer_id");
@@ -4650,6 +4709,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_booking_policies_asset_categories_asset_category_id");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogAccessAuditEntry", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_access_audit_tenants_tenant_id");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrder", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Customer", "Customer")
@@ -4769,9 +4838,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Customer", null)
                         .WithMany()
-                        .HasForeignKey("CustomerId")
+                        .HasForeignKey("TenantId", "CustomerId")
+                        .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .HasConstraintName("fk_catalog_product_access_customers_customer_id");
+                        .HasConstraintName("fk_catalog_product_access_customers_tenant_id_customer_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.CustomerGroup", null)
                         .WithMany()
@@ -4885,19 +4955,20 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CustomerGroupMember", b =>
                 {
-                    b.HasOne("Platform.Core.Domain.Entities.Customer", null)
-                        .WithMany()
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_customer_group_members_customers_customer_id");
-
                     b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
                         .WithMany()
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_customer_group_members_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CustomerId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_customer_group_members_customers_tenant_id_customer_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.CustomerGroup", null)
                         .WithMany()

@@ -140,6 +140,8 @@ public class AppDbContext : DbContext
 
     public DbSet<CatalogProductAccess> CatalogProductAccess => Set<CatalogProductAccess>();
 
+    public DbSet<CatalogAccessAuditEntry> CatalogAccessAudit => Set<CatalogAccessAuditEntry>();
+
     // --- Schema: catalog ---
     public DbSet<CatalogPolicy> CatalogPolicies => Set<CatalogPolicy>();
 
