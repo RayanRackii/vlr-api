@@ -217,6 +217,16 @@ public sealed class ResourceOccupancyService(TimeProvider? timeProvider = null) 
         }
 
         var shortenedEnd = releasedAt + cleanupBuffer;
+        if (shortenedEnd <= reservation.StartDateTime)
+        {
+            // Released (plus cleanup) before the occupied window even opens: nothing is left to
+            // occupy, so free the whole window exactly as CancelBeforeStart does. Leaving it
+            // Completed would keep the entire untouched window blocking bookings and the agenda.
+            reservation.Status = ReservationStatus.Canceled;
+            reservation.Touch();
+            return;
+        }
+
         if (shortenedEnd < reservation.EndDateTime && shortenedEnd > reservation.StartDateTime)
         {
             reservation.EndDateTime = shortenedEnd;

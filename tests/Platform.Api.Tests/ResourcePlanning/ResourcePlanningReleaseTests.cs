@@ -295,6 +295,106 @@ public sealed partial class ResourcePlanningConcurrencyTests
         Assert.DoesNotContain(seed.RentalAssetId.ToString(), conflict.Message);
     }
 
+    [DockerFact]
+    public async Task Release_before_occupied_start_cancels_reservation_and_frees_slot()
+    {
+        var factory = RequireFactory();
+        var tenant = new FakeTenantProvider();
+        var seed = await SeedAsync(factory, tenant);
+
+        // Release (no cleanup buffer) 5 min before the window even opens: nothing is left to
+        // occupy, so the whole window must be freed as Canceled, not left blocking as Completed.
+        var releaseClock = new TestTimeProvider(WorkStart.AddMinutes(-5));
+        var occupancy = new ResourceOccupancyService(releaseClock);
+
+        await using var db = factory.Create(tenant);
+        var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
+            db, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, WorkStart, WorkEnd, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        await occupancy.ReleaseInternalUseOccupancyAsync(db, seed.TenantId, reservationItemId,
+            InternalUseReleaseKind.ReleaseAfterStart, WorkEnd, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        await using var verify = factory.Create(tenant);
+        var reservation = await verify.Reservations.SingleAsync(r => r.Purpose == ReservationPurpose.InternalUse);
+        Assert.Equal(ReservationStatus.Canceled, reservation.Status);
+        Assert.True((await occupancy.CheckAvailabilityAsync(verify, seed.TenantId, seed.RentalAssetId,
+            WorkStart, WorkEnd, tentativeBatch: [], CancellationToken.None)).IsAvailable);
+    }
+
+    [DockerFact]
+    public async Task Release_exactly_at_work_start_frees_the_window()
+    {
+        var factory = RequireFactory();
+        var tenant = new FakeTenantProvider();
+        var seed = await SeedAsync(factory, tenant);
+
+        // Boundary: released at the work start with no cleanup, so shortenedEnd == occupiedStart.
+        // `<= occupiedStart` must treat this as "nothing left to occupy" and free the window.
+        var releaseClock = new TestTimeProvider(WorkStart);
+        var occupancy = new ResourceOccupancyService(releaseClock);
+
+        await using var db = factory.Create(tenant);
+        var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
+            db, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, WorkStart, WorkEnd, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        await occupancy.ReleaseInternalUseOccupancyAsync(db, seed.TenantId, reservationItemId,
+            InternalUseReleaseKind.ReleaseAfterStart, WorkEnd, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        await using var verify = factory.Create(tenant);
+        var reservation = await verify.Reservations.SingleAsync(r => r.Purpose == ReservationPurpose.InternalUse);
+        Assert.Equal(ReservationStatus.Canceled, reservation.Status);
+        Assert.True((await occupancy.CheckAvailabilityAsync(verify, seed.TenantId, seed.RentalAssetId,
+            WorkStart, WorkEnd, tentativeBatch: [], CancellationToken.None)).IsAvailable);
+    }
+
+    [DockerFact]
+    public async Task Two_approvals_competing_for_a_freed_slot_allow_exactly_one_winner()
+    {
+        var factory = RequireFactory();
+        var tenant = new FakeTenantProvider();
+        var seed = await SeedAsync(factory, tenant);
+
+        // Occupy the slot, then release-before-start to free it the Canceled way.
+        await using (var freeDb = factory.Create(tenant))
+        {
+            var occupancy = new ResourceOccupancyService(new TestTimeProvider(WorkStart.AddMinutes(-5)));
+            var itemId = await occupancy.CreateInternalUseOccupancyAsync(
+                freeDb, seed.TenantId, seed.UnitId, seed.RentalAssetId, 1, WorkStart, WorkEnd, CancellationToken.None);
+            await freeDb.SaveChangesAsync();
+            await occupancy.ReleaseInternalUseOccupancyAsync(freeDb, seed.TenantId, itemId,
+                InternalUseReleaseKind.ReleaseAfterStart, WorkEnd, CancellationToken.None);
+            await freeDb.SaveChangesAsync();
+        }
+
+        await using var setup = factory.Create(tenant);
+        var secondOrderId = await AddSecondOrderAsync(setup, seed, orderNumber: 2);
+
+        await using var db1 = factory.Create(tenant);
+        await using var db2 = factory.Create(tenant);
+        var orders1 = CreateOrders(db1, tenant);
+        var orders2 = CreateOrders(db2, tenant);
+
+        var captured = await Task.WhenAll(
+            CaptureAsync(() => orders1.ApproveAsync(seed.OrderId,
+                new() { UnitId = seed.UnitId, WorkStart = WorkStart, ExpectedVersion = 0 }, CancellationToken.None)),
+            CaptureAsync(() => orders2.ApproveAsync(secondOrderId,
+                new() { UnitId = seed.UnitId, WorkStart = WorkStart, ExpectedVersion = 0 }, CancellationToken.None)));
+
+        // Exactly one approval into the freed slot wins; the other loses the real-Postgres race.
+        Assert.Single(captured, c => c.Error is null);
+        Assert.Single(captured, c => c.Error is not null);
+
+        await using var verify = factory.Create(tenant);
+        Assert.Equal(1, await verify.CatalogOrderItemResourceAllocations.CountAsync(a => a.TenantId == seed.TenantId));
+        Assert.Equal(1, await verify.Reservations.CountAsync(r =>
+            r.TenantId == seed.TenantId && r.Purpose == ReservationPurpose.InternalUse
+            && r.Status != ReservationStatus.Canceled));
+    }
+
     private static async Task<Guid> AddSecondOrderAsync(AppDbContext db, Seed seed, int orderNumber)
     {
         var order = new CatalogOrder
