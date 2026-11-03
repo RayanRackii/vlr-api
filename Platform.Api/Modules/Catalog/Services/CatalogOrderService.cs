@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -216,8 +215,8 @@ public sealed class CatalogOrderService(
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken)
             ?? throw new KeyNotFoundException("Order not found.");
 
-        var actorId = await ResolveB2BUserIdAsync(cancellationToken);
-        var actorType = actorId is null ? CatalogActorType.System : CatalogActorType.B2BUser;
+        var (actorType, actorId) = await CatalogOrderActorResolver.ResolveAsync(
+            httpContextAccessor, dbContext, cancellationToken);
 
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
@@ -275,24 +274,6 @@ public sealed class CatalogOrderService(
 
             throw;
         }
-    }
-
-    private async Task<Guid?> ResolveB2BUserIdAsync(CancellationToken cancellationToken)
-    {
-        var principal = httpContextAccessor.HttpContext?.User;
-        var sub = principal?.FindFirst("sub")?.Value
-            ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-        if (string.IsNullOrWhiteSpace(sub))
-        {
-            return null;
-        }
-
-        return await dbContext.Users
-            .AsNoTracking()
-            .Where(u => u.SupabaseAuthId == sub)
-            .Select(u => (Guid?)u.Id)
-            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private Guid EnsureTenant() =>
