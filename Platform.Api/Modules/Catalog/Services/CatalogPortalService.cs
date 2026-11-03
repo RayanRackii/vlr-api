@@ -705,7 +705,12 @@ public sealed class CatalogPortalService(
         var result = new List<PortalProductResponse>(products.Count);
         foreach (var p in products)
         {
-            result.Add(await MapPortalProductAsync(p, ct) with { Taxonomy = assignments[p.Id] });
+            result.Add(await MapPortalProductAsync(p, ct) with
+            {
+                Taxonomy = assignments[p.Id],
+                // Only products that passed ApplyVisibility reach here, so Restricted == granted to this customer.
+                IsExclusive = p.Visibility == CatalogProductVisibility.Restricted,
+            });
         }
         return result;
     }

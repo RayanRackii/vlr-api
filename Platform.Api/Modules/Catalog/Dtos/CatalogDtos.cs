@@ -340,6 +340,9 @@ public sealed record PortalProductResponse(
     IReadOnlyList<PortalProductFileDto> Files)
 {
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+
+    /// <summary>True when the product is Restricted and this customer was granted it (direct or via group).</summary>
+    public bool IsExclusive { get; init; }
 }
 
 public sealed record CreatePortalOrderItemRequest

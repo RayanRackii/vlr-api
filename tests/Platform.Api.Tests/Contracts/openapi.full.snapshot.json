@@ -4247,6 +4247,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "isExclusive": {
+            "type": "boolean"
+          },
           "name": {
             "nullable": true,
             "type": "string"

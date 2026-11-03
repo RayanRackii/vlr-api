@@ -162,4 +162,15 @@ public sealed class CustomerGroupVisibilityTests
         Assert.Contains("sig=", list.Single(p => p.Id == s.Direct.Id).Files.Single().Url);
         Assert.DoesNotContain("sig=", list.Single(p => p.Id == s.Pub.Id).Files.Single().Url);
     }
+
+    [Fact]
+    public async Task Portal_marks_granted_restricted_products_as_exclusive()
+    {
+        var s = await SeedAsync();
+        await using var _ = s.H;
+        var list = await s.H.Portal.ListProductsAsync(s.Allowed.Id, null, CancellationToken.None);
+        Assert.True(list.Single(p => p.Id == s.Direct.Id).IsExclusive);
+        Assert.False(list.Single(p => p.Id == s.Pub.Id).IsExclusive);
+        Assert.True((await s.H.Portal.GetProductAsync(s.GroupMember.Id, s.ViaGroup.Id, CancellationToken.None))!.IsExclusive);
+    }
 }
