@@ -186,7 +186,54 @@ public sealed record CatalogOrderHistoryResponse(
     CatalogActorType ActorType,
     Guid? ActorId,
     string? Reason,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt)
+{
+    /// <summary>
+    /// Display name of the acting party — the staff user's full name for
+    /// <see cref="CatalogActorType.B2BUser"/>, the customer's name for
+    /// <see cref="CatalogActorType.Customer"/>, null for <see cref="CatalogActorType.System"/>.
+    /// Resolved tenant-scoped during enrichment (staff reads only).
+    /// </summary>
+    public string? ActorName { get; init; }
+}
+
+// --- Agenda (read-only schedule) ---
+
+public sealed record CatalogAgendaQuery(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    Guid? ProductId,
+    Guid? RentalAssetId);
+
+/// <summary>
+/// One agenda row: an allocated resource occurrence, or a still-unscheduled requested/approved
+/// line. <see cref="WorkStart"/>/<see cref="WorkEnd"/> are null for unscheduled lines;
+/// <see cref="OccupiedStart"/>/<see cref="OccupiedEnd"/> include the prep/cleanup buffers.
+/// </summary>
+public sealed record CatalogAgendaItemResponse(
+    Guid OrderId,
+    string? DisplayNumber,
+    CatalogOrderStatus OrderStatus,
+    Guid ProductId,
+    string ProductName,
+    Guid? RentalAssetId,
+    string? ResourceName,
+    string? CustomerName,
+    DateTimeOffset? WorkStart,
+    DateTimeOffset? WorkEnd,
+    DateTimeOffset OccupiedStart,
+    DateTimeOffset OccupiedEnd,
+    AllocationStatus? AllocationStatus,
+    string TimeZoneId);
+
+public sealed record CatalogAgendaResourceResponse(
+    Guid Id,
+    string Name,
+    string? Category);
+
+public sealed record CatalogAgendaResourcesResponse(
+    IReadOnlyList<CatalogAgendaItemResponse> Items,
+    IReadOnlyList<CatalogAgendaResourceResponse> Resources);
 
 public sealed record CatalogOrderResponse(
     Guid Id,

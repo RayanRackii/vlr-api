@@ -483,7 +483,7 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
         var occupancy = new ResourceOccupancyService(BookingClock());
         var scheduler = new RecordingOutboxScheduler();
         var allocationService = new CatalogOrderAllocationService(
-            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler);
+            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler, new FakeHttpContextAccessor());
         return new CatalogOrderService(
             db,
             tenantProvider,

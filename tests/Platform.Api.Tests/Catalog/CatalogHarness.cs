@@ -96,7 +96,7 @@ internal sealed class CatalogHarness : IAsyncDisposable
         var http = new FakeHttpContextAccessor();
         var occupancy = new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService();
         var allocationService = new CatalogOrderAllocationService(
-            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler);
+            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler, http);
         var orders = new CatalogOrderService(db, tenantProvider, http, publisher.AsDomainEvents(), scheduler, allocationService, occupancy);
         var portal = new CatalogPortalService(
             db,

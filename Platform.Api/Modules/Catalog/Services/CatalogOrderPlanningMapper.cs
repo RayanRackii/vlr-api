@@ -56,12 +56,71 @@ internal static class CatalogOrderPlanningMapper
         var requirementsByItem = requirements.ToLookup(r => r.OrderItemId);
         var allocationByRequirement = allocations.ToDictionary(a => a.RequirementId);
 
+        // Actor display names are a staff-read concern only (portal reads pass
+        // includeAllocationDetail: false and must never surface staff names). Resolved in two
+        // batched tenant-scoped queries — never per history row — to avoid an N+1.
+        var actorNames = includeAllocationDetail
+            ? await ResolveActorNamesAsync(db, orders, cancellationToken)
+            : EmptyActorNames;
+
         return orders.Select(order => Enrich(
             CatalogOrderService.MapOrder(order),
             order,
             requirementsByItem,
             allocationByRequirement,
+            actorNames,
             includeAllocationDetail)).ToList();
+    }
+
+    private static readonly IReadOnlyDictionary<Guid, string> EmptyActorNames =
+        new Dictionary<Guid, string>();
+
+    private static async Task<IReadOnlyDictionary<Guid, string>> ResolveActorNamesAsync(
+        AppDbContext db,
+        IReadOnlyList<CatalogOrder> orders,
+        CancellationToken cancellationToken)
+    {
+        var history = orders.SelectMany(o => o.History).ToList();
+        var userIds = history
+            .Where(h => h.ActorType == CatalogActorType.B2BUser && h.ActorId is not null)
+            .Select(h => h.ActorId!.Value)
+            .Distinct()
+            .ToList();
+        var customerIds = history
+            .Where(h => h.ActorType == CatalogActorType.Customer && h.ActorId is not null)
+            .Select(h => h.ActorId!.Value)
+            .Distinct()
+            .ToList();
+
+        var names = new Dictionary<Guid, string>();
+
+        if (userIds.Count > 0)
+        {
+            var users = await db.Users
+                .AsNoTracking()
+                .Where(u => userIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.FullName })
+                .ToListAsync(cancellationToken);
+            foreach (var u in users)
+            {
+                names[u.Id] = u.FullName;
+            }
+        }
+
+        if (customerIds.Count > 0)
+        {
+            var customers = await db.Customers
+                .AsNoTracking()
+                .Where(c => customerIds.Contains(c.Id))
+                .Select(c => new { c.Id, c.Name })
+                .ToListAsync(cancellationToken);
+            foreach (var c in customers)
+            {
+                names[c.Id] = c.Name;
+            }
+        }
+
+        return names;
     }
 
     public static async Task<CatalogOrderResponse> EnrichOneAsync(
@@ -76,6 +135,7 @@ internal static class CatalogOrderPlanningMapper
         CatalogOrder order,
         ILookup<Guid, CatalogOrderItemResourceRequirement> requirementsByItem,
         IReadOnlyDictionary<Guid, CatalogOrderItemResourceAllocation> allocationByRequirement,
+        IReadOnlyDictionary<Guid, string> actorNames,
         bool includeAllocationDetail)
     {
         DateTimeOffset? latestWorkEnd = null;
@@ -134,9 +194,18 @@ internal static class CatalogOrderPlanningMapper
                 ? latestWorkEnd
                 : null;
 
+        var history = actorNames.Count == 0
+            ? baseResponse.History
+            : baseResponse.History
+                .Select(h => h.ActorId is { } actorId && actorNames.TryGetValue(actorId, out var name)
+                    ? h with { ActorName = name }
+                    : h)
+                .ToList();
+
         return baseResponse with
         {
             Items = itemResponses,
+            History = history,
             OrderVersion = Convert.ToBase64String(order.RowVersion),
             PlanningRevision = order.PlanningRevision,
             ProductionSummary = orderSummary,

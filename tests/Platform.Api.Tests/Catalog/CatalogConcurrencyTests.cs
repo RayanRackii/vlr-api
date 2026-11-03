@@ -143,7 +143,7 @@ public sealed class CatalogConcurrencyTests : IClassFixture<PostgresContainerFix
         var occupancy = new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService();
         var scheduler = new RecordingOutboxScheduler();
         var allocationService = new CatalogOrderAllocationService(
-            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler);
+            db, tenantProvider, occupancy, publisher.AsDomainEvents(), scheduler, new FakeHttpContextAccessor());
         return new CatalogOrderService(
             db,
             tenantProvider,
