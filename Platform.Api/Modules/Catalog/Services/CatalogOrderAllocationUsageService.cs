@@ -178,7 +178,8 @@ public sealed class CatalogOrderAllocationUsageService(
         if (allocation.Status == AllocationStatus.Scheduled)
         {
             await occupancy.ReleaseInternalUseOccupancyAsync(
-                dbContext, order.TenantId, allocation.ReservationItemId, cancellationToken);
+                dbContext, order.TenantId, allocation.ReservationItemId,
+                InternalUseReleaseKind.CancelBeforeStart, allocation.PlannedWorkEnd, cancellationToken);
             allocation.Status = AllocationStatus.Cancelled;
             allocation.ActualReleaseAt = DateTimeOffset.UtcNow;
             return;
@@ -191,7 +192,8 @@ public sealed class CatalogOrderAllocationUsageService(
         }
 
         await occupancy.ReleaseInternalUseOccupancyAsync(
-            dbContext, order.TenantId, allocation.ReservationItemId, cancellationToken);
+            dbContext, order.TenantId, allocation.ReservationItemId,
+            InternalUseReleaseKind.ReleaseAfterStart, allocation.PlannedWorkEnd, cancellationToken);
         allocation.Status = AllocationStatus.Released;
         allocation.ActualReleaseAt = DateTimeOffset.UtcNow;
     }

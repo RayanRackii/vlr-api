@@ -83,7 +83,10 @@ public sealed class CatalogOrderAllocationPreviewService(
         }
 
         var orderItem = order.Items.First(i => i.Id == requirement.OrderItemId);
-        var workStart = workStartRequest.WorkStart;
+        // Normalize to UTC at the boundary: a workStart carrying a non-zero offset (e.g. -03:00) is
+        // a valid instant, but PostgreSQL's timestamptz parameters require offset 0 — without this
+        // the downstream occupancy query would surface a raw driver error instead of a clean result.
+        var workStart = workStartRequest.WorkStart.ToUniversalTime();
         var (workEnd, occupiedStart, occupiedEnd) = CatalogPlanningWindow.Calculate(
             workStart, requirement.DurationMinutesPerUnit, orderItem.Quantity,
             requirement.PrepMinutes, requirement.CleanupMinutes);
@@ -115,7 +118,7 @@ public sealed class CatalogOrderAllocationPreviewService(
             return new CatalogOrderAllocationPreviewResponse(
                 IsFeasible: false, requirement.OrderItemId, rentalAssetId, workStart, workEnd, occupiedStart, occupiedEnd, null,
                 ConflictCode: "resource_unavailable",
-                Reason: availability.Reason);
+                Reason: $"'{eligibleResource.Name}' is already booked for an overlapping interval.");
         }
 
         return new CatalogOrderAllocationPreviewResponse(
