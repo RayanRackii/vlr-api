@@ -956,6 +956,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Public")
+                        .HasColumnName("visibility");
+
                     b.HasKey("Id")
                         .HasName("pk_catalog_products");
 
@@ -974,6 +982,61 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_catalog_products_tenant_id_name");
 
                     b.ToTable("catalog_products", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalog_product_access");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_catalog_product_access_customer_id");
+
+                    b.HasIndex("TenantId", "GroupId")
+                        .HasDatabaseName("ix_catalog_product_access_tenant_id_group_id");
+
+                    b.HasIndex("TenantId", "ProductId", "CustomerId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_catalog_product_access_tenant_id_product_id_customer_id")
+                        .HasFilter("customer_id IS NOT NULL");
+
+                    b.HasIndex("TenantId", "ProductId", "GroupId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_catalog_product_access_tenant_id_product_id_group_id")
+                        .HasFilter("group_id IS NOT NULL");
+
+                    b.ToTable("catalog_product_access", "catalog", t =>
+                        {
+                            t.HasCheckConstraint("ck_catalog_product_access_exactly_one_target", "(customer_id IS NOT NULL AND group_id IS NULL) OR (customer_id IS NULL AND group_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductCategory", b =>
@@ -1303,6 +1366,73 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasFilter("phone IS NOT NULL");
 
                     b.ToTable("customers", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CustomerGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_customer_groups");
+
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_customer_groups_tenant_id_id");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_customer_groups_tenant_id_name");
+
+                    b.ToTable("customer_groups", "catalog");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CustomerGroupMember", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("customer_id");
+
+                    b.HasKey("TenantId", "GroupId", "CustomerId")
+                        .HasName("pk_customer_group_members");
+
+                    b.HasIndex("CustomerId")
+                        .HasDatabaseName("ix_customer_group_members_customer_id");
+
+                    b.HasIndex("TenantId", "CustomerId")
+                        .HasDatabaseName("ix_customer_group_members_tenant_id_customer_id");
+
+                    b.ToTable("customer_group_members", "catalog");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.GlobalMaintenanceTemplate", b =>
@@ -4632,6 +4762,30 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_catalog_policies_tenants_tenant_id");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductAccess", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_catalog_product_access_customers_customer_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CustomerGroup", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "GroupId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_catalog_product_access_customer_groups_tenant_id_group_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "ProductId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_catalog_product_access_catalog_products_tenant_id_product_id");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductCategory", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
@@ -4714,6 +4868,41 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_catalog_product_tags_taxonomy_tags_tenant_id_tag_id");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CustomerGroup", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_customer_groups_tenants_tenant_id");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.CustomerGroupMember", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_customer_group_members_customers_customer_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_customer_group_members_tenants_tenant_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.CustomerGroup", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "GroupId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_customer_group_members_customer_groups_tenant_id_group_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.GlobalTemplateTask", b =>

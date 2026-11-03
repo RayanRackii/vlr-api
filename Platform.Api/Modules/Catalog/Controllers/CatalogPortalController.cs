@@ -29,7 +29,7 @@ public sealed class CatalogPortalController(
         [FromQuery] string? category = null,
         [FromQuery] string? tags = null)
     {
-        return Ok(await portalService.ListProductsAsync(search, cancellationToken, TaxonomyFilter.Parse(category, tags)));
+        return Ok(await portalService.ListProductsAsync(TryResolveCustomerId(), search, cancellationToken, TaxonomyFilter.Parse(category, tags)));
     }
 
     [HttpGet("products/{id:guid}")]
@@ -37,7 +37,7 @@ public sealed class CatalogPortalController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var product = await portalService.GetProductAsync(id, cancellationToken);
+        var product = await portalService.GetProductAsync(TryResolveCustomerId(), id, cancellationToken);
         return product is null ? NotFound() : Ok(product);
     }
 
@@ -273,6 +273,10 @@ public sealed class CatalogPortalController(
             return StorageProviderActionResults.FromHttpRequestException();
         }
     }
+
+    // Browsing never fails on a missing claim: no customer => only Public products are shown.
+    private Guid? TryResolveCustomerId() =>
+        Guid.TryParse(User.FindFirst(CustomerClaimTypes.CustomerId)?.Value, out var id) ? id : null;
 
     private Guid ResolveCustomerId()
     {

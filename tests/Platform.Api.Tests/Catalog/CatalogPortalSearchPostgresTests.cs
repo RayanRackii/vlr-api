@@ -50,11 +50,65 @@ public sealed class CatalogPortalSearchPostgresTests(PostgresContainerFixture po
         {
             foreach (var search in new[] { "cafe", "CAFÉ", " ACAO ", "ac\u0327a\u0303o", "REF", "réF", "%", "_", @"\", @"10%_\" })
             {
-                var result = await portal.ListProductsAsync(search, CancellationToken.None);
+                var result = await portal.ListProductsAsync(null, search, CancellationToken.None);
                 Assert.Equal(match.Id, Assert.Single(result).Id);
             }
 
-            Assert.Empty(await portal.ListProductsAsync("inexistente", CancellationToken.None));
+            Assert.Empty(await portal.ListProductsAsync(null, "inexistente", CancellationToken.None));
+        }
+    }
+
+    [DockerFact]
+    public async Task Visibility_filter_applies_on_postgres_in_both_search_branches()
+    {
+        var factory = postgres.Factory ?? throw new InvalidOperationException("PostgreSQL fixture was not started.");
+        var tenant = new Tenant("Catalog vis", "66666666000191", subdomain: "catalog-vis");
+        var provider = new FakeTenantProvider { TenantId = tenant.Id };
+        await using var db = factory.Create(provider);
+        db.Tenants.Add(tenant);
+        var pub = new CatalogProduct { TenantId = tenant.Id, Name = "Item público" };
+        var direct = new CatalogProduct { TenantId = tenant.Id, Name = "Item direto", Visibility = Platform.Core.Domain.Enums.CatalogProductVisibility.Restricted };
+        var viaGroup = new CatalogProduct { TenantId = tenant.Id, Name = "Item grupo", Visibility = Platform.Core.Domain.Enums.CatalogProductVisibility.Restricted };
+        var ana = new Customer { TenantId = tenant.Id, Name = "Ana", Email = "ana@vis.test", Phone = "+5511999990000" };
+        var bia = new Customer { TenantId = tenant.Id, Name = "Bia", Email = "bia@vis.test", Phone = "+5511999990001" };
+        var group = new CustomerGroup { TenantId = tenant.Id, Name = "VIP" };
+        db.CatalogProducts.AddRange(pub, direct, viaGroup);
+        db.Customers.AddRange(ana, bia);
+        db.CustomerGroups.Add(group);
+        await db.SaveChangesAsync();
+        db.CustomerGroupMembers.Add(new CustomerGroupMember { TenantId = tenant.Id, GroupId = group.Id, CustomerId = bia.Id });
+        db.CatalogProductAccess.AddRange(
+            new CatalogProductAccess { TenantId = tenant.Id, ProductId = direct.Id, CustomerId = ana.Id },
+            new CatalogProductAccess { TenantId = tenant.Id, ProductId = viaGroup.Id, GroupId = group.Id });
+        await db.SaveChangesAsync();
+
+        // CHECK constraint: exactly one target.
+        db.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = tenant.Id, ProductId = pub.Id, CustomerId = ana.Id, GroupId = group.Id });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        await using var harness = await CatalogHarness.CreateAsync();
+        var portal = new CatalogPortalService(db, provider,
+            new DevStorageProvider(new FakeHostEnvironment(), Options.Create(new StorageOptions())),
+            Options.Create(new StorageOptions()), harness.Publisher.AsDomainEvents(), harness.Scheduler,
+            new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService());
+
+        await db.Database.ExecuteSqlRawAsync("DROP EXTENSION IF EXISTS unaccent");
+        await AssertAsync();
+        await db.Database.ExecuteSqlRawAsync("CREATE EXTENSION unaccent WITH SCHEMA public");
+        try { await AssertAsync(); }
+        finally { await db.Database.ExecuteSqlRawAsync("DROP EXTENSION unaccent"); }
+
+        async Task AssertAsync()
+        {
+            foreach (var search in new string?[] { null, "item" })
+            {
+                async Task<HashSet<Guid>> Ids(Guid? c) => (await portal.ListProductsAsync(c, search, CancellationToken.None)).Select(p => p.Id).ToHashSet();
+                Assert.Equal(new HashSet<Guid> { pub.Id }, await Ids(null));
+                Assert.Equal(new HashSet<Guid> { pub.Id, direct.Id }, await Ids(ana.Id));
+                Assert.Equal(new HashSet<Guid> { pub.Id, viaGroup.Id }, await Ids(bia.Id));
+            }
+            Assert.Null(await portal.GetProductAsync(bia.Id, direct.Id, CancellationToken.None));
         }
     }
 }

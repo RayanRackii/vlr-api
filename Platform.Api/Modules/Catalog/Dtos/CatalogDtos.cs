@@ -393,3 +393,26 @@ public sealed record UpsertCatalogChannelConfigRequest
 
     public required bool IsActive { get; init; }
 }
+
+public sealed record CustomerGroupResponse(
+    Guid Id,
+    string Name,
+    string? Description,
+    IReadOnlyList<Guid> MemberCustomerIds,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt);
+
+public sealed record UpsertCustomerGroupRequest(string Name, string? Description);
+
+public sealed record CustomerGroupMembersRequest(IReadOnlyList<Guid> CustomerIds);
+
+public sealed record CatalogProductAccessResponse(
+    Guid ProductId,
+    string Visibility,
+    IReadOnlyList<Guid> CustomerIds,
+    IReadOnlyList<Guid> GroupIds);
+
+public sealed record UpdateCatalogProductAccessRequest(
+    string Visibility,
+    IReadOnlyList<Guid>? CustomerIds,
+    IReadOnlyList<Guid>? GroupIds);

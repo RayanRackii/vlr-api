@@ -214,13 +214,13 @@ public sealed class TaxonomyPostgresTests(PostgresContainerFixture postgres) : I
 
         async Task CheckAsync()
         {
-            var result = await portal.ListProductsAsync("cafe", Ct, new(root.Id, [a.Id, b.Id]));
+            var result = await portal.ListProductsAsync(null, "cafe", Ct, new(root.Id, [a.Id, b.Id]));
             var p = Assert.Single(result);
             Assert.Equal(match.Id, p.Id);
             Assert.Equal(leaf.Id, Assert.Single(p.Taxonomy.Categories).Id);
             Assert.Equal(2, p.Taxonomy.Tags.Count);
-            Assert.Empty(await portal.ListProductsAsync("cafe", Ct, new(Guid.NewGuid(), [a.Id])));
-            Assert.Empty(await portal.ListProductsAsync("cafe", Ct, new(root.Id, [a.Id, Guid.NewGuid()])));
+            Assert.Empty(await portal.ListProductsAsync(null, "cafe", Ct, new(Guid.NewGuid(), [a.Id])));
+            Assert.Empty(await portal.ListProductsAsync(null, "cafe", Ct, new(root.Id, [a.Id, Guid.NewGuid()])));
             Assert.Equal(match.Id, Assert.Single(await products.ListAsync(new("Café", null, true, new(root.Id, [a.Id, b.Id])), Ct)).Id);
         }
     }
