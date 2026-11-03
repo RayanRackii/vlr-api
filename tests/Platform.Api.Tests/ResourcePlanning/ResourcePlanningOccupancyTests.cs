@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Catalog.Dtos;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Tests.Fakes;
@@ -104,11 +105,13 @@ public sealed partial class ResourcePlanningConcurrencyTests
             Assert.False((await occupancy.CheckAvailabilityAsync(db, seed.TenantId, seed.RentalAssetId,
                 WorkEnd, WorkEnd.AddHours(1), [], CancellationToken.None)).IsAvailable);
             clock.Advance(TimeSpan.FromHours(2));
-            await occupancy.ReleaseInternalUseOccupancyAsync(db, seed.TenantId, itemId, CancellationToken.None);
+            await occupancy.ReleaseInternalUseOccupancyAsync(db, seed.TenantId, itemId,
+                InternalUseReleaseKind.ReleaseAfterStart, WorkEnd, CancellationToken.None);
             await db.SaveChangesAsync();
             // A retry must not extend a reservation that has already been released.
             clock.Advance(TimeSpan.FromHours(1));
-            await occupancy.ReleaseInternalUseOccupancyAsync(db, seed.TenantId, itemId, CancellationToken.None);
+            await occupancy.ReleaseInternalUseOccupancyAsync(db, seed.TenantId, itemId,
+                InternalUseReleaseKind.ReleaseAfterStart, WorkEnd, CancellationToken.None);
             await db.SaveChangesAsync();
         }
 

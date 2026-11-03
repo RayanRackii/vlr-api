@@ -216,7 +216,11 @@ public sealed class CatalogOrderAllocationService(
 
             // Step 4: validate the work window and compute the buffered interval.
             var orderItem = order.Items.First(i => i.Id == requirement.OrderItemId);
-            var workStart = planningRequest.WorkStart.Value;
+            // Normalize to UTC at the boundary: a workStart carrying a non-zero offset (e.g. -03:00)
+            // is a valid instant, but PostgreSQL's timestamptz parameters require offset 0 — without
+            // this the InternalUse reservation write would throw a raw driver error (surfaced as a
+            // 500), rather than the request succeeding against the same instant.
+            var workStart = planningRequest.WorkStart.Value.ToUniversalTime();
             var (workEnd, occupiedStart, occupiedEnd) = CatalogPlanningWindow.Calculate(
                 workStart, requirement.DurationMinutesPerUnit, orderItem.Quantity,
                 requirement.PrepMinutes, requirement.CleanupMinutes);
@@ -237,9 +241,10 @@ public sealed class CatalogOrderAllocationService(
                 dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, tentativeBatch: [], cancellationToken);
             if (!availability.IsAvailable)
             {
+                // Surface the resource's display name, never the raw id (bug 4).
                 throw new ResourceUnavailableException(
                     rentalAssetId,
-                    availability.Reason ?? $"Resource '{rentalAssetId}' is not available for the requested interval.");
+                    $"'{eligibleResource.Name}' is already booked for an overlapping interval.");
             }
 
             var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(

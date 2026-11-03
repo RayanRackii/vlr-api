@@ -70,18 +70,32 @@ public interface IResourceOccupancyService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Marks the owning <c>InternalUse</c> reservation of <paramref name="reservationItemId"/> as
-    /// physically released. Phase 0 maps this to
-    /// <see cref="Platform.Core.Domain.Enums.ReservationStatus.Completed"/> (reusing the existing
-    /// enum, never a new status) because "released" means the work and cleanup for this
-    /// reservation are over and the resource is available again from this point forward — the
-    /// same terminal meaning <c>Completed</c> already carries for <c>CustomerBooking</c>. Does not
-    /// open a transaction or save; the caller commits alongside its own allocation-status update.
+    /// Closes the owning <c>InternalUse</c> reservation of <paramref name="reservationItemId"/> so
+    /// the freed time becomes bookable again by customer bookings and other allocations (and drops
+    /// from the staff agenda, which reads the same <c>BlockingStatuses</c>). The effect depends on
+    /// <paramref name="releaseKind"/>:
+    /// <list type="bullet">
+    /// <item><description><see cref="InternalUseReleaseKind.CancelBeforeStart"/>: the work never
+    /// started, so the entire planned window — prep, work and cleanup buffers alike — is freed by
+    /// marking the reservation <see cref="Platform.Core.Domain.Enums.ReservationStatus.Canceled"/>
+    /// (a non-blocking terminal status).</description></item>
+    /// <item><description><see cref="InternalUseReleaseKind.ReleaseAfterStart"/>: the work had
+    /// started, so the occupied window is closed at <c>releaseTime + cleanupBuffer</c> and the
+    /// reservation is marked <see cref="Platform.Core.Domain.Enums.ReservationStatus.Completed"/>.
+    /// An early release shortens the window (freeing the unused tail); a release at/after the
+    /// planned end leaves it unchanged (an overdue reservation still extends to the actual release
+    /// time to preserve the overrun in history).</description></item>
+    /// </list>
+    /// <paramref name="plannedWorkEnd"/> is the allocation's planned work end, used to recover the
+    /// cleanup buffer from the persisted window. Does not open a transaction or save; the caller
+    /// commits alongside its own allocation-status update.
     /// </summary>
     Task ReleaseInternalUseOccupancyAsync(
         AppDbContext db,
         Guid tenantId,
         Guid reservationItemId,
+        InternalUseReleaseKind releaseKind,
+        DateTimeOffset plannedWorkEnd,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -112,6 +126,20 @@ public interface IResourceOccupancyService
         DateTimeOffset occupiedStart,
         DateTimeOffset occupiedEnd,
         CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// How an <c>InternalUse</c> occupancy is being closed, per the Order-Resource Planning release
+/// semantics: whether the work ever started determines whether the whole window is freed or only
+/// its unused tail.
+/// </summary>
+public enum InternalUseReleaseKind
+{
+    /// <summary>Work never started: free the entire planned window (prep + work + cleanup).</summary>
+    CancelBeforeStart,
+
+    /// <summary>Work had started: close the window at the release moment plus the cleanup buffer.</summary>
+    ReleaseAfterStart,
 }
 
 /// <summary>A RentalAsset eligible (or not) for production/internal use, by id and display name.</summary>

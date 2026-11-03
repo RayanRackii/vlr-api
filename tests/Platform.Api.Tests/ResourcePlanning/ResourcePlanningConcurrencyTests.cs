@@ -299,7 +299,8 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
         Assert.False(bufferConflict.IsAvailable);
 
         // Release before the planned end; the buffered interval remains occupied in history.
-        await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId, CancellationToken.None);
+        await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId,
+            InternalUseReleaseKind.ReleaseAfterStart, WorkEnd, CancellationToken.None);
         await seedDb.SaveChangesAsync();
 
         // Entirely outside the buffered interval must be available.
@@ -340,7 +341,8 @@ public sealed partial class ResourcePlanningConcurrencyTests : IClassFixture<Pos
         Assert.False(afterPlannedEnd.IsAvailable);
 
         // Explicit release preserves the overrun; times after the release are free.
-        await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId, CancellationToken.None);
+        await occupancy.ReleaseInternalUseOccupancyAsync(seedDb, seed.TenantId, reservationItemId,
+            InternalUseReleaseKind.ReleaseAfterStart, pastEnd, CancellationToken.None);
         await seedDb.SaveChangesAsync();
 
         var afterRelease = await occupancy.CheckAvailabilityAsync(
