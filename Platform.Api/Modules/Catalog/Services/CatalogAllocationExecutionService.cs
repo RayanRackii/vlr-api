@@ -68,7 +68,8 @@ internal static class CatalogAllocationExecutionService
         foreach (var allocation in allocations.Where(a => a.Status == AllocationStatus.Scheduled))
         {
             await occupancy.ReleaseInternalUseOccupancyAsync(
-                db, order.TenantId, allocation.ReservationItemId, cancellationToken);
+                db, order.TenantId, allocation.ReservationItemId,
+                InternalUseReleaseKind.CancelBeforeStart, allocation.PlannedWorkEnd, cancellationToken);
             allocation.Status = AllocationStatus.Cancelled;
             allocation.ActualReleaseAt = DateTimeOffset.UtcNow;
             allocation.RowVersion = Guid.NewGuid().ToByteArray();

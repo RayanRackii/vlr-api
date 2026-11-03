@@ -161,6 +161,8 @@ public sealed class ResourceOccupancyService(TimeProvider? timeProvider = null) 
         AppDbContext db,
         Guid tenantId,
         Guid reservationItemId,
+        InternalUseReleaseKind releaseKind,
+        DateTimeOffset plannedWorkEnd,
         CancellationToken cancellationToken)
     {
         var item = await db.ReservationItems
@@ -177,29 +179,53 @@ public sealed class ResourceOccupancyService(TimeProvider? timeProvider = null) 
                 $"Reservation '{reservation.Id}' is not an InternalUse reservation.");
         }
 
-        if (reservation.Status == ReservationStatus.Completed)
+        // Idempotent: both Completed and Canceled are terminal, non-open states. A retry (e.g. a
+        // lost response) must neither re-extend nor re-shorten an already-closed window.
+        if (reservation.Status is ReservationStatus.Completed or ReservationStatus.Canceled)
         {
             return;
         }
 
-        if (reservation.Status == ReservationStatus.Canceled)
+        if (releaseKind == InternalUseReleaseKind.CancelBeforeStart)
         {
-            throw new InvalidOperationException(
-                $"Cannot release a canceled InternalUse reservation '{reservation.Id}'.");
+            // The work never started, so nothing physical happened in this window: free it
+            // entirely — prep, work and cleanup buffers alike. Canceled is the existing
+            // non-blocking terminal status (absent from AvailabilityReadModel.BlockingStatuses),
+            // unlike Completed which keeps blocking its window, so the prep/cleanup buffers become
+            // immediately bookable again and the staff agenda (same BlockingStatuses) drops the
+            // cell.
+            reservation.Status = ReservationStatus.Canceled;
+            reservation.Touch();
+            return;
         }
 
-        // Preserve late occupancy in history after the open-ended block is closed.
+        // ReleaseAfterStart: the resource is physically free from the release moment onward except
+        // for the cleanup allowance that still has to run, so the occupied window closes at
+        // releaseTime + cleanupBuffer. Design choice:
+        //   * early release (before the planned work end) shortens the window, giving back the
+        //     unused tail between (release + cleanup) and the originally planned end;
+        //   * release at/after the planned end leaves the window unchanged — releaseTime + cleanup
+        //     is already >= the planned end — and, for an overdue reservation, extends it to the
+        //     actual release time so the overrun is preserved in history (times after it are free).
+        // The cleanup buffer is recovered from the persisted window (occupiedEnd == plannedWorkEnd
+        // + cleanup), keeping this method agnostic to how the buffer was originally configured.
         var releasedAt = clock.GetUtcNow();
-        if (releasedAt > reservation.EndDateTime)
+        var cleanupBuffer = reservation.EndDateTime - plannedWorkEnd;
+        if (cleanupBuffer < TimeSpan.Zero)
+        {
+            cleanupBuffer = TimeSpan.Zero;
+        }
+
+        var shortenedEnd = releasedAt + cleanupBuffer;
+        if (shortenedEnd < reservation.EndDateTime && shortenedEnd > reservation.StartDateTime)
+        {
+            reservation.EndDateTime = shortenedEnd;
+        }
+        else if (releasedAt > reservation.EndDateTime)
         {
             reservation.EndDateTime = releasedAt;
         }
 
-        // "Released" means the resource is physically free again from this point forward — the
-        // same terminal meaning ReservationStatus.Completed already carries for CustomerBooking
-        // (completion does not retroactively change the blocked interval; it only stops the
-        // reservation from being touched again). Reusing Completed (rather than Canceled, which
-        // implies the work never happened) keeps the enum meaning consistent across Purpose values.
         reservation.Status = ReservationStatus.Completed;
         reservation.Touch();
     }
