@@ -206,7 +206,7 @@ public sealed class CatalogServiceTests
             CatalogFileVisibility.InternalB2B,
             CancellationToken.None);
 
-        var portal = await harness.Portal.GetProductAsync(product.Id, CancellationToken.None);
+        var portal = await harness.Portal.GetProductAsync(null, product.Id, CancellationToken.None);
         Assert.Single(portal!.Files);
         Assert.Equal("photo.png", portal.Files[0].FileName);
         Assert.DoesNotContain("storageKey", portal.Files[0].Url, StringComparison.OrdinalIgnoreCase);

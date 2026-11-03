@@ -157,6 +157,12 @@ public sealed record CatalogProductResponse(
     IReadOnlyList<CatalogProductFileDto> Files)
 {
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+
+    public CatalogProductVisibility Visibility { get; init; } = CatalogProductVisibility.Public;
+
+    public int GrantedCustomerCount { get; init; }
+
+    public int GrantedGroupCount { get; init; }
 }
 
 public sealed record CatalogFileUrlResponse(string Url, bool IsPublic);
@@ -393,3 +399,42 @@ public sealed record UpsertCatalogChannelConfigRequest
 
     public required bool IsActive { get; init; }
 }
+
+public sealed record CustomerGroupResponse(
+    Guid Id,
+    string Name,
+    string? Description,
+    IReadOnlyList<Guid> MemberCustomerIds,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt);
+
+public sealed record UpsertCustomerGroupRequest(string Name, string? Description);
+
+public sealed record CustomerGroupMembersRequest(IReadOnlyList<Guid> CustomerIds);
+
+public sealed record CatalogProductAccessResponse(
+    Guid ProductId,
+    string Visibility,
+    IReadOnlyList<Guid> CustomerIds,
+    IReadOnlyList<Guid> GroupIds)
+{
+    /// <summary>True when the product is Restricted but nobody is granted (no customer can see it).</summary>
+    public bool RestrictedWithoutGrants { get; init; }
+}
+
+public sealed record CatalogAccessAuditResponse(
+    Guid Id,
+    string Action,
+    string EntityType,
+    Guid EntityId,
+    string ActorType,
+    Guid? ActorUserId,
+    string? ActorName,
+    string? BeforeJson,
+    string? AfterJson,
+    DateTimeOffset CreatedAt);
+
+public sealed record UpdateCatalogProductAccessRequest(
+    string Visibility,
+    IReadOnlyList<Guid>? CustomerIds,
+    IReadOnlyList<Guid>? GroupIds);

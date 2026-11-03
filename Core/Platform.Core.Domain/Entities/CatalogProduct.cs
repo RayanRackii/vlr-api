@@ -1,4 +1,5 @@
 using Platform.Core.Domain.Common;
+using Platform.Core.Domain.Enums;
 
 namespace Platform.Core.Domain.Entities;
 
@@ -17,6 +18,12 @@ public class CatalogProduct : Entity, ITenantScoped
     public string Currency { get; set; } = "BRL";
 
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Portal visibility. <see cref="CatalogProductVisibility.Public"/> (default) is visible to
+    /// everyone; <see cref="CatalogProductVisibility.Restricted"/> only to granted customers/groups.
+    /// </summary>
+    public CatalogProductVisibility Visibility { get; set; } = CatalogProductVisibility.Public;
 
     /// <summary>
     /// Concurrency token for the product's resource-requirements configuration.

@@ -304,8 +304,21 @@ public sealed class CatalogProductService(
 
     private async Task<IReadOnlyList<CatalogProductResponse>> MapManyAsync(IReadOnlyList<CatalogProduct> products, CancellationToken ct)
     {
-        var assignments = await CatalogTaxonomy.LoadAsync(dbContext, EnsureTenant(), products.Select(x => x.Id), ct);
-        return products.Select(p => Map(p, true) with { Taxonomy = assignments[p.Id] }).ToArray();
+        var tenantId = EnsureTenant();
+        var assignments = await CatalogTaxonomy.LoadAsync(dbContext, tenantId, products.Select(x => x.Id), ct);
+        var ids = products.Select(x => x.Id).ToList();
+        var grants = await dbContext.CatalogProductAccess.AsNoTracking()
+            .Where(a => a.TenantId == tenantId && ids.Contains(a.ProductId))
+            .GroupBy(a => a.ProductId)
+            .Select(g => new { g.Key, Customers = g.Count(a => a.CustomerId != null), Groups = g.Count(a => a.GroupId != null) })
+            .ToDictionaryAsync(x => x.Key, ct);
+        return products.Select(p => Map(p, true) with
+        {
+            Taxonomy = assignments[p.Id],
+            Visibility = p.Visibility,
+            GrantedCustomerCount = grants.TryGetValue(p.Id, out var g) ? g.Customers : 0,
+            GrantedGroupCount = grants.TryGetValue(p.Id, out var g2) ? g2.Groups : 0,
+        }).ToArray();
     }
 
     private async Task<CatalogProductResponse> MapOneAsync(CatalogProduct product, CancellationToken ct) =>
