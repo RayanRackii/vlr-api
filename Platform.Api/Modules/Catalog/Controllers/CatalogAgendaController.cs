@@ -40,6 +40,12 @@ public sealed class CatalogAgendaController(
 
     internal static BadRequestObjectResult? ValidateRange(DateTimeOffset from, DateTimeOffset to)
     {
+        // Buffers pad the SQL window by a day each side; reject bounds that would overflow.
+        if (from.UtcDateTime.Year < 2000 || to.UtcDateTime.Year > 2999)
+        {
+            return new BadRequestObjectResult(new { error = "'from' and 'to' must be between years 2000 and 2999." });
+        }
+
         if (from >= to)
         {
             return new BadRequestObjectResult(new { error = "'from' must be strictly before 'to'." });

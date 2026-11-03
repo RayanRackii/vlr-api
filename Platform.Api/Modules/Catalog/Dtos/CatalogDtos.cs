@@ -203,7 +203,15 @@ public sealed record CatalogAgendaQuery(
     DateTimeOffset From,
     DateTimeOffset To,
     Guid? ProductId,
-    Guid? RentalAssetId);
+    Guid? RentalAssetId)
+{
+    // Npgsql only accepts UTC DateTimeOffset parameters; normalize offsets like -03:00.
+    private readonly DateTimeOffset _from = From.ToUniversalTime();
+    private readonly DateTimeOffset _to = To.ToUniversalTime();
+
+    public DateTimeOffset From { get => _from; init => _from = value.ToUniversalTime(); }
+    public DateTimeOffset To { get => _to; init => _to = value.ToUniversalTime(); }
+}
 
 /// <summary>
 /// One agenda row: an allocated resource occurrence, or a still-unscheduled requested/approved

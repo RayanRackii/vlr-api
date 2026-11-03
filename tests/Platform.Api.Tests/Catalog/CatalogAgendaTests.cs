@@ -64,6 +64,26 @@ public sealed class CatalogAgendaTests : IClassFixture<PostgresContainerFixture>
     }
 
     [DockerFact]
+    public async Task Products_agenda_accepts_non_utc_offsets()
+    {
+        var factory = RequireFactory();
+        var tenant = new FakeTenantProvider();
+        var seed = await SeedAsync(factory, tenant, prepMinutes: 30, cleanupMinutes: 30);
+        await InsertAllocationAsync(factory, tenant, seed);
+
+        await using var db = factory.Create(tenant);
+        var service = new CatalogAgendaService(db, tenant);
+        var utc = Query(new TimeOnly(9, 0), new TimeOnly(9, 45));
+        var offset = TimeSpan.FromHours(-3);
+
+        var items = await service.GetProductsAgendaAsync(
+            utc with { From = utc.From.ToOffset(offset), To = utc.To.ToOffset(offset) },
+            CancellationToken.None);
+
+        Assert.Single(items);
+    }
+
+    [DockerFact]
     public async Task Products_agenda_is_tenant_scoped()
     {
         var factory = RequireFactory();

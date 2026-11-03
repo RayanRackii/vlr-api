@@ -52,6 +52,20 @@ public sealed class CatalogAgendaHttpTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("0001-01-01T00:00:00Z", "0001-01-02T00:00:00Z")]
+    [InlineData("2026-09-10T00:00:00Z", "2026-09-01T00:00:00Z")]
+    [InlineData("2026-09-01T00:00:00Z", "2026-11-01T00:00:00Z")]
+    public void Invalid_agenda_range_is_rejected_with_400(string from, string to)
+    {
+        var result = CatalogAgendaController.ValidateRange(
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        Assert.NotNull(result);
+        Assert.Equal(400, result!.StatusCode);
+    }
+
     private static IHost StartHost(params string[] allowedPermissionKeys) =>
         new HostBuilder()
             .ConfigureWebHost(web =>
