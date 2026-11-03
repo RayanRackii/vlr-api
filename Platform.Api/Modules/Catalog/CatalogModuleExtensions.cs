@@ -19,6 +19,7 @@ public static class CatalogModuleExtensions
         services.AddScoped<ICatalogOrderAllocationService, CatalogOrderAllocationService>();
         services.AddScoped<ICatalogOrderAllocationPreviewService, CatalogOrderAllocationPreviewService>();
         services.AddScoped<ICatalogOrderAllocationUsageService, CatalogOrderAllocationUsageService>();
+        services.AddScoped<ICatalogAgendaService, CatalogAgendaService>();
         services.TryAddScoped(typeof(IDomainEventDispatcher<>), typeof(DomainEventDispatcher<>));
         services.AddScoped<IDomainEventHandler<CatalogOrderEvent>>(sp =>
             sp.GetRequiredService<ICatalogNotificationPublisher>());

@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -61,7 +63,8 @@ public sealed class CatalogOrderAllocationService(
     ITenantProvider tenantProvider,
     IResourceOccupancyService occupancy,
     IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
-    INotificationOutboxScheduler outboxScheduler) : ICatalogOrderAllocationService
+    INotificationOutboxScheduler outboxScheduler,
+    IHttpContextAccessor httpContextAccessor) : ICatalogOrderAllocationService
 {
     private static readonly string[] RequiredModules =
     [
@@ -102,6 +105,8 @@ public sealed class CatalogOrderAllocationService(
             .FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken)
             ?? throw new KeyNotFoundException("Order not found.");
 
+        var (actorType, actorId) = await ResolveActorAsync(cancellationToken);
+
         var itemIds = order.Items.Select(i => i.Id).ToList();
         var requirements = itemIds.Count == 0
             ? []
@@ -123,7 +128,7 @@ public sealed class CatalogOrderAllocationService(
         {
             // Ordinary (non-scheduled) order: resource-free approvals retain their current
             // contract exactly, including no planning-lock escalation.
-            return await ApproveWithoutPlanningAsync(order, cancellationToken);
+            return await ApproveWithoutPlanningAsync(order, actorType, actorId, cancellationToken);
         }
 
         if (planningRequest is null || planningRequest.UnitId is null || planningRequest.WorkStart is null)
@@ -185,7 +190,7 @@ public sealed class CatalogOrderAllocationService(
             {
                 // Should not normally happen (order still Requested but an allocation already
                 // exists) — treat as a lost-response retry anyway rather than duplicating.
-                order.Approve(CatalogActorType.System, actorId: null);
+                order.Approve(actorType, actorId);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 if (transaction is not null)
                 {
@@ -276,7 +281,7 @@ public sealed class CatalogOrderAllocationService(
             };
             dbContext.CatalogOrderItemResourceAllocations.Add(allocation);
 
-            order.Approve(CatalogActorType.System, actorId: null);
+            order.Approve(actorType, actorId);
 
             var queued = await domainEvents.DispatchAsync(
                 new CatalogOrderEvent(order, CatalogEventTypes.OrderApproved),
@@ -316,6 +321,8 @@ public sealed class CatalogOrderAllocationService(
 
     private async Task<CatalogOrderResponse> ApproveWithoutPlanningAsync(
         CatalogOrder order,
+        CatalogActorType actorType,
+        Guid? actorId,
         CancellationToken cancellationToken)
     {
         await domainEvents.EnsureReadyAsync(cancellationToken);
@@ -326,7 +333,7 @@ public sealed class CatalogOrderAllocationService(
 
         try
         {
-            order.Approve(CatalogActorType.System, actorId: null);
+            order.Approve(actorType, actorId);
 
             var queued = await domainEvents.DispatchAsync(
                 new CatalogOrderEvent(order, CatalogEventTypes.OrderApproved),
@@ -396,4 +403,33 @@ public sealed class CatalogOrderAllocationService(
     private Guid EnsureTenant() =>
         tenantProvider.TenantId
         ?? throw new UnauthorizedAccessException("Tenant context is required.");
+
+    /// <summary>
+    /// Resolves the acting party for an approval. A request carrying an authenticated staff
+    /// principal maps to that <see cref="CatalogActorType.B2BUser"/> (so order history attributes
+    /// the approval to the real user); only genuinely automatic paths with no principal stay
+    /// <see cref="CatalogActorType.System"/>.
+    /// </summary>
+    private async Task<(CatalogActorType ActorType, Guid? ActorId)> ResolveActorAsync(
+        CancellationToken cancellationToken)
+    {
+        var principal = httpContextAccessor.HttpContext?.User;
+        var sub = principal?.FindFirst("sub")?.Value
+            ?? principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return (CatalogActorType.System, null);
+        }
+
+        var userId = await dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.SupabaseAuthId == sub)
+            .Select(u => (Guid?)u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return userId is null
+            ? (CatalogActorType.System, null)
+            : (CatalogActorType.B2BUser, userId);
+    }
 }
