@@ -35,7 +35,8 @@ public sealed class CustomerGroupService(
     ITenantProvider tenantProvider,
     IHttpContextAccessor? httpContextAccessor = null,
     IStorageProvider? storageProvider = null,
-    IOptions<StorageOptions>? storageOptions = null) : ICustomerGroupService
+    IOptions<StorageOptions>? storageOptions = null,
+    ILogger<CustomerGroupService>? logger = null) : ICustomerGroupService
 {
     public const int MaxIdsPerRequest = 500;
     public const int NameMaxLength = 200;
@@ -215,8 +216,9 @@ public sealed class CustomerGroupService(
         {
             foreach (var m in moves)
             {
-                await storageProvider!.CopyAsync(m.FromBucket, m.Key, m.ToBucket, m.Key, ct);
+                // A timeout may occur after storage has already created the destination.
                 copied.Add(m);
+                await storageProvider!.CopyAsync(m.FromBucket, m.Key, m.ToBucket, m.Key, ct);
             }
             if (restricting)
             {
@@ -237,25 +239,27 @@ public sealed class CustomerGroupService(
             // if the public source was deleted, restore it first and drop the private copy only
             // when that restore succeeds. If the restore fails, keep the private copy so the file
             // stays recoverable (the rolled-back DB still references this key).
-            var safeToDeletePrivate = new List<FileMove>();
+            var safeToDeleteDestinations = new List<FileMove>();
             foreach (var m in copied)
             {
                 if (!sourcesDeleted.Contains(m))
                 {
-                    safeToDeletePrivate.Add(m);
+                    safeToDeleteDestinations.Add(m);
                     continue;
                 }
                 try
                 {
                     await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None);
-                    safeToDeletePrivate.Add(m);
+                    safeToDeleteDestinations.Add(m);
                 }
                 catch (Exception)
                 {
-                    /* restore of the public object failed; keep the private copy as the only surviving copy */
+                    // Keep the destination as the only surviving copy. Do not log provider exception
+                    // details, which may contain signed URLs or credentials.
+                    logger?.LogError("Storage compensation restore failed for bucket {Bucket}, key {Key}", m.FromBucket, m.Key);
                 }
             }
-            await DeleteQuietlyAsync(safeToDeletePrivate.Select(m => (m.ToBucket, m.Key)));
+            await DeleteQuietlyAsync(safeToDeleteDestinations.Select(m => (m.ToBucket, m.Key)), publicDestination: !restricting);
             throw;
         }
         if (!restricting)
@@ -280,13 +284,23 @@ public sealed class CustomerGroupService(
         return from == to ? [] : keys.Select(k => new FileMove(from, to, k)).ToList();
     }
 
-    private async Task DeleteQuietlyAsync(IEnumerable<(string Bucket, string Key)> objects)
+    private async Task DeleteQuietlyAsync(IEnumerable<(string Bucket, string Key)> objects,
+        bool publicDestination = false)
     {
         if (storageProvider is null) return;
         foreach (var (bucket, key) in objects)
         {
-            try { await storageProvider.DeleteAsync(bucket, key, CancellationToken.None); }
-            catch (Exception) { /* best effort; provider logs failures */ }
+            try
+            {
+                await storageProvider.DeleteRequiredAsync(bucket, key, CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                if (publicDestination)
+                    logger?.LogError("Storage compensation could not remove public destination in bucket {Bucket}, key {Key}", bucket, key);
+                else
+                    logger?.LogWarning("Storage cleanup failed for bucket {Bucket}, key {Key}", bucket, key);
+            }
         }
     }
 

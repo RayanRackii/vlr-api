@@ -80,6 +80,69 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         Assert.NotNull(await verify.CatalogProductFiles.FirstOrDefaultAsync(f => f.Id == file.Id));
     }
 
+    [DockerFact]
+    public async Task Opening_timeout_after_copy_rolls_back_and_removes_public_destination()
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider();
+        var productId = await SeedProductAsync(factory, provider, storage);
+        await using var db = factory.Create(provider);
+        var groups = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
+        await groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
+        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
+        var file = await AddPhotoAsync(products, productId, CancellationToken.None);
+        storage.FailAfterCopy = true;
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            groups.SetProductAccessAsync(productId, new("Public", null, null), CancellationToken.None));
+
+        var copy = Assert.Single(storage.Copies);
+        Assert.DoesNotContain((Opts.PublicBucket, copy.ToKey), storage.Objects);
+        Assert.Contains((Opts.PrivateBucket, copy.FromKey), storage.Objects);
+        await using var verify = factory.Create(provider);
+        Assert.Equal(CatalogProductVisibility.Restricted,
+            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
+        Assert.NotNull(await verify.CatalogProductFiles.SingleOrDefaultAsync(f => f.Id == file.Id));
+    }
+
+    [DockerFact]
+    public async Task Opening_commit_failure_rolls_back_and_removes_public_destination()
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider();
+        var productId = await SeedProductAsync(factory, provider, storage);
+        await using (var setup = factory.Create(provider))
+        {
+            var groups = new CustomerGroupService(setup, provider, null, storage, Options.Create(Opts));
+            await groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
+            var products = new CatalogProductService(setup, provider, storage, Options.Create(Opts));
+            await AddPhotoAsync(products, productId, CancellationToken.None);
+        }
+        var failure = new TimeoutException("Commit failed before completion.");
+        await using var db = factory.Create(provider, new FailCommit(failure));
+        var access = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
+
+        var thrown = await Assert.ThrowsAsync<TimeoutException>(() =>
+            access.SetProductAccessAsync(productId, new("Public", null, null), CancellationToken.None));
+
+        Assert.Same(failure, thrown);
+        var copy = Assert.Single(storage.Copies);
+        Assert.DoesNotContain((Opts.PublicBucket, copy.ToKey), storage.Objects);
+        Assert.Contains((Opts.PrivateBucket, copy.FromKey), storage.Objects);
+        await using var verify = factory.Create(provider);
+        Assert.Equal(CatalogProductVisibility.Restricted,
+            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
+    }
+
+    private sealed class FailCommit(Exception failure) : DbTransactionInterceptor
+    {
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
+            TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
+            => throw failure;
+    }
+
     private PostgresAppDbFactory RequireFactory() => Assert.IsType<PostgresAppDbFactory>(postgres.Factory);
 
     private static async Task<Guid> SeedProductAsync(

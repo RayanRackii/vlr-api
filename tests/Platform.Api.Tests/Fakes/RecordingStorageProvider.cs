@@ -11,6 +11,7 @@ public sealed class RecordingStorageProvider : IStorageProvider
     public Task UploadAsync(string bucket, string key, Stream stream, string contentType, CancellationToken cancellationToken = default)
     {
         Uploads.Add((bucket, key));
+        Objects.Add((bucket, key));
         return Task.CompletedTask;
     }
 
@@ -32,6 +33,10 @@ public sealed class RecordingStorageProvider : IStorageProvider
 
     public bool FailCopy { get; set; }
 
+    public bool FailAfterCopy { get; set; }
+
+    public HashSet<(string Bucket, string Key)> Objects { get; } = [];
+
     /// <summary>When set, a copy whose destination bucket equals this value fails (e.g. a restore).</summary>
     public string? FailCopyToBucket { get; set; }
 
@@ -40,14 +45,18 @@ public sealed class RecordingStorageProvider : IStorageProvider
     /// <summary>When set, required deletes succeed for the first N calls and fail afterwards.</summary>
     public int? FailRequiredDeleteAfter { get; set; }
 
+    public string? FailRequiredDeleteInBucket { get; set; }
+
     private int _requiredDeletes;
 
     public Task DeleteRequiredAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
-        if (FailRequiredDelete) return Task.FromException(new InvalidOperationException("Storage unavailable."));
-        if (FailRequiredDeleteAfter is int n && _requiredDeletes++ >= n)
+        if (FailRequiredDelete && (FailRequiredDeleteInBucket is null || bucket == FailRequiredDeleteInBucket)) return Task.FromException(new InvalidOperationException("Storage unavailable."));
+        if ((FailRequiredDeleteInBucket is null || bucket == FailRequiredDeleteInBucket)
+            && FailRequiredDeleteAfter is int n && _requiredDeletes++ >= n)
             return Task.FromException(new InvalidOperationException("Storage unavailable."));
         Deletes.Add((bucket, key));
+        Objects.Remove((bucket, key));
         return Task.CompletedTask;
     }
 
@@ -56,12 +65,15 @@ public sealed class RecordingStorageProvider : IStorageProvider
         if (FailCopy || destinationBucket == FailCopyToBucket)
             return Task.FromException(new InvalidOperationException("Storage unavailable."));
         Copies.Add((sourceBucket, sourceKey, destinationBucket, destinationKey));
+        Objects.Add((destinationBucket, destinationKey));
+        if (FailAfterCopy) return Task.FromException(new TimeoutException("Copy timed out after storage accepted the object."));
         return Task.CompletedTask;
     }
 
     public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         Deletes.Add((bucket, key));
+        Objects.Remove((bucket, key));
         return Task.CompletedTask;
     }
 
