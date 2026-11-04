@@ -1494,6 +1494,13 @@
             "nullable": true,
             "type": "array"
           },
+          "customerNames": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
+          },
           "groupIds": {
             "items": {
               "format": "uuid",
@@ -2772,6 +2779,13 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "memberNames": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
           },
           "name": {
             "nullable": true,

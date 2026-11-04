@@ -409,7 +409,11 @@ public sealed record CustomerGroupResponse(
     string? Description,
     IReadOnlyList<Guid> MemberCustomerIds,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt)
+{
+    /// <summary>Display names of members keyed by customer id (staff display only).</summary>
+    public IReadOnlyDictionary<Guid, string> MemberNames { get; init; } = new Dictionary<Guid, string>();
+}
 
 public sealed record UpsertCustomerGroupRequest(string Name, string? Description);
 
@@ -423,6 +427,9 @@ public sealed record CatalogProductAccessResponse(
 {
     /// <summary>True when the product is Restricted but nobody is granted (no customer can see it).</summary>
     public bool RestrictedWithoutGrants { get; init; }
+
+    /// <summary>Display names of granted customers keyed by customer id (staff display only; not audited).</summary>
+    public IReadOnlyDictionary<Guid, string> CustomerNames { get; init; } = new Dictionary<Guid, string>();
 }
 
 public sealed record CatalogAccessAuditResponse(

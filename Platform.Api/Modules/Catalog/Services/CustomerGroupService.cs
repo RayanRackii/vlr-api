@@ -44,7 +44,8 @@ public sealed class CustomerGroupService(
         var ids = groups.Select(g => g.Id).ToList();
         var members = await dbContext.CustomerGroupMembers.AsNoTracking()
             .Where(m => m.TenantId == tenantId && ids.Contains(m.GroupId)).ToListAsync(ct);
-        return groups.Select(g => Map(g, members)).ToList();
+        var names = await CustomerNamesAsync(tenantId, members.Select(m => m.CustomerId), ct);
+        return groups.Select(g => Map(g, members, names)).ToList();
     }
 
     public async Task<CustomerGroupResponse?> GetAsync(Guid id, CancellationToken ct)
@@ -63,7 +64,7 @@ public sealed class CustomerGroupService(
         dbContext.CustomerGroups.Add(group);
         await AuditAsync(tenantId, "group.created", "group", group.Id, null, new { group.Name, group.Description }, ct);
         await SaveAsync(ct);
-        return Map(group, []);
+        return Map(group, [], new Dictionary<Guid, string>());
     }
 
     public async Task<CustomerGroupResponse?> UpdateAsync(Guid id, UpsertCustomerGroupRequest request, CancellationToken ct)
@@ -198,13 +199,14 @@ public sealed class CustomerGroupService(
         await AuditAsync(tenantId, "product.accessChanged", "product", productId, before, after, ct);
         await dbContext.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
-        return after;
+        return after with { CustomerNames = await CustomerNamesAsync(tenantId, customerIds, ct) };
     }
 
     private async Task<CatalogProductAccessResponse> MapAccessAsync(Guid tenantId, CatalogProduct product, CancellationToken ct)
     {
         var grants = await dbContext.CatalogProductAccess.AsNoTracking()
             .Where(a => a.TenantId == tenantId && a.ProductId == product.Id).ToListAsync(ct);
+        var names = await CustomerNamesAsync(tenantId, grants.Where(a => a.CustomerId != null).Select(a => a.CustomerId!.Value), ct);
         return new CatalogProductAccessResponse(
             product.Id,
             product.Visibility.ToString(),
@@ -212,6 +214,7 @@ public sealed class CustomerGroupService(
             grants.Where(a => a.GroupId != null).Select(a => a.GroupId!.Value).ToList())
         {
             RestrictedWithoutGrants = product.Visibility == CatalogProductVisibility.Restricted && grants.Count == 0,
+            CustomerNames = names,
         };
     }
 
@@ -297,13 +300,27 @@ public sealed class CustomerGroupService(
     {
         var members = await dbContext.CustomerGroupMembers.AsNoTracking()
             .Where(m => m.TenantId == tenantId && m.GroupId == group.Id).ToListAsync(ct);
-        return Map(group, members);
+        var names = await CustomerNamesAsync(tenantId, members.Select(m => m.CustomerId), ct);
+        return Map(group, members, names);
     }
 
-    private static CustomerGroupResponse Map(CustomerGroup g, IEnumerable<CustomerGroupMember> members) =>
-        new(g.Id, g.Name, g.Description,
-            members.Where(m => m.GroupId == g.Id).Select(m => m.CustomerId).OrderBy(x => x).ToList(),
-            g.CreatedAt, g.UpdatedAt);
+    private async Task<IReadOnlyDictionary<Guid, string>> CustomerNamesAsync(Guid tenantId, IEnumerable<Guid> ids, CancellationToken ct)
+    {
+        var list = ids.Distinct().ToList();
+        if (list.Count == 0) return new Dictionary<Guid, string>();
+        return await dbContext.Customers.AsNoTracking()
+            .Where(c => c.TenantId == tenantId && list.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+    }
+
+    private static CustomerGroupResponse Map(CustomerGroup g, IEnumerable<CustomerGroupMember> members, IReadOnlyDictionary<Guid, string> names)
+    {
+        var ids = members.Where(m => m.GroupId == g.Id).Select(m => m.CustomerId).OrderBy(x => x).ToList();
+        return new(g.Id, g.Name, g.Description, ids, g.CreatedAt, g.UpdatedAt)
+        {
+            MemberNames = ids.Where(names.ContainsKey).ToDictionary(id => id, id => names[id]),
+        };
+    }
 
     private static string NormalizeName(string? name)
     {
