@@ -61,7 +61,7 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
     }
 
     [DockerFact]
-    public async Task Restriction_waits_for_upload_then_rejects_visibility_change()
+    public async Task Restriction_waits_for_upload_then_allows_visibility_change()
     {
         var factory = RequireFactory();
         var provider = new FakeTenantProvider();
@@ -84,18 +84,18 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         }
         finally { pause.Release.TrySetResult(); }
         await upload;
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => toggle);
+        await toggle;
         await using var verify = factory.Create(provider);
-        Assert.Equal(CatalogProductVisibility.Public,
+        Assert.Equal(CatalogProductVisibility.Restricted,
             (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
         Assert.Single(await verify.CatalogProductFiles.Where(f => f.ProductId == productId).ToListAsync());
-        Assert.Equal(Opts.PublicBucket, Assert.Single(storage.Uploads).Bucket);
+        Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
         Assert.Empty(storage.Copies);
         Assert.Empty(storage.Deletes);
     }
 
     [DockerFact]
-    public async Task Any_file_blocks_both_visibility_directions_but_empty_products_can_toggle()
+    public async Task Private_files_allow_both_visibility_directions()
     {
         var factory = RequireFactory();
         foreach (var initial in new[] { "Public", "Restricted" })
@@ -115,9 +115,9 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
             new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(png, 0);
             using var stream = new MemoryStream(fileVisibility == CatalogFileVisibility.InternalB2B ? "%PDF-1.4 dummy"u8.ToArray() : png);
             await products.AddFileAsync(productId, fileVisibility == CatalogFileVisibility.InternalB2B ? "doc.pdf" : "photo.png", fileVisibility == CatalogFileVisibility.InternalB2B ? "application/pdf" : "image/png", stream, fileVisibility, CancellationToken.None);
-            await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => groups.SetProductAccessAsync(
-                productId, new(initial == "Public" ? "Restricted" : "Public", null, null), CancellationToken.None));
-            Assert.Equal(initial, (await groups.GetProductAccessAsync(productId, CancellationToken.None))!.Visibility);
+            var target = initial == "Public" ? "Restricted" : "Public";
+            await groups.SetProductAccessAsync(productId, new(target, null, null), CancellationToken.None);
+            Assert.Equal(target, (await groups.GetProductAccessAsync(productId, CancellationToken.None))!.Visibility);
             Assert.Empty(storage.Copies);
             Assert.Empty(storage.Deletes);
             if (initial == "Restricted") Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
@@ -194,7 +194,7 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
     [InlineData("ready")]
     [InlineData("ambiguous")]
     [InlineData("ambiguous-save")]
-    public async Task Upload_failure_keeps_a_durable_blocking_row_and_never_deletes_storage(string step)
+    public async Task Upload_failure_keeps_a_durable_integrity_row_and_never_deletes_storage(string step)
     {
         var factory = RequireFactory();
         var provider = new FakeTenantProvider();
@@ -216,12 +216,11 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         Assert.NotEqual("pending", row.StorageKey);
         Assert.True((await new CatalogProductService(verify, provider, storage, Options.Create(Opts))
             .GetByIdAsync(productId, CancellationToken.None))!.HasFiles);
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() =>
-            new CustomerGroupService(verify, provider).SetProductAccessAsync(
-                productId, new("Restricted", null, null), CancellationToken.None));
+        await new CustomerGroupService(verify, provider).SetProductAccessAsync(
+            productId, new("Restricted", null, null), CancellationToken.None);
         Assert.Empty(storage.Deletes);
         if (step == "pending") Assert.Empty(storage.Uploads);
-        else Assert.Contains((Opts.PublicBucket, row.StorageKey), storage.Objects);
+        else Assert.Contains((Opts.PrivateBucket, row.StorageKey), storage.Objects);
         // The service must also reconcile the tracked status after an ambiguous final commit.
         Assert.Equal(row.Status, db.ChangeTracker.Entries<CatalogProductFile>().Single().Entity.Status);
     }
@@ -256,31 +255,22 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
             Visibility = CatalogFileVisibility.CustomerVisible, Status = status };
         db.CatalogProductFiles.Add(row);
         await db.SaveChangesAsync();
-        if (objectExists) storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
+        if (objectExists) storage.Objects.Add((Opts.PrivateBucket, row.StorageKey));
 
         var clock = new TestTimeProvider(row.CreatedAt);
         var products = new CatalogProductService(db, provider, storage, Options.Create(Opts), clock);
-        await Assert.ThrowsAsync<CatalogFilePendingTooRecentException>(() =>
-            products.DeleteFileAsync(productId, row.Id, CancellationToken.None));
-        Assert.True(await db.CatalogProductFiles.AnyAsync(f => f.Id == row.Id));
-        Assert.Empty(storage.Deletes);
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() =>
-            new CustomerGroupService(db, provider).SetProductAccessAsync(
-                productId, new("Restricted", null, null), CancellationToken.None));
-
-        clock.Advance(TimeSpan.FromMinutes(3));
         await products.DeleteFileAsync(productId, row.Id, CancellationToken.None);
 
         await using var verify = factory.Create(provider);
         Assert.False(await verify.CatalogProductFiles.AnyAsync(f => f.Id == row.Id));
-        Assert.DoesNotContain((Opts.PublicBucket, row.StorageKey), storage.Objects);
+        Assert.DoesNotContain((Opts.PrivateBucket, row.StorageKey), storage.Objects);
         Assert.Single(storage.Deletes);
         await new CustomerGroupService(verify, provider).SetProductAccessAsync(
             productId, new("Restricted", null, null), CancellationToken.None);
     }
 
     [DockerFact]
-    public async Task Durable_pending_upload_blocks_concurrent_visibility_change_even_when_upload_fails()
+    public async Task Pending_upload_serializes_then_allows_concurrent_visibility_change_when_upload_fails()
     {
         var factory = RequireFactory();
         var provider = new FakeTenantProvider();
@@ -306,16 +296,15 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         }
         finally { release.TrySetResult(); }
         await Assert.ThrowsAsync<InvalidOperationException>(() => upload);
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => toggle);
+        await toggle;
         verify.ChangeTracker.Clear();
-        Assert.Equal(CatalogProductVisibility.Public, (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
+        Assert.Equal(CatalogProductVisibility.Restricted, (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
         Assert.Equal(CatalogFileStatus.Pending, (await verify.CatalogProductFiles.SingleAsync(f => f.ProductId == productId)).Status);
         Assert.Empty(storage.Deletes);
         var response = await new CustomerGroupsController(new CustomerGroupService(toggleDb, provider))
             .SetAccess(productId, new("Restricted", null, null), CancellationToken.None);
-        var conflict = Assert.IsType<ConflictObjectResult>(response.Result);
-        Assert.Equal(409, conflict.StatusCode);
-        Assert.Contains(CatalogVisibilityFilesPresentException.Code, System.Text.Json.JsonSerializer.Serialize(conflict.Value));
+        Assert.IsType<OkObjectResult>(response.Result);
+        Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
     }
 
     [DockerTheory]

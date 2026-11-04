@@ -47,7 +47,7 @@ public sealed class RestrictedProductFileStorageTests
     [InlineData("Restricted", CatalogFileVisibility.CustomerVisible)]
     [InlineData("Public", CatalogFileVisibility.InternalB2B)]
     [InlineData("Restricted", CatalogFileVisibility.InternalB2B)]
-    public async Task Visibility_change_with_any_file_is_rejected(string initial, CatalogFileVisibility fileVisibility)
+    public async Task Visibility_change_with_private_files_is_allowed(string initial, CatalogFileVisibility fileVisibility)
     {
         var c = await CreateAsync();
         await using var _ = c.H;
@@ -59,10 +59,10 @@ public sealed class RestrictedProductFileStorageTests
         await c.Products.AddFileAsync(product.Id, fileVisibility == CatalogFileVisibility.InternalB2B ? "doc.pdf" : "photo.png", fileVisibility == CatalogFileVisibility.InternalB2B ? "application/pdf" : "image/png", stream, fileVisibility, CancellationToken.None);
         var original = Assert.Single(c.Storage.Uploads);
 
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => c.Groups.SetProductAccessAsync(
-            product.Id, new(initial == "Public" ? "Restricted" : "Public", null, null), CancellationToken.None));
+        var target = initial == "Public" ? "Restricted" : "Public";
+        await c.Groups.SetProductAccessAsync(product.Id, new(target, null, null), CancellationToken.None);
 
-        Assert.Equal(initial, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        Assert.Equal(target, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
         var read = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
         Assert.Single(read!.Files);
         Assert.True(read.HasFiles);
@@ -152,13 +152,16 @@ public sealed class RestrictedProductFileStorageTests
         await c.H.Db.SaveChangesAsync();
         var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
         await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", [granted.Id], null), CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
         await c.Groups.SetProductAccessAsync(product.Id, new("Public", [granted.Id], null), CancellationToken.None);
 
         Assert.Contains(granted.Id, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.CustomerIds);
         Assert.NotNull(await c.Portal.GetProductAsync(other.Id, product.Id, CancellationToken.None));
         await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", [granted.Id], null), CancellationToken.None);
         Assert.NotNull(await c.Portal.GetProductAsync(granted.Id, product.Id, CancellationToken.None));
+        var signedBefore = c.Storage.Signed.Count;
         Assert.Null(await c.Portal.GetProductAsync(other.Id, product.Id, CancellationToken.None));
+        Assert.Equal(signedBefore, c.Storage.Signed.Count);
     }
 
     [Theory]
@@ -166,7 +169,7 @@ public sealed class RestrictedProductFileStorageTests
     [InlineData("upload")]
     [InlineData("ready")]
     [InlineData("ambiguous")]
-    public async Task Failed_upload_retains_blocking_row_without_deleting_objects(string step)
+    public async Task Failed_upload_retains_integrity_row_without_blocking_visibility(string step)
     {
         var provider = new FakeTenantProvider { TenantId = Guid.NewGuid() };
         var failure = new UploadSaveFailure();
@@ -175,7 +178,7 @@ public sealed class RestrictedProductFileStorageTests
         var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
         var groups = new CustomerGroupService(db, provider);
         var product = await products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
-        failure.Arm(step == "pending" ? 1 : 2, step == "ambiguous");
+        failure.Arm(step == "upload" ? 0 : step == "pending" ? 1 : 2, step == "ambiguous");
         var png = new byte[16];
         new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(png, 0);
         using var stream = new MemoryStream(png);
@@ -188,11 +191,10 @@ public sealed class RestrictedProductFileStorageTests
         Assert.Equal(step == "ambiguous" ? CatalogFileStatus.Ready : CatalogFileStatus.Pending, row.Status);
         Assert.NotEqual("pending", row.StorageKey);
         Assert.True((await products.GetByIdAsync(product.Id, CancellationToken.None))!.HasFiles);
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => groups.SetProductAccessAsync(
-            product.Id, new("Restricted", null, null), CancellationToken.None));
+        await groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
         Assert.Empty(storage.Deletes);
         if (step == "pending") Assert.Empty(storage.Uploads);
-        else Assert.Contains((Opts.PublicBucket, row.StorageKey), storage.Objects);
+        else Assert.Contains((Opts.PrivateBucket, row.StorageKey), storage.Objects);
     }
 
     [Theory]
@@ -210,14 +212,14 @@ public sealed class RestrictedProductFileStorageTests
             Visibility = CatalogFileVisibility.CustomerVisible, Status = status };
         c.H.Db.CatalogProductFiles.Add(row);
         await c.H.Db.SaveChangesAsync();
-        if (objectExists) c.Storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
+        if (objectExists) c.Storage.Objects.Add((Opts.PrivateBucket, row.StorageKey));
 
-        var clock = new TestTimeProvider(row.CreatedAt.AddMinutes(3));
+        var clock = new TestTimeProvider(row.CreatedAt);
         var products = new CatalogProductService(c.H.Db, c.H.TenantProvider, c.Storage, Options.Create(Opts), clock);
         await products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
 
         Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
-        Assert.DoesNotContain((Opts.PublicBucket, row.StorageKey), c.Storage.Objects);
+        Assert.DoesNotContain((Opts.PrivateBucket, row.StorageKey), c.Storage.Objects);
         Assert.Single(c.Storage.Deletes);
         Assert.False((await c.Products.GetByIdAsync(product.Id, CancellationToken.None))!.HasFiles);
         await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
@@ -251,47 +253,127 @@ public sealed class RestrictedProductFileStorageTests
         Assert.All(staff.Files.Where(f => f.Id != ready.Id), f => Assert.Null(f.Url));
     }
 
-    [Theory]
-    [InlineData(CatalogFileStatus.Pending)]
-    [InlineData(CatalogFileStatus.Failed)]
-    public async Task Recent_incomplete_delete_returns_conflict_and_keeps_visibility_blocker(CatalogFileStatus status)
+    [Fact]
+    public async Task Late_private_completion_after_immediate_removal_and_restriction_cannot_be_served()
     {
-        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
-        var c = await CreateAsync(clock);
+        var c = await CreateAsync();
         await using var _ = c.H;
+        var customer = c.H.AddCustomer("Other");
+        await c.H.Db.SaveChangesAsync();
         var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
-        // The request fails before an object is visible; storage can still materialize it later.
+        await c.Products.ActivateAsync(product.Id, CancellationToken.None);
         c.Storage.BeforeUploadAsync = ct => Task.FromException(new TimeoutException("Storage POST timed out."));
         await Assert.ThrowsAsync<TimeoutException>(() => AddPhotoAsync(c, product.Id));
         var row = await c.H.Db.CatalogProductFiles.SingleAsync();
-        Assert.Equal(clock.GetUtcNow(), row.CreatedAt);
-        row.Status = status;
-        await c.H.Db.SaveChangesAsync();
-
         var controller = new CatalogProductsController(c.Products, null!);
-        var first = Assert.IsType<ConflictObjectResult>(await controller.DeleteFile(product.Id, row.Id, CancellationToken.None));
-        var firstBody = System.Text.Json.JsonSerializer.SerializeToElement(first.Value);
-        Assert.Contains("3 minute", firstBody.GetProperty("error").GetString());
-        clock.Advance(TimeSpan.FromSeconds(179));
-        var result = Assert.IsType<ConflictObjectResult>(await controller.DeleteFile(product.Id, row.Id, CancellationToken.None));
-        Assert.Equal(409, result.StatusCode);
-        var body = System.Text.Json.JsonSerializer.SerializeToElement(result.Value);
-        Assert.Equal("catalog.file.pendingTooRecent", body.GetProperty("code").GetString());
-        Assert.Contains("1 minute", body.GetProperty("error").GetString());
-        Assert.Single(await c.H.Db.CatalogProductFiles.ToListAsync());
-        Assert.True((await c.Products.GetByIdAsync(product.Id, CancellationToken.None))!.HasFiles);
-        Assert.Empty(c.Storage.Deletes);
-        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => c.Groups.SetProductAccessAsync(
-            product.Id, new("Restricted", null, null), CancellationToken.None));
-
-        // The timed-out POST materializes only after the first (blocked) removal attempt.
-        c.Storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
-        clock.Advance(TimeSpan.FromSeconds(1));
-        await c.Products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
-        Assert.DoesNotContain((Opts.PublicBucket, row.StorageKey), c.Storage.Objects);
-        Assert.Single(c.Storage.Deletes);
-        Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
+        Assert.IsType<NoContentResult>(await controller.DeleteFile(product.Id, row.Id, CancellationToken.None));
         await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+        c.Storage.Objects.Add((Opts.PrivateBucket, row.StorageKey));
+        Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
+        Assert.Equal(Opts.PrivateBucket, Assert.Single(c.Storage.Deletes).Bucket);
+        Assert.Null(await c.Portal.GetProductAsync(customer.Id, product.Id, CancellationToken.None));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => c.Products.GetFileUrlAsync(product.Id, row.Id, CancellationToken.None));
+        Assert.Empty(c.Storage.Signed);
+    }
+
+    [Fact]
+    public async Task Public_upload_uses_private_bucket()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        var file = await AddPhotoAsync(c, product.Id);
+        Assert.Equal(Opts.PrivateBucket, Assert.Single(c.Storage.Uploads).Bucket);
+        Assert.False((await c.H.Db.CatalogProductFiles.SingleAsync()).IsLegacyPublic);
+        Assert.Null(file.Url);
+    }
+
+    [Fact]
+    public async Task Public_portal_file_uses_signed_private_url()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        var file = await AddPhotoAsync(c, product.Id);
+        var portal = await c.Portal.GetProductAsync(null, product.Id, CancellationToken.None);
+        Assert.StartsWith($"https://storage.test/sign/{Opts.PrivateBucket}/", Assert.Single(portal!.Files).Url);
+        Assert.Equal(Opts.PrivateBucket, Assert.Single(c.Storage.Signed).Bucket);
+        var admin = await c.Products.GetFileUrlAsync(product.Id, file.Id, CancellationToken.None);
+        Assert.False(admin.IsPublic);
+    }
+
+    private static async Task<CatalogProductFile> AddLegacyPhotoAsync(Ctx c, Guid productId)
+    {
+        var row = new CatalogProductFile { TenantId = c.H.TenantProvider.TenantId!.Value, ProductId = productId,
+            StorageKey = "legacy.png", FileName = "legacy.png", MimeType = "image/png", SizeBytes = 16,
+            Visibility = CatalogFileVisibility.CustomerVisible, IsLegacyPublic = true };
+        c.H.Db.CatalogProductFiles.Add(row);
+        await c.H.Db.SaveChangesAsync();
+        c.Storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
+        return row;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_public_file_only_served_while_product_is_public(bool restricted)
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var customer = c.H.AddCustomer("Granted");
+        await c.H.Db.SaveChangesAsync();
+        var product = await c.Products.CreateAsync(new() { Name = "Legacy", Price = 1m }, CancellationToken.None);
+        if (restricted) await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", [customer.Id], null), CancellationToken.None);
+        var row = await AddLegacyPhotoAsync(c, product.Id);
+        var portal = await c.Portal.GetProductAsync(customer.Id, product.Id, CancellationToken.None);
+        if (restricted)
+        {
+            Assert.Empty(portal!.Files);
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => c.Products.GetFileUrlAsync(product.Id, row.Id, CancellationToken.None));
+        }
+        else
+        {
+            Assert.Equal($"https://storage.test/{Opts.PublicBucket}/legacy.png", Assert.Single(portal!.Files).Url);
+            Assert.True((await c.Products.GetFileUrlAsync(product.Id, row.Id, CancellationToken.None)).IsPublic);
+        }
+        Assert.Empty(c.Storage.Signed);
+    }
+
+    [Fact]
+    public async Task Legacy_public_files_block_restriction_with_409_until_removed()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Legacy", Price = 1m }, CancellationToken.None);
+        var row = await AddLegacyPhotoAsync(c, product.Id);
+        var response = await new CustomerGroupsController(c.Groups).SetAccess(
+            product.Id, new("Restricted", null, null), CancellationToken.None);
+        var conflict = Assert.IsType<ConflictObjectResult>(response.Result);
+        Assert.Equal(409, conflict.StatusCode);
+        var body = System.Text.Json.JsonSerializer.SerializeToElement(conflict.Value);
+        Assert.Equal("catalog.visibility.filesPresent", body.GetProperty("code").GetString());
+        Assert.Contains("re-upload", body.GetProperty("error").GetString());
+        Assert.Equal("Public", (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        Assert.Empty(c.Storage.Deletes);
+        Assert.Empty(c.Storage.Copies);
+        await c.Products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData("Public")]
+    [InlineData("Restricted")]
+    public async Task Legacy_delete_uses_recorded_public_bucket(string visibility)
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Legacy", Price = 1m }, CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new(visibility, null, null), CancellationToken.None);
+        var row = await AddLegacyPhotoAsync(c, product.Id);
+        await c.Products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
+        Assert.Equal((Opts.PublicBucket, row.StorageKey), Assert.Single(c.Storage.Deletes));
+        Assert.Empty(c.Storage.Objects);
+        Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
     }
 
     [Fact]

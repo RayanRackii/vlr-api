@@ -42,6 +42,10 @@ public sealed class CatalogProductFileConfiguration : IEntityTypeConfiguration<C
             .HasMaxLength(32)
             .IsRequired();
 
+        builder.Property(f => f.IsLegacyPublic)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.Property(f => f.Status)
             .HasConversion<string>()
             .HasMaxLength(16)

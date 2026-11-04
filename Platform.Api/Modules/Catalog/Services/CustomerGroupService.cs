@@ -173,8 +173,10 @@ public sealed class CustomerGroupService(
             if (product is null) return null;
             // A tracked product may predate a concurrent edit that committed before our lock.
             if (transaction is not null) await dbContext.Entry(product).ReloadAsync(ct);
-            if (product.Visibility != visibility && await dbContext.CatalogProductFiles.AsNoTracking()
-                .AnyAsync(f => f.TenantId == tenantId && f.ProductId == productId, ct))
+            if (product.Visibility == CatalogProductVisibility.Public
+                && visibility == CatalogProductVisibility.Restricted
+                && await dbContext.CatalogProductFiles.AsNoTracking()
+                .AnyAsync(f => f.TenantId == tenantId && f.ProductId == productId && f.IsLegacyPublic, ct))
             {
                 throw new CatalogVisibilityFilesPresentException();
             }

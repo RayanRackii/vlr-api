@@ -159,7 +159,7 @@ public sealed class CustomerGroupVisibilityTests
     }
 
     [Fact]
-    public async Task Restricted_product_files_use_signed_urls_public_products_keep_public_urls()
+    public async Task New_product_files_use_signed_private_urls_for_public_and_restricted_products()
     {
         var s = await SeedAsync();
         await using var _ = s.H;
@@ -174,7 +174,7 @@ public sealed class CustomerGroupVisibilityTests
         await s.H.Db.SaveChangesAsync();
         var list = await s.H.Portal.ListProductsAsync(s.Allowed.Id, null, CancellationToken.None);
         Assert.Contains("sig=", list.Single(p => p.Id == s.Direct.Id).Files.Single().Url);
-        Assert.DoesNotContain("sig=", list.Single(p => p.Id == s.Pub.Id).Files.Single().Url);
+        Assert.Contains("sig=", list.Single(p => p.Id == s.Pub.Id).Files.Single().Url);
     }
 
     [Fact]

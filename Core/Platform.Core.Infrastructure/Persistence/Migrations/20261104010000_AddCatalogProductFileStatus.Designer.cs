@@ -1140,6 +1140,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(260)")
                         .HasColumnName("file_name");
 
+                    b.Property<bool>("IsLegacyPublic")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_legacy_public");
+
                     b.Property<string>("MimeType")
                         .IsRequired()
                         .HasMaxLength(120)

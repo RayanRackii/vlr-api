@@ -1,7 +1,7 @@
 namespace Platform.Api.Modules.Catalog.Services;
 
 public sealed class CatalogVisibilityFilesPresentException()
-    : InvalidOperationException("Remove the product files before changing visibility, then re-upload them if needed.")
+    : InvalidOperationException("Remove or re-upload legacy public files before changing visibility to Restricted.")
 {
     public const string Code = "catalog.visibility.filesPresent";
 }

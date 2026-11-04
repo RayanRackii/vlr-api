@@ -222,8 +222,8 @@ public sealed class CatalogProductService(
         string bucket = null!;
         try
         {
-            // Commit the reservation BEFORE touching storage. Its presence blocks visibility changes
-            // even if the process dies during upload or the final Ready commit is not acknowledged.
+            // Commit the reservation before storage so uncertain uploads remain visible to staff.
+            // New objects are always private, independently of concurrent visibility changes.
             await using var transaction = dbContext.Database.IsRelational()
                 ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
                 : null;
@@ -244,12 +244,13 @@ public sealed class CatalogProductService(
                 SizeBytes = bytes.Length,
                 Visibility = visibility,
                 Status = CatalogFileStatus.Pending,
+                IsLegacyPublic = false,
             };
             file.StorageKey = CatalogFileRules.StorageKey(tenantId, product.Id, file.Id);
-            bucket = CatalogFileBuckets.For(storageOptions.Value, product.Visibility, visibility);
+            bucket = storageOptions.Value.PrivateBucket;
             product.AddFile(file);
             dbContext.CatalogProductFiles.Add(file);
-            // Persist the upload window's origin with Pending, using the same clock as removal.
+            // Persist the upload window's origin with Pending.
             dbContext.Entry(file).Property(f => f.CreatedAt).CurrentValue = _clock.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
@@ -274,8 +275,7 @@ public sealed class CatalogProductService(
             if (dbContext.Entry(file).State == EntityState.Detached)
                 throw new KeyNotFoundException("File reservation was deleted.");
 
-            // Waiting to reacquire the product lock must not start a fresh request window:
-            // removal's age guard is measured from the durable Pending reservation above.
+            // Waiting to reacquire the product lock must not start a fresh request window.
             var remaining = file.CreatedAt + StorageOptions.RequestTimeout - _clock.GetUtcNow();
             if (remaining <= TimeSpan.Zero)
                 throw new TimeoutException("File upload reservation expired before storage upload.");
@@ -295,17 +295,13 @@ public sealed class CatalogProductService(
             throw;
         }
 
-        var url = CatalogFileBuckets.IsPublic(product.Visibility, visibility)
-            ? storageProvider.GetPublicUrl(bucket, file.StorageKey)
-            : null;
-
         return new CatalogProductFileDto(
             file.Id,
             file.FileName,
             file.MimeType,
             file.SizeBytes,
             file.Visibility,
-            url,
+            null,
             file.Status);
     }
 
@@ -331,17 +327,9 @@ public sealed class CatalogProductService(
             .FirstOrDefaultAsync(f => f.Id == fileId && f.ProductId == productId, cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
 
-        if (file.Status is CatalogFileStatus.Pending or CatalogFileStatus.Failed)
-        {
-            var remaining = file.CreatedAt + StorageOptions.PendingFileRemovalMinAge - _clock.GetUtcNow();
-            if (remaining > TimeSpan.Zero)
-                throw new CatalogFilePendingTooRecentException((int)Math.Ceiling(remaining.TotalMinutes));
-        }
+        var bucket = CatalogFileBuckets.For(storageOptions.Value, file);
 
-        var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
-        var bucket = CatalogFileBuckets.For(storageOptions.Value, productVisibility, file.Visibility);
-
-        // Storage deletion is idempotent (missing is success). Keep the blocking row until
+        // Storage deletion is idempotent (missing is success). Keep the row until
         // deletion succeeds, including for Pending/Failed uploads with an uncertain object state.
         await storageProvider.DeleteRequiredAsync(bucket, file.StorageKey, cancellationToken);
         dbContext.CatalogProductFiles.Remove(file);
@@ -361,7 +349,9 @@ public sealed class CatalogProductService(
             ?? throw new KeyNotFoundException("File not found.");
 
         var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
-        if (CatalogFileBuckets.IsPublic(productVisibility, file.Visibility))
+        if (file.IsLegacyPublic && productVisibility != CatalogProductVisibility.Public)
+            throw new KeyNotFoundException("File not available for this product visibility.");
+        if (CatalogFileBuckets.IsPublic(productVisibility, file))
         {
             var publicUrl = storageProvider.GetPublicUrl(
                 storageOptions.Value.PublicBucket,
@@ -439,8 +429,8 @@ public sealed class CatalogProductService(
             .Select(f =>
             {
                 string? url = null;
-                // Restricted products keep files private: staff fetch them via GetFileUrlAsync (signed).
-                if (f.Status == CatalogFileStatus.Ready && CatalogFileBuckets.IsPublic(product.Visibility, f.Visibility))
+                // New files are private: staff fetch them via GetFileUrlAsync (signed).
+                if (f.Status == CatalogFileStatus.Ready && CatalogFileBuckets.IsPublic(product.Visibility, f))
                 {
                     url = storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
                 }
