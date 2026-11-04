@@ -148,6 +148,38 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         }
     }
 
+    public async Task DeleteRequiredAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync(
+            $"object/{Uri.EscapeDataString(bucket)}/{key}",
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (body.Contains("not_found", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _logger.LogWarning(
+                "Required delete of storage object {Bucket}/{Key} failed: {Status} {Body}",
+                bucket,
+                key,
+                (int)response.StatusCode,
+                Sanitize(body));
+            throw new InvalidOperationException("Storage object could not be deleted.");
+        }
+    }
+
     public async Task DeletePrefixAsync(
         string bucket,
         string prefix,

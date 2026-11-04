@@ -31,6 +31,13 @@ public interface IStorageProvider
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Storage copy is not supported by this provider.");
 
+    /// <summary>Delete that throws when the provider did not remove the object (a missing object is fine).</summary>
+    Task DeleteRequiredAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default) =>
+        DeleteAsync(bucket, key, cancellationToken);
+
     Task DeletePrefixAsync(
         string bucket,
         string prefix,

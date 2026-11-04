@@ -183,10 +183,7 @@ public sealed class CustomerGroupService(
             throw new ArgumentException("One or more groups do not exist in this tenant.");
         }
 
-        // Moving between Public and Restricted moves customer-visible files between the public and
-        // private buckets: copy first (abort on failure, nothing committed), delete sources after commit.
         var moves = await PlanFileMovesAsync(tenantId, product, visibility, ct);
-        await CopyFilesAsync(moves, ct);
 
         product.Visibility = visibility;
         product.Touch();
@@ -206,17 +203,46 @@ public sealed class CustomerGroupService(
             RestrictedWithoutGrants = visibility == CatalogProductVisibility.Restricted && customerIds.Count + groupIds.Count == 0,
         };
         await AuditAsync(tenantId, "product.accessChanged", "product", productId, before, after, ct);
+
+        // Public <-> Restricted moves customer-visible files between the public and private buckets.
+        // Restricting: copy to private, then REQUIRED delete of every public copy, then commit; any failure
+        // restores the public objects, removes the private copies and rolls back (product stays Public).
+        // Opening: copy to public, commit, then best-effort delete of the private copies.
+        var restricting = visibility == CatalogProductVisibility.Restricted;
+        var copied = new List<FileMove>();
+        var sourcesDeleted = new List<FileMove>();
         try
         {
+            foreach (var m in moves)
+            {
+                await storageProvider!.CopyAsync(m.FromBucket, m.Key, m.ToBucket, m.Key, ct);
+                copied.Add(m);
+            }
+            if (restricting)
+            {
+                foreach (var m in moves)
+                {
+                    await storageProvider!.DeleteRequiredAsync(m.FromBucket, m.Key, ct);
+                    sourcesDeleted.Add(m);
+                }
+            }
             await dbContext.SaveChangesAsync(ct);
             if (transaction is not null) await transaction.CommitAsync(ct);
         }
         catch
         {
-            await DeleteQuietlyAsync(moves.Select(m => (m.ToBucket, m.Key)));
+            foreach (var m in sourcesDeleted)
+            {
+                try { await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None); }
+                catch (Exception) { /* best effort restore of a public object; product stays Public */ }
+            }
+            await DeleteQuietlyAsync(copied.Select(m => (m.ToBucket, m.Key)));
             throw;
         }
-        await DeleteQuietlyAsync(moves.Select(m => (m.FromBucket, m.Key)));
+        if (!restricting)
+        {
+            await DeleteQuietlyAsync(moves.Select(m => (m.FromBucket, m.Key)));
+        }
         return after with { CustomerNames = await CustomerNamesAsync(tenantId, customerIds, ct) };
     }
 
@@ -233,24 +259,6 @@ public sealed class CustomerGroupService(
         var from = Platform.Api.Modules.Catalog.CatalogFileBuckets.For(storageOptions.Value, product.Visibility, CatalogFileVisibility.CustomerVisible);
         var to = Platform.Api.Modules.Catalog.CatalogFileBuckets.For(storageOptions.Value, target, CatalogFileVisibility.CustomerVisible);
         return from == to ? [] : keys.Select(k => new FileMove(from, to, k)).ToList();
-    }
-
-    private async Task CopyFilesAsync(IReadOnlyList<FileMove> moves, CancellationToken ct)
-    {
-        var done = new List<FileMove>();
-        try
-        {
-            foreach (var m in moves)
-            {
-                await storageProvider!.CopyAsync(m.FromBucket, m.Key, m.ToBucket, m.Key, ct);
-                done.Add(m);
-            }
-        }
-        catch
-        {
-            await DeleteQuietlyAsync(done.Select(m => (m.ToBucket, m.Key)));
-            throw;
-        }
     }
 
     private async Task DeleteQuietlyAsync(IEnumerable<(string Bucket, string Key)> objects)

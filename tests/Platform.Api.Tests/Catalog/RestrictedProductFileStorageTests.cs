@@ -104,4 +104,36 @@ public sealed class RestrictedProductFileStorageTests
         Assert.Equal(CatalogProductVisibility.Public, staff!.Visibility);
         Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PublicBucket);
     }
+
+    [Fact]
+    public async Task Public_copy_delete_failure_aborts_restriction_and_removes_private_copy()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        c.Storage.FailRequiredDelete = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None));
+
+        c.H.Db.ChangeTracker.Clear();
+        var staff = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
+        Assert.Equal(CatalogProductVisibility.Public, staff!.Visibility);
+        Assert.Contains(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PublicBucket);
+    }
+
+    [Fact]
+    public async Task Restricting_deletes_public_copy_before_commit()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+        var copy = Assert.Single(c.Storage.Copies);
+        var publicDelete = Assert.Single(c.Storage.Deletes, d => d.Bucket == Opts.PublicBucket);
+        Assert.Equal(copy.FromKey, publicDelete.Key);
+    }
 }
