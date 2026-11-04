@@ -37,20 +37,6 @@ public sealed class DevStorageProvider(
         return Task.FromResult(url);
     }
 
-    public Task CopyAsync(
-        string sourceBucket,
-        string sourceKey,
-        string destinationBucket,
-        string destinationKey,
-        CancellationToken cancellationToken = default)
-    {
-        var source = ResolvePath(sourceBucket, sourceKey);
-        var destination = ResolvePath(destinationBucket, destinationKey);
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        File.Copy(source, destination, overwrite: true);
-        return Task.CompletedTask;
-    }
-
     public Task DeleteAsync(
         string bucket,
         string key,

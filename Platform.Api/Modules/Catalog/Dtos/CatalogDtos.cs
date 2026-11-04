@@ -120,6 +120,9 @@ public sealed record CreateCatalogProductRequest
     public string? Currency { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
+    /// <summary>Optional initial status: "Active" (default) or "Inactive". Creating inactive never
+    /// publishes the product (it stays unpublished until explicitly activated).</summary>
+    public string? Status { get; init; }
 }
 
 public sealed record UpdateCatalogProductRequest
@@ -143,7 +146,8 @@ public sealed record CatalogProductFileDto(
     string MimeType,
     long SizeBytes,
     CatalogFileVisibility Visibility,
-    string? Url);
+    string? Url,
+    CatalogFileStatus Status = CatalogFileStatus.Ready);
 
 public sealed record CatalogProductResponse(
     Guid Id,
@@ -159,6 +163,8 @@ public sealed record CatalogProductResponse(
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
 
     public CatalogProductVisibility Visibility { get; init; } = CatalogProductVisibility.Public;
+
+    public bool HasFiles => Files.Count > 0;
 
     public int GrantedCustomerCount { get; init; }
 

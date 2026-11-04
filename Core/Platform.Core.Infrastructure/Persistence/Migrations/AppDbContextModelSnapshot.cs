@@ -1138,6 +1138,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(260)")
                         .HasColumnName("file_name");
 
+                    b.Property<bool>("IsLegacyPublic")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_legacy_public");
+
                     b.Property<string>("MimeType")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -1151,6 +1157,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint")
                         .HasColumnName("size_bytes");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Ready")
+                        .HasColumnName("status");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()

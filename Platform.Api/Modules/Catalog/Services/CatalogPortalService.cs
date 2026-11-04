@@ -610,7 +610,7 @@ public sealed class CatalogPortalService(
                 cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
 
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var url = await storageProvider.CreateSignedUrlAsync(
             storageOptions.Value.PrivateBucket,
             file.StorageKey,
@@ -656,7 +656,7 @@ public sealed class CatalogPortalService(
         ProductRequest request,
         CancellationToken cancellationToken)
     {
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var files = new List<PortalProductRequestFileDto>(request.Files.Count);
         foreach (var file in request.Files)
         {
@@ -717,14 +717,15 @@ public sealed class CatalogPortalService(
 
     private async Task<PortalProductResponse> MapPortalProductAsync(CatalogProduct product, CancellationToken ct)
     {
-        // Restricted products keep their files in the private bucket (no permanent public URL); they get
-        // a short-lived signed URL, issued only after ApplyVisibility let the product through.
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        // Issue private URLs only after ApplyVisibility authorizes access to the product.
+        // Legacy public objects are never served for Restricted products, even to granted customers.
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var files = new List<PortalProductFileDto>();
-        foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible))
+        foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible && f.Status == CatalogFileStatus.Ready))
         {
+            if (f.IsLegacyPublic && product.Visibility != CatalogProductVisibility.Public) continue;
             string url;
-            if (CatalogFileBuckets.IsPublic(product.Visibility, f.Visibility))
+            if (CatalogFileBuckets.IsPublic(product.Visibility, f))
             {
                 url = storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
             }

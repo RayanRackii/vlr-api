@@ -106,28 +106,6 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         return $"{_supabaseUrl}/storage/v1{signed}";
     }
 
-    public async Task CopyAsync(
-        string sourceBucket,
-        string sourceKey,
-        string destinationBucket,
-        string destinationKey,
-        CancellationToken cancellationToken = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "object/copy")
-        {
-            Content = JsonContent.Create(new
-            {
-                bucketId = sourceBucket,
-                sourceKey,
-                destinationBucket,
-                destinationKey,
-            }),
-        };
-        request.Headers.Add("x-upsert", "true");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        await EnsureStorageSuccessAsync(response, sourceBucket, sourceKey, cancellationToken);
-    }
-
     public async Task DeleteAsync(
         string bucket,
         string key,

@@ -1044,6 +1044,15 @@
         },
         "type": "object"
       },
+      "CatalogFileStatus": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
       "CatalogFileUrlResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1542,6 +1551,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "status": {
+            "$ref": "#/components/schemas/CatalogFileStatus"
+          },
           "url": {
             "nullable": true,
             "type": "string"
@@ -1643,6 +1655,10 @@
           "grantedGroupCount": {
             "format": "int32",
             "type": "integer"
+          },
+          "hasFiles": {
+            "readOnly": true,
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -1951,6 +1967,10 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
           },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyAssignmentRequest"

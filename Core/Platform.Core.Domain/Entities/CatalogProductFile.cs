@@ -19,5 +19,10 @@ public class CatalogProductFile : Entity, ITenantScoped
 
     public required CatalogFileVisibility Visibility { get; set; }
 
+    // Only pre-migration customer-visible files of Public products use public storage.
+    public bool IsLegacyPublic { get; set; }
+
+    public CatalogFileStatus Status { get; set; } = CatalogFileStatus.Ready;
+
     public CatalogProduct Product { get; set; } = null!;
 }
