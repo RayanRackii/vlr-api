@@ -120,6 +120,9 @@ public sealed record CreateCatalogProductRequest
     public string? Currency { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
+    /// <summary>Optional initial status: "Active" (default) or "Inactive". Creating inactive never
+    /// publishes the product (it stays unpublished until explicitly activated).</summary>
+    public string? Status { get; init; }
 }
 
 public sealed record UpdateCatalogProductRequest
@@ -143,7 +146,8 @@ public sealed record CatalogProductFileDto(
     string MimeType,
     long SizeBytes,
     CatalogFileVisibility Visibility,
-    string? Url);
+    string? Url,
+    CatalogFileStatus Status = CatalogFileStatus.Ready);
 
 public sealed record CatalogProductResponse(
     Guid Id,
@@ -157,6 +161,14 @@ public sealed record CatalogProductResponse(
     IReadOnlyList<CatalogProductFileDto> Files)
 {
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+
+    public CatalogProductVisibility Visibility { get; init; } = CatalogProductVisibility.Public;
+
+    public bool HasFiles => Files.Count > 0;
+
+    public int GrantedCustomerCount { get; init; }
+
+    public int GrantedGroupCount { get; init; }
 }
 
 public sealed record CatalogFileUrlResponse(string Url, bool IsPublic);
@@ -334,6 +346,9 @@ public sealed record PortalProductResponse(
     IReadOnlyList<PortalProductFileDto> Files)
 {
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+
+    /// <summary>True when the product is Restricted and this customer was granted it (direct or via group).</summary>
+    public bool IsExclusive { get; init; }
 }
 
 public sealed record CreatePortalOrderItemRequest
@@ -393,3 +408,49 @@ public sealed record UpsertCatalogChannelConfigRequest
 
     public required bool IsActive { get; init; }
 }
+
+public sealed record CustomerGroupResponse(
+    Guid Id,
+    string Name,
+    string? Description,
+    IReadOnlyList<Guid> MemberCustomerIds,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt)
+{
+    /// <summary>Display names of members keyed by customer id (staff display only).</summary>
+    public IReadOnlyDictionary<Guid, string> MemberNames { get; init; } = new Dictionary<Guid, string>();
+}
+
+public sealed record UpsertCustomerGroupRequest(string Name, string? Description);
+
+public sealed record CustomerGroupMembersRequest(IReadOnlyList<Guid> CustomerIds);
+
+public sealed record CatalogProductAccessResponse(
+    Guid ProductId,
+    string Visibility,
+    IReadOnlyList<Guid> CustomerIds,
+    IReadOnlyList<Guid> GroupIds)
+{
+    /// <summary>True when the product is Restricted but nobody is granted (no customer can see it).</summary>
+    public bool RestrictedWithoutGrants { get; init; }
+
+    /// <summary>Display names of granted customers keyed by customer id (staff display only; not audited).</summary>
+    public IReadOnlyDictionary<Guid, string> CustomerNames { get; init; } = new Dictionary<Guid, string>();
+}
+
+public sealed record CatalogAccessAuditResponse(
+    Guid Id,
+    string Action,
+    string EntityType,
+    Guid EntityId,
+    string ActorType,
+    Guid? ActorUserId,
+    string? ActorName,
+    string? BeforeJson,
+    string? AfterJson,
+    DateTimeOffset CreatedAt);
+
+public sealed record UpdateCatalogProductAccessRequest(
+    string Visibility,
+    IReadOnlyList<Guid>? CustomerIds,
+    IReadOnlyList<Guid>? GroupIds);

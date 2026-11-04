@@ -14,6 +14,7 @@ public static class CatalogModuleExtensions
         services.AddScoped<ICatalogProductService, CatalogProductService>();
         services.AddScoped<ICatalogOrderService, CatalogOrderService>();
         services.AddScoped<ICatalogPortalService, CatalogPortalService>();
+        services.AddScoped<ICustomerGroupService, CustomerGroupService>();
         services.AddScoped<ICatalogNotificationPublisher, CatalogNotificationPublisher>();
         services.AddScoped<ICatalogProductResourceRequirementService, CatalogProductResourceRequirementService>();
         services.AddScoped<ICatalogOrderAllocationService, CatalogOrderAllocationService>();

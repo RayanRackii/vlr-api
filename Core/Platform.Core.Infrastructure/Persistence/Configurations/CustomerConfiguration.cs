@@ -12,6 +12,8 @@ public sealed class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.ToTable("customers", "core");
 
         builder.HasKey(c => c.Id);
+        // Lets tenant-scoped children reference (tenant_id, id) so a cross-tenant link is impossible in the DB.
+        builder.HasAlternateKey(c => new { c.TenantId, c.Id });
 
         builder.Property(c => c.Id)
             .ValueGeneratedNever();

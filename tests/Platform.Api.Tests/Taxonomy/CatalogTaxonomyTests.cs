@@ -51,12 +51,12 @@ public sealed class CatalogTaxonomyTests
         Assert.Equal(match.Id, Assert.Single(staff).Id);
         Assert.Equal(2, staff[0].Taxonomy.Categories.Count);
         Assert.DoesNotContain(staff[0].Taxonomy.Categories, x => x.Id == root.Id);
-        Assert.Equal(match.Id, Assert.Single(await h.Portal.ListProductsAsync("cafe", Ct, filter)).Id);
-        Assert.Equal(match.Id, (await h.Portal.GetProductAsync(match.Id, Ct))!.Id);
-        Assert.Null(await h.Portal.GetProductAsync(inactive.Id, Ct));
+        Assert.Equal(match.Id, Assert.Single(await h.Portal.ListProductsAsync(null, "cafe", Ct, filter)).Id);
+        Assert.Equal(match.Id, (await h.Portal.GetProductAsync(null, match.Id, Ct))!.Id);
+        Assert.Null(await h.Portal.GetProductAsync(null, inactive.Id, Ct));
         Assert.Equal(inactive.Id, Assert.Single(await h.Products.ListAsync(new(null, null, false, filter), Ct)).Id);
         Assert.Empty(await h.Products.ListAsync(new(null, null, null, new(Guid.NewGuid(), [])), Ct));
-        Assert.Empty(await h.Portal.ListProductsAsync(null, Ct, new(null, [Guid.NewGuid()])));
+        Assert.Empty(await h.Portal.ListProductsAsync(null, null, Ct, new(null, [Guid.NewGuid()])));
         Assert.Empty(await h.Products.ListAsync(new(null, null, null, new(null, [a.Id, Guid.NewGuid()])), Ct));
     }
 
@@ -84,7 +84,7 @@ public sealed class CatalogTaxonomyTests
         Assert.Equal(2, staff.Tags.Count);
         h.TenantProvider.TenantId = Guid.NewGuid();
         Assert.Empty((await options.GetAsync(true, Ct)).Categories);
-        Assert.Empty(await h.Portal.ListProductsAsync(null, Ct, new(root.Id, [activeTag.Id])));
+        Assert.Empty(await h.Portal.ListProductsAsync(null, null, Ct, new(root.Id, [activeTag.Id])));
     }
 
     private static TaxonomyAssignmentRequest Assignment(Guid[] categories, Guid[] tags) => new() { CategoryIds = categories, TagIds = tags };

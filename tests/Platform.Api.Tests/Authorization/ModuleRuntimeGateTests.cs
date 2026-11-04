@@ -1314,12 +1314,14 @@ public sealed class ModuleRuntimeGateTests
     private sealed class StubCatalogPortalService : ICatalogPortalService
     {
         public Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
+            Guid? customerId,
             string? search,
             CancellationToken cancellationToken,
             Platform.Api.Modules.Taxonomy.Dtos.TaxonomyFilter? taxonomy = null) =>
             Task.FromResult<IReadOnlyList<PortalProductResponse>>([]);
 
         public Task<PortalProductResponse?> GetProductAsync(
+            Guid? customerId,
             Guid id,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();

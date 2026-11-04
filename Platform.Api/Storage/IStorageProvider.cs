@@ -22,6 +22,13 @@ public interface IStorageProvider
         string key,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Delete that throws when the provider did not remove the object (a missing object is fine).</summary>
+    Task DeleteRequiredAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default) =>
+        DeleteAsync(bucket, key, cancellationToken);
+
     Task DeletePrefixAsync(
         string bucket,
         string prefix,

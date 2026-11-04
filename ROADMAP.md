@@ -1,5 +1,13 @@
 # ROADMAP — vlr-api
 
+### Round 10 — catalog file prerelease safety (2026-11-04)
+
+- [x] Removed the catalog file reconcile command, runbook, listing API and dedicated tests; restored prior Supabase prefix deletion. Signed URLs remain 120 seconds; storage copy remains removed.
+- [x] File status migration marks existing `CustomerVisible` files as legacy public in its transaction; `InternalB2B` stays false and status defaults to Ready. Down guard preserved. Unit and isolated Postgres regression coverage added.
+- [x] Added read-only prerelease SQL for restricted products with customer-visible files, invalid file visibility and missing products. Catalog products have no soft-delete columns.
+- [x] Build ok; catalog non-Docker tests pass; CI confirms the full suite. No migration executed, no PROD access.
+
+
 Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `ROADMAP.md` do repo irmão **`vlr-web`**.
 
 **Foco de produto agora:** portal B2C estável + **agenda por Slot** (API pronta; UI no `vlr-web`).  

@@ -21,11 +21,12 @@ namespace Platform.Api.Modules.Catalog.Services;
 public interface ICatalogPortalService
 {
     Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
+        Guid? customerId,
         string? search,
         CancellationToken cancellationToken,
         TaxonomyFilter? taxonomy = null);
 
-    Task<PortalProductResponse?> GetProductAsync(Guid id, CancellationToken cancellationToken);
+    Task<PortalProductResponse?> GetProductAsync(Guid? customerId, Guid id, CancellationToken cancellationToken);
 
     Task<CatalogOrderResponse> CreateOrderAsync(
         Guid customerId,
@@ -85,15 +86,18 @@ public sealed class CatalogPortalService(
     IResourceOccupancyService occupancy) : ICatalogPortalService
 {
     public async Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
+        Guid? customerId,
         string? search,
         CancellationToken cancellationToken,
         TaxonomyFilter? taxonomy = null)
     {
         EnsureTenant();
-        var products = dbContext.CatalogProducts
-            .AsNoTracking()
-            .Include(p => p.Files)
-            .Where(p => p.IsActive);
+        var products = ApplyVisibility(
+            dbContext.CatalogProducts
+                .AsNoTracking()
+                .Include(p => p.Files)
+                .Where(p => p.IsActive),
+            customerId);
         products = await CatalogTaxonomy.FilterAsync(dbContext, EnsureTenant(), products, taxonomy, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -132,16 +136,46 @@ public sealed class CatalogPortalService(
     }
 
     public async Task<PortalProductResponse?> GetProductAsync(
+        Guid? customerId,
         Guid id,
         CancellationToken cancellationToken)
     {
         EnsureTenant();
-        var product = await dbContext.CatalogProducts
-            .AsNoTracking()
-            .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.TenantId == tenantProvider.TenantId && p.Id == id && p.IsActive, cancellationToken);
+        var product = await ApplyVisibility(
+                dbContext.CatalogProducts
+                    .AsNoTracking()
+                    .Include(p => p.Files)
+                    .Where(p => p.TenantId == tenantProvider.TenantId && p.Id == id && p.IsActive),
+                customerId)
+            .FirstOrDefaultAsync(cancellationToken);
 
         return product is null ? null : (await MapProductsAsync([product], cancellationToken))[0];
+    }
+
+    /// <summary>
+    /// Restricts a product query to what <paramref name="customerId"/> may see: every
+    /// <see cref="CatalogProductVisibility.Public"/> product, plus any
+    /// <see cref="CatalogProductVisibility.Restricted"/> product granted to the customer directly or
+    /// through one of their groups. A null customer (anonymous visitor) sees only public products.
+    /// Applied on the IQueryable before search/pagination so it never leaks through any branch.
+    /// </summary>
+    private IQueryable<CatalogProduct> ApplyVisibility(IQueryable<CatalogProduct> products, Guid? customerId)
+    {
+        if (customerId is null)
+        {
+            return products.Where(p => p.Visibility == CatalogProductVisibility.Public);
+        }
+
+        var id = customerId.Value;
+        var tenantId = EnsureTenant();
+        return products.Where(p =>
+            p.Visibility == CatalogProductVisibility.Public
+            || dbContext.CatalogProductAccess.Any(a =>
+                a.TenantId == tenantId
+                && a.ProductId == p.Id
+                && (a.CustomerId == id
+                    || (a.GroupId != null && dbContext.CustomerGroupMembers.Any(m =>
+                        m.TenantId == tenantId && m.GroupId == a.GroupId && m.CustomerId == id)))));
     }
 
     public async Task<CatalogOrderResponse> CreateOrderAsync(
@@ -161,8 +195,12 @@ public sealed class CatalogPortalService(
             ?? throw new UnauthorizedAccessException("Customer not found.");
 
         var productIds = request.Items.Select(i => i.ProductId).Distinct().ToList();
-        var products = await dbContext.CatalogProducts
-            .Where(p => productIds.Contains(p.Id) && p.IsActive)
+        // Re-check visibility server-side: a Restricted product the customer may not see is simply
+        // absent from this dictionary, so the loop below treats it as an unavailable product (the same
+        // path a non-existent id takes today) and never leaks that the product exists.
+        var products = await ApplyVisibility(
+                dbContext.CatalogProducts.Where(p => productIds.Contains(p.Id) && p.IsActive),
+                customerId)
             .ToDictionaryAsync(p => p.Id, cancellationToken);
 
         // Snapshot each product's currently-active resource requirement rows onto the order item at
@@ -572,7 +610,7 @@ public sealed class CatalogPortalService(
                 cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
 
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var url = await storageProvider.CreateSignedUrlAsync(
             storageOptions.Value.PrivateBucket,
             file.StorageKey,
@@ -618,7 +656,7 @@ public sealed class CatalogPortalService(
         ProductRequest request,
         CancellationToken cancellationToken)
     {
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var files = new List<PortalProductRequestFileDto>(request.Files.Count);
         foreach (var file in request.Files)
         {
@@ -664,20 +702,47 @@ public sealed class CatalogPortalService(
     private async Task<IReadOnlyList<PortalProductResponse>> MapProductsAsync(IReadOnlyList<CatalogProduct> products, CancellationToken ct)
     {
         var assignments = await CatalogTaxonomy.LoadAsync(dbContext, EnsureTenant(), products.Select(x => x.Id), ct);
-        return products.Select(p => MapPortalProduct(p) with { Taxonomy = assignments[p.Id] }).ToArray();
+        var result = new List<PortalProductResponse>(products.Count);
+        foreach (var p in products)
+        {
+            result.Add(await MapPortalProductAsync(p, ct) with
+            {
+                Taxonomy = assignments[p.Id],
+                // Only products that passed ApplyVisibility reach here, so Restricted == granted to this customer.
+                IsExclusive = p.Visibility == CatalogProductVisibility.Restricted,
+            });
+        }
+        return result;
     }
 
-    private PortalProductResponse MapPortalProduct(CatalogProduct product)
+    private async Task<PortalProductResponse> MapPortalProductAsync(CatalogProduct product, CancellationToken ct)
     {
-        var files = product.Files
-            .Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible)
-            .Select(f => new PortalProductFileDto(
-                f.Id,
-                f.FileName,
-                f.MimeType,
-                f.SizeBytes,
-                storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey)))
-            .ToList();
+        // Issue private URLs only after ApplyVisibility authorizes access to the product.
+        // Legacy public objects are never served for Restricted products, even to granted customers.
+        var ttl = CatalogFileUrls.SignedUrlTtl;
+        var files = new List<PortalProductFileDto>();
+        foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible && f.Status == CatalogFileStatus.Ready))
+        {
+            if (f.IsLegacyPublic && product.Visibility != CatalogProductVisibility.Public) continue;
+            string url;
+            if (CatalogFileBuckets.IsPublic(product.Visibility, f))
+            {
+                url = storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
+            }
+            else
+            {
+                try
+                {
+                    url = await storageProvider.CreateSignedUrlAsync(storageOptions.Value.PrivateBucket, f.StorageKey, ttl, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A missing/unsignable object must not break the whole catalog page; skip the file.
+                    continue;
+                }
+            }
+            files.Add(new PortalProductFileDto(f.Id, f.FileName, f.MimeType, f.SizeBytes, url));
+        }
 
         return new PortalProductResponse(
             product.Id,

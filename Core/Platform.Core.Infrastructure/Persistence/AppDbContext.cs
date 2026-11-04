@@ -134,6 +134,14 @@ public class AppDbContext : DbContext
     public DbSet<CatalogProductCategory> CatalogProductCategories => Set<CatalogProductCategory>();
     public DbSet<CatalogProductTag> CatalogProductTags => Set<CatalogProductTag>();
 
+    public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
+
+    public DbSet<CustomerGroupMember> CustomerGroupMembers => Set<CustomerGroupMember>();
+
+    public DbSet<CatalogProductAccess> CatalogProductAccess => Set<CatalogProductAccess>();
+
+    public DbSet<CatalogAccessAuditEntry> CatalogAccessAudit => Set<CatalogAccessAuditEntry>();
+
     // --- Schema: catalog ---
     public DbSet<CatalogPolicy> CatalogPolicies => Set<CatalogPolicy>();
 

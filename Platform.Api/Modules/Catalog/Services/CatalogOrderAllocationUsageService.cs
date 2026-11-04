@@ -1,8 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Notifications;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
+using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Exceptions;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -18,6 +22,17 @@ public interface ICatalogOrderAllocationUsageService
 }
 
 /// <summary>
+/// Stable <see cref="CatalogOrderStatusHistory.Reason"/> codes for standalone usage actions. The
+/// history schema has no dedicated action column, so the reason is the carrier that distinguishes
+/// a usage transition (work finished / resource released) from a commercial status change.
+/// </summary>
+public static class CatalogOrderUsageHistoryReasons
+{
+    public const string WorkFinished = "usage.workFinished";
+    public const string Released = "usage.released";
+}
+
+/// <summary>
 /// Standalone allocation-usage transitions (start/work-finished/release), exposed for explicit or
 /// out-of-band usage changes — e.g. production actually starting later than the commercial
 /// "preparing" status, or releasing a resource well after the order reached Ready/Completed.
@@ -28,7 +43,10 @@ public interface ICatalogOrderAllocationUsageService
 public sealed class CatalogOrderAllocationUsageService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    IResourceOccupancyService occupancy) : ICatalogOrderAllocationUsageService
+    IResourceOccupancyService occupancy,
+    IHttpContextAccessor? httpContextAccessor = null,
+    IDomainEventDispatcher<CatalogOrderEvent>? domainEvents = null,
+    INotificationOutboxScheduler? outboxScheduler = null) : ICatalogOrderAllocationUsageService
 {
     public async Task<CatalogOrderResponse> ApplyUsageActionAsync(
         Guid orderId,
@@ -44,11 +62,22 @@ public sealed class CatalogOrderAllocationUsageService(
             .FirstOrDefaultAsync(o => o.Id == orderId && o.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Order not found.");
 
+        var (actorType, actorId) = await CatalogOrderActorResolver.ResolveAsync(
+            httpContextAccessor, dbContext, cancellationToken);
+
         var itemIds = order.Items.Select(i => i.Id).ToList();
         var requirementIds = await dbContext.CatalogOrderItemResourceRequirements
             .Where(r => itemIds.Contains(r.OrderItemId))
             .Select(r => r.Id)
             .ToListAsync(cancellationToken);
+
+        // Seed notification templates/channel defaults before the transaction (as the commercial
+        // transitions do) so an auto-Ready publish inside the transaction finds the OrderReady
+        // channel config already present.
+        if (domainEvents is not null)
+        {
+            await domainEvents.EnsureReadyAsync(cancellationToken);
+        }
 
         // Pre-lock lookup only to find which resource to lock; never trusted for the actual
         // transition — the allocation is reloaded fresh once the lock is held, below.
@@ -85,6 +114,7 @@ public sealed class CatalogOrderAllocationUsageService(
                     "The allocation changed since this action was prepared; reload and retry.");
             }
 
+            IReadOnlyList<Guid> queued = [];
             switch (request.Action.Trim().ToLowerInvariant())
             {
                 case "start":
@@ -92,9 +122,14 @@ public sealed class CatalogOrderAllocationUsageService(
                     break;
                 case "work-finished":
                     WorkFinished(allocation);
+                    // Record the usage action against the current (still Preparing) status before
+                    // any auto-Ready advances it, so the history reads work-finished → ready.
+                    order.RecordHistory(order.Status, actorType, actorId, CatalogOrderUsageHistoryReasons.WorkFinished);
+                    queued = await TryMarkReadyAsync(order, requirementIds, actorType, actorId, cancellationToken);
                     break;
                 case "release":
                     await ReleaseAsync(order, allocation, cancellationToken);
+                    order.RecordHistory(order.Status, actorType, actorId, CatalogOrderUsageHistoryReasons.Released);
                     break;
                 default:
                     throw new ArgumentException($"Unknown usage action '{request.Action}'.");
@@ -121,6 +156,14 @@ public sealed class CatalogOrderAllocationUsageService(
                 await transaction.CommitAsync(cancellationToken);
             }
 
+            if (outboxScheduler is not null)
+            {
+                foreach (var deliveryId in queued)
+                {
+                    outboxScheduler.Schedule(deliveryId);
+                }
+            }
+
             return await CatalogOrderPlanningMapper.EnrichOneAsync(dbContext, order, includeAllocationDetail: true, cancellationToken);
         }
         catch
@@ -132,6 +175,52 @@ public sealed class CatalogOrderAllocationUsageService(
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// After work finishes, auto-advance a Preparing order to Ready once every current resource
+    /// allocation has finished work (Cleaning/Released/Cancelled) — the same rule
+    /// <see cref="CatalogAllocationExecutionService.RequireWorkFinishedHook"/> enforces for the
+    /// explicit ready action — and publish the OrderReady notification the same way
+    /// <c>CatalogOrderService.MarkReadyAsync</c> does. Orders without resources and partial
+    /// completion (an allocation still Scheduled/Running) are left untouched.
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> TryMarkReadyAsync(
+        CatalogOrder order,
+        List<Guid> requirementIds,
+        CatalogActorType actorType,
+        Guid? actorId,
+        CancellationToken cancellationToken)
+    {
+        if (order.Status != CatalogOrderStatus.Preparing || requirementIds.Count == 0)
+        {
+            return [];
+        }
+
+        var allocations = await dbContext.CatalogOrderItemResourceAllocations
+            .Where(a => requirementIds.Contains(a.RequirementId) && a.IsCurrent)
+            .ToListAsync(cancellationToken);
+
+        var workFinished = allocations.Count > 0
+            && allocations.All(a => a.Status is AllocationStatus.Cleaning
+                or AllocationStatus.Released
+                or AllocationStatus.Cancelled);
+
+        if (!workFinished)
+        {
+            return [];
+        }
+
+        order.MarkReady(actorType, actorId);
+
+        if (domainEvents is null)
+        {
+            return [];
+        }
+
+        return await domainEvents.DispatchAsync(
+            new CatalogOrderEvent(order, CatalogEventTypes.OrderReady),
+            cancellationToken);
     }
 
     private static void Start(CatalogOrder order, CatalogOrderItemResourceAllocation allocation)

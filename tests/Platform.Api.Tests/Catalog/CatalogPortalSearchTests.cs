@@ -24,7 +24,7 @@ public sealed class CatalogPortalSearchTests
             new CatalogProduct { TenantId = harness.Tenant.Id, Name = "Sem correspondência", Code = null });
         await harness.Db.SaveChangesAsync();
 
-        var result = await harness.Portal.ListProductsAsync(search, CancellationToken.None);
+        var result = await harness.Portal.ListProductsAsync(null, search, CancellationToken.None);
 
         Assert.Equal(match.Id, Assert.Single(result).Id);
     }
@@ -46,7 +46,7 @@ public sealed class CatalogPortalSearchTests
             new CatalogProduct { TenantId = otherTenant.Id, Name = "Café outro tenant" });
         await harness.Db.SaveChangesAsync();
 
-        var result = await harness.Portal.ListProductsAsync(search, CancellationToken.None);
+        var result = await harness.Portal.ListProductsAsync(null, search, CancellationToken.None);
 
         Assert.Equal(new[] { first.Id, last.Id }, result.Select(p => p.Id));
     }
@@ -58,6 +58,6 @@ public sealed class CatalogPortalSearchTests
         harness.Db.CatalogProducts.Add(new CatalogProduct { TenantId = harness.Tenant.Id, Name = "Café" });
         await harness.Db.SaveChangesAsync();
 
-        Assert.Empty(await harness.Portal.ListProductsAsync("inexistente", CancellationToken.None));
+        Assert.Empty(await harness.Portal.ListProductsAsync(null, "inexistente", CancellationToken.None));
     }
 }
