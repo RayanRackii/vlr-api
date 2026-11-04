@@ -21,7 +21,8 @@ public static class StorageServiceCollectionExtensions
 
         if (supabaseConfigured)
         {
-            services.AddHttpClient<IStorageProvider, SupabaseStorageProvider>();
+            services.AddHttpClient<IStorageProvider, SupabaseStorageProvider>(client =>
+                client.Timeout = StorageOptions.RequestTimeout);
         }
         else
         {

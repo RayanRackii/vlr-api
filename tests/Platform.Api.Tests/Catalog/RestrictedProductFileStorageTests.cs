@@ -21,12 +21,12 @@ public sealed class RestrictedProductFileStorageTests
     private sealed record Ctx(CatalogHarness H, RecordingStorageProvider Storage, CatalogProductService Products,
         CustomerGroupService Groups, CatalogPortalService Portal);
 
-    private static async Task<Ctx> CreateAsync()
+    private static async Task<Ctx> CreateAsync(TimeProvider? clock = null)
     {
         var h = await CatalogHarness.CreateAsync();
         var storage = new RecordingStorageProvider();
         var options = Options.Create(Opts);
-        var products = new CatalogProductService(h.Db, h.TenantProvider, storage, options);
+        var products = new CatalogProductService(h.Db, h.TenantProvider, storage, options, clock);
         var groups = new CustomerGroupService(h.Db, h.TenantProvider);
         var portal = new CatalogPortalService(h.Db, h.TenantProvider, storage, options,
             h.Publisher.AsDomainEvents(), h.Scheduler, new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService());
@@ -212,7 +212,9 @@ public sealed class RestrictedProductFileStorageTests
         await c.H.Db.SaveChangesAsync();
         if (objectExists) c.Storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
 
-        await c.Products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
+        var clock = new TestTimeProvider(row.CreatedAt.AddMinutes(3));
+        var products = new CatalogProductService(c.H.Db, c.H.TenantProvider, c.Storage, Options.Create(Opts), clock);
+        await products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
 
         Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
         Assert.DoesNotContain((Opts.PublicBucket, row.StorageKey), c.Storage.Objects);
@@ -247,6 +249,101 @@ public sealed class RestrictedProductFileStorageTests
         Assert.True(staff!.HasFiles);
         Assert.Equal(3, staff.Files.Count);
         Assert.All(staff.Files.Where(f => f.Id != ready.Id), f => Assert.Null(f.Url));
+    }
+
+    [Theory]
+    [InlineData(CatalogFileStatus.Pending)]
+    [InlineData(CatalogFileStatus.Failed)]
+    public async Task Recent_incomplete_delete_returns_conflict_and_keeps_visibility_blocker(CatalogFileStatus status)
+    {
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var c = await CreateAsync(clock);
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        // The request fails before an object is visible; storage can still materialize it later.
+        c.Storage.BeforeUploadAsync = ct => Task.FromException(new TimeoutException("Storage POST timed out."));
+        await Assert.ThrowsAsync<TimeoutException>(() => AddPhotoAsync(c, product.Id));
+        var row = await c.H.Db.CatalogProductFiles.SingleAsync();
+        Assert.Equal(clock.GetUtcNow(), row.CreatedAt);
+        row.Status = status;
+        await c.H.Db.SaveChangesAsync();
+
+        var controller = new CatalogProductsController(c.Products, null!);
+        var first = Assert.IsType<ConflictObjectResult>(await controller.DeleteFile(product.Id, row.Id, CancellationToken.None));
+        var firstBody = System.Text.Json.JsonSerializer.SerializeToElement(first.Value);
+        Assert.Contains("3 minute", firstBody.GetProperty("error").GetString());
+        clock.Advance(TimeSpan.FromSeconds(179));
+        var result = Assert.IsType<ConflictObjectResult>(await controller.DeleteFile(product.Id, row.Id, CancellationToken.None));
+        Assert.Equal(409, result.StatusCode);
+        var body = System.Text.Json.JsonSerializer.SerializeToElement(result.Value);
+        Assert.Equal("catalog.file.pendingTooRecent", body.GetProperty("code").GetString());
+        Assert.Contains("1 minute", body.GetProperty("error").GetString());
+        Assert.Single(await c.H.Db.CatalogProductFiles.ToListAsync());
+        Assert.True((await c.Products.GetByIdAsync(product.Id, CancellationToken.None))!.HasFiles);
+        Assert.Empty(c.Storage.Deletes);
+        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => c.Groups.SetProductAccessAsync(
+            product.Id, new("Restricted", null, null), CancellationToken.None));
+
+        // The timed-out POST materializes only after the first (blocked) removal attempt.
+        c.Storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await c.Products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
+        Assert.DoesNotContain((Opts.PublicBucket, row.StorageKey), c.Storage.Objects);
+        Assert.Single(c.Storage.Deletes);
+        Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Ready_delete_is_immediate_and_upload_timestamp_uses_injected_clock()
+    {
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var c = await CreateAsync(clock);
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        var file = await AddPhotoAsync(c, product.Id);
+        var row = await c.H.Db.CatalogProductFiles.SingleAsync();
+        Assert.Equal(clock.GetUtcNow(), row.CreatedAt);
+        Assert.Equal(CatalogFileStatus.Ready, row.Status);
+
+        await c.Products.DeleteFileAsync(product.Id, file.Id, CancellationToken.None);
+
+        Assert.Empty(await c.H.Db.CatalogProductFiles.ToListAsync());
+        Assert.Empty(c.Storage.Objects);
+        Assert.Single(c.Storage.Deletes);
+    }
+
+    [Fact]
+    public async Task Delayed_pending_commit_cannot_start_a_fresh_storage_request_window()
+    {
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-04T12:00:00Z"));
+        var provider = new FakeTenantProvider { TenantId = Guid.NewGuid() };
+        await using var db = InMemoryAppDb.Create(provider, interceptors: [new DelayedPendingSave(clock)]);
+        var storage = new RecordingStorageProvider();
+        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts), clock);
+        var product = await products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        var png = new byte[16];
+        new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(png, 0);
+        using var stream = new MemoryStream(png);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => products.AddFileAsync(product.Id,
+            "photo.png", "image/png", stream, CatalogFileVisibility.CustomerVisible, CancellationToken.None));
+
+        Assert.Empty(storage.Uploads);
+        Assert.Equal(CatalogFileStatus.Pending, (await db.CatalogProductFiles.SingleAsync()).Status);
+        Assert.True((await products.GetByIdAsync(product.Id, CancellationToken.None))!.HasFiles);
+    }
+
+    private sealed class DelayedPendingSave(TestTimeProvider clock) : SaveChangesInterceptor
+    {
+        public override ValueTask<int> SavedChangesAsync(
+            SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<CatalogProductFile>()
+                .Any(e => e.Entity.Status == CatalogFileStatus.Pending))
+                clock.Advance(TimeSpan.FromSeconds(101));
+            return ValueTask.FromResult(result);
+        }
     }
 
 }

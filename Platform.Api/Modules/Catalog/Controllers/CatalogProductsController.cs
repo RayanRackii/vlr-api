@@ -172,6 +172,10 @@ public sealed class CatalogProductsController(
             await productService.DeleteFileAsync(id, fileId, cancellationToken);
             return NoContent();
         }
+        catch (CatalogFilePendingTooRecentException ex)
+        {
+            return Conflict(new { error = ex.Message, code = CatalogFilePendingTooRecentException.Code });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new { error = ex.Message });

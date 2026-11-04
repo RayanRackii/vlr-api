@@ -258,8 +258,18 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         await db.SaveChangesAsync();
         if (objectExists) storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
 
-        await new CatalogProductService(db, provider, storage, Options.Create(Opts))
-            .DeleteFileAsync(productId, row.Id, CancellationToken.None);
+        var clock = new TestTimeProvider(row.CreatedAt);
+        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts), clock);
+        await Assert.ThrowsAsync<CatalogFilePendingTooRecentException>(() =>
+            products.DeleteFileAsync(productId, row.Id, CancellationToken.None));
+        Assert.True(await db.CatalogProductFiles.AnyAsync(f => f.Id == row.Id));
+        Assert.Empty(storage.Deletes);
+        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() =>
+            new CustomerGroupService(db, provider).SetProductAccessAsync(
+                productId, new("Restricted", null, null), CancellationToken.None));
+
+        clock.Advance(TimeSpan.FromMinutes(3));
+        await products.DeleteFileAsync(productId, row.Id, CancellationToken.None);
 
         await using var verify = factory.Create(provider);
         Assert.False(await verify.CatalogProductFiles.AnyAsync(f => f.Id == row.Id));

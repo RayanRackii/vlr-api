@@ -51,8 +51,11 @@ public sealed class CatalogProductService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IStorageProvider storageProvider,
-    IOptions<StorageOptions> storageOptions) : ICatalogProductService
+    IOptions<StorageOptions> storageOptions,
+    TimeProvider? timeProvider = null) : ICatalogProductService
 {
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+
     public async Task<IReadOnlyList<CatalogProductResponse>> ListAsync(
         CatalogProductListQuery query,
         CancellationToken cancellationToken)
@@ -246,6 +249,8 @@ public sealed class CatalogProductService(
             bucket = CatalogFileBuckets.For(storageOptions.Value, product.Visibility, visibility);
             product.AddFile(file);
             dbContext.CatalogProductFiles.Add(file);
+            // Persist the upload window's origin with Pending, using the same clock as removal.
+            dbContext.Entry(file).Property(f => f.CreatedAt).CurrentValue = _clock.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
@@ -269,8 +274,15 @@ public sealed class CatalogProductService(
             if (dbContext.Entry(file).State == EntityState.Detached)
                 throw new KeyNotFoundException("File reservation was deleted.");
 
+            // Waiting to reacquire the product lock must not start a fresh request window:
+            // removal's age guard is measured from the durable Pending reservation above.
+            var remaining = file.CreatedAt + StorageOptions.RequestTimeout - _clock.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException("File upload reservation expired before storage upload.");
+            using var uploadTimeout = new CancellationTokenSource(remaining, _clock);
+            using var uploadCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, uploadTimeout.Token);
             buffer.Position = 0;
-            await storageProvider.UploadAsync(bucket, file.StorageKey, buffer, contentType, cancellationToken);
+            await storageProvider.UploadAsync(bucket, file.StorageKey, buffer, contentType, uploadCancellation.Token);
             file.Status = CatalogFileStatus.Ready;
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
@@ -318,6 +330,13 @@ public sealed class CatalogProductService(
         var file = await dbContext.CatalogProductFiles
             .FirstOrDefaultAsync(f => f.Id == fileId && f.ProductId == productId, cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
+
+        if (file.Status is CatalogFileStatus.Pending or CatalogFileStatus.Failed)
+        {
+            var remaining = file.CreatedAt + StorageOptions.PendingFileRemovalMinAge - _clock.GetUtcNow();
+            if (remaining > TimeSpan.Zero)
+                throw new CatalogFilePendingTooRecentException((int)Math.Ceiling(remaining.TotalMinutes));
+        }
 
         var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
         var bucket = CatalogFileBuckets.For(storageOptions.Value, productVisibility, file.Visibility);
