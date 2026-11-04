@@ -145,6 +145,20 @@ public sealed class CustomerGroupVisibilityTests
     }
 
     [Fact]
+    public async Task Access_and_group_responses_include_customer_display_names()
+    {
+        var s = await SeedAsync();
+        await using var _ = s.H;
+        var access = await s.Groups.GetProductAccessAsync(s.Direct.Id, CancellationToken.None);
+        Assert.Equal("Ana", access!.CustomerNames[s.Allowed.Id]);
+        var saved = await s.Groups.SetProductAccessAsync(s.Direct.Id, new("Restricted", [s.Allowed.Id, s.Other.Id], null), CancellationToken.None);
+        Assert.Equal("Caio", saved!.CustomerNames[s.Other.Id]);
+        var group = Assert.Single(await s.Groups.ListAsync(CancellationToken.None));
+        Assert.Equal("Bia", group.MemberNames[s.GroupMember.Id]);
+        Assert.Equal("Bia", (await s.Groups.GetAsync(group.Id, CancellationToken.None))!.MemberNames[s.GroupMember.Id]);
+    }
+
+    [Fact]
     public async Task Restricted_product_files_use_signed_urls_public_products_keep_public_urls()
     {
         var s = await SeedAsync();
