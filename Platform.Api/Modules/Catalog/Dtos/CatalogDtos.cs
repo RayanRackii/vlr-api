@@ -146,7 +146,8 @@ public sealed record CatalogProductFileDto(
     string MimeType,
     long SizeBytes,
     CatalogFileVisibility Visibility,
-    string? Url);
+    string? Url,
+    CatalogFileStatus Status = CatalogFileStatus.Ready);
 
 public sealed record CatalogProductResponse(
     Guid Id,

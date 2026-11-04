@@ -1,4 +1,6 @@
 using System.Data.Common;
+using Microsoft.AspNetCore.Mvc;
+using Platform.Api.Modules.Catalog.Controllers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
@@ -184,6 +186,164 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         // The row delete committed only after a successful object delete; the throw rolled it back.
         await using var verify = factory.Create(provider);
         Assert.NotNull(await verify.CatalogProductFiles.FirstOrDefaultAsync(f => f.Id == file.Id));
+    }
+
+    [DockerTheory]
+    [InlineData("pending")]
+    [InlineData("upload")]
+    [InlineData("ready")]
+    [InlineData("ambiguous")]
+    [InlineData("ambiguous-save")]
+    public async Task Upload_failure_keeps_a_durable_blocking_row_and_never_deletes_storage(string step)
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider { FailUpload = step == "upload" };
+        var productId = await SeedProductAsync(factory, provider, storage);
+        var saveFailure = new UploadSaveFailure();
+        var commitFailure = new LostReadyCommitAcknowledgement();
+        if (step is "pending" or "ready" or "ambiguous-save")
+            saveFailure.Arm(step == "pending" ? 1 : 2, step == "ambiguous-save");
+        if (step == "ambiguous") commitFailure.Enabled = true;
+        await using var db = factory.Create(provider, saveFailure, commitFailure);
+        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => AddPhotoAsync(products, productId, CancellationToken.None));
+
+        await using var verify = factory.Create(provider);
+        var row = Assert.Single(await verify.CatalogProductFiles.Where(f => f.ProductId == productId).ToListAsync());
+        Assert.Equal(step == "ambiguous" ? CatalogFileStatus.Ready : CatalogFileStatus.Pending, row.Status);
+        Assert.NotEqual("pending", row.StorageKey);
+        Assert.True((await new CatalogProductService(verify, provider, storage, Options.Create(Opts))
+            .GetByIdAsync(productId, CancellationToken.None))!.HasFiles);
+        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() =>
+            new CustomerGroupService(verify, provider).SetProductAccessAsync(
+                productId, new("Restricted", null, null), CancellationToken.None));
+        Assert.Empty(storage.Deletes);
+        if (step == "pending") Assert.Empty(storage.Uploads);
+        else Assert.Contains((Opts.PublicBucket, row.StorageKey), storage.Objects);
+        // The service must also reconcile the tracked status after an ambiguous final commit.
+        Assert.Equal(row.Status, db.ChangeTracker.Entries<CatalogProductFile>().Single().Entity.Status);
+    }
+
+    private sealed class LostReadyCommitAcknowledgement : DbTransactionInterceptor
+    {
+        public bool Enabled { get; set; }
+        private int commits;
+        public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (Enabled && ++commits == 2)
+                throw new InvalidOperationException("Ready commit acknowledgement lost.");
+            return Task.CompletedTask;
+        }
+    }
+
+    [DockerTheory]
+    [InlineData(false, CatalogFileStatus.Pending)]
+    [InlineData(true, CatalogFileStatus.Pending)]
+    [InlineData(false, CatalogFileStatus.Failed)]
+    [InlineData(true, CatalogFileStatus.Failed)]
+    public async Task Delete_incomplete_row_removes_present_or_missing_object_then_row(bool objectExists, CatalogFileStatus status)
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider();
+        var productId = await SeedProductAsync(factory, provider, storage);
+        await using var db = factory.Create(provider);
+        var row = new CatalogProductFile { TenantId = provider.TenantId!.Value, ProductId = productId,
+            StorageKey = "incomplete.png", FileName = "photo.png", MimeType = "image/png", SizeBytes = 16,
+            Visibility = CatalogFileVisibility.CustomerVisible, Status = status };
+        db.CatalogProductFiles.Add(row);
+        await db.SaveChangesAsync();
+        if (objectExists) storage.Objects.Add((Opts.PublicBucket, row.StorageKey));
+
+        await new CatalogProductService(db, provider, storage, Options.Create(Opts))
+            .DeleteFileAsync(productId, row.Id, CancellationToken.None);
+
+        await using var verify = factory.Create(provider);
+        Assert.False(await verify.CatalogProductFiles.AnyAsync(f => f.Id == row.Id));
+        Assert.DoesNotContain((Opts.PublicBucket, row.StorageKey), storage.Objects);
+        Assert.Single(storage.Deletes);
+        await new CustomerGroupService(verify, provider).SetProductAccessAsync(
+            productId, new("Restricted", null, null), CancellationToken.None);
+    }
+
+    [DockerFact]
+    public async Task Durable_pending_upload_blocks_concurrent_visibility_change_even_when_upload_fails()
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider { FailUpload = true };
+        var productId = await SeedProductAsync(factory, provider, storage);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        storage.BeforeUploadAsync = async ct => { entered.TrySetResult(); await release.Task.WaitAsync(ct); };
+        var observed = new ObserveProductLock();
+        await using var uploadDb = factory.Create(provider);
+        await using var toggleDb = factory.Create(provider, observed);
+        var upload = AddPhotoAsync(new CatalogProductService(uploadDb, provider, storage, Options.Create(Opts)), productId, timeout.Token);
+        await entered.Task.WaitAsync(timeout.Token);
+        await using var verify = factory.Create(provider);
+        Assert.Equal(CatalogFileStatus.Pending, (await verify.CatalogProductFiles.SingleAsync(f => f.ProductId == productId)).Status);
+        var toggle = new CustomerGroupService(toggleDb, provider)
+            .SetProductAccessAsync(productId, new("Restricted", null, null), timeout.Token);
+        try
+        {
+            await observed.Attempted.Task.WaitAsync(timeout.Token);
+            Assert.False(toggle.IsCompleted);
+        }
+        finally { release.TrySetResult(); }
+        await Assert.ThrowsAsync<InvalidOperationException>(() => upload);
+        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => toggle);
+        verify.ChangeTracker.Clear();
+        Assert.Equal(CatalogProductVisibility.Public, (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
+        Assert.Equal(CatalogFileStatus.Pending, (await verify.CatalogProductFiles.SingleAsync(f => f.ProductId == productId)).Status);
+        Assert.Empty(storage.Deletes);
+        var response = await new CustomerGroupsController(new CustomerGroupService(toggleDb, provider))
+            .SetAccess(productId, new("Restricted", null, null), CancellationToken.None);
+        var conflict = Assert.IsType<ConflictObjectResult>(response.Result);
+        Assert.Equal(409, conflict.StatusCode);
+        Assert.Contains(CatalogVisibilityFilesPresentException.Code, System.Text.Json.JsonSerializer.Serialize(conflict.Value));
+    }
+
+    [DockerTheory]
+    [InlineData("Public")]
+    [InlineData("Restricted")]
+    public async Task Portal_hides_pending_and_failed_rows_in_list_and_detail(string visibility)
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider();
+        var productId = await SeedProductAsync(factory, provider, storage);
+        await using var db = factory.Create(provider);
+        var customer = new Customer { TenantId = provider.TenantId!.Value, Name = "Granted" };
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync();
+        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
+        await products.ActivateAsync(productId, CancellationToken.None);
+        await new CustomerGroupService(db, provider).SetProductAccessAsync(
+            productId, new(visibility, [customer.Id], null), CancellationToken.None);
+        var ready = await AddPhotoAsync(products, productId, CancellationToken.None);
+        foreach (var status in new[] { CatalogFileStatus.Pending, CatalogFileStatus.Failed })
+            db.CatalogProductFiles.Add(new CatalogProductFile {
+                TenantId = provider.TenantId.Value, ProductId = productId,
+                StorageKey = status + ".png", FileName = status + ".png", MimeType = "image/png", SizeBytes = 16,
+                Visibility = CatalogFileVisibility.CustomerVisible, Status = status });
+        await db.SaveChangesAsync();
+        await using var harness = await CatalogHarness.CreateAsync();
+        var portal = new CatalogPortalService(db, provider, storage, Options.Create(Opts),
+            harness.Publisher.AsDomainEvents(), harness.Scheduler,
+            new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService());
+
+        var detail = await portal.GetProductAsync(customer.Id, productId, CancellationToken.None);
+        Assert.Equal(ready.Id, Assert.Single(detail!.Files).Id);
+        var list = await portal.ListProductsAsync(customer.Id, null, CancellationToken.None);
+        Assert.Equal(ready.Id, Assert.Single(Assert.Single(list).Files).Id);
+        Assert.True((await products.GetByIdAsync(productId, CancellationToken.None))!.HasFiles);
+        foreach (var row in await db.CatalogProductFiles.Where(f => f.Status != CatalogFileStatus.Ready).ToListAsync())
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => products.GetFileUrlAsync(productId, row.Id, CancellationToken.None));
     }
 
     private PostgresAppDbFactory RequireFactory() => Assert.IsType<PostgresAppDbFactory>(postgres.Factory);

@@ -19,5 +19,7 @@ public class CatalogProductFile : Entity, ITenantScoped
 
     public required CatalogFileVisibility Visibility { get; set; }
 
+    public CatalogFileStatus Status { get; set; } = CatalogFileStatus.Ready;
+
     public CatalogProduct Product { get; set; } = null!;
 }

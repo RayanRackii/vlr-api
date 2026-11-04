@@ -1152,6 +1152,14 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("size_bytes");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Ready")
+                        .HasColumnName("status");
+
                     b.Property<string>("StorageKey")
                         .IsRequired()
                         .HasMaxLength(500)

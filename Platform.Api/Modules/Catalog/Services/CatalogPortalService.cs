@@ -721,7 +721,7 @@ public sealed class CatalogPortalService(
         // a short-lived signed URL, issued only after ApplyVisibility let the product through.
         var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
         var files = new List<PortalProductFileDto>();
-        foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible))
+        foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible && f.Status == CatalogFileStatus.Ready))
         {
             string url;
             if (CatalogFileBuckets.IsPublic(product.Visibility, f.Visibility))

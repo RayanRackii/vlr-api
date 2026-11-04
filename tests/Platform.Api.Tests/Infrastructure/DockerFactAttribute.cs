@@ -23,6 +23,12 @@ public sealed class DockerFactAttribute : FactAttribute
             StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>Uses the same PostgreSQL availability policy for parameterized tests.</summary>
+public sealed class DockerTheoryAttribute : TheoryAttribute
+{
+    public DockerTheoryAttribute() => Skip = new DockerFactAttribute().Skip;
+}
+
 internal static class LocalPostgresEnvironment
 {
     public const string ConnectionStringVariable = "ROLVIX_TEST_POSTGRES_CONNECTION";

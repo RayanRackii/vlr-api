@@ -6,13 +6,18 @@ public sealed class RecordingStorageProvider : IStorageProvider
 {
     public List<(string Bucket, string Prefix)> DeletedPrefixes { get; } = [];
 
+    public bool FailUpload { get; set; }
+
+    public Func<CancellationToken, Task>? BeforeUploadAsync { get; set; }
+
     public bool FailPrefixDeletion { get; set; }
 
-    public Task UploadAsync(string bucket, string key, Stream stream, string contentType, CancellationToken cancellationToken = default)
+    public async Task UploadAsync(string bucket, string key, Stream stream, string contentType, CancellationToken cancellationToken = default)
     {
+        if (BeforeUploadAsync is not null) await BeforeUploadAsync(cancellationToken);
         Uploads.Add((bucket, key));
         Objects.Add((bucket, key));
-        return Task.CompletedTask;
+        if (FailUpload) throw new InvalidOperationException("Upload acknowledgement lost.");
     }
 
     public string GetPublicUrl(string bucket, string key) => $"https://storage.test/{bucket}/{key}";

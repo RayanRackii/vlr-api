@@ -1044,6 +1044,15 @@
         },
         "type": "object"
       },
+      "CatalogFileStatus": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
       "CatalogFileUrlResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1541,6 +1550,9 @@
           "sizeBytes": {
             "format": "int64",
             "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CatalogFileStatus"
           },
           "url": {
             "nullable": true,
