@@ -16,8 +16,7 @@ namespace Platform.Api.Tests.Catalog;
 
 /// <summary>
 /// Real-PostgreSQL coverage for the product-row lock that the InMemory suite cannot exercise:
-/// an upload must wait on a concurrent restriction's FOR UPDATE lock, and a failed required
-/// storage delete must roll back so the file row survives.
+/// uploads and visibility edits serialize on the same product row; failed saves surface as errors.
 /// </summary>
 public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerFixture postgres)
     : IClassFixture<PostgresContainerFixture>
@@ -31,32 +30,139 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         var provider = new FakeTenantProvider();
         var storage = new RecordingStorageProvider();
         var productId = await SeedProductAsync(factory, provider, storage);
-
-        // Holder locks the product row and switches it to Restricted, keeping the tx open so the
-        // concurrent upload below cannot read the product visibility until the holder commits.
-        await using var holder = factory.Create(provider);
-        await using var holderTx = await holder.Database.BeginTransactionAsync();
-        await holder.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT 1 FROM catalog.catalog_products WHERE tenant_id = {provider.TenantId} AND id = {productId} FOR UPDATE");
-        var locked = await holder.CatalogProducts.FirstAsync(p => p.Id == productId);
-        locked.Visibility = CatalogProductVisibility.Restricted;
-        await holder.SaveChangesAsync();
-
-        var observed = new ObserveProductLock();
-        await using var uploadDb = factory.Create(provider, observed);
-        var uploads = new CatalogProductService(uploadDb, provider, storage, Options.Create(Opts));
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pause = new PauseSave();
+        var observed = new ObserveProductLock();
+        await using var toggleDb = factory.Create(provider, pause);
+        await using var uploadDb = factory.Create(provider, observed);
+        // Deliberately retain a stale tracked Public product before the restriction commits.
+        await uploadDb.CatalogProducts.FirstAsync(p => p.Id == productId, timeout.Token);
+        var uploads = new CatalogProductService(uploadDb, provider, storage, Options.Create(Opts));
+        var groups = new CustomerGroupService(toggleDb, provider);
+        var toggle = groups.SetProductAccessAsync(productId, new("Restricted", null, null), timeout.Token);
+        await pause.Entered.Task.WaitAsync(timeout.Token);
         var upload = AddPhotoAsync(uploads, productId, timeout.Token);
-
-        await observed.Attempted.Task.WaitAsync(timeout.Token);
-        Assert.False(upload.IsCompleted);
-
-        await holderTx.CommitAsync(timeout.Token);
-
+        try
+        {
+            await observed.Attempted.Task.WaitAsync(timeout.Token);
+            Assert.False(upload.IsCompleted);
+        }
+        finally { pause.Release.TrySetResult(); }
+        await toggle;
         var file = await upload;
-        // Visibility was read AFTER the lock was released as Restricted, so the file is private.
         Assert.Null(file.Url);
         Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
+        await using var verify = factory.Create(provider);
+        Assert.Equal(CatalogProductVisibility.Restricted,
+            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
+        Assert.Single(await verify.CatalogProductFiles.Where(f => f.ProductId == productId).ToListAsync());
+    }
+
+    [DockerFact]
+    public async Task Restriction_waits_for_upload_then_rejects_visibility_change()
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var storage = new RecordingStorageProvider();
+        var productId = await SeedProductAsync(factory, provider, storage);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var pause = new PauseSave();
+        var observed = new ObserveProductLock();
+        await using var uploadDb = factory.Create(provider, pause);
+        await using var toggleDb = factory.Create(provider, observed);
+        var uploads = new CatalogProductService(uploadDb, provider, storage, Options.Create(Opts));
+        var groups = new CustomerGroupService(toggleDb, provider);
+        var upload = AddPhotoAsync(uploads, productId, timeout.Token);
+        await pause.Entered.Task.WaitAsync(timeout.Token);
+        var toggle = groups.SetProductAccessAsync(productId, new("Restricted", null, null), timeout.Token);
+        try
+        {
+            await observed.Attempted.Task.WaitAsync(timeout.Token);
+            Assert.False(toggle.IsCompleted);
+        }
+        finally { pause.Release.TrySetResult(); }
+        await upload;
+        await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => toggle);
+        await using var verify = factory.Create(provider);
+        Assert.Equal(CatalogProductVisibility.Public,
+            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
+        Assert.Single(await verify.CatalogProductFiles.Where(f => f.ProductId == productId).ToListAsync());
+        Assert.Equal(Opts.PublicBucket, Assert.Single(storage.Uploads).Bucket);
+        Assert.Empty(storage.Copies);
+        Assert.Empty(storage.Deletes);
+    }
+
+    [DockerFact]
+    public async Task Any_file_blocks_both_visibility_directions_but_empty_products_can_toggle()
+    {
+        var factory = RequireFactory();
+        foreach (var initial in new[] { "Public", "Restricted" })
+        foreach (var fileVisibility in new[] { CatalogFileVisibility.CustomerVisible, CatalogFileVisibility.InternalB2B })
+        {
+            var provider = new FakeTenantProvider();
+            var storage = new RecordingStorageProvider();
+            var productId = await SeedProductAsync(factory, provider, storage);
+            await using var db = factory.Create(provider);
+            var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
+            var groups = new CustomerGroupService(db, provider);
+            // Exercise each direction without files first.
+            await groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
+            await groups.SetProductAccessAsync(productId, new("Public", null, null), CancellationToken.None);
+            await groups.SetProductAccessAsync(productId, new(initial, null, null), CancellationToken.None);
+            var png = new byte[16];
+            new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(png, 0);
+            using var stream = new MemoryStream(fileVisibility == CatalogFileVisibility.InternalB2B ? "%PDF-1.4 dummy"u8.ToArray() : png);
+            await products.AddFileAsync(productId, fileVisibility == CatalogFileVisibility.InternalB2B ? "doc.pdf" : "photo.png", fileVisibility == CatalogFileVisibility.InternalB2B ? "application/pdf" : "image/png", stream, fileVisibility, CancellationToken.None);
+            await Assert.ThrowsAsync<CatalogVisibilityFilesPresentException>(() => groups.SetProductAccessAsync(
+                productId, new(initial == "Public" ? "Restricted" : "Public", null, null), CancellationToken.None));
+            Assert.Equal(initial, (await groups.GetProductAccessAsync(productId, CancellationToken.None))!.Visibility);
+            Assert.Empty(storage.Copies);
+            Assert.Empty(storage.Deletes);
+            if (initial == "Restricted") Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
+        }
+    }
+
+    [DockerFact]
+    public async Task Grants_only_save_failure_is_reported_and_preserves_existing_grants()
+    {
+        var factory = RequireFactory();
+        var provider = new FakeTenantProvider();
+        var productId = await SeedProductAsync(factory, provider, new RecordingStorageProvider());
+        Guid groupId;
+        await using (var seed = factory.Create(provider))
+        {
+            var group = new CustomerGroup { TenantId = provider.TenantId!.Value, Name = "VIP" };
+            seed.CustomerGroups.Add(group);
+            await seed.SaveChangesAsync();
+            groupId = group.Id;
+        }
+        await using var db = factory.Create(provider, new FailSave());
+        var groups = new CustomerGroupService(db, provider);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => groups.SetProductAccessAsync(
+            productId, new("Public", null, [groupId]), CancellationToken.None));
+        await using var verify = factory.Create(provider);
+        Assert.Empty(await verify.CatalogProductAccess.Where(a => a.ProductId == productId).ToListAsync());
+        Assert.Empty(await verify.CatalogAccessAudit.Where(a => a.EntityId == productId).ToListAsync());
+    }
+
+    private sealed class FailSave : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Save failed.");
+    }
+
+    private sealed class PauseSave : SaveChangesInterceptor
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return result;
+        }
     }
 
     [DockerFact]
@@ -78,214 +184,6 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
         // The row delete committed only after a successful object delete; the throw rolled it back.
         await using var verify = factory.Create(provider);
         Assert.NotNull(await verify.CatalogProductFiles.FirstOrDefaultAsync(f => f.Id == file.Id));
-    }
-
-    [DockerFact]
-    public async Task Opening_timeout_after_copy_is_verified_and_commits_public()
-    {
-        var factory = RequireFactory();
-        var provider = new FakeTenantProvider();
-        var storage = new RecordingStorageProvider();
-        var productId = await SeedProductAsync(factory, provider, storage);
-        await using var db = factory.Create(provider);
-        var groups = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
-        await groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
-        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
-        var file = await AddPhotoAsync(products, productId, CancellationToken.None);
-        storage.FailAfterCopy = true;
-
-        await groups.SetProductAccessAsync(productId, new("Public", null, null), CancellationToken.None);
-
-        var copy = Assert.Single(storage.Copies);
-        Assert.Contains((Opts.PublicBucket, copy.ToKey), storage.Objects);
-        Assert.DoesNotContain((Opts.PrivateBucket, copy.FromKey), storage.Objects);
-        await using var verify = factory.Create(provider);
-        Assert.Equal(CatalogProductVisibility.Public,
-            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
-        Assert.NotNull(await verify.CatalogProductFiles.SingleOrDefaultAsync(f => f.Id == file.Id));
-    }
-
-    [DockerFact]
-    public async Task Opening_commit_failure_rolls_back_and_removes_public_destination()
-    {
-        var factory = RequireFactory();
-        var provider = new FakeTenantProvider();
-        var storage = new RecordingStorageProvider();
-        var productId = await SeedProductAsync(factory, provider, storage);
-        await using (var setup = factory.Create(provider))
-        {
-            var groups = new CustomerGroupService(setup, provider, null, storage, Options.Create(Opts));
-            await groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
-            var products = new CatalogProductService(setup, provider, storage, Options.Create(Opts));
-            await AddPhotoAsync(products, productId, CancellationToken.None);
-        }
-        var failure = new TimeoutException("Commit failed before completion.");
-        await using var db = factory.Create(provider, new FailCommit(failure));
-        var access = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
-
-        var thrown = await Assert.ThrowsAsync<TimeoutException>(() =>
-            access.SetProductAccessAsync(productId, new("Public", null, null), CancellationToken.None));
-
-        Assert.Same(failure, thrown);
-        var copy = Assert.Single(storage.Copies);
-        Assert.DoesNotContain((Opts.PublicBucket, copy.ToKey), storage.Objects);
-        Assert.Contains((Opts.PrivateBucket, copy.FromKey), storage.Objects);
-        await using var verify = factory.Create(provider);
-        Assert.Equal(CatalogProductVisibility.Restricted,
-            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
-    }
-
-    [DockerFact]
-    public async Task Partial_public_delete_failure_commits_public_revert_then_restores_every_file()
-    {
-        var factory = RequireFactory();
-        var provider = new FakeTenantProvider();
-        var storage = new RecordingStorageProvider();
-        var productId = await SeedProductAsync(factory, provider, storage);
-        await using var db = factory.Create(provider);
-        var products = new CatalogProductService(db, provider, storage, Options.Create(Opts));
-        await AddPhotoAsync(products, productId, CancellationToken.None);
-        await AddPhotoAsync(products, productId, CancellationToken.None);
-        storage.FailRequiredDeleteInBucket = Opts.PublicBucket;
-        storage.FailRequiredDeleteAfter = 1;
-        storage.BeforeCopy = (bucket, key) =>
-        {
-            if (bucket != Opts.PublicBucket) return;
-            using var committed = factory.Create(provider);
-            Assert.Equal(CatalogProductVisibility.Public,
-                committed.CatalogProducts.AsNoTracking().Single(p => p.Id == productId).Visibility);
-        };
-        var groups = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
-
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None));
-
-        Assert.Contains("reverted to Public", error.Message);
-        await using var verify = factory.Create(provider);
-        Assert.Equal(CatalogProductVisibility.Public,
-            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
-        Assert.Equal(3, storage.Copies.Count); // Two private copies, one public restoration.
-        foreach (var upload in storage.Uploads)
-        {
-            Assert.Contains((Opts.PublicBucket, upload.Key), storage.Objects);
-            Assert.Contains((Opts.PrivateBucket, upload.Key), storage.Objects);
-        }
-        Assert.DoesNotContain(storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
-    }
-
-    [DockerFact]
-    public async Task Restricting_commit_failure_keeps_public_files_and_never_deletes_either_copy()
-    {
-        var factory = RequireFactory();
-        var provider = new FakeTenantProvider();
-        var storage = new RecordingStorageProvider();
-        var productId = await SeedProductAsync(factory, provider, storage);
-        await using (var setup = factory.Create(provider))
-            await AddPhotoAsync(new CatalogProductService(setup, provider, storage, Options.Create(Opts)), productId, CancellationToken.None);
-        await using var db = factory.Create(provider, new FailCommit(new TimeoutException("Commit failed.")));
-        var groups = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
-
-        await Assert.ThrowsAsync<TimeoutException>(() =>
-            groups.SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None));
-
-        await using var verify = factory.Create(provider);
-        Assert.Equal(CatalogProductVisibility.Public,
-            (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
-        Assert.Empty(storage.Deletes);
-        var copy = Assert.Single(storage.Copies);
-        Assert.Contains((Opts.PublicBucket, copy.FromKey), storage.Objects);
-        Assert.Contains((Opts.PrivateBucket, copy.ToKey), storage.Objects);
-    }
-
-    [DockerFact]
-    public async Task Restricting_commit_timeout_after_success_reads_committed_state_and_removes_public_copy()
-        => await AssertCommittedTimeoutAsync("Restricted");
-
-    [DockerFact]
-    public async Task Opening_commit_timeout_after_success_keeps_public_copy_and_removes_private_copy()
-        => await AssertCommittedTimeoutAsync("Public");
-
-    [DockerFact]
-    public async Task Opening_commit_failure_and_partial_public_cleanup_recovers_public_and_retains_all_private_files()
-    {
-        var factory = RequireFactory();
-        var provider = new FakeTenantProvider();
-        var storage = new RecordingStorageProvider();
-        var productId = await SeedProductAsync(factory, provider, storage);
-        await using (var setup = factory.Create(provider))
-        {
-            await new CustomerGroupService(setup, provider, null, storage, Options.Create(Opts))
-                .SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
-            var products = new CatalogProductService(setup, provider, storage, Options.Create(Opts));
-            for (var i = 0; i < 3; i++) await AddPhotoAsync(products, productId, CancellationToken.None);
-        }
-        storage.FailRequiredDeleteInBucket = Opts.PublicBucket;
-        storage.FailRequiredDeleteAfter = 1;
-        var failure = new TimeoutException("Opening commit failed before completion.");
-        await using var db = factory.Create(provider, new FailCommit(failure, once: true));
-        var groups = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
-
-        var thrown = await Assert.ThrowsAsync<TimeoutException>(() =>
-            groups.SetProductAccessAsync(productId, new("Public", null, null), CancellationToken.None));
-
-        Assert.Same(failure, thrown);
-        await using var verify = factory.Create(provider);
-        var access = new CustomerGroupService(verify, provider, null, storage, Options.Create(Opts));
-        Assert.Equal("Public", (await access.GetProductAccessAsync(productId, CancellationToken.None))!.Visibility);
-        foreach (var upload in storage.Uploads)
-        {
-            Assert.Contains((Opts.PrivateBucket, upload.Key), storage.Objects);
-            Assert.Contains((Opts.PublicBucket, upload.Key), storage.Objects);
-        }
-        Assert.DoesNotContain(storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
-        Assert.Contains(storage.Deletes, d => d.Bucket == Opts.PublicBucket);
-    }
-
-    private async Task AssertCommittedTimeoutAsync(string target)
-    {
-        var factory = RequireFactory();
-        var provider = new FakeTenantProvider();
-        var storage = new RecordingStorageProvider();
-        var productId = await SeedProductAsync(factory, provider, storage);
-        await using (var setup = factory.Create(provider))
-        {
-            if (target == "Public")
-                await new CustomerGroupService(setup, provider, null, storage, Options.Create(Opts))
-                    .SetProductAccessAsync(productId, new("Restricted", null, null), CancellationToken.None);
-            await AddPhotoAsync(new CatalogProductService(setup, provider, storage, Options.Create(Opts)), productId, CancellationToken.None);
-        }
-        await using var db = factory.Create(provider, new TimeoutAfterCommit());
-        var groups = new CustomerGroupService(db, provider, null, storage, Options.Create(Opts));
-
-        await groups.SetProductAccessAsync(productId, new(target, null, null), CancellationToken.None);
-
-        await using var verify = factory.Create(provider);
-        Assert.Equal(target, (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility.ToString());
-        var copy = Assert.Single(storage.Copies);
-        Assert.Contains((copy.ToBucket, copy.ToKey), storage.Objects);
-        Assert.DoesNotContain((copy.FromBucket, copy.FromKey), storage.Objects);
-    }
-
-    private sealed class TimeoutAfterCommit : DbTransactionInterceptor
-    {
-        public override Task TransactionCommittedAsync(DbTransaction transaction,
-            TransactionEndEventData eventData, CancellationToken cancellationToken = default)
-            => throw new TimeoutException("Commit timed out after success.");
-    }
-
-    private sealed class FailCommit(Exception failure, bool once = false) : DbTransactionInterceptor
-    {
-        private bool failed;
-        public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
-            TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
-        {
-            if (!once || !failed)
-            {
-                failed = true;
-                throw failure;
-            }
-            return ValueTask.FromResult(result);
-        }
     }
 
     private PostgresAppDbFactory RequireFactory() => Assert.IsType<PostgresAppDbFactory>(postgres.Factory);

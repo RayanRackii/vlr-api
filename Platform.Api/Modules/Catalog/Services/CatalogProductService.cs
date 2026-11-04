@@ -216,7 +216,7 @@ public sealed class CatalogProductService(
 
         // Take the same product-row lock as a visibility change so an upload cannot race a
         // restriction: the lock is held until commit and the product visibility is read AFTER it,
-        // guaranteeing the chosen bucket matches where a concurrent move would place the file.
+        // guaranteeing the chosen bucket matches the current committed visibility.
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
@@ -228,8 +228,11 @@ public sealed class CatalogProductService(
 
         var product = await dbContext.CatalogProducts
             .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken)
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == productId, cancellationToken)
             ?? throw new KeyNotFoundException("Product not found.");
+
+        // EF identity resolution can return a product tracked before we acquired the lock.
+        if (transaction is not null) await dbContext.Entry(product).ReloadAsync(cancellationToken);
 
         var file = new CatalogProductFile
         {

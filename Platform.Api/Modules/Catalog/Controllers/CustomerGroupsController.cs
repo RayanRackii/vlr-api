@@ -69,6 +69,10 @@ public sealed class CustomerGroupsController(ICustomerGroupService service) : Co
     {
         try { return await action(); }
         catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (CatalogVisibilityFilesPresentException ex)
+        {
+            return Conflict(new { error = ex.Message, code = CatalogVisibilityFilesPresentException.Code });
+        }
         catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
     }
 }

@@ -52,6 +52,20 @@ public sealed class CustomerGroupsHttpTests
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/catalog/customer-groups")).StatusCode);
     }
 
+    [Fact]
+    public async Task Visibility_change_with_files_returns_409_and_stable_error_code()
+    {
+        using var host = StartHost(Permissions.Catalog.ProductsManage);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+        var response = await client.PutAsJsonAsync($"/api/catalog/products/{Guid.NewGuid()}/access",
+            new UpdateCatalogProductAccessRequest("Restricted", null, null));
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("catalog.visibility.filesPresent", body.GetProperty("code").GetString());
+        Assert.Contains("re-upload", body.GetProperty("error").GetString());
+    }
+
     private static IHost StartHost(params string[] allowedPermissionKeys) =>
         new HostBuilder()
             .ConfigureWebHost(web =>
@@ -121,7 +135,7 @@ public sealed class CustomerGroupsHttpTests
         public Task<CustomerGroupResponse?> RemoveMemberAsync(Guid id, Guid customerId, CancellationToken ct) => throw new NotSupportedException();
         public Task<CatalogProductAccessResponse?> GetProductAccessAsync(Guid productId, CancellationToken ct) =>
             Task.FromResult<CatalogProductAccessResponse?>(new CatalogProductAccessResponse(productId, "Public", [], []));
-        public Task<CatalogProductAccessResponse?> SetProductAccessAsync(Guid productId, UpdateCatalogProductAccessRequest request, CancellationToken ct) => throw new NotSupportedException();
+        public Task<CatalogProductAccessResponse?> SetProductAccessAsync(Guid productId, UpdateCatalogProductAccessRequest request, CancellationToken ct) => throw new CatalogVisibilityFilesPresentException();
         public Task<IReadOnlyList<CatalogAccessAuditResponse>> ListHistoryAsync(string entityType, Guid entityId, CancellationToken ct) => Task.FromResult<IReadOnlyList<CatalogAccessAuditResponse>>([]);
     }
 

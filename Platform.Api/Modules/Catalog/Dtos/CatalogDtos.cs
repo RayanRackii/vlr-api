@@ -163,6 +163,8 @@ public sealed record CatalogProductResponse(
 
     public CatalogProductVisibility Visibility { get; init; } = CatalogProductVisibility.Public;
 
+    public bool HasFiles => Files.Count > 0;
+
     public int GrantedCustomerCount { get; init; }
 
     public int GrantedGroupCount { get; init; }

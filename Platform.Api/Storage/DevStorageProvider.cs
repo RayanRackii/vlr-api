@@ -51,12 +51,6 @@ public sealed class DevStorageProvider(
         return Task.CompletedTask;
     }
 
-    public Task<bool> ExistsAsync(
-        string bucket,
-        string key,
-        CancellationToken cancellationToken = default) =>
-        Task.FromResult(File.Exists(ResolvePath(bucket, key)));
-
     public Task DeleteAsync(
         string bucket,
         string key,

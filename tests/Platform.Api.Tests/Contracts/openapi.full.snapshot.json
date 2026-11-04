@@ -1644,6 +1644,10 @@
             "format": "int32",
             "type": "integer"
           },
+          "hasFiles": {
+            "readOnly": true,
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
