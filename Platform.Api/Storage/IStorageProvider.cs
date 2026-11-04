@@ -22,13 +22,6 @@ public interface IStorageProvider
         string key,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Recursively lists object keys beneath a prefix (empty means the entire bucket).</summary>
-    Task<IReadOnlyList<string>> ListAsync(
-        string bucket,
-        string prefix,
-        CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException("Storage listing is not supported by this provider.");
-
     /// <summary>Delete that throws when the provider did not remove the object (a missing object is fine).</summary>
     Task DeleteRequiredAsync(
         string bucket,

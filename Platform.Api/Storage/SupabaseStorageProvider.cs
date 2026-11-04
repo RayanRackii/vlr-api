@@ -158,12 +158,12 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         }
     }
 
-    public async Task<IReadOnlyList<string>> ListAsync(
+    public async Task DeletePrefixAsync(
         string bucket,
         string prefix,
         CancellationToken cancellationToken = default)
     {
-        var tenantPrefix = string.IsNullOrWhiteSpace(prefix) ? "" : NormalizePrefix(prefix);
+        var tenantPrefix = NormalizePrefix(prefix);
         var folders = new Queue<string>([tenantPrefix]);
         var visitedFolders = new HashSet<string>(StringComparer.Ordinal) { tenantPrefix };
         var keys = new HashSet<string>(StringComparer.Ordinal);
@@ -176,12 +176,12 @@ public sealed class SupabaseStorageProvider : IStorageProvider
             {
                 if (++listRequests > MaxListRequests)
                 {
-                    throw new InvalidOperationException("Storage listing exceeded the safety limit.");
+                    throw new InvalidOperationException("Storage prefix deletion exceeded the listing safety limit.");
                 }
 
                 using var listResponse = await _httpClient.PostAsJsonAsync(
                     $"object/list/{Uri.EscapeDataString(bucket)}",
-                    new { prefix = folder, limit = ListBatchSize, offset, sortBy = new { column = "name", order = "asc" } },
+                    new { prefix = folder, limit = ListBatchSize, offset },
                     cancellationToken);
                 listResponse.EnsureSuccessStatusCode();
 
@@ -219,15 +219,6 @@ public sealed class SupabaseStorageProvider : IStorageProvider
             }
         }
 
-        return keys.Order(StringComparer.Ordinal).ToArray();
-    }
-
-    public async Task DeletePrefixAsync(
-        string bucket,
-        string prefix,
-        CancellationToken cancellationToken = default)
-    {
-        var keys = await ListAsync(bucket, NormalizePrefix(prefix), cancellationToken);
         foreach (var batch in keys.Chunk(ListBatchSize))
         {
             using var deleteRequest = new HttpRequestMessage(

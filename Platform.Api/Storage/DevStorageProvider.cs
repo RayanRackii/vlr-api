@@ -37,23 +37,6 @@ public sealed class DevStorageProvider(
         return Task.FromResult(url);
     }
 
-    public Task<IReadOnlyList<string>> ListAsync(
-        string bucket,
-        string prefix,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var root = ResolvePath(bucket, "");
-        var normalized = prefix.Trim('/');
-        IReadOnlyList<string> keys = Directory.Exists(root)
-            ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-                .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
-                .Where(key => normalized.Length == 0 || key.StartsWith(normalized + "/", StringComparison.Ordinal))
-                .Order(StringComparer.Ordinal).ToArray()
-            : [];
-        return Task.FromResult(keys);
-    }
-
     public Task DeleteAsync(
         string bucket,
         string key,

@@ -25,7 +25,9 @@ public partial class AddCatalogProductFileStatus : Migration
             nullable: false,
             defaultValue: false);
 
-
+        migrationBuilder.Sql("""
+            UPDATE catalog.catalog_product_files SET is_legacy_public = true WHERE visibility = 'CustomerVisible';
+            """);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

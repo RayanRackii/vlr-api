@@ -47,10 +47,6 @@ public sealed class RecordingStorageProvider : IStorageProvider
         return DeleteAsync(bucket, key, cancellationToken);
     }
 
-    public Task<IReadOnlyList<string>> ListAsync(string bucket, string prefix, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<string>>(Objects.Where(o => o.Bucket == bucket && o.Key.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(o => o.Key).Order(StringComparer.Ordinal).ToArray());
-
     public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         Deletes.Add((bucket, key));
