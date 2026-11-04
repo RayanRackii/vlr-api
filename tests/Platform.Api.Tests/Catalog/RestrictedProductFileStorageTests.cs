@@ -125,6 +125,49 @@ public sealed class RestrictedProductFileStorageTests
     }
 
     [Fact]
+    public async Task Public_restore_failure_keeps_private_copy_as_only_surviving_copy()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        await AddPhotoAsync(c, product.Id);
+        // First public delete succeeds (so its public copy is gone), the second fails -> compensation.
+        // Restoring the deleted public copy then fails too, so that file's private copy is the only one left.
+        c.Storage.FailRequiredDeleteAfter = 1;
+        c.Storage.FailCopyToBucket = Opts.PublicBucket;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None));
+
+        c.H.Db.ChangeTracker.Clear();
+        var staff = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
+        Assert.Equal(CatalogProductVisibility.Public, staff!.Visibility);
+
+        // File whose public restore failed: its private copy is the only surviving copy -> must be kept.
+        var restoreFailedKey = c.Storage.Copies[0].ToKey;
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket && d.Key == restoreFailedKey);
+        // File whose public was never deleted: safe to drop its redundant private copy.
+        var publicIntactKey = c.Storage.Copies[1].ToKey;
+        Assert.Contains(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket && d.Key == publicIntactKey);
+    }
+
+    [Fact]
+    public async Task Upload_picks_private_bucket_when_product_restricted_under_lock()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+
+        var file = await AddPhotoAsync(c, product.Id);
+
+        // Visibility is read after the product-row lock, so the bucket is the private one.
+        Assert.Equal(Opts.PrivateBucket, Assert.Single(c.Storage.Uploads).Bucket);
+        Assert.Null(file.Url);
+    }
+
+    [Fact]
     public async Task Restricting_deletes_public_copy_before_commit()
     {
         var c = await CreateAsync();

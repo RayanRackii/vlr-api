@@ -231,12 +231,31 @@ public sealed class CustomerGroupService(
         }
         catch
         {
-            foreach (var m in sourcesDeleted)
+            // Compensation. A private copy may be removed ONLY once a public copy is known to
+            // exist again, otherwise we would delete the sole remaining copy and lose the file.
+            // For each private copy: if its public source was never deleted it is safe to drop;
+            // if the public source was deleted, restore it first and drop the private copy only
+            // when that restore succeeds. If the restore fails, keep the private copy so the file
+            // stays recoverable (the rolled-back DB still references this key).
+            var safeToDeletePrivate = new List<FileMove>();
+            foreach (var m in copied)
             {
-                try { await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None); }
-                catch (Exception) { /* best effort restore of a public object; product stays Public */ }
+                if (!sourcesDeleted.Contains(m))
+                {
+                    safeToDeletePrivate.Add(m);
+                    continue;
+                }
+                try
+                {
+                    await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None);
+                    safeToDeletePrivate.Add(m);
+                }
+                catch (Exception)
+                {
+                    /* restore of the public object failed; keep the private copy as the only surviving copy */
+                }
             }
-            await DeleteQuietlyAsync(copied.Select(m => (m.ToBucket, m.Key)));
+            await DeleteQuietlyAsync(safeToDeletePrivate.Select(m => (m.ToBucket, m.Key)));
             throw;
         }
         if (!restricting)

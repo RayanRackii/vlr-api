@@ -32,18 +32,29 @@ public sealed class RecordingStorageProvider : IStorageProvider
 
     public bool FailCopy { get; set; }
 
+    /// <summary>When set, a copy whose destination bucket equals this value fails (e.g. a restore).</summary>
+    public string? FailCopyToBucket { get; set; }
+
     public bool FailRequiredDelete { get; set; }
+
+    /// <summary>When set, required deletes succeed for the first N calls and fail afterwards.</summary>
+    public int? FailRequiredDeleteAfter { get; set; }
+
+    private int _requiredDeletes;
 
     public Task DeleteRequiredAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         if (FailRequiredDelete) return Task.FromException(new InvalidOperationException("Storage unavailable."));
+        if (FailRequiredDeleteAfter is int n && _requiredDeletes++ >= n)
+            return Task.FromException(new InvalidOperationException("Storage unavailable."));
         Deletes.Add((bucket, key));
         return Task.CompletedTask;
     }
 
     public Task CopyAsync(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey, CancellationToken cancellationToken = default)
     {
-        if (FailCopy) return Task.FromException(new InvalidOperationException("Storage unavailable."));
+        if (FailCopy || destinationBucket == FailCopyToBucket)
+            return Task.FromException(new InvalidOperationException("Storage unavailable."));
         Copies.Add((sourceBucket, sourceKey, destinationBucket, destinationKey));
         return Task.CompletedTask;
     }

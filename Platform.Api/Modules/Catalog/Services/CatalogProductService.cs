@@ -207,15 +207,28 @@ public sealed class CatalogProductService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
-        var product = await dbContext.CatalogProducts
-            .Include(p => p.Files)
-            .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken)
-            ?? throw new KeyNotFoundException("Product not found.");
 
         await using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken);
         var bytes = buffer.ToArray();
         CatalogFileRules.Validate(visibility, fileName, contentType, bytes.Length, bytes);
+
+        // Take the same product-row lock as a visibility change so an upload cannot race a
+        // restriction: the lock is held until commit and the product visibility is read AFTER it,
+        // guaranteeing the chosen bucket matches where a concurrent move would place the file.
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        if (dbContext.Database.IsRelational())
+        {
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM catalog.catalog_products WHERE tenant_id = {tenantId} AND id = {productId} FOR UPDATE", cancellationToken);
+        }
+
+        var product = await dbContext.CatalogProducts
+            .Include(p => p.Files)
+            .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken)
+            ?? throw new KeyNotFoundException("Product not found.");
 
         var file = new CatalogProductFile
         {
@@ -232,13 +245,24 @@ public sealed class CatalogProductService(
         var bucket = CatalogFileBuckets.For(storageOptions.Value, product.Visibility, visibility);
 
         buffer.Position = 0;
-        await storageProvider.UploadAsync(bucket, key, buffer, contentType, cancellationToken);
-        file.StorageKey = key;
+        try
+        {
+            await storageProvider.UploadAsync(bucket, key, buffer, contentType, cancellationToken);
+            file.StorageKey = key;
 
-        // Entity.Id is protected set; reconstruct via adding then setting storage after.
-        product.AddFile(file);
-        dbContext.CatalogProductFiles.Add(file);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            // Entity.Id is protected set; reconstruct via adding then setting storage after.
+            product.AddFile(file);
+            dbContext.CatalogProductFiles.Add(file);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            // The object was uploaded but the row did not commit: remove the orphan, best effort.
+            try { await storageProvider.DeleteAsync(bucket, key, CancellationToken.None); }
+            catch (Exception) { /* best effort; provider logs failures */ }
+            throw;
+        }
 
         var url = CatalogFileBuckets.IsPublic(product.Visibility, visibility)
             ? storageProvider.GetPublicUrl(bucket, key)
@@ -258,7 +282,19 @@ public sealed class CatalogProductService(
         Guid fileId,
         CancellationToken cancellationToken)
     {
-        EnsureTenant();
+        var tenantId = EnsureTenant();
+
+        // Same product-row lock as a visibility change: held until commit, visibility read after it,
+        // so a delete cannot race a restriction that moves files between buckets.
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        if (dbContext.Database.IsRelational())
+        {
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT 1 FROM catalog.catalog_products WHERE tenant_id = {tenantId} AND id = {productId} FOR UPDATE", cancellationToken);
+        }
+
         var file = await dbContext.CatalogProductFiles
             .FirstOrDefaultAsync(f => f.Id == fileId && f.ProductId == productId, cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
@@ -266,9 +302,12 @@ public sealed class CatalogProductService(
         var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
         var bucket = CatalogFileBuckets.For(storageOptions.Value, productVisibility, file.Visibility);
 
-        await storageProvider.DeleteAsync(bucket, file.StorageKey, cancellationToken);
+        // Remove the row first and commit; delete the object only after the DB settles, so a
+        // failure leaves a recoverable orphan rather than a row pointing at a deleted object.
         dbContext.CatalogProductFiles.Remove(file);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        await storageProvider.DeleteAsync(bucket, file.StorageKey, cancellationToken);
     }
 
     public async Task<CatalogFileUrlResponse> GetFileUrlAsync(
