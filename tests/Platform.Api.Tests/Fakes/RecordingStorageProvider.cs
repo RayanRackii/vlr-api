@@ -47,7 +47,14 @@ public sealed class RecordingStorageProvider : IStorageProvider
 
     public string? FailRequiredDeleteInBucket { get; set; }
 
+    /// <summary>When set, a required delete removes the object (server-side success) but the call
+    /// then throws, modelling a timeout whose outcome is unknown to the caller.</summary>
+    public string? TimeoutAfterRequiredDeleteInBucket { get; set; }
+
     private int _requiredDeletes;
+
+    public Task<bool> ExistsAsync(string bucket, string key, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Objects.Contains((bucket, key)));
 
     public Task DeleteRequiredAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
@@ -57,6 +64,8 @@ public sealed class RecordingStorageProvider : IStorageProvider
             return Task.FromException(new InvalidOperationException("Storage unavailable."));
         Deletes.Add((bucket, key));
         Objects.Remove((bucket, key));
+        if (bucket == TimeoutAfterRequiredDeleteInBucket)
+            return Task.FromException(new TimeoutException("Delete timed out after storage removed the object."));
         return Task.CompletedTask;
     }
 

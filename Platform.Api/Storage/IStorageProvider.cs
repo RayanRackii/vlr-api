@@ -31,6 +31,14 @@ public interface IStorageProvider
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Storage copy is not supported by this provider.");
 
+    /// <summary>Returns true when the object currently exists. Used by compensation to avoid deleting
+    /// the last surviving copy when a prior storage op's outcome is unknown (e.g. a timeout).</summary>
+    Task<bool> ExistsAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Storage existence check is not supported by this provider.");
+
     /// <summary>Delete that throws when the provider did not remove the object (a missing object is fine).</summary>
     Task DeleteRequiredAsync(
         string bucket,

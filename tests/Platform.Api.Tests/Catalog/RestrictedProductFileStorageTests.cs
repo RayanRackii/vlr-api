@@ -211,6 +211,31 @@ public sealed class RestrictedProductFileStorageTests
     }
 
     [Fact]
+    public async Task Restricting_public_delete_timeout_after_removal_restores_copy_and_never_loses_file()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        // The public delete succeeds server-side but the call times out, so its outcome is unknown.
+        c.Storage.TimeoutAfterRequiredDeleteInBucket = Opts.PublicBucket;
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None));
+
+        var key = c.Storage.Copies[0].FromKey;
+        // Compensation must NEVER delete the last remaining copy: the public source is restored (a
+        // second, reverse copy) and the private destination dropped, so exactly one copy survives
+        // (the public one the rolled-back product references). The file is never lost.
+        Assert.Contains((Opts.PrivateBucket, key, Opts.PublicBucket, key), c.Storage.Copies);
+        Assert.Contains((Opts.PublicBucket, key), c.Storage.Objects);
+        Assert.DoesNotContain((Opts.PrivateBucket, key), c.Storage.Objects);
+        c.H.Db.ChangeTracker.Clear();
+        var staff = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
+        Assert.Equal(CatalogProductVisibility.Public, staff!.Visibility);
+    }
+
+    [Fact]
     public async Task Upload_picks_private_bucket_when_product_restricted_under_lock()
     {
         var c = await CreateAsync();

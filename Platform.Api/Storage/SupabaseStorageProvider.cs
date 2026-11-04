@@ -128,6 +128,24 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         await EnsureStorageSuccessAsync(response, sourceBucket, sourceKey, cancellationToken);
     }
 
+    public async Task<bool> ExistsAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.GetAsync(
+            $"object/info/{Uri.EscapeDataString(bucket)}/{key}",
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        // Any non-success status is treated as unknown so callers never delete a last remaining copy.
+        await EnsureStorageSuccessAsync(response, bucket, key, cancellationToken);
+        return true;
+    }
+
     public async Task DeleteAsync(
         string bucket,
         string key,

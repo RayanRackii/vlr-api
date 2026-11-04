@@ -211,7 +211,6 @@ public sealed class CustomerGroupService(
         // Opening: copy to public, commit, then best-effort delete of the private copies.
         var restricting = visibility == CatalogProductVisibility.Restricted;
         var copied = new List<FileMove>();
-        var sourcesDeleted = new List<FileMove>();
         try
         {
             foreach (var m in moves)
@@ -224,8 +223,10 @@ public sealed class CustomerGroupService(
             {
                 foreach (var m in moves)
                 {
+                    // The source delete is idempotent. Its outcome may be unknown on a timeout
+                    // (the object may already be gone), so compensation never assumes the source
+                    // survived — it checks existence instead of tracking what we attempted here.
                     await storageProvider!.DeleteRequiredAsync(m.FromBucket, m.Key, ct);
-                    sourcesDeleted.Add(m);
                 }
             }
             await dbContext.SaveChangesAsync(ct);
@@ -233,30 +234,29 @@ public sealed class CustomerGroupService(
         }
         catch
         {
-            // Compensation. A private copy may be removed ONLY once a public copy is known to
-            // exist again, otherwise we would delete the sole remaining copy and lose the file.
-            // For each private copy: if its public source was never deleted it is safe to drop;
-            // if the public source was deleted, restore it first and drop the private copy only
-            // when that restore succeeds. If the restore fails, keep the private copy so the file
-            // stays recoverable (the rolled-back DB still references this key).
+            // Compensation. The destination copy may be removed ONLY once the source copy is known
+            // to exist, otherwise we would delete the sole remaining copy and lose the file.
+            // For each destination copy: confirm the source still exists; if it is gone (its delete
+            // completed, possibly only after the timeout we are handling) restore it from the
+            // destination first. The destination is dropped only once a source copy is secured; if
+            // existence cannot be confirmed or the restore fails, keep the destination as the only
+            // surviving copy (the rolled-back DB still references this key).
             var safeToDeleteDestinations = new List<FileMove>();
             foreach (var m in copied)
             {
-                if (!sourcesDeleted.Contains(m))
-                {
-                    safeToDeleteDestinations.Add(m);
-                    continue;
-                }
                 try
                 {
-                    await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None);
+                    if (!await storageProvider!.ExistsAsync(m.FromBucket, m.Key, CancellationToken.None))
+                    {
+                        await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None);
+                    }
                     safeToDeleteDestinations.Add(m);
                 }
                 catch (Exception)
                 {
-                    // Keep the destination as the only surviving copy. Do not log provider exception
+                    // Keep the destination as the only guaranteed copy. Do not log provider exception
                     // details, which may contain signed URLs or credentials.
-                    logger?.LogError("Storage compensation restore failed for bucket {Bucket}, key {Key}", m.FromBucket, m.Key);
+                    logger?.LogError("Storage compensation could not secure a source copy for bucket {Bucket}, key {Key}", m.FromBucket, m.Key);
                 }
             }
             await DeleteQuietlyAsync(safeToDeleteDestinations.Select(m => (m.ToBucket, m.Key)), publicDestination: !restricting);
@@ -297,7 +297,10 @@ public sealed class CustomerGroupService(
             catch (Exception)
             {
                 if (publicDestination)
-                    logger?.LogError("Storage compensation could not remove public destination in bucket {Bucket}, key {Key}", bucket, key);
+                    // Fail-closed: the transaction is rolled back so the product stays Restricted, but a
+                    // public copy was orphaned and could not be removed. Rethrown to the caller; this Error
+                    // is the durable record of the pending cleanup for that key.
+                    logger?.LogError("Storage compensation orphaned a public object (product stays restricted); manual cleanup required for bucket {Bucket}, key {Key}", bucket, key);
                 else
                     logger?.LogWarning("Storage cleanup failed for bucket {Bucket}, key {Key}", bucket, key);
             }
