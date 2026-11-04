@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -47,50 +48,26 @@ public sealed class RestrictedProductFileStorageTests
             Func<TState, Exception?, string> formatter) => Entries.Add((logLevel, formatter(state, exception)));
     }
 
-    [Fact]
-    public async Task Opening_compensation_delete_failure_logs_error_and_rethrows_original_timeout()
-    {
-        var logger = new RecordingLogger();
-        var c = await CreateAsync(logger);
-        await using var _ = c.H;
-        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
-        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
-        await AddPhotoAsync(c, product.Id);
-        c.Storage.FailAfterCopy = true;
-        c.Storage.FailRequiredDelete = true;
-
-        var error = await Assert.ThrowsAsync<TimeoutException>(() =>
-            c.Groups.SetProductAccessAsync(product.Id, new("Public", null, null), CancellationToken.None));
-
-        Assert.Equal("Copy timed out after storage accepted the object.", error.Message);
-        var copy = Assert.Single(c.Storage.Copies);
-        Assert.Contains((Opts.PublicBucket, copy.ToKey), c.Storage.Objects);
-        Assert.Contains((Opts.PrivateBucket, copy.FromKey), c.Storage.Objects);
-        var entry = Assert.Single(logger.Entries);
-        Assert.Equal(LogLevel.Error, entry.Level);
-        Assert.Contains(Opts.PublicBucket, entry.Message);
-        Assert.Contains(copy.ToKey, entry.Message);
-    }
-
-    [Fact]
-    public async Task Opening_timeout_after_copy_removes_public_destination_and_keeps_product_restricted()
+    [Theory]
+    [InlineData("Restricted")]
+    [InlineData("Public")]
+    public async Task Copy_timeout_after_success_is_verified_and_transition_completes(string target)
     {
         var c = await CreateAsync();
         await using var _ = c.H;
-        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
-        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        if (target == "Public")
+            await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
         await AddPhotoAsync(c, product.Id);
         c.Storage.FailAfterCopy = true;
 
-        await Assert.ThrowsAsync<TimeoutException>(() =>
-            c.Groups.SetProductAccessAsync(product.Id, new("Public", null, null), CancellationToken.None));
+        await c.Groups.SetProductAccessAsync(product.Id, new(target, null, null), CancellationToken.None);
 
-        var copy = Assert.Single(c.Storage.Copies);
-        Assert.DoesNotContain((Opts.PublicBucket, copy.ToKey), c.Storage.Objects);
-        Assert.Contains((Opts.PrivateBucket, copy.FromKey), c.Storage.Objects);
         c.H.Db.ChangeTracker.Clear();
-        var staff = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
-        Assert.Equal(CatalogProductVisibility.Restricted, staff!.Visibility);
+        Assert.Equal(target, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        var copy = Assert.Single(c.Storage.Copies);
+        Assert.Contains((copy.ToBucket, copy.ToKey), c.Storage.Objects);
+        Assert.DoesNotContain((copy.FromBucket, copy.FromKey), c.Storage.Objects);
     }
 
     [Fact]
@@ -162,7 +139,7 @@ public sealed class RestrictedProductFileStorageTests
     }
 
     [Fact]
-    public async Task Public_copy_delete_failure_aborts_restriction_and_removes_private_copy()
+    public async Task Public_copy_delete_failure_reverts_to_public_and_keeps_private_copy()
     {
         var c = await CreateAsync();
         await using var _ = c.H;
@@ -177,23 +154,27 @@ public sealed class RestrictedProductFileStorageTests
         c.H.Db.ChangeTracker.Clear();
         var staff = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
         Assert.Equal(CatalogProductVisibility.Public, staff!.Visibility);
-        Assert.Contains(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
+        Assert.Contains(c.Storage.Objects, o => o.Bucket == Opts.PrivateBucket);
         Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PublicBucket);
     }
 
-    [Fact]
-    public async Task Public_restore_failure_keeps_private_copy_as_only_surviving_copy()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Public_restore_failure_keeps_private_copy_as_only_surviving_copy(bool unverifiedCopy)
     {
-        var c = await CreateAsync();
+        var logger = new RecordingLogger();
+        var c = await CreateAsync(logger);
         await using var _ = c.H;
         var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
         await AddPhotoAsync(c, product.Id);
         await AddPhotoAsync(c, product.Id);
-        // First public delete succeeds (so its public copy is gone), the second fails -> compensation.
-        // Restoring the deleted public copy then fails too, so that file's private copy is the only one left.
+        // The first delete succeeds. Restore fails after the second delete forces a DB revert.
         c.Storage.FailRequiredDeleteAfter = 1;
         c.Storage.FailRequiredDeleteInBucket = Opts.PublicBucket;
-        c.Storage.FailCopyToBucket = Opts.PublicBucket;
+        if (unverifiedCopy) c.Storage.CopyWithoutPersistingToBucket = Opts.PublicBucket;
+        else c.Storage.FailCopyToBucket = Opts.PublicBucket;
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None));
@@ -205,34 +186,30 @@ public sealed class RestrictedProductFileStorageTests
         // File whose public restore failed: its private copy is the only surviving copy -> must be kept.
         var restoreFailedKey = c.Storage.Copies[0].ToKey;
         Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket && d.Key == restoreFailedKey);
-        // File whose public was never deleted: safe to drop its redundant private copy.
-        var publicIntactKey = c.Storage.Copies[1].ToKey;
-        Assert.Contains(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket && d.Key == publicIntactKey);
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error);
     }
 
-    [Fact]
-    public async Task Restricting_public_delete_timeout_after_removal_restores_copy_and_never_loses_file()
+    [Theory]
+    [InlineData("Restricted")]
+    [InlineData("Public")]
+    public async Task Delete_timeout_after_success_is_confirmed_without_reverting(string target)
     {
         var c = await CreateAsync();
         await using var _ = c.H;
-        var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        if (target == "Public")
+            await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
         await AddPhotoAsync(c, product.Id);
-        // The public delete succeeds server-side but the call times out, so its outcome is unknown.
-        c.Storage.TimeoutAfterRequiredDeleteInBucket = Opts.PublicBucket;
+        c.Storage.TimeoutAfterRequiredDeleteInBucket = target == "Public" ? Opts.PrivateBucket : Opts.PublicBucket;
 
-        await Assert.ThrowsAsync<TimeoutException>(() =>
-            c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None));
+        await c.Groups.SetProductAccessAsync(product.Id, new(target, null, null), CancellationToken.None);
 
-        var key = c.Storage.Copies[0].FromKey;
-        // Compensation must NEVER delete the last remaining copy: the public source is restored (a
-        // second, reverse copy) and the private destination dropped, so exactly one copy survives
-        // (the public one the rolled-back product references). The file is never lost.
-        Assert.Contains((Opts.PrivateBucket, key, Opts.PublicBucket, key), c.Storage.Copies);
-        Assert.Contains((Opts.PublicBucket, key), c.Storage.Objects);
-        Assert.DoesNotContain((Opts.PrivateBucket, key), c.Storage.Objects);
         c.H.Db.ChangeTracker.Clear();
-        var staff = await c.Products.GetByIdAsync(product.Id, CancellationToken.None);
-        Assert.Equal(CatalogProductVisibility.Public, staff!.Visibility);
+        Assert.Equal(target, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        var copy = Assert.Single(c.Storage.Copies);
+        Assert.Contains((copy.ToBucket, copy.ToKey), c.Storage.Objects);
+        Assert.DoesNotContain((copy.FromBucket, copy.FromKey), c.Storage.Objects);
     }
 
     [Fact]
@@ -251,15 +228,220 @@ public sealed class RestrictedProductFileStorageTests
     }
 
     [Fact]
-    public async Task Restricting_deletes_public_copy_before_commit()
+    public async Task Restricting_deletes_public_copy_after_commit()
     {
         var c = await CreateAsync();
         await using var _ = c.H;
         var product = await c.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
         await AddPhotoAsync(c, product.Id);
+        c.Storage.BeforeRequiredDelete = (bucket, key) =>
+        {
+            Assert.Equal(CatalogProductVisibility.Restricted,
+                c.H.Db.CatalogProducts.AsNoTracking().Single(p => p.Id == product.Id).Visibility);
+            Assert.Contains((Opts.PrivateBucket, key), c.Storage.Objects);
+        };
         await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
         var copy = Assert.Single(c.Storage.Copies);
         var publicDelete = Assert.Single(c.Storage.Deletes, d => d.Bucket == Opts.PublicBucket);
         Assert.Equal(copy.FromKey, publicDelete.Key);
     }
+    [Theory]
+    [InlineData("Restricted", "copy")]
+    [InlineData("Restricted", "verification")]
+    [InlineData("Restricted", "exists")]
+    [InlineData("Public", "copy")]
+    [InlineData("Public", "verification")]
+    [InlineData("Public", "exists")]
+    [InlineData("Public", "partial")]
+    public async Task Preparation_failure_keeps_original_visibility_and_all_source_files(string target, string failure)
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        var original = target == "Public" ? "Restricted" : "Public";
+        if (original == "Restricted")
+            await c.Groups.SetProductAccessAsync(product.Id, new(original, null, null), CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        await AddPhotoAsync(c, product.Id);
+        var destination = target == "Public" ? Opts.PublicBucket : Opts.PrivateBucket;
+        if (failure == "copy") c.Storage.FailCopyToBucket = destination;
+        if (failure == "partial") c.Storage.FailCopyAfter = 1;
+        if (failure == "verification") c.Storage.CopyWithoutPersistingToBucket = destination;
+        if (failure == "exists")
+        {
+            c.Storage.FailExistsInBucket = destination;
+            c.Storage.FailExistsAfter = 1;
+            c.Storage.FailExistsOnce = true;
+        }
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new(target, null, null), CancellationToken.None));
+
+        c.H.Db.ChangeTracker.Clear();
+        Assert.Equal(original, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        foreach (var upload in c.Storage.Uploads)
+            Assert.Contains(upload, c.Storage.Objects);
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == c.Storage.Uploads[0].Bucket);
+        if (original == "Restricted")
+            Assert.DoesNotContain(c.Storage.Objects, o => o.Bucket == Opts.PublicBucket);
+    }
+
+    [Theory]
+    [InlineData("delete")]
+    [InlineData("unconfirmed")]
+    [InlineData("exists")]
+    [InlineData("restore-timeout")]
+    public async Task Partial_public_cleanup_commits_revert_before_restoring_missing_public_copies(string failure)
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var customer = c.H.AddCustomer("Ana");
+        await c.H.Db.SaveChangesAsync();
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        await AddPhotoAsync(c, product.Id);
+        if (failure is "delete" or "restore-timeout")
+        {
+            c.Storage.FailRequiredDeleteInBucket = Opts.PublicBucket;
+            c.Storage.FailRequiredDeleteAfter = 1;
+        }
+        if (failure == "restore-timeout") c.Storage.FailAfterCopy = true;
+        if (failure == "unconfirmed") c.Storage.IgnoreRequiredDeleteInBucket = Opts.PublicBucket;
+        if (failure == "exists")
+        {
+            c.Storage.FailExistsInBucket = Opts.PublicBucket;
+            c.Storage.FailExistsAfter = 1;
+            c.Storage.FailExistsOnce = true;
+        }
+        c.Storage.BeforeCopy = (bucket, key) =>
+        {
+            if (bucket == Opts.PublicBucket)
+                Assert.Equal(CatalogProductVisibility.Public,
+                    c.H.Db.CatalogProducts.AsNoTracking().Single(p => p.Id == product.Id).Visibility);
+        };
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Restricted", [customer.Id], null), CancellationToken.None));
+
+        Assert.Contains("reverted to Public", error.Message);
+        c.H.Db.ChangeTracker.Clear();
+        var access = await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None);
+        Assert.Equal("Public", access!.Visibility);
+        Assert.Contains(customer.Id, access.CustomerIds);
+        foreach (var upload in c.Storage.Uploads)
+        {
+            Assert.Contains((Opts.PublicBucket, upload.Key), c.Storage.Objects);
+            Assert.Contains((Opts.PrivateBucket, upload.Key), c.Storage.Objects);
+        }
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
+    }
+
+    [Fact]
+    public async Task Missing_private_copy_prevents_deleting_last_public_copy()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        var checks = 0;
+        c.Storage.BeforeExists = (bucket, key) =>
+        {
+            if (bucket == Opts.PrivateBucket && ++checks == 3)
+                c.Storage.Objects.Remove((bucket, key));
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None));
+
+        Assert.Empty(c.Storage.Deletes);
+        Assert.Contains(c.Storage.Uploads[0], c.Storage.Objects);
+        Assert.Equal("Public", (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+    }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("copy")]
+    [InlineData("verification")]
+    [InlineData("exists")]
+    public async Task Opening_preparation_and_public_cleanup_failure_recovers_public_and_retains_private_files(string restoreFailure)
+    {
+        var logger = new RecordingLogger();
+        var c = await CreateAsync(logger);
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+        for (var i = 0; i < 3; i++) await AddPhotoAsync(c, product.Id);
+        c.Storage.FailRequiredDeleteInBucket = Opts.PublicBucket;
+        c.Storage.FailRequiredDeleteAfter = 1;
+        var copies = 0;
+        c.Storage.BeforeCopy = (bucket, key) =>
+        {
+            if (++copies != 3) return;
+            c.Storage.BeforeCopy = (restoreBucket, restoreKey) =>
+            {
+                if (restoreFailure == "copy") c.Storage.FailCopyToBucket = Opts.PublicBucket;
+                if (restoreFailure == "verification") c.Storage.CopyWithoutPersistingToBucket = Opts.PublicBucket;
+                if (restoreFailure == "exists") c.Storage.FailExistsInBucket = Opts.PublicBucket;
+            };
+            throw new TimeoutException("Opening preparation failed after two public copies.");
+        };
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Public", null, null), CancellationToken.None));
+
+        Assert.Equal("Public", (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        foreach (var upload in c.Storage.Uploads)
+        {
+            Assert.Contains((Opts.PrivateBucket, upload.Key), c.Storage.Objects);
+            if (restoreFailure == "none") Assert.Contains((Opts.PublicBucket, upload.Key), c.Storage.Objects);
+        }
+        if (restoreFailure != "none")
+            Assert.Contains(c.Storage.Uploads, upload => !c.Storage.Objects.Contains((Opts.PublicBucket, upload.Key)));
+        Assert.DoesNotContain(c.Storage.Deletes, d => d.Bucket == Opts.PrivateBucket);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Private_cleanup_failure_fails_operation_but_keeps_committed_public_product_and_both_copies(bool copyTimeout)
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
+        await AddPhotoAsync(c, product.Id);
+        c.Storage.FailRequiredDelete = true;
+        c.Storage.FailRequiredDeleteInBucket = Opts.PrivateBucket;
+        c.Storage.FailAfterCopy = copyTimeout;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            c.Groups.SetProductAccessAsync(product.Id, new("Public", null, null), CancellationToken.None));
+
+        c.H.Db.ChangeTracker.Clear();
+        Assert.Equal("Public", (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
+        var copy = Assert.Single(c.Storage.Copies);
+        Assert.Contains((Opts.PublicBucket, copy.ToKey), c.Storage.Objects);
+        Assert.Contains((Opts.PrivateBucket, copy.FromKey), c.Storage.Objects);
+    }
+
+    [Fact]
+    public async Task Grants_are_stored_while_public_and_apply_again_when_restricted()
+    {
+        var c = await CreateAsync();
+        await using var _ = c.H;
+        var granted = c.H.AddCustomer("Granted");
+        var other = c.H.AddCustomer("Other");
+        await c.H.Db.SaveChangesAsync();
+        var product = await c.Products.CreateAsync(new() { Name = "Item", Price = 1m }, CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", [granted.Id], null), CancellationToken.None);
+        await c.Groups.SetProductAccessAsync(product.Id, new("Public", [granted.Id], null), CancellationToken.None);
+
+        Assert.Contains(granted.Id, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.CustomerIds);
+        Assert.NotNull(await c.Portal.GetProductAsync(other.Id, product.Id, CancellationToken.None));
+        await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", [granted.Id], null), CancellationToken.None);
+        Assert.NotNull(await c.Portal.GetProductAsync(granted.Id, product.Id, CancellationToken.None));
+        Assert.Null(await c.Portal.GetProductAsync(other.Id, product.Id, CancellationToken.None));
+    }
+
 }

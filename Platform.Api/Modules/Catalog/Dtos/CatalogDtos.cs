@@ -120,6 +120,9 @@ public sealed record CreateCatalogProductRequest
     public string? Currency { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
+    /// <summary>Optional initial status: "Active" (default) or "Inactive". Creating inactive never
+    /// publishes the product (it stays unpublished until explicitly activated).</summary>
+    public string? Status { get; init; }
 }
 
 public sealed record UpdateCatalogProductRequest

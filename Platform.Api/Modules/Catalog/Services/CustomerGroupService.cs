@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -161,112 +162,319 @@ public sealed class CustomerGroupService(
         var customerIds = Capped(request.CustomerIds, "customerIds");
         var groupIds = Capped(request.GroupIds, "groupIds");
 
-        await using var transaction = dbContext.Database.IsRelational()
+        var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(ct)
             : null;
-        if (dbContext.Database.IsRelational())
+        try
         {
-            // Serialize concurrent access edits on the same product.
-            await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT 1 FROM catalog.catalog_products WHERE tenant_id = {tenantId} AND id = {productId} FOR UPDATE", ct);
+            if (dbContext.Database.IsRelational())
+            {
+                // Serialize concurrent access edits on the same product.
+                await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT 1 FROM catalog.catalog_products WHERE tenant_id = {tenantId} AND id = {productId} FOR UPDATE", ct);
+            }
+
+            var product = await dbContext.CatalogProducts
+                .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == productId, ct);
+            if (product is null) return null;
+            var before = await MapAccessAsync(tenantId, product, ct);
+
+            await EnsureCustomersInTenantAsync(tenantId, customerIds, ct);
+            var validGroups = await dbContext.CustomerGroups
+                .CountAsync(g => g.TenantId == tenantId && groupIds.Contains(g.Id), ct);
+            if (validGroups != groupIds.Count)
+            {
+                throw new ArgumentException("One or more groups do not exist in this tenant.");
+            }
+
+            var moves = await PlanFileMovesAsync(tenantId, product, visibility, ct);
+
+            product.Visibility = visibility;
+            product.Touch();
+            var current = await dbContext.CatalogProductAccess
+                .Where(a => a.TenantId == tenantId && a.ProductId == productId).ToListAsync(ct);
+            dbContext.CatalogProductAccess.RemoveRange(current);
+            foreach (var cid in customerIds)
+            {
+                dbContext.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = tenantId, ProductId = productId, CustomerId = cid });
+            }
+            foreach (var gid in groupIds)
+            {
+                dbContext.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = tenantId, ProductId = productId, GroupId = gid });
+            }
+            var after = new CatalogProductAccessResponse(productId, visibility.ToString(), customerIds, groupIds)
+            {
+                RestrictedWithoutGrants = visibility == CatalogProductVisibility.Restricted && customerIds.Count + groupIds.Count == 0,
+            };
+            await AuditAsync(tenantId, "product.accessChanged", "product", productId, before, after, ct);
+
+            // Fail-closed, ordered file moves between the public and private buckets. The DB commit is
+            // the single pivot: a Restricted product must never persist with a reachable public file.
+            var needsRevertToPublic = visibility == CatalogProductVisibility.Restricted
+                ? await RestrictAsync(tenantId, productId, moves, transaction, ct)
+                : await OpenAsync(tenantId, productId, moves, transaction, ct);
+
+            // The commit happened (or was abandoned) inside Restrict/OpenAsync; the transaction is
+            // complete. Dispose it before any further write (e.g. the revert) so EF does not try to
+            // enlist in the finished transaction.
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+                transaction = null;
+            }
+
+            if (needsRevertToPublic)
+            {
+                // Recovery must complete even if the HTTP request was cancelled after the commit.
+                await RevertToPublicAsync(tenantId, productId, CancellationToken.None);
+                await RestorePublicCopiesAsync(moves);
+                throw new InvalidOperationException(
+                    "Could not remove every public copy while restricting; the product was reverted to Public. Please retry.");
+            }
+
+            return after with { CustomerNames = await CustomerNamesAsync(tenantId, customerIds, ct) };
+        }
+        catch
+        {
+            // Do not leave an uncommitted visibility/grant change tracked for a later SaveChanges.
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null && dbContext.Database.CurrentTransaction == transaction)
+                await transaction.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Público -> Restrito. (1) copy every public file to private and verify; a failure leaves the DB
+    /// Public with the public files intact. (2) commit the switch to Restricted (the pivot). (3) delete
+    /// the public copies LAST, idempotent, each confirmed gone with ExistsAsync and never deleting the
+    /// sole copy. Returns true when a public copy could not be confirmed removed, so the caller reverts
+    /// the product to Public — we never leave a Restricted product with a reachable public file.
+    /// </summary>
+    private async Task<bool> RestrictAsync(
+        Guid tenantId, Guid productId, IReadOnlyList<FileMove> moves, IDbContextTransaction? transaction, CancellationToken ct)
+    {
+        foreach (var m in moves)
+        {
+            await CopyVerifiedAsync(m, ct);
         }
 
-        var product = await dbContext.CatalogProducts
-            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == productId, ct);
-        if (product is null) return null;
-        var before = await MapAccessAsync(tenantId, product, ct);
+        await CommitAsync(tenantId, productId, transaction, CatalogProductVisibility.Restricted, ct);
 
-        await EnsureCustomersInTenantAsync(tenantId, customerIds, ct);
-        var validGroups = await dbContext.CustomerGroups
-            .CountAsync(g => g.TenantId == tenantId && groupIds.Contains(g.Id), ct);
-        if (validGroups != groupIds.Count)
+        var anyUnconfirmed = false;
+        foreach (var m in moves)
         {
-            throw new ArgumentException("One or more groups do not exist in this tenant.");
+            if (!await ConfirmSourceRemovedAsync(m, CancellationToken.None))
+            {
+                anyUnconfirmed = true;
+                break;
+            }
         }
+        return anyUnconfirmed;
+    }
 
-        var moves = await PlanFileMovesAsync(tenantId, product, visibility, ct);
-
-        product.Visibility = visibility;
-        product.Touch();
-        var current = await dbContext.CatalogProductAccess
-            .Where(a => a.TenantId == tenantId && a.ProductId == productId).ToListAsync(ct);
-        dbContext.CatalogProductAccess.RemoveRange(current);
-        foreach (var cid in customerIds)
+    /// <summary>Deletes one source copy and confirms it is gone. The destination must exist first so we
+    /// never delete the last remaining copy. The delete may time out after the object was already
+    /// removed, so success is decided by a follow-up ExistsAsync rather than by the delete call.</summary>
+    private async Task<bool> ConfirmSourceRemovedAsync(FileMove m, CancellationToken ct)
+    {
+        try
         {
-            dbContext.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = tenantId, ProductId = productId, CustomerId = cid });
+            if (!await storageProvider!.ExistsAsync(m.FromBucket, m.Key, ct)) return true;
+            if (!await storageProvider!.ExistsAsync(m.ToBucket, m.Key, ct)) return false;
+            try
+            {
+                await storageProvider!.DeleteRequiredAsync(m.FromBucket, m.Key, ct);
+            }
+            catch (Exception)
+            {
+                // May be a timeout after the object was already removed; the ExistsAsync below decides.
+            }
+            return !await storageProvider!.ExistsAsync(m.FromBucket, m.Key, ct);
         }
-        foreach (var gid in groupIds)
+        catch (Exception)
         {
-            dbContext.CatalogProductAccess.Add(new CatalogProductAccess { TenantId = tenantId, ProductId = productId, GroupId = gid });
+            return false;
         }
-        var after = new CatalogProductAccessResponse(productId, visibility.ToString(), customerIds, groupIds)
-        {
-            RestrictedWithoutGrants = visibility == CatalogProductVisibility.Restricted && customerIds.Count + groupIds.Count == 0,
-        };
-        await AuditAsync(tenantId, "product.accessChanged", "product", productId, before, after, ct);
+    }
 
-        // Public <-> Restricted moves customer-visible files between the public and private buckets.
-        // Restricting: copy to private, then REQUIRED delete of every public copy, then commit; any failure
-        // restores the public objects, removes the private copies and rolls back (product stays Public).
-        // Opening: copy to public, commit, then best-effort delete of the private copies.
-        var restricting = visibility == CatalogProductVisibility.Restricted;
-        var copied = new List<FileMove>();
+    private async Task CopyVerifiedAsync(FileMove move, CancellationToken ct)
+    {
+        if (await storageProvider!.ExistsAsync(move.ToBucket, move.Key, ct)) return;
+        try
+        {
+            await storageProvider.CopyAsync(move.FromBucket, move.Key, move.ToBucket, move.Key, ct);
+        }
+        catch
+        {
+            // A timeout may follow a successful copy. Verify with a token independent of the request.
+            if (!await storageProvider.ExistsAsync(move.ToBucket, move.Key, CancellationToken.None)) throw;
+            return;
+        }
+        if (!await storageProvider.ExistsAsync(move.ToBucket, move.Key, ct))
+            throw new InvalidOperationException("Storage copy could not be verified; please retry.");
+    }
+
+    private async Task RestorePublicCopiesAsync(IReadOnlyList<FileMove> moves)
+    {
+        var failed = false;
+        foreach (var move in moves)
+        {
+            try
+            {
+                await CopyVerifiedAsync(new FileMove(move.ToBucket, move.FromBucket, move.Key), CancellationToken.None);
+            }
+            catch
+            {
+                failed = true;
+                logger?.LogError("Product reverted to Public but public copy restoration failed for key {Key}; private copy retained", move.Key);
+            }
+        }
+        if (failed)
+            throw new InvalidOperationException("Product reverted to Public, but some public files could not be restored. Private copies were retained; please retry.");
+    }
+
+    /// <summary>
+    /// Restrito -> Publico. Copy each private file to public and verify, then commit the switch to
+    /// Public, then delete the private copies LAST (private leftovers are harmless). Pre-commit
+    /// failures attempt verified public-copy cleanup; failed or ambiguous cleanup recovers Public
+    /// even if restoring public availability fails, always retaining private files.
+    /// </summary>
+    private async Task<bool> OpenAsync(
+        Guid tenantId, Guid productId, IReadOnlyList<FileMove> moves, IDbContextTransaction? transaction, CancellationToken ct)
+    {
+        var publicCopies = new List<FileMove>();
         try
         {
             foreach (var m in moves)
             {
-                // A timeout may occur after storage has already created the destination.
-                copied.Add(m);
-                await storageProvider!.CopyAsync(m.FromBucket, m.Key, m.ToBucket, m.Key, ct);
+                // Track before the call: a timeout may land the public object anyway, and the rollback
+                // below must still remove it.
+                publicCopies.Add(m);
+                await CopyVerifiedAsync(m, ct);
             }
-            if (restricting)
+            await CommitAsync(tenantId, productId, transaction, CatalogProductVisibility.Public, ct);
+        }
+        catch
+        {
+            // Only remove destinations when the committed product is known to be Restricted.
+            // An unreadable commit outcome must preserve copies needed by a possibly Public product.
+            var state = await ReadOpeningVisibilityAsync(tenantId, productId);
+            var publicCleanupFailed = false;
+            if (state == CatalogProductVisibility.Restricted)
             {
-                foreach (var m in moves)
+                foreach (var move in publicCopies)
                 {
-                    // The source delete is idempotent. Its outcome may be unknown on a timeout
-                    // (the object may already be gone), so compensation never assumes the source
-                    // survived — it checks existence instead of tracking what we attempted here.
-                    await storageProvider!.DeleteRequiredAsync(m.FromBucket, m.Key, ct);
+                    if (!await ConfirmSourceRemovedAsync(new FileMove(move.ToBucket, move.FromBucket, move.Key), CancellationToken.None))
+                        publicCleanupFailed = true;
                 }
+                if (publicCleanupFailed) state = await ReadOpeningVisibilityAsync(tenantId, productId);
             }
+            if ((publicCleanupFailed || state is null) && state != CatalogProductVisibility.Public)
+            {
+                // Abandon the opening transaction before recovery writes: it may still hold the row
+                // lock or contain uncommitted grants. The outer owner skips this disposed transaction.
+                if (transaction is not null) await transaction.DisposeAsync();
+                foreach (var move in moves)
+                {
+                    try
+                    {
+                        await CopyVerifiedAsync(move, CancellationToken.None);
+                    }
+                    catch
+                    {
+                        logger?.LogError(
+                            "Opening recovery could not verify public copy for key {Key}; private copy retained", move.Key);
+                    }
+                }
+                // Even degraded availability is safer than Restricted with a reachable public object.
+                await RevertToPublicAsync(tenantId, productId, CancellationToken.None, "product.openRecovery");
+                logger?.LogError(
+                    "Opening failed and public cleanup could not be confirmed for product {ProductId}; recovered Public and retained private copies", productId);
+            }
+            throw;
+        }
+        var cleanupFailed = false;
+        foreach (var move in moves)
+            if (!await ConfirmSourceRemovedAsync(move, CancellationToken.None)) cleanupFailed = true;
+        if (cleanupFailed)
+            throw new InvalidOperationException("Product is Public, but private copy cleanup failed. Please retry.");
+        return false;
+    }
+
+    private async Task<CatalogProductVisibility?> ReadOpeningVisibilityAsync(Guid tenantId, Guid productId)
+    {
+        try
+        {
+            return await ReadCommittedVisibilityAsync(tenantId, productId, CancellationToken.None);
+        }
+        catch
+        {
+            logger?.LogError("Opening recovery could not read committed visibility for product {ProductId}", productId);
+            return null;
+        }
+    }
+
+    /// <summary>Commits the pending DB changes. If the commit result is ambiguous (e.g. a timeout after
+    /// the server applied it), re-reads the committed visibility on a fresh connection: if it already
+    /// matches the target the switch landed and we proceed, otherwise the commit failed and we rethrow.
+    /// Never disposes the transaction (the caller owns disposal).</summary>
+    private async Task CommitAsync(
+        Guid tenantId, Guid productId, IDbContextTransaction? transaction, CatalogProductVisibility target, CancellationToken ct)
+    {
+        try
+        {
             await dbContext.SaveChangesAsync(ct);
             if (transaction is not null) await transaction.CommitAsync(ct);
         }
         catch
         {
-            // Compensation. The destination copy may be removed ONLY once the source copy is known
-            // to exist, otherwise we would delete the sole remaining copy and lose the file.
-            // For each destination copy: confirm the source still exists; if it is gone (its delete
-            // completed, possibly only after the timeout we are handling) restore it from the
-            // destination first. The destination is dropped only once a source copy is secured; if
-            // existence cannot be confirmed or the restore fails, keep the destination as the only
-            // surviving copy (the rolled-back DB still references this key).
-            var safeToDeleteDestinations = new List<FileMove>();
-            foreach (var m in copied)
-            {
-                try
-                {
-                    if (!await storageProvider!.ExistsAsync(m.FromBucket, m.Key, CancellationToken.None))
-                    {
-                        await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None);
-                    }
-                    safeToDeleteDestinations.Add(m);
-                }
-                catch (Exception)
-                {
-                    // Keep the destination as the only guaranteed copy. Do not log provider exception
-                    // details, which may contain signed URLs or credentials.
-                    logger?.LogError("Storage compensation could not secure a source copy for bucket {Bucket}, key {Key}", m.FromBucket, m.Key);
-                }
-            }
-            await DeleteQuietlyAsync(safeToDeleteDestinations.Select(m => (m.ToBucket, m.Key)), publicDestination: !restricting);
-            throw;
+            if (await ReadCommittedVisibilityAsync(tenantId, productId, CancellationToken.None) != target) throw;
+            // The commit actually landed despite the ambiguous failure; treat it as success. For a
+            // restriction this means we proceed to delete the public copies and never restore them.
         }
-        if (!restricting)
+    }
+
+    /// <summary>Reads the committed visibility outside the current (possibly broken) transaction, using a
+    /// fresh connection for relational providers so a plain read is not blocked by the row lock.</summary>
+    private async Task<CatalogProductVisibility?> ReadCommittedVisibilityAsync(Guid tenantId, Guid productId, CancellationToken ct)
+    {
+        if (!dbContext.Database.IsRelational())
         {
-            await DeleteQuietlyAsync(moves.Select(m => (m.FromBucket, m.Key)));
+            dbContext.ChangeTracker.Clear();
+            var row = await dbContext.CatalogProducts.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == productId, ct);
+            return row?.Visibility;
         }
-        return after with { CustomerNames = await CustomerNamesAsync(tenantId, customerIds, ct) };
+        // Clone retains authentication details even when Persist Security Info is false, as well as
+        // data-source authentication callbacks. Do not reconstruct from a sanitized connection string.
+        await using var connection = (NpgsqlConnection)((ICloneable)dbContext.Database.GetDbConnection()).Clone();
+        await connection.OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT visibility FROM catalog.catalog_products WHERE tenant_id = @tenant AND id = @id";
+        command.Parameters.AddWithValue("tenant", tenantId);
+        command.Parameters.AddWithValue("id", productId);
+        var value = await command.ExecuteScalarAsync(ct) as string;
+        return value is not null && Enum.TryParse<CatalogProductVisibility>(value, out var parsed) ? parsed : null;
+    }
+
+    /// <summary>Reverts a just-committed restriction back to Public when a public copy could not be
+    /// removed. Grants stay stored (ignored by the portal while Public); private copies are kept.</summary>
+    private async Task RevertToPublicAsync(Guid tenantId, Guid productId, CancellationToken ct,
+        string auditAction = "product.restrictReverted")
+    {
+        dbContext.ChangeTracker.Clear();
+        var product = await dbContext.CatalogProducts
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == productId, ct);
+        if (product is null) throw new InvalidOperationException("Product disappeared during visibility recovery; public files were not restored.");
+        product.Visibility = CatalogProductVisibility.Public;
+        product.Touch();
+        await AuditAsync(tenantId, auditAction, "product", productId, null,
+            new { Reason = "public copy cleanup failed" }, ct);
+        await CommitAsync(tenantId, productId, null, CatalogProductVisibility.Public, ct);
     }
 
     private sealed record FileMove(string FromBucket, string ToBucket, string Key);
@@ -282,29 +490,6 @@ public sealed class CustomerGroupService(
         var from = Platform.Api.Modules.Catalog.CatalogFileBuckets.For(storageOptions.Value, product.Visibility, CatalogFileVisibility.CustomerVisible);
         var to = Platform.Api.Modules.Catalog.CatalogFileBuckets.For(storageOptions.Value, target, CatalogFileVisibility.CustomerVisible);
         return from == to ? [] : keys.Select(k => new FileMove(from, to, k)).ToList();
-    }
-
-    private async Task DeleteQuietlyAsync(IEnumerable<(string Bucket, string Key)> objects,
-        bool publicDestination = false)
-    {
-        if (storageProvider is null) return;
-        foreach (var (bucket, key) in objects)
-        {
-            try
-            {
-                await storageProvider.DeleteRequiredAsync(bucket, key, CancellationToken.None);
-            }
-            catch (Exception)
-            {
-                if (publicDestination)
-                    // Fail-closed: the transaction is rolled back so the product stays Restricted, but a
-                    // public copy was orphaned and could not be removed. Rethrown to the caller; this Error
-                    // is the durable record of the pending cleanup for that key.
-                    logger?.LogError("Storage compensation orphaned a public object (product stays restricted); manual cleanup required for bucket {Bucket}, key {Key}", bucket, key);
-                else
-                    logger?.LogWarning("Storage cleanup failed for bucket {Bucket}, key {Key}", bucket, key);
-            }
-        }
     }
 
     private async Task<CatalogProductAccessResponse> MapAccessAsync(Guid tenantId, CatalogProduct product, CancellationToken ct)

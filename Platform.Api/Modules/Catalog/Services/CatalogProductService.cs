@@ -109,6 +109,7 @@ public sealed class CatalogProductService(
         await CatalogTaxonomy.ValidateAsync(dbContext, tenantId, request.Taxonomy, cancellationToken);
         var name = NormalizeName(request.Name);
         var code = NormalizeCode(request.Code);
+        var isActive = NormalizeStatus(request.Status);
         await EnsureCodeAvailableAsync(code, excludeId: null, cancellationToken);
 
         var product = new CatalogProduct
@@ -119,7 +120,7 @@ public sealed class CatalogProductService(
             Description = NormalizeOptional(request.Description),
             Price = RoundPrice(request.Price),
             Currency = NormalizeCurrency(request.Currency),
-            IsActive = true,
+            IsActive = isActive,
         };
 
         dbContext.CatalogProducts.Add(product);
@@ -445,6 +446,19 @@ public sealed class CatalogProductService(
         }
 
         return trimmed;
+    }
+
+    /// <summary>Maps the optional create status to IsActive. Absent defaults to Active so the
+    /// default stays unchanged; "Inactive" creates unpublished so create-inactive never publishes.</summary>
+    private static bool NormalizeStatus(string? status)
+    {
+        if (status is null) return true;
+        return status.Trim().ToLowerInvariant() switch
+        {
+            "active" => true,
+            "inactive" => false,
+            _ => throw new ArgumentException("Status must be Active or Inactive."),
+        };
     }
 
     private static string? NormalizeCode(string? code)

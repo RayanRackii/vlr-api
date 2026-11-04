@@ -1952,6 +1952,10 @@
             "nullable": true,
             "type": "number"
           },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyAssignmentRequest"
           }
