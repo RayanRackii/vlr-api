@@ -302,12 +302,21 @@ public sealed class CatalogProductService(
         var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
         var bucket = CatalogFileBuckets.For(storageOptions.Value, productVisibility, file.Visibility);
 
-        // Remove the row first and commit; delete the object only after the DB settles, so a
-        // failure leaves a recoverable orphan rather than a row pointing at a deleted object.
+        // Remove the row (uncommitted), then require the object delete, then commit. Committing only
+        // after the object is gone means a failure (including cancellation) rolls back so the row
+        // survives, leaving the object still referenced rather than orphaned and undiscoverable.
         dbContext.CatalogProductFiles.Remove(file);
         await dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
-        await storageProvider.DeleteAsync(bucket, file.StorageKey, cancellationToken);
+        try
+        {
+            await storageProvider.DeleteRequiredAsync(bucket, file.StorageKey, cancellationToken);
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        if (transaction is not null) await transaction.CommitAsync(CancellationToken.None);
     }
 
     public async Task<CatalogFileUrlResponse> GetFileUrlAsync(
