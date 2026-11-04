@@ -229,9 +229,7 @@ public sealed class CatalogProductService(
         };
 
         var key = CatalogFileRules.StorageKey(tenantId, product.Id, file.Id);
-        var bucket = visibility == CatalogFileVisibility.CustomerVisible
-            ? storageOptions.Value.PublicBucket
-            : storageOptions.Value.PrivateBucket;
+        var bucket = CatalogFileBuckets.For(storageOptions.Value, product.Visibility, visibility);
 
         buffer.Position = 0;
         await storageProvider.UploadAsync(bucket, key, buffer, contentType, cancellationToken);
@@ -242,7 +240,7 @@ public sealed class CatalogProductService(
         dbContext.CatalogProductFiles.Add(file);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var url = visibility == CatalogFileVisibility.CustomerVisible
+        var url = CatalogFileBuckets.IsPublic(product.Visibility, visibility)
             ? storageProvider.GetPublicUrl(bucket, key)
             : null;
 
@@ -265,9 +263,8 @@ public sealed class CatalogProductService(
             .FirstOrDefaultAsync(f => f.Id == fileId && f.ProductId == productId, cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
 
-        var bucket = file.Visibility == CatalogFileVisibility.CustomerVisible
-            ? storageOptions.Value.PublicBucket
-            : storageOptions.Value.PrivateBucket;
+        var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
+        var bucket = CatalogFileBuckets.For(storageOptions.Value, productVisibility, file.Visibility);
 
         await storageProvider.DeleteAsync(bucket, file.StorageKey, cancellationToken);
         dbContext.CatalogProductFiles.Remove(file);
@@ -285,7 +282,8 @@ public sealed class CatalogProductService(
             .FirstOrDefaultAsync(f => f.Id == fileId && f.ProductId == productId, cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
 
-        if (file.Visibility == CatalogFileVisibility.CustomerVisible)
+        var productVisibility = await ProductVisibilityAsync(productId, cancellationToken);
+        if (CatalogFileBuckets.IsPublic(productVisibility, file.Visibility))
         {
             var publicUrl = storageProvider.GetPublicUrl(
                 storageOptions.Value.PublicBucket,
@@ -301,6 +299,12 @@ public sealed class CatalogProductService(
             cancellationToken);
         return new CatalogFileUrlResponse(signed, IsPublic: false);
     }
+
+    private Task<CatalogProductVisibility> ProductVisibilityAsync(Guid productId, CancellationToken ct) =>
+        dbContext.CatalogProducts.AsNoTracking()
+            .Where(p => p.Id == productId)
+            .Select(p => p.Visibility)
+            .FirstOrDefaultAsync(ct);
 
     private async Task<IReadOnlyList<CatalogProductResponse>> MapManyAsync(IReadOnlyList<CatalogProduct> products, CancellationToken ct)
     {
@@ -331,7 +335,8 @@ public sealed class CatalogProductService(
             .Select(f =>
             {
                 string? url = null;
-                if (f.Visibility == CatalogFileVisibility.CustomerVisible)
+                // Restricted products keep files private: staff fetch them via GetFileUrlAsync (signed).
+                if (CatalogFileBuckets.IsPublic(product.Visibility, f.Visibility))
                 {
                     url = storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
                 }

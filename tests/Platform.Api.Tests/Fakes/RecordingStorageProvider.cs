@@ -8,16 +8,42 @@ public sealed class RecordingStorageProvider : IStorageProvider
 
     public bool FailPrefixDeletion { get; set; }
 
-    public Task UploadAsync(string bucket, string key, Stream stream, string contentType, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public Task UploadAsync(string bucket, string key, Stream stream, string contentType, CancellationToken cancellationToken = default)
+    {
+        Uploads.Add((bucket, key));
+        return Task.CompletedTask;
+    }
 
     public string GetPublicUrl(string bucket, string key) => $"https://storage.test/{bucket}/{key}";
 
-    public Task<string> CreateSignedUrlAsync(string bucket, string key, TimeSpan ttl, CancellationToken cancellationToken = default) =>
-        Task.FromResult(GetPublicUrl(bucket, key));
+    public Task<string> CreateSignedUrlAsync(string bucket, string key, TimeSpan ttl, CancellationToken cancellationToken = default)
+    {
+        Signed.Add((bucket, key));
+        return Task.FromResult($"https://storage.test/sign/{bucket}/{key}");
+    }
 
-    public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public List<(string Bucket, string Key)> Uploads { get; } = [];
+
+    public List<(string FromBucket, string FromKey, string ToBucket, string ToKey)> Copies { get; } = [];
+
+    public List<(string Bucket, string Key)> Deletes { get; } = [];
+
+    public List<(string Bucket, string Key)> Signed { get; } = [];
+
+    public bool FailCopy { get; set; }
+
+    public Task CopyAsync(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey, CancellationToken cancellationToken = default)
+    {
+        if (FailCopy) return Task.FromException(new InvalidOperationException("Storage unavailable."));
+        Copies.Add((sourceBucket, sourceKey, destinationBucket, destinationKey));
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default)
+    {
+        Deletes.Add((bucket, key));
+        return Task.CompletedTask;
+    }
 
     public Task DeletePrefixAsync(string bucket, string prefix, CancellationToken cancellationToken = default)
     {

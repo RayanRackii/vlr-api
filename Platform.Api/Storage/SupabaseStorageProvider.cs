@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Platform.Core.Infrastructure.Supabase;
@@ -103,6 +104,28 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         }
 
         return $"{_supabaseUrl}/storage/v1{signed}";
+    }
+
+    public async Task CopyAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "object/copy")
+        {
+            Content = JsonContent.Create(new
+            {
+                bucketId = sourceBucket,
+                sourceKey,
+                destinationBucket,
+                destinationKey,
+            }),
+        };
+        request.Headers.Add("x-upsert", "true");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        await EnsureStorageSuccessAsync(response, sourceBucket, sourceKey, cancellationToken);
     }
 
     public async Task DeleteAsync(
