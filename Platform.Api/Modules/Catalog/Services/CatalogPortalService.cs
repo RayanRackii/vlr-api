@@ -717,15 +717,29 @@ public sealed class CatalogPortalService(
 
     private async Task<PortalProductResponse> MapPortalProductAsync(CatalogProduct product, CancellationToken ct)
     {
-        // Restricted products never expose a permanent public URL: their files get a short-lived
-        // signed URL, issued only after ApplyVisibility let the product through.
+        // Restricted products keep their files in the private bucket (no permanent public URL); they get
+        // a short-lived signed URL, issued only after ApplyVisibility let the product through.
         var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
         var files = new List<PortalProductFileDto>();
         foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible))
         {
-            var url = product.Visibility == CatalogProductVisibility.Restricted
-                ? await storageProvider.CreateSignedUrlAsync(storageOptions.Value.PublicBucket, f.StorageKey, ttl, ct)
-                : storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
+            string url;
+            if (CatalogFileBuckets.IsPublic(product.Visibility, f.Visibility))
+            {
+                url = storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, f.StorageKey);
+            }
+            else
+            {
+                try
+                {
+                    url = await storageProvider.CreateSignedUrlAsync(storageOptions.Value.PrivateBucket, f.StorageKey, ttl, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A missing/unsignable object must not break the whole catalog page; skip the file.
+                    continue;
+                }
+            }
             files.Add(new PortalProductFileDto(f.Id, f.FileName, f.MimeType, f.SizeBytes, url));
         }
 

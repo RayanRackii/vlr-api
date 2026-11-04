@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Platform.Api.Modules.Catalog.Dtos;
+using Platform.Api.Storage;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Domain.Services;
@@ -31,7 +33,9 @@ public interface ICustomerGroupService
 public sealed class CustomerGroupService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    IHttpContextAccessor? httpContextAccessor = null) : ICustomerGroupService
+    IHttpContextAccessor? httpContextAccessor = null,
+    IStorageProvider? storageProvider = null,
+    IOptions<StorageOptions>? storageOptions = null) : ICustomerGroupService
 {
     public const int MaxIdsPerRequest = 500;
     public const int NameMaxLength = 200;
@@ -179,6 +183,8 @@ public sealed class CustomerGroupService(
             throw new ArgumentException("One or more groups do not exist in this tenant.");
         }
 
+        var moves = await PlanFileMovesAsync(tenantId, product, visibility, ct);
+
         product.Visibility = visibility;
         product.Touch();
         var current = await dbContext.CatalogProductAccess
@@ -197,9 +203,91 @@ public sealed class CustomerGroupService(
             RestrictedWithoutGrants = visibility == CatalogProductVisibility.Restricted && customerIds.Count + groupIds.Count == 0,
         };
         await AuditAsync(tenantId, "product.accessChanged", "product", productId, before, after, ct);
-        await dbContext.SaveChangesAsync(ct);
-        if (transaction is not null) await transaction.CommitAsync(ct);
+
+        // Public <-> Restricted moves customer-visible files between the public and private buckets.
+        // Restricting: copy to private, then REQUIRED delete of every public copy, then commit; any failure
+        // restores the public objects, removes the private copies and rolls back (product stays Public).
+        // Opening: copy to public, commit, then best-effort delete of the private copies.
+        var restricting = visibility == CatalogProductVisibility.Restricted;
+        var copied = new List<FileMove>();
+        var sourcesDeleted = new List<FileMove>();
+        try
+        {
+            foreach (var m in moves)
+            {
+                await storageProvider!.CopyAsync(m.FromBucket, m.Key, m.ToBucket, m.Key, ct);
+                copied.Add(m);
+            }
+            if (restricting)
+            {
+                foreach (var m in moves)
+                {
+                    await storageProvider!.DeleteRequiredAsync(m.FromBucket, m.Key, ct);
+                    sourcesDeleted.Add(m);
+                }
+            }
+            await dbContext.SaveChangesAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            // Compensation. A private copy may be removed ONLY once a public copy is known to
+            // exist again, otherwise we would delete the sole remaining copy and lose the file.
+            // For each private copy: if its public source was never deleted it is safe to drop;
+            // if the public source was deleted, restore it first and drop the private copy only
+            // when that restore succeeds. If the restore fails, keep the private copy so the file
+            // stays recoverable (the rolled-back DB still references this key).
+            var safeToDeletePrivate = new List<FileMove>();
+            foreach (var m in copied)
+            {
+                if (!sourcesDeleted.Contains(m))
+                {
+                    safeToDeletePrivate.Add(m);
+                    continue;
+                }
+                try
+                {
+                    await storageProvider!.CopyAsync(m.ToBucket, m.Key, m.FromBucket, m.Key, CancellationToken.None);
+                    safeToDeletePrivate.Add(m);
+                }
+                catch (Exception)
+                {
+                    /* restore of the public object failed; keep the private copy as the only surviving copy */
+                }
+            }
+            await DeleteQuietlyAsync(safeToDeletePrivate.Select(m => (m.ToBucket, m.Key)));
+            throw;
+        }
+        if (!restricting)
+        {
+            await DeleteQuietlyAsync(moves.Select(m => (m.FromBucket, m.Key)));
+        }
         return after with { CustomerNames = await CustomerNamesAsync(tenantId, customerIds, ct) };
+    }
+
+    private sealed record FileMove(string FromBucket, string ToBucket, string Key);
+
+    private async Task<IReadOnlyList<FileMove>> PlanFileMovesAsync(
+        Guid tenantId, CatalogProduct product, CatalogProductVisibility target, CancellationToken ct)
+    {
+        if (storageProvider is null || storageOptions is null || product.Visibility == target) return [];
+        var keys = await dbContext.CatalogProductFiles.AsNoTracking()
+            .Where(f => f.TenantId == tenantId && f.ProductId == product.Id && f.Visibility == CatalogFileVisibility.CustomerVisible)
+            .Select(f => f.StorageKey)
+            .ToListAsync(ct);
+        var from = Platform.Api.Modules.Catalog.CatalogFileBuckets.For(storageOptions.Value, product.Visibility, CatalogFileVisibility.CustomerVisible);
+        var to = Platform.Api.Modules.Catalog.CatalogFileBuckets.For(storageOptions.Value, target, CatalogFileVisibility.CustomerVisible);
+        return from == to ? [] : keys.Select(k => new FileMove(from, to, k)).ToList();
+    }
+
+    private async Task DeleteQuietlyAsync(IEnumerable<(string Bucket, string Key)> objects)
+    {
+        if (storageProvider is null) return;
+        foreach (var (bucket, key) in objects)
+        {
+            try { await storageProvider.DeleteAsync(bucket, key, CancellationToken.None); }
+            catch (Exception) { /* best effort; provider logs failures */ }
+        }
     }
 
     private async Task<CatalogProductAccessResponse> MapAccessAsync(Guid tenantId, CatalogProduct product, CancellationToken ct)

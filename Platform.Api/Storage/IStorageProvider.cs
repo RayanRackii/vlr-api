@@ -22,6 +22,22 @@ public interface IStorageProvider
         string key,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Server-side copy (may cross buckets); overwrites the destination.</summary>
+    Task CopyAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Storage copy is not supported by this provider.");
+
+    /// <summary>Delete that throws when the provider did not remove the object (a missing object is fine).</summary>
+    Task DeleteRequiredAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default) =>
+        DeleteAsync(bucket, key, cancellationToken);
+
     Task DeletePrefixAsync(
         string bucket,
         string prefix,

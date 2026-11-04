@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Platform.Core.Infrastructure.Supabase;
@@ -105,6 +106,28 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         return $"{_supabaseUrl}/storage/v1{signed}";
     }
 
+    public async Task CopyAsync(
+        string sourceBucket,
+        string sourceKey,
+        string destinationBucket,
+        string destinationKey,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "object/copy")
+        {
+            Content = JsonContent.Create(new
+            {
+                bucketId = sourceBucket,
+                sourceKey,
+                destinationBucket,
+                destinationKey,
+            }),
+        };
+        request.Headers.Add("x-upsert", "true");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        await EnsureStorageSuccessAsync(response, sourceBucket, sourceKey, cancellationToken);
+    }
+
     public async Task DeleteAsync(
         string bucket,
         string key,
@@ -122,6 +145,38 @@ public sealed class SupabaseStorageProvider : IStorageProvider
                 key,
                 (int)response.StatusCode,
                 Sanitize(body));
+        }
+    }
+
+    public async Task DeleteRequiredAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync(
+            $"object/{Uri.EscapeDataString(bucket)}/{key}",
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (body.Contains("not_found", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _logger.LogWarning(
+                "Required delete of storage object {Bucket}/{Key} failed: {Status} {Body}",
+                bucket,
+                key,
+                (int)response.StatusCode,
+                Sanitize(body));
+            throw new InvalidOperationException("Storage object could not be deleted.");
         }
     }
 
