@@ -25,18 +25,25 @@ public partial class AddCatalogProductFileStatus : Migration
             nullable: false,
             defaultValue: false);
 
-        // Existing objects retain their original storage location; all future files are private.
-        migrationBuilder.Sql("""
-            UPDATE catalog.catalog_product_files AS f
-            SET is_legacy_public = TRUE
-            FROM catalog.catalog_products AS p
-            WHERE f.product_id = p.id AND f.tenant_id = p.tenant_id
-              AND f.visibility = 'CustomerVisible' AND p.visibility = 'Public';
-            """);
+
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        // No Up-time marker is persisted: conservatively refuse rollback of any populated
+        // table. This includes post-Up private Ready rows as well as Pending/Failed and
+        // legacy rows, whose status/provenance would otherwise be lost on Down -> Up.
+        // Lock out concurrent inserts until the column drops commit.
+        migrationBuilder.Sql("""
+            LOCK TABLE catalog.catalog_product_files IN ACCESS EXCLUSIVE MODE;
+            DO $rollback$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM catalog.catalog_product_files) THEN
+                    RAISE EXCEPTION 'Catalog file rollback refused: populated table may contain post-Up status or storage provenance.';
+                END IF;
+            END;
+            $rollback$;
+            """);
         migrationBuilder.DropColumn(name: "is_legacy_public", schema: "catalog", table: "catalog_product_files");
         migrationBuilder.DropColumn(name: "status", schema: "catalog", table: "catalog_product_files");
     }

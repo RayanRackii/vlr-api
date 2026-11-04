@@ -30,6 +30,12 @@ using Platform.Core.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
 using Serilog;
 
+if (args.Length > 0 && args[0] == "catalog-files-reconcile")
+{
+    await CatalogFilesReconcileCommand.RunAsync(args[1..]);
+    return;
+}
+
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .CreateBootstrapLogger();

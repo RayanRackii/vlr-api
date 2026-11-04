@@ -610,7 +610,7 @@ public sealed class CatalogPortalService(
                 cancellationToken)
             ?? throw new KeyNotFoundException("File not found.");
 
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var url = await storageProvider.CreateSignedUrlAsync(
             storageOptions.Value.PrivateBucket,
             file.StorageKey,
@@ -656,7 +656,7 @@ public sealed class CatalogPortalService(
         ProductRequest request,
         CancellationToken cancellationToken)
     {
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var files = new List<PortalProductRequestFileDto>(request.Files.Count);
         foreach (var file in request.Files)
         {
@@ -719,7 +719,7 @@ public sealed class CatalogPortalService(
     {
         // Issue private URLs only after ApplyVisibility authorizes access to the product.
         // Legacy public objects are never served for Restricted products, even to granted customers.
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var files = new List<PortalProductFileDto>();
         foreach (var f in product.Files.Where(f => f.Visibility == CatalogFileVisibility.CustomerVisible && f.Status == CatalogFileStatus.Ready))
         {

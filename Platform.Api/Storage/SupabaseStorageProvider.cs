@@ -106,28 +106,6 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         return $"{_supabaseUrl}/storage/v1{signed}";
     }
 
-    public async Task CopyAsync(
-        string sourceBucket,
-        string sourceKey,
-        string destinationBucket,
-        string destinationKey,
-        CancellationToken cancellationToken = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "object/copy")
-        {
-            Content = JsonContent.Create(new
-            {
-                bucketId = sourceBucket,
-                sourceKey,
-                destinationBucket,
-                destinationKey,
-            }),
-        };
-        request.Headers.Add("x-upsert", "true");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        await EnsureStorageSuccessAsync(response, sourceBucket, sourceKey, cancellationToken);
-    }
-
     public async Task DeleteAsync(
         string bucket,
         string key,
@@ -180,12 +158,12 @@ public sealed class SupabaseStorageProvider : IStorageProvider
         }
     }
 
-    public async Task DeletePrefixAsync(
+    public async Task<IReadOnlyList<string>> ListAsync(
         string bucket,
         string prefix,
         CancellationToken cancellationToken = default)
     {
-        var tenantPrefix = NormalizePrefix(prefix);
+        var tenantPrefix = string.IsNullOrWhiteSpace(prefix) ? "" : NormalizePrefix(prefix);
         var folders = new Queue<string>([tenantPrefix]);
         var visitedFolders = new HashSet<string>(StringComparer.Ordinal) { tenantPrefix };
         var keys = new HashSet<string>(StringComparer.Ordinal);
@@ -198,12 +176,12 @@ public sealed class SupabaseStorageProvider : IStorageProvider
             {
                 if (++listRequests > MaxListRequests)
                 {
-                    throw new InvalidOperationException("Storage prefix deletion exceeded the listing safety limit.");
+                    throw new InvalidOperationException("Storage listing exceeded the safety limit.");
                 }
 
                 using var listResponse = await _httpClient.PostAsJsonAsync(
                     $"object/list/{Uri.EscapeDataString(bucket)}",
-                    new { prefix = folder, limit = ListBatchSize, offset },
+                    new { prefix = folder, limit = ListBatchSize, offset, sortBy = new { column = "name", order = "asc" } },
                     cancellationToken);
                 listResponse.EnsureSuccessStatusCode();
 
@@ -241,6 +219,15 @@ public sealed class SupabaseStorageProvider : IStorageProvider
             }
         }
 
+        return keys.Order(StringComparer.Ordinal).ToArray();
+    }
+
+    public async Task DeletePrefixAsync(
+        string bucket,
+        string prefix,
+        CancellationToken cancellationToken = default)
+    {
+        var keys = await ListAsync(bucket, NormalizePrefix(prefix), cancellationToken);
         foreach (var batch in keys.Chunk(ListBatchSize))
         {
             using var deleteRequest = new HttpRequestMessage(

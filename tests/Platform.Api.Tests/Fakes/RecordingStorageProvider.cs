@@ -25,12 +25,13 @@ public sealed class RecordingStorageProvider : IStorageProvider
     public Task<string> CreateSignedUrlAsync(string bucket, string key, TimeSpan ttl, CancellationToken cancellationToken = default)
     {
         Signed.Add((bucket, key));
+        SignedTtls.Add(ttl);
         return Task.FromResult($"https://storage.test/sign/{bucket}/{key}");
     }
 
     public List<(string Bucket, string Key)> Uploads { get; } = [];
 
-    public List<(string FromBucket, string FromKey, string ToBucket, string ToKey)> Copies { get; } = [];
+    public List<TimeSpan> SignedTtls { get; } = [];
 
     public List<(string Bucket, string Key)> Deletes { get; } = [];
 
@@ -46,12 +47,9 @@ public sealed class RecordingStorageProvider : IStorageProvider
         return DeleteAsync(bucket, key, cancellationToken);
     }
 
-    public Task CopyAsync(string sourceBucket, string sourceKey, string destinationBucket, string destinationKey, CancellationToken cancellationToken = default)
-    {
-        Copies.Add((sourceBucket, sourceKey, destinationBucket, destinationKey));
-        Objects.Add((destinationBucket, destinationKey));
-        return Task.CompletedTask;
-    }
+    public Task<IReadOnlyList<string>> ListAsync(string bucket, string prefix, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<string>>(Objects.Where(o => o.Bucket == bucket && o.Key.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(o => o.Key).Order(StringComparer.Ordinal).ToArray());
 
     public Task DeleteAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {

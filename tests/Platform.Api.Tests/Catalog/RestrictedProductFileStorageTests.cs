@@ -67,7 +67,6 @@ public sealed class RestrictedProductFileStorageTests
         Assert.Single(read!.Files);
         Assert.True(read.HasFiles);
         Assert.Contains(original, c.Storage.Objects);
-        Assert.Empty(c.Storage.Copies);
         Assert.Empty(c.Storage.Deletes);
     }
 
@@ -84,7 +83,6 @@ public sealed class RestrictedProductFileStorageTests
         Assert.Equal(target, result!.Visibility);
         Assert.False((await c.Products.GetByIdAsync(product.Id, CancellationToken.None))!.HasFiles);
         Assert.Equal(target, (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
-        Assert.Empty(c.Storage.Copies);
     }
 
     [Fact]
@@ -104,7 +102,6 @@ public sealed class RestrictedProductFileStorageTests
         var file = await AddPhotoAsync(c, restricted.Id);
         Assert.Null(file.Url);
         Assert.Equal(Opts.PrivateBucket, c.Storage.Uploads.Last().Bucket);
-        Assert.Empty(c.Storage.Copies);
     }
 
     [Fact]
@@ -300,6 +297,8 @@ public sealed class RestrictedProductFileStorageTests
         Assert.Equal(Opts.PrivateBucket, Assert.Single(c.Storage.Signed).Bucket);
         var admin = await c.Products.GetFileUrlAsync(product.Id, file.Id, CancellationToken.None);
         Assert.False(admin.IsPublic);
+        Assert.All(c.Storage.SignedTtls, ttl => Assert.Equal(TimeSpan.FromSeconds(120), ttl));
+        Assert.Equal(2, c.Storage.SignedTtls.Count);
     }
 
     private static async Task<CatalogProductFile> AddLegacyPhotoAsync(Ctx c, Guid productId)
@@ -355,7 +354,6 @@ public sealed class RestrictedProductFileStorageTests
         Assert.Contains("re-upload", body.GetProperty("error").GetString());
         Assert.Equal("Public", (await c.Groups.GetProductAccessAsync(product.Id, CancellationToken.None))!.Visibility);
         Assert.Empty(c.Storage.Deletes);
-        Assert.Empty(c.Storage.Copies);
         await c.Products.DeleteFileAsync(product.Id, row.Id, CancellationToken.None);
         await c.Groups.SetProductAccessAsync(product.Id, new("Restricted", null, null), CancellationToken.None);
     }

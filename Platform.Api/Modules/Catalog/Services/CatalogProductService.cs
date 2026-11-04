@@ -359,7 +359,7 @@ public sealed class CatalogProductService(
             return new CatalogFileUrlResponse(publicUrl, IsPublic: true);
         }
 
-        var ttl = TimeSpan.FromSeconds(Math.Max(60, storageOptions.Value.SignedUrlTtlSeconds));
+        var ttl = CatalogFileUrls.SignedUrlTtl;
         var signed = await storageProvider.CreateSignedUrlAsync(
             storageOptions.Value.PrivateBucket,
             file.StorageKey,

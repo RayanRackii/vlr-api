@@ -90,7 +90,6 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
             (await verify.CatalogProducts.SingleAsync(p => p.Id == productId)).Visibility);
         Assert.Single(await verify.CatalogProductFiles.Where(f => f.ProductId == productId).ToListAsync());
         Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
-        Assert.Empty(storage.Copies);
         Assert.Empty(storage.Deletes);
     }
 
@@ -118,7 +117,6 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
             var target = initial == "Public" ? "Restricted" : "Public";
             await groups.SetProductAccessAsync(productId, new(target, null, null), CancellationToken.None);
             Assert.Equal(target, (await groups.GetProductAccessAsync(productId, CancellationToken.None))!.Visibility);
-            Assert.Empty(storage.Copies);
             Assert.Empty(storage.Deletes);
             if (initial == "Restricted") Assert.Equal(Opts.PrivateBucket, Assert.Single(storage.Uploads).Bucket);
         }
