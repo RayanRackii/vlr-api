@@ -22,7 +22,7 @@ public sealed record CreateRentableRequest
 
     /// <summary>
     /// Registry identifier. Optional: create generates one when omitted and
-    /// update keeps the stored tag, because RentalAssetResponse does not expose it.
+    /// update keeps the stored tag when omitted; RentalAssetResponse exposes it as Tag.
     /// </summary>
     public string? Tag { get; init; }
 
@@ -87,7 +87,7 @@ public sealed record UpdateRentableRequest
 
     /// <summary>
     /// Registry identifier. Optional: create generates one when omitted and
-    /// update keeps the stored tag, because RentalAssetResponse does not expose it.
+    /// update keeps the stored tag when omitted; RentalAssetResponse exposes it as Tag.
     /// </summary>
     public string? Tag { get; init; }
 
