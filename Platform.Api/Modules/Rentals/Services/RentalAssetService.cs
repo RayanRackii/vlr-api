@@ -338,5 +338,6 @@ public sealed class RentalAssetService(
             rental.Asset.FamilyId == Guid.Empty ? null : rental.Asset.FamilyId,
             PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).CancelCutoffHours,
             rental.Asset.Location,
-            rental.Asset.ScheduledDeletionAt);
+            rental.Asset.ScheduledDeletionAt,
+            rental.Asset.Tag);
 }

@@ -272,6 +272,24 @@ public sealed class AssetRegistryTests
     }
 
     [Fact]
+    public async Task CreateRentable_tag_round_trips_through_the_rental_asset_response()
+    {
+        // R40: the edit page reopened with an empty Identificador because the response omitted the tag.
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var registry = harness.CreateRegistry();
+        var rentals = new Platform.Api.Modules.Rentals.Services.RentalAssetService(harness.Db, harness.TenantProvider);
+        var created = await registry.CreateRentableAsync(
+            RentableRequest(harness, name: "Sala", tag: "ZZ-TAG-1"),
+            CancellationToken.None);
+
+        var byAsset = await rentals.GetByAssetIdAsync(created.Id, CancellationToken.None);
+        var listed = await rentals.ListRentableAsync(CancellationToken.None);
+
+        Assert.Equal("ZZ-TAG-1", byAsset!.Tag);
+        Assert.Equal("ZZ-TAG-1", Assert.Single(listed, r => r.AssetId == created.Id).Tag);
+    }
+
+    [Fact]
     public async Task UpdateRentable_location_round_trips_through_the_rental_asset_response()
     {
         // R11: drawer saved Localização, the PUT persisted it, but GET /api/rental-assets
