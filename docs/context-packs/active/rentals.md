@@ -102,6 +102,10 @@ RLS is disabled in source migrations for the Rentals tables mapped in EF, includ
 - **QueueTicket** = FIFO `Sequence`; Waiting → Active (90s Turn) → Completed | Expired | Cancelled
 - **Turn** = 90s Active lease authorizing one reservation; F-01 still serializes occupancy
 
+## Staff queue roster (2026-11-09)
+
+`GET /api/rentals/rental-assets/{rentalAssetId}/queue` is the staff read (`rentals.reservations.read`, rentals module). Tenant comes from the staff JWT. A rental asset outside that tenant is 404 `Rentable was not found.` Optional `openingDate` is the civil date in the tenant zone; omitted means today, not the customer endpoint's rolling opening date. The body lists the session tickets. Phase is `ReservationQueueClock.ResolvePhase` for that date. The read does not create a session or save tickets; it applies the same expiry, promotion, and position rules in memory. A ticket that is not Waiting or Active has position 0. `GET /api/rental-assets/{id}/queue` remains the customer contract (`myTicket` only). No migration.
+
 ## Current model
 
 Reservation is the occupancy fact (start/end + items). Slot is the schedule cell. Link is optional: `Slot.ReservationId` when a persisted cell is booked via `BookSlot`. Derived OpenHours/SlotGrid windows book via `POST /api/reservations` until a Slot row exists (`PublishDay` optional). Conflict = overlapping reservations, not “must have SlotId”. Weekly apply matches `(RentalAssetId, DayOfWeek, StartTime, EndTime, OccupancyKindId)`.

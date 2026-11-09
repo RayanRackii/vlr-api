@@ -18,6 +18,93 @@ public sealed class ReservationQueueService(
         CancellationToken cancellationToken) =>
         MutateAsync(rentalAssetId, customerId, JoinMode.None, cancellationToken);
 
+    public async Task<StaffReservationQueueDto> GetStaffRosterAsync(
+        Guid rentalAssetId,
+        DateOnly? openingDate,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        var rental = await dbContext.RentalAssets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                item => item.Id == rentalAssetId && item.TenantId == tenantId,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("Rentable was not found.");
+
+        var now = timeProvider.GetUtcNow();
+        var zone = await TenantBookingClock.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+        var date = openingDate ?? ReservationQueueClock.CivilDate(now, zone);
+        var session = await dbContext.ReservationQueueSessions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                item => item.TenantId == tenantId
+                    && item.RentalAssetId == rental.Id
+                    && item.OpeningDate == date,
+                cancellationToken);
+
+        DateTimeOffset? opensAt;
+        DateTimeOffset? waitingRoomOpensAt;
+        if (session is not null)
+        {
+            opensAt = session.OpensAt;
+            waitingRoomOpensAt = session.WaitingRoomOpensAt;
+        }
+        else if (rental.QueueOpeningTime is TimeOnly openingTime)
+        {
+            opensAt = ReservationQueueClock.OpensAt(date, openingTime, zone);
+            waitingRoomOpensAt = ReservationQueueClock.WaitingRoomOpensAt(date, openingTime, zone);
+        }
+        else
+        {
+            opensAt = null;
+            waitingRoomOpensAt = null;
+        }
+
+        var phase = opensAt is DateTimeOffset open && waitingRoomOpensAt is DateTimeOffset waitingRoom
+            ? ReservationQueueClock.ResolvePhase(now, waitingRoom, open)
+            : QueuePhase.Closed;
+
+        IReadOnlyList<ProjectedQueueTicket> projected = [];
+        if (session is not null && opensAt is DateTimeOffset sessionOpensAt)
+        {
+            projected = await ProjectSessionAsync(
+                tenantId,
+                session.Id,
+                now,
+                sessionOpensAt,
+                cancellationToken);
+        }
+        var waitingSequences = projected
+            .Where(ticket => ticket.Status == QueueTicketStatus.Waiting)
+            .Select(ticket => ticket.Sequence)
+            .ToList();
+        var tickets = projected
+            .Select(ticket => new StaffReservationQueueTicketDto(
+                ticket.Id,
+                ticket.CustomerId,
+                ticket.CustomerName,
+                ticket.Status,
+                ticket.Sequence,
+                ReservationQueueProjection.Position(ticket.Status, ticket.Sequence, waitingSequences),
+                ticket.JoinedAt,
+                ticket.TurnStartedAt,
+                ticket.TurnExpiresAt,
+                ticket.CompletedReservationId))
+            .ToList();
+
+        return new StaffReservationQueueDto(
+            rental.Id,
+            rental.QueueEnabled,
+            date,
+            opensAt,
+            waitingRoomOpensAt,
+            now,
+            phase,
+            waitingSequences.Count,
+            projected.Count(ticket => ticket.Status == QueueTicketStatus.Active),
+            tickets);
+    }
+
     public Task<ReservationQueueStatusDto> JoinAsync(
         Guid rentalAssetId,
         Guid customerId,
@@ -327,7 +414,7 @@ public sealed class ReservationQueueService(
                 continue;
             }
 
-            if (ticket.TurnExpiresAt is { } expiresAt && expiresAt <= now)
+            if (ReservationQueueProjection.TurnIsDue(ticket.TurnExpiresAt, now))
             {
                 ticket.Expire();
                 logger.LogInformation(
@@ -349,18 +436,14 @@ public sealed class ReservationQueueService(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (now < session.OpensAt || HasActive(session))
+        var nextSequence = ReservationQueueProjection.NextWaitingSequence(
+            session.Tickets.Select(ticket => new ReservationQueueProjection.Line(ticket.Status, ticket.Sequence)),
+            now,
+            session.OpensAt);
+        if (nextSequence is long sequence)
         {
-            return Task.CompletedTask;
-        }
-
-        var next = session.Tickets
-            .Where(t => t.Status == QueueTicketStatus.Waiting)
-            .OrderBy(t => t.Sequence)
-            .FirstOrDefault();
-
-        if (next is not null)
-        {
+            var next = session.Tickets.First(ticket =>
+                ticket.Status == QueueTicketStatus.Waiting && ticket.Sequence == sequence);
             Activate(session.RentalAssetId, session, next, now);
         }
 
@@ -476,7 +559,56 @@ public sealed class ReservationQueueService(
             && (t.Status == QueueTicketStatus.Waiting || t.Status == QueueTicketStatus.Active));
 
     private static bool HasActive(ReservationQueueSession session) =>
-        session.Tickets.Any(t => t.Status == QueueTicketStatus.Active);
+        ReservationQueueProjection.HasActive(session.Tickets.Select(ticket => ticket.Status));
+
+    private async Task<IReadOnlyList<ProjectedQueueTicket>> ProjectSessionAsync(
+        Guid tenantId,
+        Guid sessionId,
+        DateTimeOffset now,
+        DateTimeOffset opensAt,
+        CancellationToken cancellationToken)
+    {
+        var stored = await dbContext.ReservationQueueTickets
+            .AsNoTracking()
+            .Where(ticket => ticket.TenantId == tenantId && ticket.QueueSessionId == sessionId)
+            .OrderBy(ticket => ticket.Sequence)
+            .Select(ticket => new
+            {
+                ticket.Id,
+                ticket.CustomerId,
+                ticket.Status,
+                ticket.Sequence,
+                ticket.JoinedAt,
+                ticket.TurnStartedAt,
+                ticket.TurnExpiresAt,
+                ticket.CompletedReservationId,
+            })
+            .ToListAsync(cancellationToken);
+
+        var customerIds = stored.Select(ticket => ticket.CustomerId).Distinct().ToList();
+        var names = customerIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await dbContext.Customers
+                .AsNoTracking()
+                .Where(customer => customer.TenantId == tenantId && customerIds.Contains(customer.Id))
+                .Select(customer => new { customer.Id, customer.Name })
+                .ToDictionaryAsync(customer => customer.Id, customer => customer.Name, cancellationToken);
+
+        var tickets = stored
+            .Select(ticket => new ProjectedQueueTicket(
+                ticket.Id,
+                ticket.CustomerId,
+                names.TryGetValue(ticket.CustomerId, out var name) ? name : null,
+                ticket.Status,
+                ticket.Sequence,
+                ticket.JoinedAt,
+                ticket.TurnStartedAt,
+                ticket.TurnExpiresAt,
+                ticket.CompletedReservationId))
+            .ToList();
+
+        return ReservationQueueProjection.Project(tickets, now, opensAt);
+    }
 
     private static long NextSequence(ReservationQueueSession session) =>
         session.Tickets.Count == 0 ? 1 : session.Tickets.Max(t => t.Sequence) + 1;
@@ -503,11 +635,10 @@ public sealed class ReservationQueueService(
             : live is { Status: QueueTicketStatus.Active }
                 ? 0
                 : waitingCount;
-        var position = live is { Status: QueueTicketStatus.Waiting }
-            ? aheadCount + 1
-            : live is { Status: QueueTicketStatus.Active }
-                ? 1
-                : 0;
+        var waitingSequences = waiting.Select(ticket => ticket.Sequence).ToList();
+        var position = mine is null
+            ? 0
+            : ReservationQueueProjection.Position(mine.Status, mine.Sequence, waitingSequences);
 
         ReservationQueueTicketDto? myTicket = mine is null
             ? null

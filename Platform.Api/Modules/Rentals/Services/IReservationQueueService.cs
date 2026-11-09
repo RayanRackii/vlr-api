@@ -10,6 +10,14 @@ public interface IReservationQueueService
         Guid customerId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Read-only roster for staff. Does not create a session and does not save ticket changes.
+    /// </summary>
+    Task<StaffReservationQueueDto> GetStaffRosterAsync(
+        Guid rentalAssetId,
+        DateOnly? openingDate,
+        CancellationToken cancellationToken);
+
     Task<ReservationQueueStatusDto> JoinAsync(
         Guid rentalAssetId,
         Guid customerId,

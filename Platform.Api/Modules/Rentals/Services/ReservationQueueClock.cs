@@ -14,6 +14,9 @@ internal static class ReservationQueueClock
     public static DateTimeOffset WaitingRoomOpensAt(DateOnly openingDate, TimeOnly openingTime, TimeZoneInfo? zone = null) =>
         OpensAt(openingDate, openingTime, zone) - WaitingRoomLead;
 
+    public static DateOnly CivilDate(DateTimeOffset now, TimeZoneInfo zone) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+
     /// <summary>
     /// OpeningDate D for status/join: today's civil date while before its waiting room
     /// (phase Closed); otherwise the unique D where WR(D) ≤ now &lt; WR(D+1).
@@ -21,7 +24,7 @@ internal static class ReservationQueueClock
     public static DateOnly ResolveOpeningDate(DateTimeOffset now, TimeOnly openingTime, TimeZoneInfo? zone = null)
     {
         zone ??= TenantBookingClock.Resolve(null);
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+        var today = CivilDate(now, zone);
         var waitingRoomToday = WaitingRoomOpensAt(today, openingTime, zone);
         if (now < waitingRoomToday)
         {
