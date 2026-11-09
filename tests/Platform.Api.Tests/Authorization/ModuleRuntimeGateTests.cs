@@ -1146,6 +1146,12 @@ public sealed class ModuleRuntimeGateTests
             Guid reservationId,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<StaffReservationQueueDto> GetStaffRosterAsync(
+            Guid rentalAssetId,
+            DateOnly? openingDate,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubReservationService : IReservationService

@@ -1,5 +1,10 @@
 # ROADMAP — vlr-api
 
+### Staff roster da fila (2026-11-09)
+
+- [x] `GET /api/rentals/rental-assets/{rentalAssetId}/queue` para staff com `rentals.reservations.read`. O tenant vem do JWT. Recurso ausente ou de outro tenant responde 404 `Rentable was not found.` sem corpo da fila. `openingDate` (`yyyy-MM-dd`) é a data civil no fuso do tenant; omitido = hoje. 200: `rentalAssetId`, `queueEnabled`, `openingDate`, `opensAt`, `waitingRoomOpensAt`, `serverNow`, `phase` (`Closed` | `WaitingRoom` | `Open`), `waitingCount`, `activeCount`, `tickets[]` (`id`, `customerId`, `customerName`, `status`, `sequence`, `position`, `joinedAt`, `turnStartedAt`, `turnExpiresAt`, `completedReservationId`). Sem `QueueOpeningTime`, `opensAt` e `waitingRoomOpensAt` são null e `phase` é `Closed`. A fase usa `ReservationQueueClock.ResolvePhase` da sessão (ou do horário calculado, se a sessão ainda não existe). A leitura não cria sessão e não grava ticket: aplica em memória a mesma expiração, promoção e posição da fila. Ticket que não está `Waiting` nem `Active` fica com `position` 0, como o ticket do customer. Sem migration.
+- [ ] Próximo API: integrar este PR em `develop`. Próximo `vlr-web`: o PR #464 já chama esta rota; com a API no ar, o assistente deixa de tratar a fila como indisponível. Espelhar a frase de WaitingQueue no `CONTEXT.md` do `vlr-web`.
+
 ### R40 — occupancy kinds na agenda (2026-11-09, código local)
 
 - [x] GET `/api/occupancy-kinds` aceita `OccupancyKindsRead`, `ScheduleRead` ou `ScheduleWrite`; POST/PUT continuam exclusivos de `OccupancyKindsWrite`. Matriz HTTP adicionada ao host de autorização de Rentals.
@@ -389,6 +394,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-11-09 | **API:** leitura staff da fila de um recurso reservável em `GET /api/rentals/rental-assets/{rentalAssetId}/queue` (`rentals.reservations.read`, tenant do JWT, 404 cross-tenant). Reusa o relógio e as regras de posição/expiração/promoção sem gravar e sem migration. O contrato B2C `GET /api/rental-assets/{id}/queue` permanece só com o ticket do caller. UI no `vlr-web` PR #464. |
 | 2026-10-29 | **API, código local:** inbox Customer JWT em `/api/me/customer-notifications`, isolado por tenant/cliente/kind, leitura individual com 404 para ID alheio e read-all. InApp de pedidos obrigatório, incluindo preparando; rota real do portal no payload. Sem migration ou edição web. Build OK; xUnit em processo: 2102 passaram, 130 skipped, 0 falhas (2232 casos); VSTest bloqueado por socket no sandbox. Review `SAFE_WITH_FOLLOWUP`, sem Critical/High/Medium; falta CI PostgreSQL + smoke DEV e integração do inbox B2C no web. |
 | 2026-10-25 | **Fix (API, PR #286, local):** atualizações concorrentes de módulos do mesmo tenant tomam advisory transaction lock PostgreSQL antes de carregar módulos/itens de menu; dois enables concorrentes agora preservam um único menu padrão por módulo. Caminho InMemory sem alteração, sem migration. Regressão relacional (Postgres) adicionada; testes AdminTenant 90/90. |
 | 2026-10-24 | **Fix (API, PR #280, local):** agenda admin/pública omite também Slots persistidos cujo intervalo fica invertido após conversão civil→UTC; regressões cobrem slot materializado e CreateReservation sem persistência no gap DST de Nova York. Suíte completa: 1882 passed, 0 failed, 1 skipped. Sem migration. |

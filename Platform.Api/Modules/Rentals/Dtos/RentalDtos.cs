@@ -251,3 +251,31 @@ public sealed record ReservationQueueStatusDto(
     int WaitingCount,
     int AheadCount,
     ReservationQueueTicketDto? MyTicket);
+
+/// <summary>
+/// Staff roster for one bookable resource's queue session.
+/// Terminal tickets use position 0, the same rule as the customer ticket.
+/// </summary>
+public sealed record StaffReservationQueueTicketDto(
+    Guid Id,
+    Guid CustomerId,
+    string? CustomerName,
+    QueueTicketStatus Status,
+    long Sequence,
+    int Position,
+    DateTimeOffset JoinedAt,
+    DateTimeOffset? TurnStartedAt,
+    DateTimeOffset? TurnExpiresAt,
+    Guid? CompletedReservationId);
+
+public sealed record StaffReservationQueueDto(
+    Guid RentalAssetId,
+    bool QueueEnabled,
+    DateOnly OpeningDate,
+    DateTimeOffset? OpensAt,
+    DateTimeOffset? WaitingRoomOpensAt,
+    DateTimeOffset ServerNow,
+    QueuePhase Phase,
+    int WaitingCount,
+    int ActiveCount,
+    IReadOnlyList<StaffReservationQueueTicketDto> Tickets);

@@ -119,7 +119,7 @@ Rentable-level flag: a Customer booking of that Rentable waits for admin payment
 _Avoid_: needPayment; assuming every booking waits for deposit
 
 **WaitingQueue**:
-Optional per-Location FIFO waiting room for B2C reservation opening. Default off (`RentalAsset.QueueEnabled`). When on, Customers cannot book that Location without a valid Active ticket for the current daily opening session. Does not replace occupancy row locks (F-01). Not used for Goods; not tenant-global.
+Optional per-Location FIFO waiting room for B2C reservation opening. Default off (`RentalAsset.QueueEnabled`). When on, Customers cannot book that Location without a valid Active ticket for the current daily opening session. Does not replace occupancy row locks (F-01). Not used for Goods; not tenant-global. Staff with `rentals.reservations.read` read one session at `GET /api/rentals/rental-assets/{rentalAssetId}/queue` (`openingDate` is the civil date in the tenant time zone; omit it for today). That read does not create a session or save tickets. A resource outside the caller's tenant is 404. `GET /api/rental-assets/{id}/queue` stays the customer contract and still returns only that caller's ticket.
 _Avoid_: per-slot queue; raffle; multi-active turns; WebSocket as the MVP transport
 
 **QueueOpeningTime**:
