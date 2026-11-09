@@ -12,7 +12,7 @@ namespace Platform.Api.Modules.Rentals.Controllers;
 public sealed class OccupancyKindsController(IOccupancyKindService occupancyKindService) : ControllerBase
 {
     [HttpGet]
-    [RequirePermission(Permissions.Rentals.OccupancyKindsRead)]
+    [RequireAnyPermission(Permissions.Rentals.OccupancyKindsRead, Permissions.Rentals.ScheduleRead, Permissions.Rentals.ScheduleWrite)]
     public async Task<ActionResult<IReadOnlyList<OccupancyKindResponseDto>>> List(
         CancellationToken cancellationToken)
     {
