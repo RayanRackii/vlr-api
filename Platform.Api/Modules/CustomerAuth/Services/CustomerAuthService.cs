@@ -694,7 +694,7 @@ public sealed class CustomerAuthService(
         return emailProvider.SendAsync(
             email,
             RolvixEmailLayout.EmailVerificationSubject,
-            html,
+            EmailContent.FromRenderedHtml(html),
             cancellationToken);
     }
 

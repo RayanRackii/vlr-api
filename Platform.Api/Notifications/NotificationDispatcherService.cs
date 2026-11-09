@@ -50,7 +50,9 @@ public sealed class NotificationDispatcherService(
                 await emailProvider.SendAsync(
                     message.Recipient,
                     message.Subject,
-                    message.Body,
+                    message.TextBody is null
+                        ? EmailContent.FromPlainText(message.Body)
+                        : new EmailContent(message.Body, message.TextBody),
                     cancellationToken);
                 break;
             }

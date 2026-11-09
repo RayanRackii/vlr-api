@@ -32,19 +32,26 @@ public sealed class ResendEmailProvider : IEmailProvider
         CancellationToken cancellationToken = default) =>
         SendAsync(recipient, subject, body, fromDisplayName: null, cancellationToken);
 
-    public async Task SendAsync(
+    public Task SendAsync(
         string recipient,
         string subject,
         string body,
         string? fromDisplayName,
         CancellationToken cancellationToken)
+        => SendAsync(recipient, subject, EmailContent.FromPlainText(body), fromDisplayName, cancellationToken);
+
+    public Task SendAsync(string recipient, string subject, EmailContent content, CancellationToken cancellationToken = default)
+        => SendAsync(recipient, subject, content, null, cancellationToken);
+
+    public async Task SendAsync(string recipient, string subject, EmailContent content, string? fromDisplayName, CancellationToken cancellationToken)
     {
         var payload = new
         {
             from = EmailFromHeader.Format(fromDisplayName, _options.FromEmail, _options.FromName),
             to = new[] { recipient },
             subject,
-            html = body,
+            html = content.Html,
+            text = content.Text,
         };
 
         using var response = await _httpClient.PostAsJsonAsync(

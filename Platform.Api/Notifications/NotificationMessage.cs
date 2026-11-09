@@ -13,4 +13,7 @@ public sealed record NotificationMessage(
     string? TemplateName = null,
     string? TemplateLanguage = null,
     IReadOnlyList<string>? TemplateParameters = null,
-    Guid? TenantId = null);
+    Guid? TenantId = null)
+{
+    public string? TextBody { get; init; }
+}

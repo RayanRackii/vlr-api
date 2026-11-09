@@ -22,7 +22,7 @@ public sealed class DispatchWelcomeNotificationHandler(
                 Type: "Email",
                 Recipient: notification.Email,
                 Subject: "Convite Rolvix — defina sua senha",
-                Body: htmlBody),
+                Body: htmlBody) { TextBody = EmailContent.FromRenderedHtml(htmlBody).Text },
             cancellationToken);
     }
 }

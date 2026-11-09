@@ -5,6 +5,22 @@ public interface IEmailProvider
     Task SendAsync(
         string recipient,
         string subject,
+        EmailContent content,
+        CancellationToken cancellationToken = default)
+        => SendAsync(recipient, subject, content, null, cancellationToken);
+
+    Task SendAsync(
+        string recipient,
+        string subject,
+        EmailContent content,
+        string? fromDisplayName,
+        CancellationToken cancellationToken)
+        => SendAsync(recipient, subject, content.Html, fromDisplayName, cancellationToken);
+
+    /// <summary>Plain text entry point. Providers encode it and apply the shared HTML layout.</summary>
+    Task SendAsync(
+        string recipient,
+        string subject,
         string body,
         CancellationToken cancellationToken = default);
 

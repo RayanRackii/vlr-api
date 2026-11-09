@@ -29,3 +29,6 @@ logs/
 ## OS Files
 .DS_Store
 Thumbs.db
+
+# Synthetic email previews (reproducible from render tests)
+artifacts/email-layout/

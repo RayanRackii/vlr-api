@@ -113,7 +113,7 @@ public sealed class PasswordRecoveryService(
                     Type: "Email",
                     Recipient: normalized,
                     Subject: "Redefinir senha — Rolvix",
-                    Body: htmlBody),
+                    Body: htmlBody) { TextBody = EmailContent.FromRenderedHtml(htmlBody).Text },
                 cancellationToken);
         }
         catch (OperationCanceledException)

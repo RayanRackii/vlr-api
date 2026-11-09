@@ -1,5 +1,10 @@
 # ROADMAP — vlr-api
 
+### Requisitos de recurso do produto (2026-11-09)
+
+- [x] `GET` e `PUT /api/catalog/products/{id}/resource-requirements` passam a depender só do módulo `catalog` (já exigido na classe) e de `catalog.products.manage`. Um tenant com catálogo e sem `resource-planning` lê e grava a configuração. Catálogo inativo continua 403. Sem migration. Preview de alocação, uso da alocação e a aprovação que reserva recurso permanecem atrás de `resource-planning`.
+- [ ] Próximo API: seguir o ciclo de catálogo/portal. Próximo `vlr-web`: o assistente de produto (PR #466) pode gravar o recurso consumido com o módulo de catálogo ativo.
+
 ### Staff roster da fila (2026-11-09)
 
 - [x] `GET /api/rentals/rental-assets/{rentalAssetId}/queue` para staff com `rentals.reservations.read`. O tenant vem do JWT. Recurso ausente ou de outro tenant responde 404 `Rentable was not found.` sem corpo da fila. `openingDate` (`yyyy-MM-dd`) é a data civil no fuso do tenant; omitido = hoje. 200: `rentalAssetId`, `queueEnabled`, `openingDate`, `opensAt`, `waitingRoomOpensAt`, `serverNow`, `phase` (`Closed` | `WaitingRoom` | `Open`), `waitingCount`, `activeCount`, `tickets[]` (`id`, `customerId`, `customerName`, `status`, `sequence`, `position`, `joinedAt`, `turnStartedAt`, `turnExpiresAt`, `completedReservationId`). Sem `QueueOpeningTime`, `opensAt` e `waitingRoomOpensAt` são null e `phase` é `Closed`. A fase usa `ReservationQueueClock.ResolvePhase` da sessão (ou do horário calculado, se a sessão ainda não existe). A leitura não cria sessão e não grava ticket: aplica em memória a mesma expiração, promoção e posição da fila. Ticket que não está `Waiting` nem `Active` fica com `position` 0, como o ticket do customer. Sem migration.
@@ -27,6 +32,11 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 **Estados de entrega:** **código merged** = merge em `develop`; **validado em DEV** = validação operacional no ambiente DEV; **released em PROD** = release confirmado em produção. Não inferir um estado a partir do outro.
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
+
+## Shared transactional email layout (2026-11-09, local)
+
+- [x] Rayan t1377u: header/footer/CSS compartilhados, HTML + texto no Resend, conteúdo genérico escapado e texto de reservas preservado. Review fresco do executor encontrou Medium: faltava paleta dark explícita. Adicionados CSS dark compartilhado (media query/Outlook), fallback light inline e assertions de superfícies/textos/ações e contraste mínimo 4.5:1. Inventário: [`email-layout-inventory`](docs/notifications/email-layout-inventory.md); 20 pares de previews anteriores em `artifacts/email-layout/`, refresh pendente. Nenhum gate canônico Claude executado; autoavaliação do autor não é gate. [Handoff](docs/sessions/2026-11-09-shared-email-layout.md).
+- [ ] Executor: rodar VSTest após o fix, regenerar previews/screenshots, validar clientes de email e gates canônicos/CI. Seleção all-email em execução; anterior **243 passed / 17 skipped**. VSTest completo anterior **2223 passed / 2 failed / 182 skipped**; baseline Havana sob verificação, sem correções de timezone nesta task. Próximo API: esses gates; próximo web: smoke visual DEV/redesign conforme roadmap irmão.
 
 ## Resource Planning Phase 0 — security fixes (2026-11-02, código local)
 
@@ -394,6 +404,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-11-09 | **API:** `GET`/`PUT /api/catalog/products/{id}/resource-requirements` deixam de exigir o módulo `resource-planning`. O gate passa a ser o `catalog` da classe, com `catalog.products.manage` e o filtro de tenant. Preview, uso e a reserva na aprovação continuam em `resource-planning`. Sem migration. |
 | 2026-11-09 | **API:** leitura staff da fila de um recurso reservável em `GET /api/rentals/rental-assets/{rentalAssetId}/queue` (`rentals.reservations.read`, tenant do JWT, 404 cross-tenant). Reusa o relógio e as regras de posição/expiração/promoção sem gravar e sem migration. O contrato B2C `GET /api/rental-assets/{id}/queue` permanece só com o ticket do caller. UI no `vlr-web` PR #464. |
 | 2026-10-29 | **API, código local:** inbox Customer JWT em `/api/me/customer-notifications`, isolado por tenant/cliente/kind, leitura individual com 404 para ID alheio e read-all. InApp de pedidos obrigatório, incluindo preparando; rota real do portal no payload. Sem migration ou edição web. Build OK; xUnit em processo: 2102 passaram, 130 skipped, 0 falhas (2232 casos); VSTest bloqueado por socket no sandbox. Review `SAFE_WITH_FOLLOWUP`, sem Critical/High/Medium; falta CI PostgreSQL + smoke DEV e integração do inbox B2C no web. |
 | 2026-10-25 | **Fix (API, PR #286, local):** atualizações concorrentes de módulos do mesmo tenant tomam advisory transaction lock PostgreSQL antes de carregar módulos/itens de menu; dois enables concorrentes agora preservam um único menu padrão por módulo. Caminho InMemory sem alteração, sem migration. Regressão relacional (Postgres) adicionada; testes AdminTenant 90/90. |
@@ -587,3 +598,5 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 | 2026-10-14 | **Executado (API):** onboarding público de trial deixa de definir senha do admin. `POST /api/onboarding/tenants` (`IsTrial`) reusa `InviteAsync` + o mesmo e-mail `/invite?token=`; `AdminPassword` enviado → 400; omitido → convite pendente e nenhum `CreateUser` com senha do caller. Accept inalterado. Wizard Super-Admin inalterado. Sem migration. **WEB:** remover o campo de senha no signup trial. `IsTrial: false` anônimo permanece legado com senha. Branch `feat/trial-onboarding-invite`. |
 | 2026-10-14 | **Fix (API, mesmo PR):** a rota anônima deixa de criar tenant permanente. `IsTrial: false` ou ausente → 400 `ANONYMOUS_TRIAL_REQUIRED` e nenhum write. Trial anônimo: 10 / 10 min por IP → 429 `ANONYMOUS_TRIAL_RATE_LIMITED` (XFF do #109 não muda). Erro Supabase nessa rota não ecoa a mensagem do provider. Wizard `POST /api/admin/tenants` inalterado. Sem migration. |
 | 2026-10-22 | **Fix (API):** Swashbuckle gera o documento completo com upload de foto de task de OS modelado como `[FromForm] UploadRequest`; campo multipart `file` e tratamento existente de arquivo ausente preservados. Teste OpenAPI adicionado; execução bloqueada pelo sandbox (VSTest sem socket TCP). |
+
+- Email layout executor verification (2026-11-09): fresh Codex delta review **APPROVE** after dark-palette Medium fixed; standard VSTest affected **336 passed / 0 failed / 28 skipped**, full **2225 passed / 2 failed / 182 skipped**. Both Havana failures reproduce on unchanged base 86b45b9 (15 passed / 2 failed). Twenty previews + local desktop/mobile/light/dark screenshots saved. No merge/deploy; canonical release review, CI/PostgreSQL and real email-client QA remain pending.

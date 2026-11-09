@@ -51,6 +51,30 @@ public sealed class ResendEmailProviderTests
         await CreateProvider(client).SendAsync("recipient@example.test", "Subject", "Body");
     }
 
+    [Fact]
+    public async Task Plain_content_is_encoded_and_sent_with_both_alternatives()
+    {
+        var handler = new CaptureHandler();
+        using var client = new HttpClient(handler);
+        await CreateProvider(client).SendAsync("recipient@example.invalid", "Subject", "Hello <script>unsafe</script>\nhttps://example.invalid/order");
+        using var json = System.Text.Json.JsonDocument.Parse(handler.Payload!);
+        var root = json.RootElement;
+        Assert.Equal("Hello <script>unsafe</script>\nhttps://example.invalid/order", root.GetProperty("text").GetString());
+        Assert.Contains("&lt;script&gt;", root.GetProperty("html").GetString());
+        Assert.DoesNotContain("<script>", root.GetProperty("html").GetString());
+        Assert.Contains("Rolvix.", root.GetProperty("html").GetString());
+    }
+
+    internal sealed class CaptureHandler : HttpMessageHandler
+    {
+        public string? Payload { get; private set; }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Payload = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        }
+    }
+
     internal static ResendEmailProvider CreateProvider(HttpClient client) => new(
         client,
         Options.Create(new ResendOptions { ApiKey = "test-key", FromEmail = "sender@example.test" }),
