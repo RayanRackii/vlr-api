@@ -1,5 +1,11 @@
 # ROADMAP — vlr-api
 
+### R40 — occupancy kinds na agenda (2026-11-09, código local)
+
+- [x] GET `/api/occupancy-kinds` aceita `OccupancyKindsRead`, `ScheduleRead` ou `ScheduleWrite`; POST/PUT continuam exclusivos de `OccupancyKindsWrite`. Matriz HTTP adicionada ao host de autorização de Rentals.
+- [x] Build sem warnings/erros; harness temporário em processo: 19 passed / 0 failed (antes da correção: 17 passed / 2 failed em ScheduleRead/Write). VSTest bloqueado por socket local no sandbox.
+- [ ] Executor: validar pelo VSTest e concluir os gates antes de integrar. Próximo web: validar o preenchimento das regras semanais com usuário que tenha somente leitura/escrita de agenda.
+
 ### Round 10 — catalog file prerelease safety (2026-11-04)
 
 - [x] Removed the catalog file reconcile command, runbook, listing API and dedicated tests; restored prior Supabase prefix deletion. Signed URLs remain 120 seconds; storage copy remains removed.
