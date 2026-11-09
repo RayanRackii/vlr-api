@@ -274,8 +274,8 @@ public static class ReservationCustomerEmail
     private static void AppendTextRow(StringBuilder html, string encodedHtml)
     {
         html.Append(
-            """
-            <tr><td style="padding:0 0 16px;font-size:15px;line-height:1.55;color:#27272a;">
+            $"""
+            <tr><td style="padding:0 0 16px;{EmailStyles.Text}">
             """);
         html.Append(encodedHtml);
         html.Append("</td></tr>");
@@ -289,8 +289,8 @@ public static class ReservationCustomerEmail
         }
 
         html.Append(
-            """
-            <tr><td style="padding:0 0 12px;font-size:15px;line-height:1.55;color:#27272a;">
+            $"""
+            <tr><td style="padding:0 0 12px;{EmailStyles.Text}">
             """);
         html.Append(EmailHtml.Encode(label));
         html.Append(": <strong>");
@@ -308,7 +308,7 @@ public static class ReservationCustomerEmail
         var safeUrl = EmailHtml.Encode(url);
         html.Append(
             $"""
-            <tr><td style="padding:8px 0 8px;"><a href="{safeUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:6px;font-weight:600;">Ver reserva</a></td></tr>
+            <tr><td style="padding:8px 0 8px;"><a href="{safeUrl}" style="{EmailStyles.Button}">Ver reserva</a></td></tr>
             """);
     }
 

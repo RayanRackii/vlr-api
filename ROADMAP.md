@@ -33,6 +33,11 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Shared transactional email layout (2026-11-09, local)
+
+- [x] Rayan t1377u: header/footer/CSS compartilhados, HTML + texto no Resend, conteúdo genérico escapado e texto de reservas preservado. Review fresco do executor encontrou Medium: faltava paleta dark explícita. Adicionados CSS dark compartilhado (media query/Outlook), fallback light inline e assertions de superfícies/textos/ações e contraste mínimo 4.5:1. Inventário: [`email-layout-inventory`](docs/notifications/email-layout-inventory.md); 20 pares de previews anteriores em `artifacts/email-layout/`, refresh pendente. Nenhum gate canônico Claude executado; autoavaliação do autor não é gate. [Handoff](docs/sessions/2026-11-09-shared-email-layout.md).
+- [ ] Executor: rodar VSTest após o fix, regenerar previews/screenshots, validar clientes de email e gates canônicos/CI. Seleção all-email em execução; anterior **243 passed / 17 skipped**. VSTest completo anterior **2223 passed / 2 failed / 182 skipped**; baseline Havana sob verificação, sem correções de timezone nesta task. Próximo API: esses gates; próximo web: smoke visual DEV/redesign conforme roadmap irmão.
+
 ## Resource Planning Phase 0 — security fixes (2026-11-02, código local)
 
 - [x] Round 2: helper único limita planos futuros, prolonga somente InternalUse vencido não liberado e preserva overrun na liberação tardia; três regressões Postgres adicionadas (execução pelo orquestrador).
@@ -593,3 +598,5 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 | 2026-10-14 | **Executado (API):** onboarding público de trial deixa de definir senha do admin. `POST /api/onboarding/tenants` (`IsTrial`) reusa `InviteAsync` + o mesmo e-mail `/invite?token=`; `AdminPassword` enviado → 400; omitido → convite pendente e nenhum `CreateUser` com senha do caller. Accept inalterado. Wizard Super-Admin inalterado. Sem migration. **WEB:** remover o campo de senha no signup trial. `IsTrial: false` anônimo permanece legado com senha. Branch `feat/trial-onboarding-invite`. |
 | 2026-10-14 | **Fix (API, mesmo PR):** a rota anônima deixa de criar tenant permanente. `IsTrial: false` ou ausente → 400 `ANONYMOUS_TRIAL_REQUIRED` e nenhum write. Trial anônimo: 10 / 10 min por IP → 429 `ANONYMOUS_TRIAL_RATE_LIMITED` (XFF do #109 não muda). Erro Supabase nessa rota não ecoa a mensagem do provider. Wizard `POST /api/admin/tenants` inalterado. Sem migration. |
 | 2026-10-22 | **Fix (API):** Swashbuckle gera o documento completo com upload de foto de task de OS modelado como `[FromForm] UploadRequest`; campo multipart `file` e tratamento existente de arquivo ausente preservados. Teste OpenAPI adicionado; execução bloqueada pelo sandbox (VSTest sem socket TCP). |
+
+- Email layout executor verification (2026-11-09): fresh Codex delta review **APPROVE** after dark-palette Medium fixed; standard VSTest affected **336 passed / 0 failed / 28 skipped**, full **2225 passed / 2 failed / 182 skipped**. Both Havana failures reproduce on unchanged base 86b45b9 (15 passed / 2 failed). Twenty previews + local desktop/mobile/light/dark screenshots saved. No merge/deploy; canonical release review, CI/PostgreSQL and real email-client QA remain pending.

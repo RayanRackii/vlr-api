@@ -820,14 +820,15 @@ public sealed class TenantUserAdminService(
                 portalHost,
                 roleNames: roleNames,
                 frontendBaseUrl: frontendBaseUrl,
-                tenantPortalHostTemplate: tenantPortalHostTemplate));
+                tenantPortalHostTemplate: tenantPortalHostTemplate),
+            companyName);
 
         await notificationQueue.EnqueueAsync(
             new NotificationMessage(
                 Type: "Email",
                 Recipient: invite.Email,
                 Subject: RolvixEmailLayout.InviteSubject(companyName, roleNames),
-                Body: htmlBody),
+                Body: htmlBody) { TextBody = EmailContent.FromRenderedHtml(htmlBody).Text },
             cancellationToken);
     }
 

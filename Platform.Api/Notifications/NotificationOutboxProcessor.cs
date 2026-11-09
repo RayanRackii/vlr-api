@@ -116,6 +116,7 @@ public sealed class NotificationOutboxProcessor(
             string body;
             string subject;
             string? fromDisplayName = null;
+            string? textBody = null;
             NotificationTemplate? template = null;
             if (reservationEmail)
             {
@@ -123,6 +124,7 @@ public sealed class NotificationOutboxProcessor(
                     delivery.Notification.EventType,
                     delivery.Notification.Payload);
                 body = rendered.HtmlBody;
+                textBody = rendered.TextBody;
                 subject = rendered.Subject;
                 fromDisplayName = rendered.FromDisplayName;
             }
@@ -168,7 +170,7 @@ public sealed class NotificationOutboxProcessor(
                         await emailProvider.SendAsync(
                             delivery.RecipientEmail,
                             subject,
-                            body,
+                            new EmailContent(body, textBody!),
                             fromDisplayName,
                             cancellationToken);
                     }
@@ -177,7 +179,7 @@ public sealed class NotificationOutboxProcessor(
                         await emailProvider.SendAsync(
                             delivery.RecipientEmail,
                             subject,
-                            body,
+                            EmailContent.FromPlainText(body, delivery.Notification.Payload.GetValueOrDefault("tenantName")),
                             cancellationToken);
                     }
 
