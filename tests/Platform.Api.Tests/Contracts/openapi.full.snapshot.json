@@ -5985,6 +5985,103 @@
         "format": "int32",
         "type": "integer"
       },
+      "StaffReservationQueueDto": {
+        "additionalProperties": false,
+        "properties": {
+          "activeCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "openingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "opensAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/QueuePhase"
+          },
+          "queueEnabled": {
+            "type": "boolean"
+          },
+          "rentalAssetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "serverNow": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tickets": {
+            "items": {
+              "$ref": "#/components/schemas/StaffReservationQueueTicketDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "waitingCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "waitingRoomOpensAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StaffReservationQueueTicketDto": {
+        "additionalProperties": false,
+        "properties": {
+          "completedReservationId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "customerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "customerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "joinedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/QueueTicketStatus"
+          },
+          "turnExpiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "turnStartedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "StaffTenantMembershipDto": {
         "additionalProperties": false,
         "properties": {
@@ -16687,6 +16784,54 @@
         ]
       }
     },
+    "/api/rentals/rental-assets/{rentalAssetId}/queue": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rentalAssetId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "openingDate",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffReservationQueueDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffReservationQueueDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffReservationQueueDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "StaffRentalAssetQueue"
+        ]
+      }
+    },
     "/api/rentals/resource-segments": {
       "get": {
         "responses": {
@@ -19622,6 +19767,9 @@
     },
     {
       "name": "Schedule"
+    },
+    {
+      "name": "StaffRentalAssetQueue"
     },
     {
       "name": "StaffTenantMemberships"

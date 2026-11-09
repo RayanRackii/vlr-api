@@ -197,6 +197,7 @@ public sealed class RentalAssetCategoriesHttpTests
         public Task<ReservationQueueStatusDto> LeaveAsync(Guid rentalAssetId, Guid customerId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task EnsureActiveTurnForBookingAsync(Guid customerId, RentalAsset rentalAsset, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task CompleteTurnAsync(Guid customerId, RentalAsset rentalAsset, Guid reservationId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<StaffReservationQueueDto> GetStaffRosterAsync(Guid rentalAssetId, DateOnly? openingDate, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubTenantProvider : ITenantProvider
