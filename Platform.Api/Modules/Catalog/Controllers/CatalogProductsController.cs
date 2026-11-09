@@ -208,8 +208,9 @@ public sealed class CatalogProductsController(
         }
     }
 
+    // Which resource a product consumes is catalog configuration. Allocation preview, usage, and
+    // approval that actually reserves a resource stay gated by resource-planning.
     [HttpGet("{id:guid}/resource-requirements")]
-    [RequireActiveModule(PlatformModules.ResourcePlanning)]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
     public async Task<ActionResult<CatalogProductResourceRequirementsResponse>> GetResourceRequirements(
         Guid id,
@@ -226,7 +227,6 @@ public sealed class CatalogProductsController(
     }
 
     [HttpPut("{id:guid}/resource-requirements")]
-    [RequireActiveModule(PlatformModules.ResourcePlanning)]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
     public async Task<ActionResult<CatalogProductResourceRequirementsResponse>> ReplaceResourceRequirements(
         Guid id,
