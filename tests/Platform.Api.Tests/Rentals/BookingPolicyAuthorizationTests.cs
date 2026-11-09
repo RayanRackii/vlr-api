@@ -124,6 +124,61 @@ public sealed class BookingPolicyAuthorizationTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(Permissions.Rentals.OccupancyKindsRead)]
+    [InlineData(Permissions.Rentals.ScheduleRead)]
+    [InlineData(Permissions.Rentals.ScheduleWrite)]
+    public async Task Occupancy_kinds_get_with_any_list_permission_returns_ok(string permission)
+    {
+        using var host = StartHost(permission);
+        using var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+
+        using var response = await client.GetAsync("/api/occupancy-kinds");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(Permissions.Core.CustomersRead)]
+    [InlineData(Permissions.Rentals.OccupancyKindsWrite)]
+    public async Task Occupancy_kinds_get_without_list_permission_returns_forbidden(string? permission)
+    {
+        using var host = StartHost(permission is null ? [] : [permission]);
+        using var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+
+        using var response = await client.GetAsync("/api/occupancy-kinds");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(Permissions.Rentals.OccupancyKindsRead)]
+    [InlineData(Permissions.Rentals.ScheduleRead)]
+    [InlineData(Permissions.Rentals.ScheduleWrite)]
+    [InlineData(Permissions.Rentals.OccupancyKindsWrite)]
+    public async Task Occupancy_kinds_mutations_require_occupancy_kinds_write(string? permission)
+    {
+        using var host = StartHost(permission is null ? [] : [permission]);
+        using var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, "ops@club.test");
+
+        using var createContent = new StringContent(
+            """{"key":"lesson","label":"Lesson"}""", Encoding.UTF8, "application/json");
+        using var updateContent = new StringContent(
+            """{"key":"lesson","label":"Lesson"}""", Encoding.UTF8, "application/json");
+        using var create = await client.PostAsync("/api/occupancy-kinds", createContent);
+        using var update = await client.PutAsync(
+            "/api/occupancy-kinds/11111111-1111-1111-1111-111111111111", updateContent);
+
+        var canWrite = permission == Permissions.Rentals.OccupancyKindsWrite;
+        Assert.Equal(canWrite ? HttpStatusCode.Created : HttpStatusCode.Forbidden, create.StatusCode);
+        Assert.Equal(canWrite ? HttpStatusCode.OK : HttpStatusCode.Forbidden, update.StatusCode);
+    }
+
     private static StringContent JsonBody() =>
         new(
             """{"cancellationPolicyText":"Plain note","maxActiveReservationsPerCustomerPerDay":2}""",
@@ -139,6 +194,7 @@ public sealed class BookingPolicyAuthorizationTests
                 {
                     services.AddLogging();
                     services.AddSingleton<IBookingPolicyService, StubBookingPolicyService>();
+                    services.AddSingleton<IOccupancyKindService, StubOccupancyKindService>();
                     services.AddSingleton<ITenantProvider, StubTenantProvider>();
                     services.AddSingleton<ITenantModuleAccessor, StubTenantModuleAccessor>();
                     services.AddSingleton<IPublicTenantBinder, StubPublicTenantBinder>();
@@ -161,7 +217,8 @@ public sealed class BookingPolicyAuthorizationTests
 
                             manager.ApplicationParts.Add(new AssemblyPart(typeof(BookingPolicyController).Assembly));
                             manager.FeatureProviders.Add(
-                                new SingleControllerFeatureProvider(typeof(BookingPolicyController)));
+                                new SelectedControllersFeatureProvider(
+                                    typeof(BookingPolicyController), typeof(OccupancyKindsController)));
                         });
                 });
                 web.Configure(app =>
@@ -214,6 +271,26 @@ public sealed class BookingPolicyAuthorizationTests
                     : null));
     }
 
+    private sealed class StubOccupancyKindService : IOccupancyKindService
+    {
+        public Task EnsureDefaultsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<OccupancyKindResponseDto>> ListAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<OccupancyKindResponseDto>>([]);
+
+        public Task<OccupancyKindResponseDto> CreateAsync(
+            UpsertOccupancyKindRequestDto request, CancellationToken cancellationToken) =>
+            Task.FromResult(Response(Guid.NewGuid(), request));
+
+        public Task<OccupancyKindResponseDto> UpdateAsync(
+            Guid id, UpsertOccupancyKindRequestDto request, CancellationToken cancellationToken) =>
+            Task.FromResult(Response(id, request));
+
+        private static OccupancyKindResponseDto Response(Guid id, UpsertOccupancyKindRequestDto request) =>
+            new(id, request.Key, request.Label, request.Description, request.ColorHex, request.IconKey,
+                request.IsBookableByCustomer, request.BlocksCapacity, request.SortOrder, request.IsActive);
+    }
+
     private sealed class StubTenantProvider : ITenantProvider
     {
         public Guid? TenantId => Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -233,10 +310,10 @@ public sealed class BookingPolicyAuthorizationTests
             Task.CompletedTask;
     }
 
-    private sealed class SingleControllerFeatureProvider(Type controllerType) : ControllerFeatureProvider
+    private sealed class SelectedControllersFeatureProvider(params Type[] controllerTypes) : ControllerFeatureProvider
     {
         protected override bool IsController(TypeInfo typeInfo) =>
-            typeInfo.AsType() == controllerType;
+            controllerTypes.Contains(typeInfo.AsType());
     }
 
     private sealed class TestAuthHandler(

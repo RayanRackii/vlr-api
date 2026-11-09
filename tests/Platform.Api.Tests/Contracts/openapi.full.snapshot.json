@@ -4737,6 +4737,10 @@
             "nullable": true,
             "type": "string"
           },
+          "tag": {
+            "nullable": true,
+            "type": "string"
+          },
           "tenantId": {
             "format": "uuid",
             "type": "string"
