@@ -70,7 +70,7 @@ public sealed class PasswordResetEmailDispatcher(
         await emailProvider.SendAsync(
             work.Recipient,
             RolvixEmailLayout.PasswordResetSubject,
-            html,
+            EmailContent.FromRenderedHtml(html),
             cancellationToken);
     }
 

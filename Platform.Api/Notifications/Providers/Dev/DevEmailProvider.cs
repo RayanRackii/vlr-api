@@ -2,6 +2,12 @@ namespace Platform.Api.Notifications.Providers.Dev;
 
 public sealed class DevEmailProvider(ILogger<DevEmailProvider> logger) : IEmailProvider
 {
+    public Task SendAsync(string recipient, string subject, EmailContent content, CancellationToken cancellationToken = default)
+        => SendAsync(recipient, subject, content, null, cancellationToken);
+
+    public Task SendAsync(string recipient, string subject, EmailContent content, string? fromDisplayName, CancellationToken cancellationToken)
+        => SendAsync(recipient, subject, content.Html, fromDisplayName, cancellationToken);
+
     public Task SendAsync(
         string recipient,
         string subject,
