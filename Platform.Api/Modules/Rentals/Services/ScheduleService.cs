@@ -203,6 +203,16 @@ public sealed class ScheduleService(
 
             var start = TenantBookingClock.AtLocal(slot.Date, slot.StartTime, zone);
             ReservationBookingRules.EnsureStartNotBeforeNow(start, timeProvider);
+            var resolver = new PolicyResolver(dbContext);
+            var tenantPolicy = await resolver.ReadTenantAsync(tenantId, cancellationToken);
+            var categories = await resolver.ReadCategoriesAsync(tenantId, cancellationToken);
+            BookingLeadTime.Ensure(
+                start,
+                timeProvider.GetUtcNow(),
+                PolicyResolver.Resolve(
+                    slot.RentalAsset,
+                    categories.GetValueOrDefault(slot.RentalAsset.Asset.CategoryId),
+                    tenantPolicy).MinimumBookingLeadMinutes);
 
             await reservationQueueService.EnsureActiveTurnForBookingAsync(
                 customerId,
@@ -309,9 +319,6 @@ public sealed class ScheduleService(
                 new ReservationEvent(reservation, eventType),
                 cancellationToken);
 
-            var resolver = new PolicyResolver(dbContext);
-            var tenantPolicy = await resolver.ReadTenantAsync(tenantId, cancellationToken);
-            var categories = await resolver.ReadCategoriesAsync(tenantId, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {

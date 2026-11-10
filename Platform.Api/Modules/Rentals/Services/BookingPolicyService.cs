@@ -29,12 +29,14 @@ public sealed class BookingPolicyService(
 
         try
         {
-            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, request.CancelCutoffHours, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, request.CancelCutoffHours,
+                request.MinimumBookingLeadMinutes, request.DepositPercent, cancellationToken);
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, request.CancelCutoffHours, cancellationToken);
+            return await SaveAsync(tenantId, text, limit, request.MaxAdvanceBookingDays, request.CancelCutoffHours,
+                request.MinimumBookingLeadMinutes, request.DepositPercent, cancellationToken);
         }
     }
 
@@ -50,9 +52,15 @@ public sealed class BookingPolicyService(
             .Select(c => new { c.Id, c.Name })
             .ToListAsync(cancellationToken);
         var policies = await new PolicyResolver(dbContext).ReadCategoriesAsync(tenantId, cancellationToken);
-        return categories.Select(c => new CategoryBookingPolicyResponseDto(c.Id, c.Name,
-            policies.GetValueOrDefault(c.Id)?.MaxAdvanceBookingDays,
-            policies.GetValueOrDefault(c.Id)?.CancelCutoffHours)).ToList();
+        return categories.Select(c =>
+        {
+            var policy = policies.GetValueOrDefault(c.Id);
+            return new CategoryBookingPolicyResponseDto(c.Id, c.Name,
+                policy?.MaxAdvanceBookingDays,
+                policy?.CancelCutoffHours,
+                policy?.MinimumBookingLeadMinutes,
+                policy?.DepositPercent);
+        }).ToList();
     }
 
     public async Task<CategoryBookingPolicyResponseDto> UpsertCategoryAsync(
@@ -64,19 +72,33 @@ public sealed class BookingPolicyService(
             ?? throw new KeyNotFoundException("Asset category was not found.");
         var days = BookingPolicyText.NormalizeAdvanceDays(request.MaxAdvanceBookingDays);
         var cutoff = PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours);
+        var lead = request.MinimumBookingLeadMinutes.IsSpecified
+            ? BookingPolicy.NormalizeLeadMinutes(request.MinimumBookingLeadMinutes.Value)
+            : null;
+        var deposit = request.DepositPercent.IsSpecified
+            ? BookingPolicy.NormalizeDepositPercent(request.DepositPercent.Value)
+            : null;
+        BookingPolicy policy;
         try
         {
-            await SaveCategoryAsync(tenantId, categoryId, days, cutoff, cancellationToken);
+            policy = await SaveCategoryAsync(tenantId, categoryId, days, cutoff,
+                request.MinimumBookingLeadMinutes.IsSpecified, lead,
+                request.DepositPercent.IsSpecified, deposit, cancellationToken);
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            await SaveCategoryAsync(tenantId, categoryId, days, cutoff, cancellationToken);
+            policy = await SaveCategoryAsync(tenantId, categoryId, days, cutoff,
+                request.MinimumBookingLeadMinutes.IsSpecified, lead,
+                request.DepositPercent.IsSpecified, deposit, cancellationToken);
         }
-        return new(category.Id, category.Name, days, cutoff);
+        return new(category.Id, category.Name, policy.MaxAdvanceBookingDays, policy.CancelCutoffHours,
+            policy.MinimumBookingLeadMinutes, policy.DepositPercent);
     }
 
-    private async Task SaveCategoryAsync(Guid tenantId, Guid categoryId, int? days, int? cutoff,
+    private async Task<BookingPolicy> SaveCategoryAsync(
+        Guid tenantId, Guid categoryId, int? days, int? cutoff,
+        bool leadSpecified, int? lead, bool depositSpecified, int? deposit,
         CancellationToken cancellationToken)
     {
         var policy = await dbContext.BookingPolicies.FirstOrDefaultAsync(
@@ -89,10 +111,21 @@ public sealed class BookingPolicyService(
         }
         policy.MaxAdvanceBookingDays = days;
         policy.CancelCutoffHours = cutoff;
+        if (leadSpecified)
+        {
+            policy.MinimumBookingLeadMinutes = lead;
+        }
+
+        if (depositSpecified)
+        {
+            policy.DepositPercent = deposit;
+        }
+
         policy.CancellationPolicyText = null;
         policy.MaxActiveReservationsPerCustomerPerDay = null;
         policy.Touch();
         await dbContext.SaveChangesAsync(cancellationToken);
+        return policy;
     }
 
     private async Task<BookingPolicyResponseDto> SaveAsync(
@@ -101,6 +134,8 @@ public sealed class BookingPolicyService(
         int? limit,
         JsonOptional<int> horizon,
         JsonOptional<int> cancelCutoff,
+        JsonOptional<int> leadMinutes,
+        JsonOptional<int> depositPercent,
         CancellationToken cancellationToken)
     {
         var policy = await FindDefaultAsync(tenantId, tracking: true, cancellationToken);
@@ -111,6 +146,12 @@ public sealed class BookingPolicyService(
         var resolvedCutoff = cancelCutoff.IsSpecified
             ? PolicyResolver.ValidateCancelCutoffHours(cancelCutoff.Value)
             : policy?.CancelCutoffHours;
+        var resolvedLead = leadMinutes.IsSpecified
+            ? BookingPolicy.NormalizeLeadMinutes(leadMinutes.Value)
+            : policy?.MinimumBookingLeadMinutes;
+        var resolvedDeposit = depositPercent.IsSpecified
+            ? BookingPolicy.NormalizeDepositPercent(depositPercent.Value)
+            : policy?.DepositPercent;
         if (policy is null)
         {
             policy = new BookingPolicy
@@ -121,6 +162,8 @@ public sealed class BookingPolicyService(
                 MaxActiveReservationsPerCustomerPerDay = limit,
                 MaxAdvanceBookingDays = resolvedHorizon,
                 CancelCutoffHours = resolvedCutoff,
+                MinimumBookingLeadMinutes = resolvedLead,
+                DepositPercent = resolvedDeposit,
             };
             dbContext.BookingPolicies.Add(policy);
         }
@@ -128,6 +171,8 @@ public sealed class BookingPolicyService(
         {
             policy.Replace(text, limit, resolvedHorizon);
             policy.CancelCutoffHours = resolvedCutoff;
+            policy.MinimumBookingLeadMinutes = resolvedLead;
+            policy.DepositPercent = resolvedDeposit;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -164,7 +209,9 @@ public sealed class BookingPolicyService(
             policy?.CancellationPolicyText,
             policy?.MaxActiveReservationsPerCustomerPerDay,
             policy?.MaxAdvanceBookingDays,
-            policy?.CancelCutoffHours);
+            policy?.CancelCutoffHours,
+            policy?.MinimumBookingLeadMinutes,
+            policy?.DepositPercent);
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgres

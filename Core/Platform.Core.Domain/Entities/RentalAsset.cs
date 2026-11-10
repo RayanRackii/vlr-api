@@ -57,6 +57,18 @@ public class RentalAsset : Entity, ITenantScoped
     /// <summary>Customer cancellation cutoff in hours; null inherits the tenant policy.</summary>
     public int? CancelCutoffHours { get; set; }
 
+    /// <summary>
+    /// Minutes a customer must book ahead of the start. Null inherits the
+    /// category policy, then the tenant policy. Null at every level means no minimum.
+    /// </summary>
+    public int? MinimumBookingLeadMinutes { get; set; }
+
+    /// <summary>
+    /// Deposit percent from 0 to 100. Null inherits the category policy, then
+    /// the tenant policy. Stored for setup and display; it does not change the charged total.
+    /// </summary>
+    public int? DepositPercent { get; set; }
+
     /// <summary>Fixed published visual revision; null uses the generic resource presentation.</summary>
     public Guid? VisualTemplateRevisionId { get; set; }
 

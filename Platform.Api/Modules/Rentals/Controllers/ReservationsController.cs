@@ -39,6 +39,10 @@ public sealed class ReservationsController(
         {
             return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
         }
+        catch (BookingLeadTimeNotMetException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingLeadTimeNotMetException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -260,6 +264,10 @@ public sealed class ReservationsController(
         catch (BookingHorizonExceededException ex)
         {
             return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
+        }
+        catch (BookingLeadTimeNotMetException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingLeadTimeNotMetException.Code });
         }
         catch (StartInThePastException ex)
         {

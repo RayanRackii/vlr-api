@@ -616,12 +616,22 @@
             "nullable": true,
             "type": "string"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "maxActiveReservationsPerCustomerPerDay": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
           },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -818,6 +828,16 @@
             "format": "time",
             "nullable": true,
             "type": "string"
+          },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "openTime": {
             "format": "time",
@@ -1758,7 +1778,17 @@
             "nullable": true,
             "type": "string"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -2235,6 +2265,11 @@
           "confirmVisualSuggestions": {
             "type": "boolean"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "familyId": {
             "format": "uuid",
             "type": "string"
@@ -2244,6 +2279,11 @@
             "type": "string"
           },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -4843,12 +4883,27 @@
             "format": "date-time",
             "type": "string"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "effectiveCancelCutoffHours": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
           },
+          "effectiveDepositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "effectiveMaxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "effectiveMinimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -4870,6 +4925,11 @@
             "type": "string"
           },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -7079,6 +7139,11 @@
           "confirmVisualSuggestions": {
             "type": "boolean"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "familyId": {
             "format": "uuid",
             "type": "string"
@@ -7088,6 +7153,11 @@
             "type": "string"
           },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -7191,6 +7261,16 @@
             "format": "time",
             "nullable": true,
             "type": "string"
+          },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "openTime": {
             "format": "time",
@@ -7315,12 +7395,22 @@
             "nullable": true,
             "type": "string"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "maxActiveReservationsPerCustomerPerDay": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
           },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
@@ -7386,7 +7476,17 @@
             "nullable": true,
             "type": "integer"
           },
+          "depositPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "maxAdvanceBookingDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "minimumBookingLeadMinutes": {
             "format": "int32",
             "nullable": true,
             "type": "integer"
