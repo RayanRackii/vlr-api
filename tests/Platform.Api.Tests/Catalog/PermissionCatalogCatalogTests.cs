@@ -7,8 +7,8 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(58, PermissionCatalog.All.Length);
-        Assert.Equal(58, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(59, PermissionCatalog.All.Length);
+        Assert.Equal(59, PermissionCatalog.AllKeys.Count);
         foreach (var key in new[] { Permissions.Rentals.SegmentsRead, Permissions.Rentals.SegmentsWrite,
             Permissions.Rentals.MapSettingsRead, Permissions.Rentals.MapSettingsWrite })
         {
@@ -44,6 +44,11 @@ public sealed class PermissionCatalogCatalogTests
         Assert.Contains(Permissions.Rentals.ScheduleLessonsWrite, PermissionCatalog.ExplicitGrantOnlyKeys);
         Assert.Contains(Permissions.Core.NotificationsRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Core.NotificationsWrite, PermissionCatalog.AllKeys);
+        Assert.Contains(Permissions.Core.NotificationsResend, PermissionCatalog.AllKeys);
+        Assert.Null(Assert.Single(PermissionCatalog.All, item => item.Key == Permissions.Core.NotificationsResend).ModuleKey);
+        Assert.DoesNotContain(Permissions.Core.NotificationsResend, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsResend, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.DoesNotContain(Permissions.Core.NotificationsResend, PermissionCatalog.ExplicitGrantOnlyKeys);
         Assert.Contains(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.AllKeys);
         Assert.Contains(Permissions.Rentals.BookingPolicyWrite, PermissionCatalog.AllKeys);
         Assert.DoesNotContain(Permissions.Rentals.BookingPolicyRead, PermissionCatalog.ExplicitGrantOnlyKeys);

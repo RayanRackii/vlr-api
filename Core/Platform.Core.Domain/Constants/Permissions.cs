@@ -24,6 +24,7 @@ public static class Permissions
         public const string ModuleMenuWrite = "core.module_menu.write";
         public const string NotificationsRead = "core.notifications.read";
         public const string NotificationsWrite = "core.notifications.write";
+        public const string NotificationsResend = "core.notifications.resend";
     }
 
     public static class Inventory
