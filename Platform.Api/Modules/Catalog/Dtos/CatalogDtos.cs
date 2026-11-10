@@ -393,7 +393,8 @@ public sealed record CatalogNotificationDeliveryResponse(
     NotificationDeliveryStatus Status,
     int AttemptCount,
     string? ErrorMessage,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool CanResend);
 
 public sealed record CatalogChannelConfigItem(
     string EventType,

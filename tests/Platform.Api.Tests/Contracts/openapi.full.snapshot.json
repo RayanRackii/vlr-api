@@ -1081,6 +1081,9 @@
             "format": "int32",
             "type": "integer"
           },
+          "canResend": {
+            "type": "boolean"
+          },
           "channel": {
             "$ref": "#/components/schemas/NotificationChannel"
           },
@@ -3818,7 +3821,8 @@
           0,
           1,
           2,
-          3
+          3,
+          4
         ],
         "format": "int32",
         "type": "integer"

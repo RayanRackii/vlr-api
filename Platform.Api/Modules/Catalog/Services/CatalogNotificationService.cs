@@ -86,19 +86,12 @@ public sealed class CatalogNotificationService(
         CancellationToken cancellationToken)
     {
         EnsureTenant();
-        var delivery = await dbContext.NotificationDeliveries
-            .Include(d => d.Notification)
-            .Include(d => d.Attempts)
-            .FirstOrDefaultAsync(d => d.Id == deliveryId, cancellationToken)
-            ?? throw new KeyNotFoundException("Delivery not found.");
-
-        delivery.ResetForResend();
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await outboxProcessor.ProcessDeliveryAsync(delivery.Id, cancellationToken);
+        await outboxProcessor.ResendAsync(deliveryId, cancellationToken);
 
         var reloaded = await dbContext.NotificationDeliveries
+            .AsNoTracking()
             .Include(d => d.Notification)
-            .FirstAsync(d => d.Id == delivery.Id, cancellationToken);
+            .FirstAsync(d => d.Id == deliveryId, cancellationToken);
         return Map(reloaded);
     }
 
@@ -187,5 +180,6 @@ public sealed class CatalogNotificationService(
             delivery.Status,
             delivery.AttemptCount,
             delivery.ErrorMessage,
-            delivery.CreatedAt);
+            delivery.CreatedAt,
+            NotificationDeliveryFailures.CanResend(delivery.Status, delivery.Channel, delivery.ErrorMessage));
 }
