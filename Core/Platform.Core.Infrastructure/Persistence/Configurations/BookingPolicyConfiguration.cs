@@ -16,6 +16,12 @@ public sealed class BookingPolicyConfiguration : IEntityTypeConfiguration<Bookin
             table.HasCheckConstraint(
                 "ck_booking_policies_advance_days",
                 "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+            table.HasCheckConstraint(
+                "ck_booking_policies_lead_minutes",
+                "minimum_booking_lead_minutes IS NULL OR (minimum_booking_lead_minutes >= 0 AND minimum_booking_lead_minutes <= 525600)");
+            table.HasCheckConstraint(
+                "ck_booking_policies_deposit_percent",
+                "deposit_percent IS NULL OR (deposit_percent >= 0 AND deposit_percent <= 100)");
         });
 
         builder.HasKey(policy => policy.Id);
@@ -38,6 +44,10 @@ public sealed class BookingPolicyConfiguration : IEntityTypeConfiguration<Bookin
         builder.Property(policy => policy.MaxAdvanceBookingDays);
 
         builder.Property(policy => policy.CancelCutoffHours);
+
+        builder.Property(policy => policy.MinimumBookingLeadMinutes);
+
+        builder.Property(policy => policy.DepositPercent);
 
         builder.Property(policy => policy.CreatedAt)
             .IsRequired();

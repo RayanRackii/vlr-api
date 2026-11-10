@@ -67,6 +67,22 @@ public sealed record CreateRentableRequest
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> CancelCutoffHours { get; init; }
 
+    /// <summary>
+    /// Minutes a customer must book ahead. Omitted inherits on create and keeps the stored
+    /// override on update. Explicit null clears the override. 0 to 525600.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MinimumBookingLeadMinutes { get; init; }
+
+    /// <summary>
+    /// Deposit percent 0 to 100. Omitted inherits on create and keeps the stored override
+    /// on update. Explicit null clears the override. Not applied to a charge.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> DepositPercent { get; init; }
+
     public Guid? VisualTemplateRevisionId { get; init; }
 
     public int? CapacityPeople { get; init; }
@@ -123,6 +139,22 @@ public sealed record UpdateRentableRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> CancelCutoffHours { get; init; }
+
+    /// <summary>
+    /// Minutes a customer must book ahead. Omitted keeps the stored override.
+    /// Explicit null clears it so the resource inherits category/tenant policy. 0 to 525600.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MinimumBookingLeadMinutes { get; init; }
+
+    /// <summary>
+    /// Deposit percent 0 to 100. Omitted keeps the stored override.
+    /// Explicit null clears it. Not applied to a charge.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> DepositPercent { get; init; }
 
     /// <summary>Omitted preserves the fixed revision; explicit null clears it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

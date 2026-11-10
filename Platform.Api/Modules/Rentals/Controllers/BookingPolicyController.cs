@@ -76,6 +76,9 @@ public sealed class BookingPolicyController(
     /// Explicit null clears it (unlimited).
     /// Omitted <c>cancelCutoffHours</c> keeps the cutoff; explicit null clears it.
     /// The cutoff must be between 0 and 8760 hours.
+    /// Omitted <c>minimumBookingLeadMinutes</c> keeps the lead; explicit null clears it.
+    /// The lead is 0 to 525600 minutes. Omitted <c>depositPercent</c> keeps the percent;
+    /// explicit null clears it. The percent is 0 to 100 and is not applied to a charge.
     /// </summary>
     [RequirePermission(Permissions.Rentals.BookingPolicyWrite)]
     [HttpPut]

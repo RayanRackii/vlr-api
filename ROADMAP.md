@@ -1,5 +1,9 @@
 # ROADMAP — vlr-api
 
+### Antecedência mínima e percentual de sinal (2026-11-10)
+
+- [x] `minimumBookingLeadMinutes` (0–525600, null = sem mínimo) e `depositPercent` (0–100, null = sem percentual) na política de reserva: tenant, categoria e override do recurso. Precedência: recurso > categoria > tenant. Cliente: `POST /api/reservations`, `POST /api/schedule/slots/book` e a consulta de disponibilidade rejeitam início curto com `booking_lead_time_not_met`. Staff (ocupação de uso interno) não lê o mínimo. Não há reagendamento. `depositPercent` só é gravado e exposto; o total da reserva e o e-mail de sinal continuam na janela de preço (`depositPercentage`). Sem coluna em produto ou `CatalogPolicy`. Migration aditiva `AddBookingLeadTimeAndDepositPercent`.
+
 ### Agenda do dia com itens repetidos (2026-11-10)
 
 - [x] `GET /api/schedule/days/{date}` deixa de responder 500 quando uma reserva tem dois itens no mesmo recurso, ou um item tem duas alocações. A célula soma a quantidade, fica com o nome e o propósito do menor item id, e a janela vai do início mais cedo ao fim mais tarde (o pedido exibido é o do trecho mais cedo). Sem migration e sem mudança de contrato.
@@ -415,6 +419,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-11-10 | **API:** antecedência mínima (minutos) e percentual de sinal na política de reserva e no recurso. O percentual não entra no valor cobrado. Migration aditiva `AddBookingLeadTimeAndDepositPercent`. |
 | 2026-11-10 | **API:** a agenda do dia agrupa itens da mesma reserva no mesmo recurso e alocações do mesmo item, em vez de estourar a chave do dicionário. Sem migration. |
 | 2026-11-10 | **API:** a mesma migration também copia `core.notifications.write` para quem tem `catalog.notifications.resend` e `core.notifications.read` para quem tem `catalog.notifications.read`. O Down não apaga esses dois grants. Página cujo deslocamento estoura `int` responde 400. |
 | 2026-11-10 | **API:** log e reenvio passam para `/api/notifications/deliveries` com paginação e filtros, sem o módulo Catalog. `core.notifications.resend` é semeado nas roles que já têm `catalog.notifications.resend` (migration idempotente). As rotas `/api/catalog/...` ficam como wrappers. `PUT /api/catalog/notification-channels` exige `core.notifications.write`. |

@@ -342,6 +342,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<int?>("DepositPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("deposit_percent");
+
                     b.Property<int?>("MaxActiveReservationsPerCustomerPerDay")
                         .HasColumnType("integer")
                         .HasColumnName("max_active_reservations_per_customer_per_day");
@@ -349,6 +353,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<int?>("MaxAdvanceBookingDays")
                         .HasColumnType("integer")
                         .HasColumnName("max_advance_booking_days");
+
+                    b.Property<int?>("MinimumBookingLeadMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("minimum_booking_lead_minutes");
 
                     b.Property<string>("ResourceType")
                         .HasMaxLength(32)
@@ -389,6 +397,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_booking_policies_advance_days", "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
 
                             t.HasCheckConstraint("ck_booking_policies_daily_limit", "max_active_reservations_per_customer_per_day IS NULL OR (max_active_reservations_per_customer_per_day >= 1 AND max_active_reservations_per_customer_per_day <= 100)");
+
+                            t.HasCheckConstraint("ck_booking_policies_deposit_percent", "deposit_percent IS NULL OR (deposit_percent >= 0 AND deposit_percent <= 100)");
+
+                            t.HasCheckConstraint("ck_booking_policies_lead_minutes", "minimum_booking_lead_minutes IS NULL OR (minimum_booking_lead_minutes >= 0 AND minimum_booking_lead_minutes <= 525600)");
                         });
                 });
 
@@ -2583,6 +2595,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<int?>("DepositPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("deposit_percent");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -2592,6 +2608,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<int?>("MaxAdvanceBookingDays")
                         .HasColumnType("integer")
                         .HasColumnName("max_advance_booking_days");
+
+                    b.Property<int?>("MinimumBookingLeadMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("minimum_booking_lead_minutes");
 
                     b.Property<TimeOnly?>("OpenTime")
                         .HasColumnType("time without time zone")
@@ -2664,6 +2684,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_rental_assets_advance_days", "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
 
                             t.HasCheckConstraint("ck_rental_assets_capacity_people", "capacity_people IS NULL OR (capacity_people > 0 AND capacity_people <= 100000)");
+
+                            t.HasCheckConstraint("ck_rental_assets_deposit_percent", "deposit_percent IS NULL OR (deposit_percent >= 0 AND deposit_percent <= 100)");
+
+                            t.HasCheckConstraint("ck_rental_assets_lead_minutes", "minimum_booking_lead_minutes IS NULL OR (minimum_booking_lead_minutes >= 0 AND minimum_booking_lead_minutes <= 525600)");
                         });
                 });
 

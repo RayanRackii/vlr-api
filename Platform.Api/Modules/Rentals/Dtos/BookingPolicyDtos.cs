@@ -7,7 +7,9 @@ public sealed record BookingPolicyResponseDto(
     string? CancellationPolicyText,
     int? MaxActiveReservationsPerCustomerPerDay,
     int? MaxAdvanceBookingDays,
-    int? CancelCutoffHours = null);
+    int? CancelCutoffHours = null,
+    int? MinimumBookingLeadMinutes = null,
+    int? DepositPercent = null);
 
 /// <summary>
 /// Replacement of the tenant default booking policy.
@@ -28,14 +30,51 @@ public sealed record UpsertBookingPolicyRequestDto
     /// <summary>Omitted keeps the cutoff; explicit null clears it.</summary>
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> CancelCutoffHours { get; init; }
+
+    /// <summary>Omitted keeps the lead time; explicit null clears it (no minimum).</summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MinimumBookingLeadMinutes { get; init; }
+
+    /// <summary>Omitted keeps the percent; explicit null clears it (no deposit percent).</summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> DepositPercent { get; init; }
 }
 
 public sealed record CategoryBookingPolicyResponseDto(
     Guid CategoryId,
     string CategoryName,
     int? MaxAdvanceBookingDays,
-    int? CancelCutoffHours);
+    int? CancelCutoffHours,
+    int? MinimumBookingLeadMinutes = null,
+    int? DepositPercent = null);
 
-public sealed record UpsertCategoryBookingPolicyRequestDto(
-    int? MaxAdvanceBookingDays,
-    int? CancelCutoffHours);
+public sealed class UpsertCategoryBookingPolicyRequestDto
+{
+    public UpsertCategoryBookingPolicyRequestDto()
+    {
+    }
+
+    public UpsertCategoryBookingPolicyRequestDto(
+        int? maxAdvanceBookingDays,
+        int? cancelCutoffHours,
+        JsonOptional<int> minimumBookingLeadMinutes = default,
+        JsonOptional<int> depositPercent = default)
+    {
+        MaxAdvanceBookingDays = maxAdvanceBookingDays;
+        CancelCutoffHours = cancelCutoffHours;
+        MinimumBookingLeadMinutes = minimumBookingLeadMinutes;
+        DepositPercent = depositPercent;
+    }
+
+    public int? MaxAdvanceBookingDays { get; init; }
+
+    public int? CancelCutoffHours { get; init; }
+
+    /// <summary>Omitted keeps the stored lead; explicit null clears it.</summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MinimumBookingLeadMinutes { get; init; }
+
+    /// <summary>Omitted keeps the stored percent; explicit null clears it.</summary>
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> DepositPercent { get; init; }
+}

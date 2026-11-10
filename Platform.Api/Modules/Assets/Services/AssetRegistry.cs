@@ -87,10 +87,15 @@ public sealed class AssetRegistry(
         var tenantId = EnsureTenantContext();
 
         var cutoff = ValidateCutoff(request.CancelCutoffHours);
-        // One transaction for the asset write and the cutoff write (AssetService joins an ambient one).
-        await using var transaction = await BeginCutoffTransactionAsync(request.CancelCutoffHours, cancellationToken);
+        var lead = ValidateLead(request.MinimumBookingLeadMinutes);
+        var deposit = ValidateDeposit(request.DepositPercent);
+        // One transaction for the asset write and the policy override (AssetService joins an ambient one).
+        await using var transaction = await BeginPolicyTransactionAsync(
+            request.CancelCutoffHours.IsSpecified || request.MinimumBookingLeadMinutes.IsSpecified || request.DepositPercent.IsSpecified,
+            cancellationToken);
         var created = await assetService.CreateRentableAsync(request, cancellationToken);
-        await ApplyCancelCutoffAsync(created.Id, request.CancelCutoffHours, cutoff, cancellationToken);
+        await ApplyResourcePolicyAsync(created.Id, request.CancelCutoffHours, cutoff,
+            request.MinimumBookingLeadMinutes, lead, request.DepositPercent, deposit, cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return await LoadRentableAssetAsync(created.Id, cancellationToken);
     }
@@ -111,16 +116,21 @@ public sealed class AssetRegistry(
             ?? throw new KeyNotFoundException("Rentable was not found.");
 
         var cutoff = ValidateCutoff(request.CancelCutoffHours);
-        await using var transaction = await BeginCutoffTransactionAsync(request.CancelCutoffHours, cancellationToken);
+        var lead = ValidateLead(request.MinimumBookingLeadMinutes);
+        var deposit = ValidateDeposit(request.DepositPercent);
+        await using var transaction = await BeginPolicyTransactionAsync(
+            request.CancelCutoffHours.IsSpecified || request.MinimumBookingLeadMinutes.IsSpecified || request.DepositPercent.IsSpecified,
+            cancellationToken);
         await assetService.UpdateRentableAsync(rental.AssetId, request, cancellationToken);
-        await ApplyCancelCutoffAsync(rental.AssetId, request.CancelCutoffHours, cutoff, cancellationToken);
+        await ApplyResourcePolicyAsync(rental.AssetId, request.CancelCutoffHours, cutoff,
+            request.MinimumBookingLeadMinutes, lead, request.DepositPercent, deposit, cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return await LoadRentableAssetAsync(rental.AssetId, cancellationToken);
     }
 
-    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginCutoffTransactionAsync(
-        JsonOptional<int> requested, CancellationToken cancellationToken) =>
-        requested.IsSpecified && dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> BeginPolicyTransactionAsync(
+        bool specified, CancellationToken cancellationToken) =>
+        specified && dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
 
@@ -131,18 +141,54 @@ public sealed class AssetRegistry(
             ? throw new ArgumentException("Cancellation cutoff must be an integer from 0 to 8760, or null for no cutoff.")
             : requested.Value;
 
-    // The drawer sends cancelCutoffHours on PUT/POST /api/rental-assets; before this it was
-    // silently dropped by model binding (field missing from the DTO) and the API answered 200.
-    private async Task ApplyCancelCutoffAsync(
-        Guid assetId, JsonOptional<int> requested, int? cutoff, CancellationToken cancellationToken)
+    private static int? ValidateLead(JsonOptional<int> requested) =>
+        !requested.IsSpecified ? null : BookingPolicy.NormalizeLeadMinutes(requested.Value);
+
+    private static int? ValidateDeposit(JsonOptional<int> requested) =>
+        !requested.IsSpecified ? null : BookingPolicy.NormalizeDepositPercent(requested.Value);
+
+    // The drawer sends these overrides on PUT/POST /api/rental-assets. A missing property
+    // must not wipe a stored value.
+    private async Task ApplyResourcePolicyAsync(
+        Guid assetId,
+        JsonOptional<int> cutoffRequested, int? cutoff,
+        JsonOptional<int> leadRequested, int? lead,
+        JsonOptional<int> depositRequested, int? deposit,
+        CancellationToken cancellationToken)
     {
-        if (!requested.IsSpecified) return;
+        if (!cutoffRequested.IsSpecified && !leadRequested.IsSpecified && !depositRequested.IsSpecified)
+        {
+            return;
+        }
+
         var tenantId = EnsureTenantContext();
         var rental = await dbContext.RentalAssets
             .FirstOrDefaultAsync(r => r.AssetId == assetId && r.TenantId == tenantId, cancellationToken)
             ?? throw new KeyNotFoundException("Rentable was not found.");
-        if (rental.CancelCutoffHours == cutoff) return;
-        rental.CancelCutoffHours = cutoff;
+        var changed = false;
+        if (cutoffRequested.IsSpecified && rental.CancelCutoffHours != cutoff)
+        {
+            rental.CancelCutoffHours = cutoff;
+            changed = true;
+        }
+
+        if (leadRequested.IsSpecified && rental.MinimumBookingLeadMinutes != lead)
+        {
+            rental.MinimumBookingLeadMinutes = lead;
+            changed = true;
+        }
+
+        if (depositRequested.IsSpecified && rental.DepositPercent != deposit)
+        {
+            rental.DepositPercent = deposit;
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
         rental.Touch();
         await dbContext.SaveChangesAsync(cancellationToken);
     }

@@ -81,6 +81,10 @@ public sealed class RentalAssetService(
 
             if (request.CancelCutoffHours.IsSpecified)
                 rental.CancelCutoffHours = PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours.Value);
+            if (request.MinimumBookingLeadMinutes.IsSpecified)
+                rental.MinimumBookingLeadMinutes = BookingPolicy.NormalizeLeadMinutes(request.MinimumBookingLeadMinutes.Value);
+            if (request.DepositPercent.IsSpecified)
+                rental.DepositPercent = BookingPolicy.NormalizeDepositPercent(request.DepositPercent.Value);
             rental.SchedulePolicy = request.SchedulePolicy;
             rental.OpenTime = request.OpenTime;
             rental.CloseTime = request.CloseTime;
@@ -148,10 +152,18 @@ public sealed class RentalAssetService(
 
             var cutoff = request.CancelCutoffHours.IsSpecified
                 ? PolicyResolver.ValidateCancelCutoffHours(request.CancelCutoffHours.Value) : null;
+            var lead = request.MinimumBookingLeadMinutes.IsSpecified
+                ? BookingPolicy.NormalizeLeadMinutes(request.MinimumBookingLeadMinutes.Value) : null;
+            var deposit = request.DepositPercent.IsSpecified
+                ? BookingPolicy.NormalizeDepositPercent(request.DepositPercent.Value) : null;
             foreach (var rental in rentals)
             {
                 if (request.CancelCutoffHours.IsSpecified)
                     rental.CancelCutoffHours = cutoff;
+                if (request.MinimumBookingLeadMinutes.IsSpecified)
+                    rental.MinimumBookingLeadMinutes = lead;
+                if (request.DepositPercent.IsSpecified)
+                    rental.DepositPercent = deposit;
                 rental.SchedulePolicy = request.SchedulePolicy;
                 rental.OpenTime = request.OpenTime;
                 rental.CloseTime = request.CloseTime;
@@ -339,5 +351,9 @@ public sealed class RentalAssetService(
             PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).CancelCutoffHours,
             rental.Asset.Location,
             rental.Asset.ScheduledDeletionAt,
-            rental.Asset.Tag);
+            rental.Asset.Tag,
+            rental.MinimumBookingLeadMinutes,
+            PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).MinimumBookingLeadMinutes,
+            rental.DepositPercent,
+            PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).DepositPercent);
 }

@@ -35,7 +35,11 @@ public sealed record RentalAssetResponse(
     int? EffectiveCancelCutoffHours = null,
     string? Location = null,
     DateTimeOffset? ScheduledDeletionAt = null,
-    string? Tag = null);
+    string? Tag = null,
+    int? MinimumBookingLeadMinutes = null,
+    int? EffectiveMinimumBookingLeadMinutes = null,
+    int? DepositPercent = null,
+    int? EffectiveDepositPercent = null);
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {
@@ -54,6 +58,16 @@ public sealed record UpdateRentalSchedulePolicyRequestDto
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> CancelCutoffHours { get; init; }
+
+    /// <summary>Omitted keeps the override; explicit null restores category/tenant inheritance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MinimumBookingLeadMinutes { get; init; }
+
+    /// <summary>Omitted keeps the override; explicit null restores category/tenant inheritance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> DepositPercent { get; init; }
 }
 
 public sealed record BulkUpdateRentalSchedulePolicyRequestDto
@@ -75,6 +89,16 @@ public sealed record BulkUpdateRentalSchedulePolicyRequestDto
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonConverter(typeof(JsonOptionalInt32Converter))]
     public JsonOptional<int> CancelCutoffHours { get; init; }
+
+    /// <summary>Omitted keeps the override; explicit null restores category/tenant inheritance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> MinimumBookingLeadMinutes { get; init; }
+
+    /// <summary>Omitted keeps the override; explicit null restores category/tenant inheritance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalInt32Converter))]
+    public JsonOptional<int> DepositPercent { get; init; }
 }
 
 public sealed record BulkUpdateRentalSchedulePolicyResponseDto(
