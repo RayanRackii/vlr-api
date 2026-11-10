@@ -1074,12 +1074,51 @@
         "format": "int32",
         "type": "integer"
       },
+      "CatalogNotificationAttemptResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "attemptNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/NotificationChannel"
+          },
+          "errorMessage": {
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/NotificationAttemptOutcome"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CatalogNotificationDeliveryResponse": {
         "additionalProperties": false,
         "properties": {
           "attemptCount": {
             "format": "int32",
             "type": "integer"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogNotificationAttemptResponse"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "canResend": {
+            "type": "boolean"
           },
           "channel": {
             "$ref": "#/components/schemas/NotificationChannel"
@@ -3770,6 +3809,15 @@
         },
         "type": "object"
       },
+      "NotificationAttemptOutcome": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
       "NotificationChannel": {
         "enum": [
           0,
@@ -3818,7 +3866,8 @@
           0,
           1,
           2,
-          3
+          3,
+          4
         ],
         "format": "int32",
         "type": "integer"

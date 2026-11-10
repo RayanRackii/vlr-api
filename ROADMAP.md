@@ -1,5 +1,11 @@
 # ROADMAP — vlr-api
 
+### Reenvio de notificações (2026-11-10)
+
+- [x] O reenvio manual e o sweep `notification-outbox` reivindicam a mesma entrega antes de chamar o provedor (`Failed` ou `Queued` vencido → `Sending`, com retomada de `Sending` parado há 5 minutos). O reenvio manual também exige o `UpdatedAt` lido antes do claim, para não tomar uma falha nova. Dois reenvios sobrepostos produzem um envio mesmo quando o primeiro termina em `Failed`. Sem migration.
+- [x] O reenvio manual relê e-mail e telefone do `RecipientId` (cliente ou usuário do tenant) quando o id existe, zera `AttemptCount` e mantém as linhas de tentativa. A resposta devolve `status`, `errorMessage`, `canResend` e `attempts` (número, início, fim, resultado, erro, canal; sem contato). `canResend` é falso para SMS, InApp, Push e canal sem provedor. O timeout dos clientes de e-mail e WhatsApp fica em 100s, abaixo do lease de 5 minutos.
+- [ ] Próximo API: mover o log e o reenvio para `/api/notifications` (sem exigir o módulo Catalog). Próximo `vlr-web`: aceitar `Sending`, esconder Reenviar quando `canResend` for falso, e listar `attempts` em vez de inventar a data.
+
 ### Requisitos de recurso do produto (2026-11-09)
 
 - [x] `GET` e `PUT /api/catalog/products/{id}/resource-requirements` passam a depender só do módulo `catalog` (já exigido na classe) e de `catalog.products.manage`. Um tenant com catálogo e sem `resource-planning` lê e grava a configuração. Catálogo inativo continua 403. Sem migration. Preview de alocação, uso da alocação e a aprovação que reserva recurso permanecem atrás de `resource-planning`.
@@ -404,6 +410,8 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-11-10 | **API:** o claim do reenvio manual passa a exigir o `UpdatedAt` observado, então uma falha concluída pelo vencedor não é reivindicada de novo. A lista e o reenvio devolvem `attempts` sem contato. Timeout explícito de 100s nos clientes HTTP de e-mail e WhatsApp. Sem migration. |
+| 2026-11-10 | **API:** reenvio de entrega passa a reivindicar a linha (`Sending`) antes do provedor, compartilhado com o sweep. Reenvio manual relê o contato pelo `RecipientId`, zera o orçamento de tentativas e devolve `status`, `errorMessage` e `canResend`. Sem migration. Rotas continuam em `/api/catalog`. |
 | 2026-11-09 | **API:** `GET`/`PUT /api/catalog/products/{id}/resource-requirements` deixam de exigir o módulo `resource-planning`. O gate passa a ser o `catalog` da classe, com `catalog.products.manage` e o filtro de tenant. Preview, uso e a reserva na aprovação continuam em `resource-planning`. Sem migration. |
 | 2026-11-09 | **API:** leitura staff da fila de um recurso reservável em `GET /api/rentals/rental-assets/{rentalAssetId}/queue` (`rentals.reservations.read`, tenant do JWT, 404 cross-tenant). Reusa o relógio e as regras de posição/expiração/promoção sem gravar e sem migration. O contrato B2C `GET /api/rental-assets/{id}/queue` permanece só com o ticket do caller. UI no `vlr-web` PR #464. |
 | 2026-10-29 | **API, código local:** inbox Customer JWT em `/api/me/customer-notifications`, isolado por tenant/cliente/kind, leitura individual com 404 para ID alheio e read-all. InApp de pedidos obrigatório, incluindo preparando; rota real do portal no payload. Sem migration ou edição web. Build OK; xUnit em processo: 2102 passaram, 130 skipped, 0 falhas (2232 casos); VSTest bloqueado por socket no sandbox. Review `SAFE_WITH_FOLLOWUP`, sem Critical/High/Medium; falta CI PostgreSQL + smoke DEV e integração do inbox B2C no web. |
