@@ -166,28 +166,43 @@ internal sealed class AvailabilityReadModel(
             })
             .ToListAsync(cancellationToken);
 
-        var quantities = rows
+        // A reservation may hold several items on one asset, and one item may have several
+        // allocations. The cell has one quantity, one name, one purpose and one work window:
+        // quantities add up; the name and purpose come from the lowest item id; the window
+        // runs from the earliest start to the latest end, and the order id is that earliest
+        // segment's order.
+        var byReservationAsset = rows
             .GroupBy(r => (r.Id, r.RentalAssetId))
-            .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(r => r.ReservationItemId).ToList());
+        var quantities = byReservationAsset.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Sum(r => r.Quantity));
+        var purposeByKey = byReservationAsset.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value[0].Purpose);
+        var itemIdsByKey = byReservationAsset.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Select(r => r.ReservationItemId).ToArray());
         var names = rows
             .GroupBy(r => r.Id)
-            .ToDictionary(g => g.Key, g => g.First().CustomerName);
-        var reservationItemIdByKey = rows
-            .ToDictionary(r => (r.Id, r.RentalAssetId), r => r.ReservationItemId);
-        var purposeByKey = rows
-            .ToDictionary(r => (r.Id, r.RentalAssetId), r => r.Purpose);
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(r => r.ReservationItemId).First().CustomerName);
 
         var internalUseReservationItemIds = rows
             .Where(r => r.Purpose == ReservationPurpose.InternalUse)
             .Select(r => r.ReservationItemId)
+            .Distinct()
             .ToList();
 
         // Staff-only badge: an InternalUse cell is backed by an order-resource-planning allocation.
         // order-equipment-link-codex §4 — the owning order id and work window (for buffer shading)
         // are attached here (staff read model); the controller strips the order id when the caller
         // lacks catalog.orders.view/OrdersRead.
-        var allocationByReservationItemId = internalUseReservationItemIds.Count == 0
-            ? new Dictionary<Guid, (Guid OrderId, DateTimeOffset WorkStart, DateTimeOffset WorkEnd)>()
+        var allocationRows = internalUseReservationItemIds.Count == 0
+            ? []
             : await (
                 from allocation in dbContext.CatalogOrderItemResourceAllocations.AsNoTracking()
                 join requirement in dbContext.CatalogOrderItemResourceRequirements.AsNoTracking()
@@ -202,11 +217,23 @@ internal sealed class AvailabilityReadModel(
                     orderItem.OrderId,
                     allocation.PlannedWorkStart,
                     allocation.PlannedWorkEnd,
-                })
-                .ToDictionaryAsync(
-                    x => x.ReservationItemId,
-                    x => (x.OrderId, x.PlannedWorkStart, x.PlannedWorkEnd),
-                    cancellationToken);
+                }).ToListAsync(cancellationToken);
+        var allocationByReservationItemId = allocationRows
+            .GroupBy(x => x.ReservationItemId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var ordered = g
+                        .OrderBy(x => x.PlannedWorkStart)
+                        .ThenBy(x => x.PlannedWorkEnd)
+                        .ThenBy(x => x.OrderId)
+                        .ToList();
+                    return (
+                        OrderId: ordered[0].OrderId,
+                        WorkStart: ordered.Min(x => x.PlannedWorkStart),
+                        WorkEnd: ordered.Max(x => x.PlannedWorkEnd));
+                });
 
         return slots
             .Select(s =>
@@ -216,11 +243,24 @@ internal sealed class AvailabilityReadModel(
                     return s;
                 }
 
-                (Guid OrderId, DateTimeOffset WorkStart, DateTimeOffset WorkEnd)? allocation =
-                    reservationItemIdByKey.TryGetValue((rid, s.RentalAssetId), out var itemId)
-                    && allocationByReservationItemId.TryGetValue(itemId, out var found)
-                        ? found
-                        : null;
+                (Guid OrderId, DateTimeOffset WorkStart, DateTimeOffset WorkEnd)? allocation = null;
+                if (itemIdsByKey.TryGetValue((rid, s.RentalAssetId), out var itemIds))
+                {
+                    var spans = itemIds
+                        .Where(allocationByReservationItemId.ContainsKey)
+                        .Select(id => allocationByReservationItemId[id])
+                        .OrderBy(span => span.WorkStart)
+                        .ThenBy(span => span.WorkEnd)
+                        .ThenBy(span => span.OrderId)
+                        .ToList();
+                    if (spans.Count > 0)
+                    {
+                        allocation = (
+                            spans[0].OrderId,
+                            spans.Min(span => span.WorkStart),
+                            spans.Max(span => span.WorkEnd));
+                    }
+                }
 
                 return s with
                 {
