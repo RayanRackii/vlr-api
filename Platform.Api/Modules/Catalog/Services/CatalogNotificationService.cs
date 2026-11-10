@@ -42,6 +42,7 @@ public sealed class CatalogNotificationService(
         var deliveries = dbContext.NotificationDeliveries
             .AsNoTracking()
             .Include(d => d.Notification)
+            .Include(d => d.Attempts)
             .AsQueryable();
 
         if (query.From is { } from)
@@ -91,6 +92,7 @@ public sealed class CatalogNotificationService(
         var reloaded = await dbContext.NotificationDeliveries
             .AsNoTracking()
             .Include(d => d.Notification)
+            .Include(d => d.Attempts)
             .FirstAsync(d => d.Id == deliveryId, cancellationToken);
         return Map(reloaded);
     }
@@ -181,5 +183,15 @@ public sealed class CatalogNotificationService(
             delivery.AttemptCount,
             delivery.ErrorMessage,
             delivery.CreatedAt,
-            NotificationDeliveryFailures.CanResend(delivery.Status, delivery.Channel, delivery.ErrorMessage));
+            NotificationDeliveryFailures.CanResend(delivery.Status, delivery.Channel, delivery.ErrorMessage),
+            delivery.Attempts
+                .OrderBy(attempt => attempt.AttemptNumber)
+                .Select(attempt => new CatalogNotificationAttemptResponse(
+                    attempt.AttemptNumber,
+                    attempt.StartedAt,
+                    attempt.FinishedAt,
+                    attempt.Outcome,
+                    attempt.ErrorMessage,
+                    delivery.Channel))
+                .ToList());
 }

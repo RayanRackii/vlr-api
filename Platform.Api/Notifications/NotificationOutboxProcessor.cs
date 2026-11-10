@@ -24,6 +24,8 @@ public sealed class NotificationOutboxProcessor(
 
     private const int MaxAttempts = 5;
 
+    internal static readonly TimeSpan ProviderCallTimeout = TimeSpan.FromSeconds(100);
+
     internal static readonly TimeSpan SendLease = TimeSpan.FromMinutes(5);
 
     private static readonly SemaphoreSlim InMemoryClaimGate = new(1, 1);
@@ -380,8 +382,13 @@ public sealed class NotificationOutboxProcessor(
         var email = resolved.Email;
         var phone = resolved.Phone;
         var now = DateTimeOffset.UtcNow;
-        var updated = await dbContext.NotificationDeliveries
-            .Where(delivery => delivery.Id == deliveryId && delivery.Status == NotificationDeliveryStatus.Failed)
+        var observedUpdatedAt = current.UpdatedAt;
+        var claim = dbContext.NotificationDeliveries.Where(delivery =>
+            delivery.Id == deliveryId && delivery.Status == NotificationDeliveryStatus.Failed);
+        claim = observedUpdatedAt is { } version
+            ? claim.Where(delivery => delivery.UpdatedAt == version)
+            : claim.Where(delivery => delivery.UpdatedAt == null);
+        var updated = await claim
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(delivery => delivery.Status, NotificationDeliveryStatus.Sending)

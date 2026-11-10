@@ -1,4 +1,6 @@
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Notifications;
@@ -40,6 +42,11 @@ public sealed class NotificationResendTests : IClassFixture<PostgresContainerFix
         Assert.True(resent.CanResend);
         Assert.Equal(1, resent.AttemptCount);
         Assert.Equal(0, harness.WhatsApp.SendCount);
+        Assert.Equal(2, resent.Attempts.Count);
+        Assert.Equal(2, resent.Attempts[1].AttemptNumber);
+        Assert.Equal(NotificationChannel.WhatsApp, resent.Attempts[1].Channel);
+        Assert.Equal(NotificationDeliveryFailures.WhatsAppMissing, resent.Attempts[1].ErrorMessage);
+        Assert.Equal(NotificationAttemptOutcome.PermanentFailure, resent.Attempts[1].Outcome);
         Assert.Equal(2, await harness.Db.NotificationDeliveryAttempts.CountAsync(a => a.DeliveryId == delivery.Id));
     }
 
@@ -133,6 +140,14 @@ public sealed class NotificationResendTests : IClassFixture<PostgresContainerFix
         var push = FailedDelivery(harness.Tenant.Id, NotificationChannel.Push, NotificationDeliveryFailures.NoExternalProvider);
         var unsupported = FailedDelivery(harness.Tenant.Id, NotificationChannel.WhatsApp, "Unsupported channel WhatsApp.");
         var missing = FailedDelivery(harness.Tenant.Id, NotificationChannel.WhatsApp, NotificationDeliveryFailures.WhatsAppMissing);
+        missing.AddAttempt(new NotificationDeliveryAttempt
+        {
+            DeliveryId = missing.Id,
+            AttemptNumber = 1,
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-3),
+            Outcome = NotificationAttemptOutcome.PermanentFailure,
+            ErrorMessage = NotificationDeliveryFailures.WhatsAppMissing,
+        });
         harness.Db.Notifications.AddRange(sms.Notification, push.Notification, unsupported.Notification, missing.Notification);
         await harness.Db.SaveChangesAsync();
 
@@ -143,7 +158,44 @@ public sealed class NotificationResendTests : IClassFixture<PostgresContainerFix
         Assert.False(listed.Single(item => item.Id == sms.Id).CanResend);
         Assert.False(listed.Single(item => item.Id == push.Id).CanResend);
         Assert.False(listed.Single(item => item.Id == unsupported.Id).CanResend);
-        Assert.True(listed.Single(item => item.Id == missing.Id).CanResend);
+        var missingRow = listed.Single(item => item.Id == missing.Id);
+        Assert.True(missingRow.CanResend);
+        var attempt = Assert.Single(missingRow.Attempts);
+        Assert.Equal(1, attempt.AttemptNumber);
+        Assert.Equal(NotificationChannel.WhatsApp, attempt.Channel);
+        Assert.Equal(NotificationDeliveryFailures.WhatsAppMissing, attempt.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Fresh_sending_row_is_not_reclaimed_and_the_provider_timeout_is_inside_the_lease()
+    {
+        Assert.True(NotificationOutboxProcessor.SendLease > NotificationOutboxProcessor.ProviderCallTimeout);
+
+        var tenantId = Guid.NewGuid();
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider { TenantId = tenantId });
+        var delivery = FailedEmail(tenantId, attemptCount: 0);
+        delivery.Status = NotificationDeliveryStatus.Sending;
+        delivery.Touch();
+        db.Notifications.Add(delivery.Notification);
+        db.NotificationTemplates.Add(EmailTemplate(delivery.Notification.EventType));
+        await db.SaveChangesAsync();
+
+        var email = new CountingEmail();
+        var processor = Processor(db, email);
+        await processor.ProcessDueAsync();
+        await processor.ProcessDeliveryAsync(delivery.Id);
+
+        Assert.Equal(0, email.Calls);
+        var stored = await db.NotificationDeliveries.AsNoTracking().SingleAsync(item => item.Id == delivery.Id);
+        Assert.Equal(NotificationDeliveryStatus.Sending, stored.Status);
+    }
+
+    [DockerFact]
+    public async Task Overlapping_resend_does_not_claim_the_failure_the_winner_just_saved()
+    {
+        var factory = _postgres.Factory ?? throw new InvalidOperationException("PostgreSQL fixture was not initialized.");
+        await AssertStaleResendDoesNotSendAsync(factory, versioned: true);
+        await AssertStaleResendDoesNotSendAsync(factory, versioned: false);
     }
 
     [Fact]
@@ -225,6 +277,70 @@ public sealed class NotificationResendTests : IClassFixture<PostgresContainerFix
         Assert.Equal(NotificationDeliveryStatus.Sent, stored.Status);
         Assert.Equal(1, stored.AttemptCount);
         Assert.Equal(2, stored.Attempts.Count);
+    }
+
+    private static async Task AssertStaleResendDoesNotSendAsync(PostgresAppDbFactory factory, bool versioned)
+    {
+        var tenant = new FakeTenantProvider { TenantId = Guid.NewGuid() };
+        var email = new PermanentFailureEmail();
+        Guid deliveryId;
+        await using (var seed = factory.Create(tenant))
+        {
+            var delivery = FailedEmail(tenant.TenantId!.Value, attemptCount: 1);
+            delivery.Notification.EventType = versioned ? "notice.email.versioned" : "notice.email.plain";
+            if (versioned)
+            {
+                delivery.Touch();
+            }
+
+            delivery.AddAttempt(new NotificationDeliveryAttempt
+            {
+                DeliveryId = delivery.Id,
+                AttemptNumber = 1,
+                StartedAt = DateTimeOffset.UtcNow.AddMinutes(-2),
+                Outcome = NotificationAttemptOutcome.PermanentFailure,
+            });
+            seed.Notifications.Add(delivery.Notification);
+            seed.NotificationTemplates.Add(EmailTemplate(delivery.Notification.EventType));
+            await seed.SaveChangesAsync();
+            deliveryId = delivery.Id;
+        }
+
+        await using (var check = factory.Create(tenant))
+        {
+            var version = await check.NotificationDeliveries.AsNoTracking()
+                .Where(item => item.Id == deliveryId)
+                .Select(item => item.UpdatedAt)
+                .SingleAsync();
+            if (versioned)
+            {
+                Assert.NotNull(version);
+            }
+            else
+            {
+                Assert.Null(version);
+            }
+        }
+
+        var hold = new HoldClaimUpdate();
+        await using var winnerDb = factory.Create(tenant);
+        await using var loserDb = factory.Create(tenant, hold);
+        var winner = Processor(winnerDb, email);
+        var loser = Processor(loserDb, email);
+        var stale = Task.Run(() => loser.ResendAsync(deliveryId));
+        await hold.Ready.WaitAsync(TimeSpan.FromSeconds(15));
+
+        await winner.ResendAsync(deliveryId);
+        Assert.Equal(1, email.Calls);
+        hold.Release();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () => await stale);
+        Assert.Equal("Only failed deliveries can be resent.", error.Message);
+        Assert.Equal(1, email.Calls);
+
+        await using var verify = factory.Create(tenant);
+        var attempts = await verify.NotificationDeliveryAttempts.CountAsync(item => item.DeliveryId == deliveryId);
+        Assert.Equal(2, attempts);
     }
 
     private static NotificationOutboxProcessor Processor(AppDbContext db, IEmailProvider email) =>
@@ -333,6 +449,56 @@ public sealed class NotificationResendTests : IClassFixture<PostgresContainerFix
         BodyTemplate = "Hello",
         SubjectTemplate = "Hello",
     };
+
+    private sealed class CountingEmail : IEmailProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task SendAsync(string recipient, string subject, string body, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class PermanentFailureEmail : IEmailProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task SendAsync(string recipient, string subject, string body, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new InvalidOperationException("provider rejected");
+        }
+    }
+
+    private sealed class HoldClaimUpdate : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int seen;
+
+        public Task Ready => ready.Task;
+
+        public void Release() => release.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("notification_deliveries", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
+                && Interlocked.Increment(ref seen) == 1)
+            {
+                ready.TrySetResult();
+                await release.Task.WaitAsync(cancellationToken);
+            }
+
+            return result;
+        }
+    }
 
     private sealed class ThrowingEmail : IEmailProvider
     {
