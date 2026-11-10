@@ -59,7 +59,7 @@ public sealed class CatalogNotificationsController(
     }
 
     [HttpPut("notification-channels")]
-    [RequirePermission(Permissions.Catalog.NotificationsResend)]
+    [RequirePermission(Permissions.Core.NotificationsWrite)]
     public async Task<ActionResult<CatalogChannelConfigItem>> UpsertChannel(
         [FromBody] UpsertCatalogChannelConfigRequest request,
         CancellationToken cancellationToken)

@@ -106,7 +106,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
             publisher.AsDomainEvents(),
             scheduler,
             occupancy);
-        var notifications = new CatalogNotificationService(db, tenantProvider, publisher, processor);
+        var deliveryLog = new NotificationDeliveryService(db, tenantProvider, processor);
+        var notifications = new CatalogNotificationService(db, tenantProvider, publisher, deliveryLog);
 
         return new CatalogHarness(
             db,
