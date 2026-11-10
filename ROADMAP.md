@@ -1,5 +1,9 @@
 # ROADMAP — vlr-api
 
+### Agenda do dia com itens repetidos (2026-11-10)
+
+- [x] `GET /api/schedule/days/{date}` deixa de responder 500 quando uma reserva tem dois itens no mesmo recurso, ou um item tem duas alocações. A célula soma a quantidade, fica com o nome e o propósito do menor item id, e a janela vai do início mais cedo ao fim mais tarde (o pedido exibido é o do trecho mais cedo). Sem migration e sem mudança de contrato.
+
 ### Reenvio de notificações (2026-11-10)
 
 - [x] O reenvio manual e o sweep `notification-outbox` reivindicam a mesma entrega antes de chamar o provedor (`Failed` ou `Queued` vencido → `Sending`, com retomada de `Sending` parado há 5 minutos). O reenvio manual também exige o `UpdatedAt` lido antes do claim, para não tomar uma falha nova. Dois reenvios sobrepostos produzem um envio mesmo quando o primeiro termina em `Failed`. Sem migration.
@@ -411,6 +415,7 @@ Phases 1–3 are **COMPLETE / RELEASED PROD**. Phase 4 is **NOT PLANNED**. There
 
 | Data | Mudança |
 |---|---|
+| 2026-11-10 | **API:** a agenda do dia agrupa itens da mesma reserva no mesmo recurso e alocações do mesmo item, em vez de estourar a chave do dicionário. Sem migration. |
 | 2026-11-10 | **API:** a mesma migration também copia `core.notifications.write` para quem tem `catalog.notifications.resend` e `core.notifications.read` para quem tem `catalog.notifications.read`. O Down não apaga esses dois grants. Página cujo deslocamento estoura `int` responde 400. |
 | 2026-11-10 | **API:** log e reenvio passam para `/api/notifications/deliveries` com paginação e filtros, sem o módulo Catalog. `core.notifications.resend` é semeado nas roles que já têm `catalog.notifications.resend` (migration idempotente). As rotas `/api/catalog/...` ficam como wrappers. `PUT /api/catalog/notification-channels` exige `core.notifications.write`. |
 | 2026-11-10 | **API:** o claim do reenvio manual passa a exigir o `UpdatedAt` observado, então uma falha concluída pelo vencedor não é reivindicada de novo. A lista e o reenvio devolvem `attempts` sem contato. Timeout explícito de 100s nos clientes HTTP de e-mail e WhatsApp. Sem migration. |

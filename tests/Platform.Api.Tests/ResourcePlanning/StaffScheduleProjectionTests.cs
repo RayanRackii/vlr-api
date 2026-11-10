@@ -75,6 +75,23 @@ public sealed class StaffScheduleProjectionTests
     }
 
     [Fact]
+    public async Task Staff_day_keeps_one_cell_when_two_items_share_an_asset_and_one_item_has_two_allocations()
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        var (orderId, quantity) = await SeedDuplicateItemsAndAllocationsAsync(h);
+
+        var day = await Schedule(h).GetDayAsync(Day, null, customerFacing: false, default);
+
+        var slot = Assert.Single(day.Slots, s => s.RentalAssetId == h.Primary.Id && s.Status == SlotStatus.Booked);
+        Assert.Equal(quantity, slot.Quantity);
+        Assert.Equal("Internal", slot.CustomerName);
+        Assert.True(slot.IsInternalUseOrigin);
+        Assert.Equal(orderId, slot.OwningCatalogOrderId);
+        Assert.Equal(new TimeOnly(10, 0), slot.WorkStartTime);
+        Assert.Equal(new TimeOnly(11, 0), slot.WorkEndTime);
+    }
+
+    [Fact]
     public async Task Customer_booking_cells_are_unaffected_by_the_internal_use_projection()
     {
         await using var h = await AvailabilityHarness.CreateAsync();
@@ -197,6 +214,142 @@ public sealed class StaffScheduleProjectionTests
         await h.Db.SaveChangesAsync();
 
         return (reservation.Id, order.Id);
+    }
+
+    private static async Task<(Guid OrderId, int Quantity)> SeedDuplicateItemsAndAllocationsAsync(AvailabilityHarness h)
+    {
+        h.Primary.TotalQuantity = 5;
+        await h.Db.SaveChangesAsync();
+
+        var customer = new Customer { TenantId = h.Tenant.Id, Name = "Internal", Phone = "5511000000000" };
+        var reservation = new Reservation
+        {
+            Purpose = ReservationPurpose.InternalUse,
+            TenantId = h.Tenant.Id,
+            UnitId = h.Unit.Id,
+            CustomerId = customer.Id,
+            CustomerName = "Internal",
+            CustomerWhatsApp = "5511000000000",
+            Status = ReservationStatus.Confirmed,
+            StartDateTime = BrazilTimeZone.AtLocal(Day, new TimeOnly(10, 0)),
+            EndDateTime = BrazilTimeZone.AtLocal(Day, new TimeOnly(12, 0)),
+            TotalAmount = 0,
+            DepositPaid = 0,
+        };
+        var firstItem = new ReservationItem
+        {
+            TenantId = h.Tenant.Id,
+            ReservationId = reservation.Id,
+            RentalAssetId = h.Primary.Id,
+            Quantity = 2,
+            UnitPrice = 0,
+            SubTotal = 0,
+        };
+        var secondItem = new ReservationItem
+        {
+            TenantId = h.Tenant.Id,
+            ReservationId = reservation.Id,
+            RentalAssetId = h.Primary.Id,
+            Quantity = 3,
+            UnitPrice = 0,
+            SubTotal = 0,
+        };
+        reservation.AddItem(firstItem);
+        reservation.AddItem(secondItem);
+
+        var slot = new Slot
+        {
+            TenantId = h.Tenant.Id,
+            RentalAssetId = h.Primary.Id,
+            Date = Day,
+            StartTime = new TimeOnly(10, 0),
+            EndTime = new TimeOnly(12, 0),
+            OccupancyKindId = h.Open.Id,
+            Status = SlotStatus.Booked,
+            ReservationId = reservation.Id,
+        };
+
+        var product = new CatalogProduct { TenantId = h.Tenant.Id, Name = "Printer time", IsActive = true };
+        var earlyOrder = new CatalogOrder
+        {
+            TenantId = h.Tenant.Id,
+            CustomerId = customer.Id,
+            OrderNumber = 1,
+            CustomerNameSnapshot = customer.Name,
+        };
+        var laterOrder = new CatalogOrder
+        {
+            TenantId = h.Tenant.Id,
+            CustomerId = customer.Id,
+            OrderNumber = 2,
+            CustomerNameSnapshot = customer.Name,
+        };
+        var earlyItem = new CatalogOrderItem
+        {
+            TenantId = h.Tenant.Id,
+            OrderId = earlyOrder.Id,
+            ProductId = product.Id,
+            ProductNameSnapshot = product.Name,
+            Quantity = 1,
+        };
+        var laterItem = new CatalogOrderItem
+        {
+            TenantId = h.Tenant.Id,
+            OrderId = laterOrder.Id,
+            ProductId = product.Id,
+            ProductNameSnapshot = product.Name,
+            Quantity = 1,
+        };
+        earlyOrder.AddItem(earlyItem);
+        laterOrder.AddItem(laterItem);
+        var earlyRequirement = new CatalogOrderItemResourceRequirement
+        {
+            TenantId = h.Tenant.Id,
+            OrderItemId = earlyItem.Id,
+            RentalAssetId = h.Primary.Id,
+            ResourceQuantity = 1,
+            DurationMinutesPerUnit = 30,
+        };
+        var laterRequirement = new CatalogOrderItemResourceRequirement
+        {
+            TenantId = h.Tenant.Id,
+            OrderItemId = laterItem.Id,
+            RentalAssetId = h.Primary.Id,
+            ResourceQuantity = 1,
+            DurationMinutesPerUnit = 40,
+        };
+        var earlyAllocation = new CatalogOrderItemResourceAllocation
+        {
+            TenantId = h.Tenant.Id,
+            RequirementId = earlyRequirement.Id,
+            ReservationItemId = firstItem.Id,
+            Sequence = 1,
+            PlanningRevision = 1,
+            AllocatedQuantity = 1,
+            RentalAssetId = h.Primary.Id,
+            PlannedWorkStart = BrazilTimeZone.AtLocal(Day, new TimeOnly(10, 0)),
+            PlannedWorkEnd = BrazilTimeZone.AtLocal(Day, new TimeOnly(10, 30)),
+            TimeZoneId = "America/Sao_Paulo",
+        };
+        var laterAllocation = new CatalogOrderItemResourceAllocation
+        {
+            TenantId = h.Tenant.Id,
+            RequirementId = laterRequirement.Id,
+            ReservationItemId = firstItem.Id,
+            Sequence = 1,
+            PlanningRevision = 1,
+            AllocatedQuantity = 1,
+            RentalAssetId = h.Primary.Id,
+            PlannedWorkStart = BrazilTimeZone.AtLocal(Day, new TimeOnly(10, 20)),
+            PlannedWorkEnd = BrazilTimeZone.AtLocal(Day, new TimeOnly(11, 0)),
+            TimeZoneId = "America/Sao_Paulo",
+        };
+
+        h.Db.AddRange(
+            customer, reservation, slot, product, earlyOrder, laterOrder,
+            earlyRequirement, laterRequirement, earlyAllocation, laterAllocation);
+        await h.Db.SaveChangesAsync();
+        return (earlyOrder.Id, firstItem.Quantity + secondItem.Quantity);
     }
 
     private static ScheduleService Schedule(AvailabilityHarness h) =>
