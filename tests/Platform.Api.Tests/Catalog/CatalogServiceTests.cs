@@ -299,9 +299,11 @@ public sealed class CatalogServiceTests
         await harness.Db.SaveChangesAsync();
 
         var resent = await harness.Notifications.ResendAsync(delivery.Id, CancellationToken.None);
-        Assert.Equal(2, resent.AttemptCount);
+        Assert.Equal(1, resent.AttemptCount);
         Assert.Equal(2, harness.Db.NotificationDeliveryAttempts.Count(a => a.DeliveryId == delivery.Id));
         Assert.Equal(NotificationDeliveryStatus.Sent, resent.Status);
+        Assert.Null(resent.ErrorMessage);
+        Assert.False(resent.CanResend);
     }
 
     [Fact]

@@ -116,6 +116,9 @@ public sealed class PlatformScopeJobTests
 
         public Task ProcessDeliveryAsync(Guid deliveryId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task ResendAsync(Guid deliveryId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }
 

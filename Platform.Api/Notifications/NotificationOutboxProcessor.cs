@@ -24,14 +24,17 @@ public sealed class NotificationOutboxProcessor(
 
     private const int MaxAttempts = 5;
 
+    internal static readonly TimeSpan ProviderCallTimeout = TimeSpan.FromSeconds(100);
+
+    internal static readonly TimeSpan SendLease = TimeSpan.FromMinutes(5);
+
+    private static readonly SemaphoreSlim InMemoryClaimGate = new(1, 1);
+
     public async Task ProcessDueAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var dueIds = await dbContext.NotificationDeliveries
+        var dueIds = await ClaimableDeliveries(now, externalOnly: true)
             .AsNoTracking()
-            .Where(d => d.Status == NotificationDeliveryStatus.Queued
-                        && (d.NextAttemptAt == null || d.NextAttemptAt <= now)
-                        && d.Channel != NotificationChannel.InApp)
             .Select(d => d.Id)
             .ToListAsync(cancellationToken);
 
@@ -48,62 +51,89 @@ public sealed class NotificationOutboxProcessor(
         // Hangfire runs this alone (no tenant). Lookup is by delivery id; the reminder check
         // below still pins the notification's own tenant.
         using var _ = PlatformScope.Begin(logger, "notification-outbox-delivery");
-        var delivery = await dbContext.NotificationDeliveries
-            .Include(d => d.Notification)
-            .Include(d => d.Attempts)
-            .FirstOrDefaultAsync(d => d.Id == deliveryId, cancellationToken);
-
+        var delivery = await ClaimForProcessingAsync(deliveryId, cancellationToken);
         if (delivery is null)
         {
             return;
         }
 
-        if (delivery.Status is NotificationDeliveryStatus.Sent or NotificationDeliveryStatus.Delivered)
+        await DispatchClaimedAsync(delivery, cancellationToken);
+    }
+
+    public async Task ResendAsync(Guid deliveryId, CancellationToken cancellationToken = default)
+    {
+        var delivery = await ClaimForManualResendAsync(deliveryId, cancellationToken);
+        if (delivery is null)
         {
+            var visible = await dbContext.NotificationDeliveries
+                .AsNoTracking()
+                .AnyAsync(d => d.Id == deliveryId, cancellationToken);
+            if (!visible)
+            {
+                throw new KeyNotFoundException("Delivery not found.");
+            }
+
+            throw new InvalidOperationException("Only failed deliveries can be resent.");
+        }
+
+        if (!NotificationRecipientContacts.AllowsExternalSend(
+                delivery.Notification.EventType,
+                delivery.Channel))
+        {
+            await FailWithoutProviderAsync(
+                delivery,
+                NotificationDeliveryFailures.Unrecoverable(delivery.Channel),
+                cancellationToken);
             return;
         }
 
-        if (delivery.Status != NotificationDeliveryStatus.Queued)
+        if (NotificationDeliveryFailures.MissingContact(
+                delivery.Channel,
+                delivery.RecipientEmail,
+                delivery.RecipientPhone) is { } missing)
         {
+            await FailWithoutProviderAsync(delivery, missing, cancellationToken);
             return;
         }
 
-        if (delivery.NextAttemptAt is { } next && next > DateTimeOffset.UtcNow)
-        {
-            return;
-        }
+        await DispatchClaimedAsync(delivery, cancellationToken);
+    }
 
+    private async Task DispatchClaimedAsync(
+        NotificationDelivery delivery,
+        CancellationToken cancellationToken)
+    {
         if (delivery.Notification.EventType == RentalEventTypes.ReservationReminder
             && !await IsReminderStillDueAsync(delivery.Notification, cancellationToken))
         {
-            await SuppressReminderAsync(delivery, attempt: null, cancellationToken);
+            await SuppressReminderAsync(delivery, attempt: null, budgetAttempt: 0, cancellationToken);
             return;
         }
 
-        var attemptNumber = delivery.AttemptCount + 1;
+        var budgetAttempt = delivery.AttemptCount + 1;
         var attempt = new NotificationDeliveryAttempt
         {
             DeliveryId = delivery.Id,
-            AttemptNumber = attemptNumber,
+            AttemptNumber = NextHistoryNumber(delivery, budgetAttempt),
             StartedAt = DateTimeOffset.UtcNow,
         };
 
         if (delivery.Channel == NotificationChannel.Sms)
         {
-            const string smsError = "SMS channel is not available.";
+            var smsError = NotificationDeliveryFailures.SmsUnavailable;
             attempt.Finish(NotificationAttemptOutcome.PermanentFailure, providerResponse: null, smsError);
             delivery.MarkFailed(smsError);
-            RecordAttempt(delivery, attempt);
+            RecordAttempt(delivery, attempt, budgetAttempt);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
         if (delivery.Channel is NotificationChannel.InApp or NotificationChannel.Push)
         {
-            const string skip = "Channel has no external provider.";
+            var skip = NotificationDeliveryFailures.NoExternalProvider;
             attempt.Finish(NotificationAttemptOutcome.PermanentFailure, providerResponse: null, skip);
             delivery.MarkFailed(skip);
-            RecordAttempt(delivery, attempt);
+            RecordAttempt(delivery, attempt, budgetAttempt);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -153,16 +183,16 @@ public sealed class NotificationOutboxProcessor(
             if (delivery.Notification.EventType == RentalEventTypes.ReservationReminder
                 && !await IsReminderStillDueAsync(delivery.Notification, cancellationToken))
             {
-                await SuppressReminderAsync(delivery, attempt, cancellationToken);
-                return;
-            }
+            await SuppressReminderAsync(delivery, attempt, budgetAttempt, cancellationToken);
+            return;
+        }
 
             switch (delivery.Channel)
             {
                 case NotificationChannel.Email:
                     if (string.IsNullOrWhiteSpace(delivery.RecipientEmail))
                     {
-                        throw new InvalidOperationException("Email recipient is missing.");
+                        throw new InvalidOperationException(NotificationDeliveryFailures.EmailMissing);
                     }
 
                     if (reservationEmail)
@@ -188,7 +218,7 @@ public sealed class NotificationOutboxProcessor(
                     if (string.IsNullOrWhiteSpace(delivery.RecipientPhone))
                     {
                         throw new WhatsAppSendException(
-                            "WhatsApp recipient is missing.",
+                            NotificationDeliveryFailures.WhatsAppMissing,
                             isTransient: false);
                     }
 
@@ -213,7 +243,7 @@ public sealed class NotificationOutboxProcessor(
                         providerResponse: Truncate(providerMessageId, 200),
                         errorMessage: null);
                     delivery.MarkSent(providerMessageId);
-                    RecordAttempt(delivery, attempt);
+                    RecordAttempt(delivery, attempt, budgetAttempt);
                     await dbContext.SaveChangesAsync(cancellationToken);
                     return;
                 default:
@@ -222,7 +252,7 @@ public sealed class NotificationOutboxProcessor(
 
             attempt.Finish(NotificationAttemptOutcome.Success, providerResponse: "ok", errorMessage: null);
             delivery.MarkSent(providerMessageId: null);
-            RecordAttempt(delivery, attempt);
+            RecordAttempt(delivery, attempt, budgetAttempt);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (EmailDeferredException) when (delivery.Channel == NotificationChannel.Email)
@@ -236,28 +266,217 @@ public sealed class NotificationOutboxProcessor(
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            FinishFailedAttempt(delivery, attempt, attemptNumber, ex, isTransient: true);
+            FinishFailedAttempt(delivery, attempt, budgetAttempt, ex, isTransient: true);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            FinishFailedAttempt(delivery, attempt, attemptNumber, ex, IsTransient(ex));
+            FinishFailedAttempt(delivery, attempt, budgetAttempt, ex, IsTransient(ex));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 
-    private static void RecordAttempt(NotificationDelivery delivery, NotificationDeliveryAttempt attempt)
+    private IQueryable<NotificationDelivery> ClaimableDeliveries(DateTimeOffset now, bool externalOnly)
     {
-        delivery.AttemptCount = attempt.AttemptNumber;
+        var staleBefore = now - SendLease;
+        var query = dbContext.NotificationDeliveries.Where(delivery =>
+            (delivery.Status == NotificationDeliveryStatus.Queued
+                && (delivery.NextAttemptAt == null || delivery.NextAttemptAt <= now))
+            || (delivery.Status == NotificationDeliveryStatus.Sending
+                && (delivery.UpdatedAt == null || delivery.UpdatedAt <= staleBefore)));
+        if (externalOnly)
+        {
+            query = query.Where(delivery => delivery.Channel != NotificationChannel.InApp);
+        }
+
+        return query;
+    }
+
+    private async Task<NotificationDelivery?> ClaimForProcessingAsync(
+        Guid deliveryId,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (dbContext.Database.IsRelational())
+        {
+            var claimed = await ClaimableDeliveries(now, externalOnly: false)
+                .Where(delivery => delivery.Id == deliveryId)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(delivery => delivery.Status, NotificationDeliveryStatus.Sending)
+                        .SetProperty(delivery => delivery.UpdatedAt, now),
+                    cancellationToken);
+            if (claimed != 1)
+            {
+                return null;
+            }
+
+            DetachDelivery(deliveryId);
+            return await LoadDeliveryAsync(deliveryId, cancellationToken);
+        }
+
+        await InMemoryClaimGate.WaitAsync(cancellationToken);
+        try
+        {
+            var delivery = await LoadDeliveryAsync(deliveryId, cancellationToken);
+            if (delivery is null || !delivery.TryClaimForProcessing(now, SendLease))
+            {
+                return null;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return delivery;
+        }
+        finally
+        {
+            InMemoryClaimGate.Release();
+        }
+    }
+
+    private async Task<NotificationDelivery?> ClaimForManualResendAsync(
+        Guid deliveryId,
+        CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational())
+        {
+            await InMemoryClaimGate.WaitAsync(cancellationToken);
+            try
+            {
+                var delivery = await LoadDeliveryAsync(deliveryId, cancellationToken);
+                if (delivery is null || delivery.Status != NotificationDeliveryStatus.Failed)
+                {
+                    return null;
+                }
+
+                var (liveEmail, livePhone) = await NotificationRecipientContacts.ResolveForResendAsync(
+                    dbContext,
+                    delivery,
+                    cancellationToken);
+                if (!delivery.TryClaimForResend(DateTimeOffset.UtcNow, liveEmail, livePhone))
+                {
+                    return null;
+                }
+
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return delivery;
+            }
+            finally
+            {
+                InMemoryClaimGate.Release();
+            }
+        }
+
+        var current = await dbContext.NotificationDeliveries
+            .AsNoTracking()
+            .Include(delivery => delivery.Notification)
+            .FirstOrDefaultAsync(delivery => delivery.Id == deliveryId, cancellationToken);
+        if (current is null || current.Status != NotificationDeliveryStatus.Failed)
+        {
+            return null;
+        }
+
+        var resolved = await NotificationRecipientContacts.ResolveForResendAsync(
+            dbContext,
+            current,
+            cancellationToken);
+        var email = resolved.Email;
+        var phone = resolved.Phone;
+        var now = DateTimeOffset.UtcNow;
+        var observedUpdatedAt = current.UpdatedAt;
+        var claim = dbContext.NotificationDeliveries.Where(delivery =>
+            delivery.Id == deliveryId && delivery.Status == NotificationDeliveryStatus.Failed);
+        claim = observedUpdatedAt is { } version
+            ? claim.Where(delivery => delivery.UpdatedAt == version)
+            : claim.Where(delivery => delivery.UpdatedAt == null);
+        var updated = await claim
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(delivery => delivery.Status, NotificationDeliveryStatus.Sending)
+                    .SetProperty(delivery => delivery.AttemptCount, 0)
+                    .SetProperty(delivery => delivery.ErrorMessage, (string?)null)
+                    .SetProperty(delivery => delivery.NextAttemptAt, now)
+                    .SetProperty(delivery => delivery.RecipientEmail, email)
+                    .SetProperty(delivery => delivery.RecipientPhone, phone)
+                    .SetProperty(delivery => delivery.UpdatedAt, now),
+                cancellationToken);
+        if (updated != 1)
+        {
+            return null;
+        }
+
+        DetachDelivery(deliveryId);
+        return await LoadDeliveryAsync(deliveryId, cancellationToken);
+    }
+
+    private async Task FailWithoutProviderAsync(
+        NotificationDelivery delivery,
+        string error,
+        CancellationToken cancellationToken)
+    {
+        var budgetAttempt = delivery.AttemptCount + 1;
+        var attempt = new NotificationDeliveryAttempt
+        {
+            DeliveryId = delivery.Id,
+            AttemptNumber = NextHistoryNumber(delivery, budgetAttempt),
+            StartedAt = DateTimeOffset.UtcNow,
+        };
+        attempt.Finish(NotificationAttemptOutcome.PermanentFailure, providerResponse: null, error);
+        RecordAttempt(delivery, attempt, budgetAttempt);
+        delivery.MarkFailed(error);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private Task<NotificationDelivery?> LoadDeliveryAsync(Guid deliveryId, CancellationToken cancellationToken) =>
+        dbContext.NotificationDeliveries
+            .Include(delivery => delivery.Notification)
+            .Include(delivery => delivery.Attempts)
+            .FirstOrDefaultAsync(delivery => delivery.Id == deliveryId, cancellationToken);
+
+    private void DetachDelivery(Guid deliveryId)
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries().ToList())
+        {
+            if (entry.Entity is NotificationDelivery delivery && delivery.Id == deliveryId)
+            {
+                entry.State = EntityState.Detached;
+            }
+            else if (entry.Entity is NotificationDeliveryAttempt attempt && attempt.DeliveryId == deliveryId)
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+    }
+
+    private static void RecordAttempt(
+        NotificationDelivery delivery,
+        NotificationDeliveryAttempt attempt,
+        int budgetAttempt)
+    {
+        delivery.AttemptCount = budgetAttempt;
         if (!delivery.Attempts.Contains(attempt))
         {
             delivery.AddAttempt(attempt);
         }
     }
 
+    private static int NextHistoryNumber(NotificationDelivery delivery, int budgetAttempt)
+    {
+        var max = 0;
+        foreach (var existing in delivery.Attempts)
+        {
+            if (existing.AttemptNumber > max)
+            {
+                max = existing.AttemptNumber;
+            }
+        }
+
+        return Math.Max(max + 1, budgetAttempt);
+    }
+
     private async Task SuppressReminderAsync(
         NotificationDelivery delivery,
         NotificationDeliveryAttempt? attempt,
+        int budgetAttempt,
         CancellationToken cancellationToken)
     {
         logger.LogInformation(
@@ -270,7 +489,7 @@ public sealed class NotificationOutboxProcessor(
             ReservationReminderSendGate.SkippedMessage);
         if (attempt is not null)
         {
-            RecordAttempt(delivery, attempt);
+            RecordAttempt(delivery, attempt, budgetAttempt);
         }
         delivery.MarkFailed(ReservationReminderSendGate.SkippedMessage);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -316,7 +535,7 @@ public sealed class NotificationOutboxProcessor(
             ? NotificationAttemptOutcome.TransientFailure
             : NotificationAttemptOutcome.PermanentFailure;
         attempt.Finish(outcome, providerResponse: Truncate(ex.Message, 200), ex.Message);
-        RecordAttempt(delivery, attempt);
+        RecordAttempt(delivery, attempt, attemptNumber);
 
         if (outcome == NotificationAttemptOutcome.PermanentFailure || attemptNumber >= MaxAttempts)
         {

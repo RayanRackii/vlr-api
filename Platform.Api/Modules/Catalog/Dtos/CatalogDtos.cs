@@ -382,6 +382,14 @@ public sealed record CatalogNotificationListQuery(
     NotificationChannel? Channel,
     NotificationDeliveryStatus? Status);
 
+public sealed record CatalogNotificationAttemptResponse(
+    int AttemptNumber,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    NotificationAttemptOutcome Outcome,
+    string? ErrorMessage,
+    NotificationChannel Channel);
+
 public sealed record CatalogNotificationDeliveryResponse(
     Guid Id,
     Guid NotificationId,
@@ -393,7 +401,9 @@ public sealed record CatalogNotificationDeliveryResponse(
     NotificationDeliveryStatus Status,
     int AttemptCount,
     string? ErrorMessage,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool CanResend,
+    IReadOnlyList<CatalogNotificationAttemptResponse> Attempts);
 
 public sealed record CatalogChannelConfigItem(
     string EventType,

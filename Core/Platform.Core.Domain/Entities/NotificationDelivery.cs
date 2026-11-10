@@ -88,16 +88,36 @@ public class NotificationDelivery : Entity, ITenantScoped
         Touch();
     }
 
-    public void ResetForResend()
+    public bool TryClaimForProcessing(DateTimeOffset now, TimeSpan lease)
+    {
+        var due = Status == NotificationDeliveryStatus.Queued
+            && (NextAttemptAt is null || NextAttemptAt <= now);
+        var leaseExpired = Status == NotificationDeliveryStatus.Sending
+            && (UpdatedAt is null || UpdatedAt <= now - lease);
+        if (!due && !leaseExpired)
+        {
+            return false;
+        }
+
+        Status = NotificationDeliveryStatus.Sending;
+        Touch();
+        return true;
+    }
+
+    public bool TryClaimForResend(DateTimeOffset now, string? email, string? phone)
     {
         if (Status != NotificationDeliveryStatus.Failed)
         {
-            throw new InvalidOperationException("Only failed deliveries can be resent.");
+            return false;
         }
 
-        Status = NotificationDeliveryStatus.Queued;
+        Status = NotificationDeliveryStatus.Sending;
+        AttemptCount = 0;
         ErrorMessage = null;
-        NextAttemptAt = DateTimeOffset.UtcNow;
+        NextAttemptAt = now;
+        RecipientEmail = email;
+        RecipientPhone = phone;
         Touch();
+        return true;
     }
 }

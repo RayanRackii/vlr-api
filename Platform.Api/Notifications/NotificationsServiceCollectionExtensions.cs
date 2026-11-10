@@ -46,7 +46,8 @@ public static class NotificationsServiceCollectionExtensions
         var emailExternal = emailGate && resendConfigured;
         if (emailExternal)
         {
-            services.AddHttpClient<IEmailProvider, ResendEmailProvider>();
+            services.AddHttpClient<IEmailProvider, ResendEmailProvider>(client =>
+                client.Timeout = NotificationOutboxProcessor.ProviderCallTimeout);
         }
         else
         {
@@ -59,7 +60,8 @@ public static class NotificationsServiceCollectionExtensions
         var whatsAppExternal = whatsAppGate && whatsAppConfigured;
         if (whatsAppExternal)
         {
-            services.AddHttpClient<IWhatsAppProvider, MetaWhatsAppProvider>();
+            services.AddHttpClient<IWhatsAppProvider, MetaWhatsAppProvider>(client =>
+                client.Timeout = NotificationOutboxProcessor.ProviderCallTimeout);
         }
         else
         {

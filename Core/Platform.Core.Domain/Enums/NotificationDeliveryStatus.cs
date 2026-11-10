@@ -6,4 +6,5 @@ public enum NotificationDeliveryStatus
     Sent = 1,
     Delivered = 2,
     Failed = 3,
+    Sending = 4,
 }
