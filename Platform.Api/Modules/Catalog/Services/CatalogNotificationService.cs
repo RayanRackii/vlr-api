@@ -30,7 +30,7 @@ public sealed class CatalogNotificationService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     ICatalogNotificationPublisher publisher,
-    INotificationOutboxProcessor outboxProcessor) : ICatalogNotificationService
+    INotificationDeliveryService deliveries) : ICatalogNotificationService
 {
     public async Task<IReadOnlyList<CatalogNotificationDeliveryResponse>> ListAsync(
         CatalogNotificationListQuery query,
@@ -38,48 +38,16 @@ public sealed class CatalogNotificationService(
     {
         EnsureTenant();
         await EnsureDefaultsAsync(cancellationToken);
-
-        var deliveries = dbContext.NotificationDeliveries
-            .AsNoTracking()
-            .Include(d => d.Notification)
-            .Include(d => d.Attempts)
-            .AsQueryable();
-
-        if (query.From is { } from)
-        {
-            deliveries = deliveries.Where(d => d.CreatedAt >= from);
-        }
-
-        if (query.To is { } to)
-        {
-            deliveries = deliveries.Where(d => d.CreatedAt <= to);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.EventType))
-        {
-            deliveries = deliveries.Where(d => d.Notification.EventType == query.EventType);
-        }
-
-        if (query.RecipientKind is { } kind)
-        {
-            deliveries = deliveries.Where(d => d.RecipientKind == kind);
-        }
-
-        if (query.Channel is { } channel)
-        {
-            deliveries = deliveries.Where(d => d.Channel == channel);
-        }
-
-        if (query.Status is { } status)
-        {
-            deliveries = deliveries.Where(d => d.Status == status);
-        }
-
-        var list = await deliveries
-            .OrderByDescending(d => d.CreatedAt)
-            .ToListAsync(cancellationToken);
-
-        return list.Select(Map).ToList();
+        var items = await deliveries.ListAllAsync(
+            new NotificationDeliveryFilter(
+                query.From,
+                query.To,
+                query.EventType,
+                query.RecipientKind,
+                query.Channel,
+                query.Status),
+            cancellationToken);
+        return items.Select(ToCatalog).ToList();
     }
 
     public async Task<CatalogNotificationDeliveryResponse> ResendAsync(
@@ -87,14 +55,7 @@ public sealed class CatalogNotificationService(
         CancellationToken cancellationToken)
     {
         EnsureTenant();
-        await outboxProcessor.ResendAsync(deliveryId, cancellationToken);
-
-        var reloaded = await dbContext.NotificationDeliveries
-            .AsNoTracking()
-            .Include(d => d.Notification)
-            .Include(d => d.Attempts)
-            .FirstAsync(d => d.Id == deliveryId, cancellationToken);
-        return Map(reloaded);
+        return ToCatalog(await deliveries.ResendAsync(deliveryId, cancellationToken));
     }
 
     public async Task<IReadOnlyList<CatalogChannelConfigItem>> ListChannelConfigsAsync(
@@ -170,11 +131,11 @@ public sealed class CatalogNotificationService(
         tenantProvider.TenantId
         ?? throw new UnauthorizedAccessException("Tenant context is required.");
 
-    private static CatalogNotificationDeliveryResponse Map(NotificationDelivery delivery) =>
+    private static CatalogNotificationDeliveryResponse ToCatalog(NotificationDeliveryResponse delivery) =>
         new(
             delivery.Id,
             delivery.NotificationId,
-            delivery.Notification.EventType,
+            delivery.EventKey,
             delivery.Channel,
             delivery.RecipientKind,
             delivery.RecipientId,
@@ -183,15 +144,14 @@ public sealed class CatalogNotificationService(
             delivery.AttemptCount,
             delivery.ErrorMessage,
             delivery.CreatedAt,
-            NotificationDeliveryFailures.CanResend(delivery.Status, delivery.Channel, delivery.ErrorMessage),
+            delivery.CanResend,
             delivery.Attempts
-                .OrderBy(attempt => attempt.AttemptNumber)
                 .Select(attempt => new CatalogNotificationAttemptResponse(
                     attempt.AttemptNumber,
                     attempt.StartedAt,
                     attempt.FinishedAt,
                     attempt.Outcome,
                     attempt.ErrorMessage,
-                    delivery.Channel))
+                    attempt.Channel))
                 .ToList());
 }
