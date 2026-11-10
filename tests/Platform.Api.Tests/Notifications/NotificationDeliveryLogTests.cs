@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Platform.Api.Authorization;
@@ -9,6 +10,7 @@ using Platform.Api.Modules.Notifications.Controllers;
 using Platform.Api.Notifications;
 using Platform.Api.Tests.Authorization;
 using Platform.Api.Tests.Catalog;
+using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Common;
 using Platform.Core.Domain.Constants;
@@ -186,13 +188,19 @@ public sealed class NotificationDeliveryLogTests
     {
         var migration = new AddCoreNotificationResendPermission();
         var up = Assert.Single(migration.UpOperations.OfType<SqlOperation>()).Sql;
-        Assert.Contains("core.notifications.resend", up, StringComparison.Ordinal);
-        Assert.Contains("catalog.notifications.resend", up, StringComparison.Ordinal);
+        Assert.Equal(AddCoreNotificationResendPermission.UpSql, up);
         Assert.Contains("ON CONFLICT (key) DO NOTHING", up, StringComparison.Ordinal);
-        Assert.Contains("ON CONFLICT DO NOTHING", up, StringComparison.Ordinal);
+        Assert.Equal(3, CountOf(up, "ON CONFLICT DO NOTHING"));
+        Assert.Contains("source.key = 'catalog.notifications.resend'", up, StringComparison.Ordinal);
+        Assert.Contains("added.key = 'core.notifications.resend'", up, StringComparison.Ordinal);
+        Assert.Contains("added.key = 'core.notifications.write'", up, StringComparison.Ordinal);
+        Assert.Contains("source.key = 'catalog.notifications.read'", up, StringComparison.Ordinal);
+        Assert.Contains("added.key = 'core.notifications.read'", up, StringComparison.Ordinal);
         var down = Assert.Single(migration.DownOperations.OfType<SqlOperation>()).Sql;
-        Assert.Contains("core.notifications.resend", down, StringComparison.Ordinal);
-        Assert.DoesNotContain("catalog.notifications.resend", down, StringComparison.Ordinal);
+        Assert.Equal(AddCoreNotificationResendPermission.DownSql, down);
+        Assert.Contains("key = 'core.notifications.resend'", down, StringComparison.Ordinal);
+        Assert.DoesNotContain("core.notifications.read", down, StringComparison.Ordinal);
+        Assert.DoesNotContain("core.notifications.write", down, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -202,6 +210,13 @@ public sealed class NotificationDeliveryLogTests
         Assert.Equal("Page must be at least 1.", error);
         Assert.False(NotificationDeliveryPages.TryCreate(1, 51, out error));
         Assert.Contains("50", error, StringComparison.Ordinal);
+        Assert.False(NotificationDeliveryPages.TryCreate(int.MaxValue, 2, out error));
+        Assert.Equal("Page is too large.", error);
+        Assert.True(NotificationDeliveryPages.TryCreate(
+            (int.MaxValue / NotificationDeliveryPages.MaxPageSize) + 1,
+            NotificationDeliveryPages.MaxPageSize,
+            out error));
+        Assert.Equal(string.Empty, error);
     }
 
     private static NotificationDeliveryService Log(CatalogHarness harness) =>
@@ -247,4 +262,114 @@ public sealed class NotificationDeliveryLogTests
 
     private static string Policy(MethodInfo method) =>
         Assert.Single(method.GetCustomAttributes<AuthorizeAttribute>()).Policy!;
+
+    private static int CountOf(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
+    }
+}
+
+public sealed class NotificationGrantCopyTests : IClassFixture<PostgresContainerFixture>
+{
+    private readonly PostgresContainerFixture _postgres;
+
+    public NotificationGrantCopyTests(PostgresContainerFixture postgres)
+    {
+        _postgres = postgres;
+    }
+
+    [DockerFact]
+    public async Task Copies_catalog_read_and_resend_grants_once()
+    {
+        var factory = _postgres.Factory ?? throw new InvalidOperationException("PostgreSQL fixture was not initialized.");
+        var tenantProvider = new FakeTenantProvider();
+        Guid resendRoleId;
+        Guid readRoleId;
+        Guid bothRoleId;
+        Guid alreadyRoleId;
+        Guid untouchedRoleId;
+
+        await using (var db = factory.Create(tenantProvider))
+        {
+            var tenant = new Tenant("Grant Club", Random.Shared.NextInt64(0, 100_000_000_000_000).ToString("D14"));
+            var resendRole = new Role(tenant.Id, "Catalog resend");
+            var readRole = new Role(tenant.Id, "Catalog read");
+            var bothRole = new Role(tenant.Id, "Catalog both");
+            var alreadyRole = new Role(tenant.Id, "Already write");
+            var untouchedRole = new Role(tenant.Id, "No catalog grant");
+            db.Tenants.Add(tenant);
+            db.Roles.AddRange(resendRole, readRole, bothRole, alreadyRole, untouchedRole);
+            await db.SaveChangesAsync();
+
+            var permissions = await db.Permissions
+                .Where(permission => permission.Key == Permissions.Catalog.NotificationsRead
+                    || permission.Key == Permissions.Catalog.NotificationsResend
+                    || permission.Key == Permissions.Core.NotificationsRead
+                    || permission.Key == Permissions.Core.NotificationsWrite
+                    || permission.Key == Permissions.Core.NotificationsResend)
+                .ToListAsync();
+            Guid Id(string key) => permissions.Single(permission => permission.Key == key).Id;
+
+            db.RolePermissions.AddRange(
+                new RolePermission(resendRole.Id, Id(Permissions.Catalog.NotificationsResend)),
+                new RolePermission(readRole.Id, Id(Permissions.Catalog.NotificationsRead)),
+                new RolePermission(bothRole.Id, Id(Permissions.Catalog.NotificationsRead)),
+                new RolePermission(bothRole.Id, Id(Permissions.Catalog.NotificationsResend)),
+                new RolePermission(alreadyRole.Id, Id(Permissions.Catalog.NotificationsResend)),
+                new RolePermission(alreadyRole.Id, Id(Permissions.Core.NotificationsWrite)));
+            await db.SaveChangesAsync();
+            resendRoleId = resendRole.Id;
+            readRoleId = readRole.Id;
+            bothRoleId = bothRole.Id;
+            alreadyRoleId = alreadyRole.Id;
+            untouchedRoleId = untouchedRole.Id;
+        }
+
+        await using (var db = factory.Create(tenantProvider))
+        {
+            await db.Database.ExecuteSqlRawAsync(AddCoreNotificationResendPermission.UpSql);
+            await db.Database.ExecuteSqlRawAsync(AddCoreNotificationResendPermission.UpSql);
+        }
+
+        await using var verify = factory.Create(tenantProvider);
+        var grants = await verify.RolePermissions
+            .Where(grant => grant.RoleId == resendRoleId
+                || grant.RoleId == readRoleId
+                || grant.RoleId == bothRoleId
+                || grant.RoleId == alreadyRoleId
+                || grant.RoleId == untouchedRoleId)
+            .Select(grant => new { grant.RoleId, grant.Permission.Key })
+            .ToListAsync();
+
+        string[] Of(Guid roleId) => grants.Where(grant => grant.RoleId == roleId).Select(grant => grant.Key).Order().ToArray();
+
+        Assert.Equal(
+            [Permissions.Catalog.NotificationsResend, Permissions.Core.NotificationsResend, Permissions.Core.NotificationsWrite],
+            Of(resendRoleId));
+        Assert.Equal(
+            [Permissions.Catalog.NotificationsRead, Permissions.Core.NotificationsRead],
+            Of(readRoleId));
+        Assert.Equal(
+            [
+                Permissions.Catalog.NotificationsRead,
+                Permissions.Catalog.NotificationsResend,
+                Permissions.Core.NotificationsRead,
+                Permissions.Core.NotificationsResend,
+                Permissions.Core.NotificationsWrite,
+            ],
+            Of(bothRoleId));
+        Assert.Equal(
+            [Permissions.Catalog.NotificationsResend, Permissions.Core.NotificationsResend, Permissions.Core.NotificationsWrite],
+            Of(alreadyRoleId));
+        Assert.Equal(1, grants.Count(grant => grant.RoleId == alreadyRoleId && grant.Key == Permissions.Core.NotificationsWrite));
+        Assert.Empty(Of(untouchedRoleId));
+    }
 }

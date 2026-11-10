@@ -30,6 +30,12 @@ public static class NotificationDeliveryPages
             return false;
         }
 
+        if (page - 1 > int.MaxValue / pageSize)
+        {
+            error = "Page is too large.";
+            return false;
+        }
+
         error = string.Empty;
         return true;
     }
