@@ -255,7 +255,9 @@ public sealed class BookingPolicyAuthorizationTests
         public Task<CategoryBookingPolicyResponseDto> UpsertCategoryAsync(Guid categoryId,
             UpsertCategoryBookingPolicyRequestDto request, CancellationToken cancellationToken) =>
             Task.FromResult(new CategoryBookingPolicyResponseDto(categoryId, "Category",
-                request.MaxAdvanceBookingDays, request.CancelCutoffHours));
+                request.MaxAdvanceBookingDays, request.CancelCutoffHours,
+                request.MinimumBookingLeadMinutes.IsSpecified ? request.MinimumBookingLeadMinutes.Value : null,
+                request.DepositPercent.IsSpecified ? request.DepositPercent.Value : null));
 
         public Task<BookingPolicyResponseDto> GetAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new BookingPolicyResponseDto("Plain note", null, null));
@@ -268,6 +270,12 @@ public sealed class BookingPolicyAuthorizationTests
                 request.MaxActiveReservationsPerCustomerPerDay,
                 request.MaxAdvanceBookingDays.IsSpecified
                     ? request.MaxAdvanceBookingDays.Value
+                    : null,
+                MinimumBookingLeadMinutes: request.MinimumBookingLeadMinutes.IsSpecified
+                    ? request.MinimumBookingLeadMinutes.Value
+                    : null,
+                DepositPercent: request.DepositPercent.IsSpecified
+                    ? request.DepositPercent.Value
                     : null));
     }
 

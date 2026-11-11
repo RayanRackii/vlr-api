@@ -74,6 +74,10 @@ public sealed class ReservationService(
             request.EndDate ?? request.Date,
             today,
             PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MaxAdvanceBookingDays);
+        BookingLeadTime.Ensure(
+            start,
+            timeProvider.GetUtcNow(),
+            PolicyResolver.Resolve(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy).MinimumBookingLeadMinutes);
 
         RentalPricing? multiDayPricing = null;
         if (calendarDays.HasValue)
@@ -274,6 +278,13 @@ public sealed class ReservationService(
                 request.EndDate ?? request.Date,
                 today,
                 tenantHorizon,
+                cancellationToken);
+            await BookingLeadTime.EnsureAssetsAsync(
+                dbContext,
+                tenantId,
+                assetIds,
+                start,
+                timeProvider.GetUtcNow(),
                 cancellationToken);
 
             var reservation = new Reservation

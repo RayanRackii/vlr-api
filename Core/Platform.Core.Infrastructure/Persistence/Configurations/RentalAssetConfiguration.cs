@@ -14,6 +14,12 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
             table.HasCheckConstraint(
                 "ck_rental_assets_advance_days",
                 "max_advance_booking_days IS NULL OR (max_advance_booking_days >= 0 AND max_advance_booking_days <= 3650)");
+            table.HasCheckConstraint(
+                "ck_rental_assets_lead_minutes",
+                "minimum_booking_lead_minutes IS NULL OR (minimum_booking_lead_minutes >= 0 AND minimum_booking_lead_minutes <= 525600)");
+            table.HasCheckConstraint(
+                "ck_rental_assets_deposit_percent",
+                "deposit_percent IS NULL OR (deposit_percent >= 0 AND deposit_percent <= 100)");
             table.HasCheckConstraint("ck_rental_assets_capacity_people", "capacity_people IS NULL OR (capacity_people > 0 AND capacity_people <= 100000)");
         });
 
@@ -71,6 +77,10 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
         builder.Property(a => a.MaxAdvanceBookingDays);
 
         builder.Property(a => a.CancelCutoffHours);
+
+        builder.Property(a => a.MinimumBookingLeadMinutes);
+
+        builder.Property(a => a.DepositPercent);
 
         builder.Property(a => a.CreatedAt)
             .IsRequired();

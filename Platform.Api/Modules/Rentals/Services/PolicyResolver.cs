@@ -8,7 +8,9 @@ public sealed record EffectiveBookingPolicy(
     int? MaxAdvanceBookingDays,
     int? CancelCutoffHours,
     int? MaxActiveReservationsPerCustomerPerDay,
-    string? CancellationPolicyText);
+    string? CancellationPolicyText,
+    int? MinimumBookingLeadMinutes = null,
+    int? DepositPercent = null);
 
 /// <summary>Resource overrides, then category policies, then tenant defaults, then unlimited defaults.</summary>
 public sealed class PolicyResolver(AppDbContext db)
@@ -43,9 +45,17 @@ public sealed class PolicyResolver(AppDbContext db)
         return hours;
     }
 
+    public static int? EffectiveLeadMinutes(int? resourceMinutes, BookingPolicy? category, BookingPolicy? tenant) =>
+        resourceMinutes ?? category?.MinimumBookingLeadMinutes ?? tenant?.MinimumBookingLeadMinutes;
+
+    public static int? EffectiveDepositPercent(int? resourcePercent, BookingPolicy? category, BookingPolicy? tenant) =>
+        resourcePercent ?? category?.DepositPercent ?? tenant?.DepositPercent;
+
     public static EffectiveBookingPolicy Resolve(RentalAsset? resource, BookingPolicy? category, BookingPolicy? tenant) =>
         new(resource?.MaxAdvanceBookingDays ?? category?.MaxAdvanceBookingDays ?? tenant?.MaxAdvanceBookingDays,
             resource?.CancelCutoffHours ?? category?.CancelCutoffHours ?? tenant?.CancelCutoffHours,
             tenant?.MaxActiveReservationsPerCustomerPerDay,
-            tenant?.CancellationPolicyText);
+            tenant?.CancellationPolicyText,
+            EffectiveLeadMinutes(resource?.MinimumBookingLeadMinutes, category, tenant),
+            EffectiveDepositPercent(resource?.DepositPercent, category, tenant));
 }

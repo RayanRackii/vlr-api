@@ -125,6 +125,253 @@ public sealed class BookingPolicyTests
     }
 
     [Fact]
+    public async Task Lead_time_and_deposit_round_trip_preserve_omitted_and_clear_null()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var before = await harness.Policies.GetAsync(CancellationToken.None);
+        Assert.Null(before.MinimumBookingLeadMinutes);
+        Assert.Null(before.DepositPercent);
+
+        var saved = await harness.Policies.UpsertAsync(
+            DeserializePolicy("""{"minimumBookingLeadMinutes":525600,"depositPercent":100}"""),
+            CancellationToken.None);
+        Assert.Equal(525600, saved.MinimumBookingLeadMinutes);
+        Assert.Equal(100, saved.DepositPercent);
+        var kept = await harness.Policies.UpsertAsync(DeserializePolicy("{}"), CancellationToken.None);
+        Assert.Equal(525600, kept.MinimumBookingLeadMinutes);
+        Assert.Equal(100, kept.DepositPercent);
+        var zero = await harness.Policies.UpsertAsync(
+            DeserializePolicy("""{"minimumBookingLeadMinutes":0,"depositPercent":0}"""),
+            CancellationToken.None);
+        Assert.Equal(0, zero.MinimumBookingLeadMinutes);
+        Assert.Equal(0, zero.DepositPercent);
+        var cleared = await harness.Policies.UpsertAsync(
+            DeserializePolicy("""{"minimumBookingLeadMinutes":null,"depositPercent":null}"""),
+            CancellationToken.None);
+        Assert.Null(cleared.MinimumBookingLeadMinutes);
+        Assert.Null(cleared.DepositPercent);
+    }
+
+    [Theory]
+    [InlineData("""{"minimumBookingLeadMinutes":-1}""")]
+    [InlineData("""{"minimumBookingLeadMinutes":525601}""")]
+    [InlineData("""{"depositPercent":-1}""")]
+    [InlineData("""{"depositPercent":101}""")]
+    public async Task Policy_put_rejects_out_of_range_lead_and_deposit(string json)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var controller = new BookingPolicyController(harness.Policies, null!);
+        var response = await controller.Upsert(DeserializePolicy(json), CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(response.Result);
+        var stored = await harness.Policies.GetAsync(CancellationToken.None);
+        Assert.Null(stored.MinimumBookingLeadMinutes);
+        Assert.Null(stored.DepositPercent);
+    }
+
+    [Fact]
+    public async Task Category_lead_and_deposit_survive_an_omitted_update_and_apply_to_the_resource()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        var saved = await harness.Policies.UpsertCategoryAsync(
+            asset.CategoryId, new(null, null, 180, 40), CancellationToken.None);
+        Assert.Equal(180, saved.MinimumBookingLeadMinutes);
+        Assert.Equal(40, saved.DepositPercent);
+        var kept = await harness.Policies.UpsertCategoryAsync(asset.CategoryId, new(7, null), CancellationToken.None);
+        Assert.Equal(7, kept.MaxAdvanceBookingDays);
+        Assert.Equal(180, kept.MinimumBookingLeadMinutes);
+        Assert.Equal(40, kept.DepositPercent);
+
+        var rental = await new RentalAssetService(harness.Db, harness.TenantProvider)
+            .GetByAssetIdAsync(asset.Id, CancellationToken.None);
+        Assert.Null(rental!.MinimumBookingLeadMinutes);
+        Assert.Null(rental.DepositPercent);
+        Assert.Equal(180, rental.EffectiveMinimumBookingLeadMinutes);
+        Assert.Equal(40, rental.EffectiveDepositPercent);
+
+        var controller = new BookingPolicyController(harness.Policies, null!);
+        var rejected = await controller.UpsertCategory(asset.CategoryId, new(0, null, -1, 101), CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(rejected.Result);
+        Assert.Equal(180, (await harness.Policies.GetCategoriesAsync(CancellationToken.None))
+            .Single(c => c.CategoryId == asset.CategoryId).MinimumBookingLeadMinutes);
+    }
+
+    [Fact]
+    public async Task Category_json_null_clears_lead_and_deposit_and_omitted_keeps_them()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var asset = await harness.Db.Assets.SingleAsync(a => a.Id == harness.AssetId);
+        await harness.Policies.UpsertCategoryAsync(asset.CategoryId, new(null, null, 90, 25), CancellationToken.None);
+
+        var omitted = JsonSerializer.Deserialize<UpsertCategoryBookingPolicyRequestDto>(
+            """{"maxAdvanceBookingDays":3}""", ApiJson)!;
+        Assert.False(omitted.MinimumBookingLeadMinutes.IsSpecified);
+        Assert.False(omitted.DepositPercent.IsSpecified);
+        var kept = await harness.Policies.UpsertCategoryAsync(asset.CategoryId, omitted, CancellationToken.None);
+        Assert.Equal(3, kept.MaxAdvanceBookingDays);
+        Assert.Equal(90, kept.MinimumBookingLeadMinutes);
+        Assert.Equal(25, kept.DepositPercent);
+
+        var clearedJson = JsonSerializer.Deserialize<UpsertCategoryBookingPolicyRequestDto>(
+            """{"maxAdvanceBookingDays":3,"minimumBookingLeadMinutes":null,"depositPercent":null}""", ApiJson)!;
+        Assert.True(clearedJson.MinimumBookingLeadMinutes.IsSpecified);
+        Assert.Null(clearedJson.MinimumBookingLeadMinutes.Value);
+        Assert.True(clearedJson.DepositPercent.IsSpecified);
+        var cleared = await harness.Policies.UpsertCategoryAsync(asset.CategoryId, clearedJson, CancellationToken.None);
+        Assert.Null(cleared.MinimumBookingLeadMinutes);
+        Assert.Null(cleared.DepositPercent);
+        Assert.Equal(3, cleared.MaxAdvanceBookingDays);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Customer_booking_rejects_a_start_inside_the_lead_time(bool slotBooking)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MinimumBookingLeadMinutes = 180, DepositPercent = 50 },
+            CancellationToken.None);
+
+        if (!slotBooking)
+        {
+            await Assert.ThrowsAsync<BookingLeadTimeNotMetException>(() => harness.Reservations.CheckAvailabilityAsync(
+                new CheckAvailabilityRequestDto { AssetId = harness.AssetId, Date = Day, StartTime = Ten, EndTime = Eleven },
+                CancellationToken.None));
+        }
+
+        var exception = slotBooking
+            ? await Assert.ThrowsAsync<BookingLeadTimeNotMetException>(async () =>
+            {
+                var slot = await harness.SeedSlotAsync(Day, Ten, Eleven);
+                await harness.Schedule.BookSlotAsync(
+                    harness.CustomerId, new BookSlotRequestDto { SlotId = slot, UnitId = harness.UnitId }, CancellationToken.None);
+            })
+            : await Assert.ThrowsAsync<BookingLeadTimeNotMetException>(() => harness.BookAsync(Day, Ten, Eleven));
+
+        Assert.Equal(180, exception.MinimumBookingLeadMinutes);
+        Assert.Equal("A reserva precisa ser feita com pelo menos 180 minutos de antecedência.", exception.Message);
+        Assert.Equal(0, await harness.Db.Reservations.CountAsync());
+    }
+
+    [Fact]
+    public async Task Customer_booking_at_the_lead_boundary_keeps_the_full_price()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MinimumBookingLeadMinutes = 120, DepositPercent = 50 },
+            CancellationToken.None);
+
+        var booked = await harness.BookAsync(Day, Ten, Eleven);
+
+        Assert.Equal(40m, booked.TotalAmount);
+        Assert.Equal(0m, booked.DepositPaid);
+    }
+
+    [Fact]
+    public async Task Resource_lead_overrides_the_tenant_policy()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MinimumBookingLeadMinutes = 180 }, CancellationToken.None);
+        var rental = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.AssetId);
+        var service = new RentalAssetService(harness.Db, harness.TenantProvider);
+        var updated = await service.UpdateSchedulePolicyAsync(rental.Id, new UpdateRentalSchedulePolicyRequestDto
+        {
+            SchedulePolicy = SchedulePolicy.OpenHours,
+            OpenTime = TimeOnly.MinValue,
+            CloseTime = new TimeOnly(23, 59),
+            MinimumBookingLeadMinutes = 60,
+            DepositPercent = 10,
+        }, CancellationToken.None);
+        Assert.Equal(60, updated.EffectiveMinimumBookingLeadMinutes);
+        Assert.Equal(10, updated.EffectiveDepositPercent);
+
+        var booked = await harness.BookAsync(Day, Ten, Eleven);
+        Assert.Equal(40m, booked.TotalAmount);
+        Assert.Equal(0m, booked.DepositPaid);
+
+        var omitted = await service.UpdateSchedulePolicyAsync(rental.Id, new UpdateRentalSchedulePolicyRequestDto
+        {
+            SchedulePolicy = SchedulePolicy.OpenHours,
+            OpenTime = TimeOnly.MinValue,
+            CloseTime = new TimeOnly(23, 59),
+        }, CancellationToken.None);
+        Assert.Equal(60, omitted.MinimumBookingLeadMinutes);
+        Assert.Equal(10, omitted.DepositPercent);
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(0, 101)]
+    public async Task Resource_lead_and_deposit_reject_out_of_range_values(int lead, int deposit)
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var rental = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.AssetId);
+        var service = new RentalAssetService(harness.Db, harness.TenantProvider);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.UpdateSchedulePolicyAsync(rental.Id,
+            new UpdateRentalSchedulePolicyRequestDto
+            {
+                SchedulePolicy = SchedulePolicy.OpenHours,
+                OpenTime = TimeOnly.MinValue,
+                CloseTime = new TimeOnly(23, 59),
+                MinimumBookingLeadMinutes = lead,
+                DepositPercent = deposit,
+            }, CancellationToken.None));
+        var stored = await service.GetByAssetIdAsync(harness.AssetId, CancellationToken.None);
+        Assert.Null(stored!.MinimumBookingLeadMinutes);
+        Assert.Null(stored.DepositPercent);
+    }
+
+    [Fact]
+    public async Task Several_resources_report_the_longest_unmet_lead()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        var primary = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.AssetId);
+        var secondary = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.SecondAssetId);
+        primary.MinimumBookingLeadMinutes = 30;
+        secondary.MinimumBookingLeadMinutes = 180;
+        await harness.Db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<BookingLeadTimeNotMetException>(() =>
+            harness.Reservations.CreateReservationAsync(harness.CustomerId, new CreateReservationRequestDto
+            {
+                UnitId = harness.UnitId,
+                Date = Day,
+                StartTime = Ten,
+                EndTime = Eleven,
+                Items =
+                [
+                    new CreateReservationItemRequestDto { AssetId = harness.AssetId },
+                    new CreateReservationItemRequestDto { AssetId = harness.SecondAssetId },
+                ],
+            }, CancellationToken.None));
+
+        Assert.Equal(180, exception.MinimumBookingLeadMinutes);
+        Assert.Equal(0, await harness.Db.Reservations.CountAsync());
+    }
+
+    [Fact]
+    public async Task Staff_internal_use_ignores_the_customer_lead_time()
+    {
+        await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));
+        await harness.Policies.UpsertAsync(
+            new UpsertBookingPolicyRequestDto { MinimumBookingLeadMinutes = 180 }, CancellationToken.None);
+        var rental = await harness.Db.RentalAssets.SingleAsync(r => r.AssetId == harness.AssetId);
+        var start = BrazilTimeZone.AtLocal(Day, new TimeOnly(8, 30));
+
+        var itemId = await new ResourceOccupancyService().CreateInternalUseOccupancyAsync(
+            harness.Db, harness.TenantId, harness.UnitId, rental.Id, 1, start, start.AddMinutes(30), CancellationToken.None);
+        await harness.Db.SaveChangesAsync();
+
+        var reservation = await harness.Db.Reservations.SingleAsync();
+        Assert.Equal(ReservationPurpose.InternalUse, reservation.Purpose);
+        Assert.Equal(start, reservation.StartDateTime);
+        Assert.NotEqual(Guid.Empty, itemId);
+        await Assert.ThrowsAsync<BookingLeadTimeNotMetException>(() => harness.BookAsync(Day, Ten, Eleven));
+    }
+
+    [Fact]
     public async Task Rentable_responses_expose_the_asset_family()
     {
         await using var harness = await BookingPolicyHarness.CreateAsync(Day, new TimeOnly(8, 0));

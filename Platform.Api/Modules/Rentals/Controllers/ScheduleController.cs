@@ -277,6 +277,10 @@ public sealed class ScheduleController(
         {
             return BadRequest(new { error = ex.Message, code = BookingHorizonExceededException.Code });
         }
+        catch (BookingLeadTimeNotMetException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = BookingLeadTimeNotMetException.Code });
+        }
         catch (StartInThePastException ex)
         {
             return BadRequest(new { error = ex.Message, code = StartInThePastException.Code });

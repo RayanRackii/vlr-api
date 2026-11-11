@@ -408,6 +408,8 @@ public sealed class RentalsNotificationPublisher(
             // booking routes (persisted slot / derived window) agree with the deposit row.
             var booked = prices.Where(pricing => pricing.PricePerHour == item.UnitPrice
                 && BookingOffer.Total(pricing, hours, item.Quantity) == item.SubTotal).ToList();
+            // depositPercent on the booking policy is setup data only. This figure stays
+            // on the pricing window and does not change the reservation total.
             var percentage = BookingOffer.ForDerivedWindow(booked.Count > 0 ? booked : prices, hours, item.Quantity)
                 ?.DepositPercentage;
 
