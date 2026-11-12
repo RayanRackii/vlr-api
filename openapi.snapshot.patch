@@ -1,0 +1,112 @@
+diff --git a/tests/Platform.Api.Tests/Contracts/openapi.full.snapshot.json b/tests/Platform.Api.Tests/Contracts/openapi.full.snapshot.json
+index dcd5bbe..d1368db 100644
+--- a/tests/Platform.Api.Tests/Contracts/openapi.full.snapshot.json
++++ b/tests/Platform.Api.Tests/Contracts/openapi.full.snapshot.json
+@@ -6088,6 +6088,61 @@
+         },
+         "type": "object"
+       },
++      "SetupChecklistItemResponse": {
++        "additionalProperties": false,
++        "properties": {
++          "key": {
++            "nullable": true,
++            "type": "string"
++          },
++          "state": {
++            "nullable": true,
++            "type": "string"
++          }
++        },
++        "type": "object"
++      },
++      "SetupResourceStateResponse": {
++        "additionalProperties": false,
++        "properties": {
++          "id": {
++            "format": "uuid",
++            "type": "string"
++          },
++          "missing": {
++            "items": {
++              "type": "string"
++            },
++            "nullable": true,
++            "type": "array"
++          },
++          "state": {
++            "nullable": true,
++            "type": "string"
++          }
++        },
++        "type": "object"
++      },
++      "SetupStatusResponse": {
++        "additionalProperties": false,
++        "properties": {
++          "checklist": {
++            "items": {
++              "$ref": "#/components/schemas/SetupChecklistItemResponse"
++            },
++            "nullable": true,
++            "type": "array"
++          },
++          "resources": {
++            "items": {
++              "$ref": "#/components/schemas/SetupResourceStateResponse"
++            },
++            "nullable": true,
++            "type": "array"
++          }
++        },
++        "type": "object"
++      },
+       "SlotOccurrenceSource": {
+         "enum": [
+           0,
+@@ -17264,6 +17319,35 @@
+         ]
+       }
+     },
++    "/api/rentals/setup-status": {
++      "get": {
++        "responses": {
++          "200": {
++            "content": {
++              "application/json": {
++                "schema": {
++                  "$ref": "#/components/schemas/SetupStatusResponse"
++                }
++              },
++              "text/json": {
++                "schema": {
++                  "$ref": "#/components/schemas/SetupStatusResponse"
++                }
++              },
++              "text/plain": {
++                "schema": {
++                  "$ref": "#/components/schemas/SetupStatusResponse"
++                }
++              }
++            },
++            "description": "OK"
++          }
++        },
++        "tags": [
++          "SetupStatus"
++        ]
++      }
++    },
+     "/api/reservations": {
+       "get": {
+         "parameters": [
+@@ -20162,6 +20246,9 @@
+     {
+       "name": "Schedule"
+     },
++    {
++      "name": "SetupStatus"
++    },
+     {
+       "name": "StaffRentalAssetQueue"
+     },

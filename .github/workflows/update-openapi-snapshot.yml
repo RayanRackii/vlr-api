@@ -1,0 +1,22 @@
+name: update openapi snapshot
+on:
+  push:
+    branches: [cursor/r68-setup-status-8e64]
+    paths: [openapi.snapshot.patch]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply snapshot patch
+        run: |
+          git apply openapi.snapshot.patch
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/Platform.Api.Tests/Contracts/openapi.full.snapshot.json
+          git commit -m "test(api): update OpenAPI snapshot for setup status"
+          git rm -f openapi.snapshot.patch .github/workflows/update-openapi-snapshot.yml
+          git commit -m "chore: remove snapshot helper [skip ci]"
+          git push
