@@ -88,6 +88,13 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(a => a.ResourceTypeId);
+        builder.HasOne<ResourceType>()
+            .WithMany()
+            .HasForeignKey(a => a.ResourceTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(a => a.ResourceTypeId);
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 

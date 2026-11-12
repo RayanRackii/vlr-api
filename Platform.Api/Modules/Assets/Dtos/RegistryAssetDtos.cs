@@ -34,6 +34,9 @@ public sealed record CreateRentableRequest
 
     public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
 
+    /// <summary>Optional tenant resource type. The rental enum stays valid when this is omitted.</summary>
+    public Guid? ResourceTypeId { get; init; }
+
     public int TotalQuantity { get; init; } = 1;
 
     /// <summary>
@@ -114,6 +117,9 @@ public sealed record UpdateRentableRequest
     public required Guid FamilyId { get; init; }
 
     public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
+
+    /// <summary>Optional tenant resource type. Omitted keeps the stored link. The rental enum stays valid.</summary>
+    public Guid? ResourceTypeId { get; init; }
 
     public int TotalQuantity { get; init; } = 1;
 

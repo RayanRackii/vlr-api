@@ -68,6 +68,9 @@ public sealed record CreateAssetRequest
 
     public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
 
+    /// <summary>Optional tenant resource type. Omitted leaves the link unset. The rental enum stays valid.</summary>
+    public Guid? ResourceTypeId { get; init; }
+
     public int TotalQuantity { get; init; } = 1;
 
     /// <summary>
@@ -124,6 +127,9 @@ public sealed record UpdateAssetRequest
     public bool RequiresMaintenance { get; init; }
 
     public RentalAssetType RentalType { get; init; } = RentalAssetType.Location;
+
+    /// <summary>Optional tenant resource type. Omitted keeps the stored link. The rental enum stays valid.</summary>
+    public Guid? ResourceTypeId { get; init; }
 
     public int TotalQuantity { get; init; } = 1;
 
