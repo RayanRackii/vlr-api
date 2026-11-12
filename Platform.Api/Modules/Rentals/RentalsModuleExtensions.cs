@@ -28,6 +28,8 @@ public static class RentalsModuleExtensions
         services.AddScoped<IBookingPolicyService, BookingPolicyService>();
         services.AddScoped<PolicyResolver>();
         services.AddScoped<IRentalsReadinessService, RentalsReadinessService>();
+        services.AddScoped<ISetupStatusService, SetupStatusService>();
+        services.AddScoped<IResourceTypeService, ResourceTypeService>();
         services.AddScoped<IRentalsNotificationPublisher, RentalsNotificationPublisher>();
         services.TryAddScoped(typeof(IDomainEventDispatcher<>), typeof(DomainEventDispatcher<>));
         services.AddScoped<IDomainEventHandler<ReservationEvent>>(sp =>

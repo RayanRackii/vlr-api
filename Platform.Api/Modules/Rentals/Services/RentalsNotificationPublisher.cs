@@ -400,6 +400,7 @@ public sealed class RentalsNotificationPublisher(
             var prices = await dbContext.RentalPricings
                 .AsNoTracking()
                 .Where(pricing => pricing.TenantId == tenantId && pricing.RentalAssetId == item.RentalAssetId)
+                .Where(pricing => pricing.PricePerHour > 0)
                 .Where(pricing => pricing.DayOfWeek == date.DayOfWeek)
                 .Where(pricing => pricing.StartTime <= startTime && pricing.EndTime >= endTime)
                 .OrderBy(pricing => pricing.PricePerHour)

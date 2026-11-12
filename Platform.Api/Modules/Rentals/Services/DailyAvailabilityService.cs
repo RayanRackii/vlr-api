@@ -149,9 +149,12 @@ public sealed class DailyAvailabilityService(
                 var matching = prices.Where(p => p.RentalAssetId == resource.Id
                     && p.StartTime <= window.Start && p.EndTime >= TenantBookingClock.NormalizeEndTime(window.End)).AsQueryable();
                 var hours = (decimal)(end - start).TotalHours;
-                var pricing = window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching).FirstOrDefault()
+                var pricing = !resource.DirectRental ? null
+                    : window.Id.HasValue ? BookingOffer.ForPersistedSlot(matching).FirstOrDefault()
                     : BookingOffer.ForDerivedWindow(matching, hours, quantity);
-                var amount = pricing is not null ? BookingOffer.Total(pricing, hours, quantity) : (decimal?)null;
+                var amount = BookingOffer.PositivePrice(pricing?.PricePerHour) is decimal
+                    ? BookingOffer.Total(pricing!, hours, quantity)
+                    : (decimal?)null;
                 var state = BookingHorizon.IsBeyond(date, today, effectiveDays) ? AvailabilityWindowState.OutsideHorizon
                     : start < now ? AvailabilityWindowState.Past
                     : blocked ? AvailabilityWindowState.Blocked

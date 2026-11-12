@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
@@ -355,5 +356,63 @@ public sealed class RentalAssetService(
             rental.MinimumBookingLeadMinutes,
             PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).MinimumBookingLeadMinutes,
             rental.DepositPercent,
-            PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).DepositPercent);
+            PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).DepositPercent,
+            rental.DirectRental,
+            rental.ResourceTypeId);
+
+    public async Task<RentalAssetResponse> SetDirectRentalAsync(
+        Guid rentalAssetId,
+        bool directRental,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenantContext();
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            await RentalAssetLocks.LockByRentalAssetIdAsync(
+                dbContext, tenantId, rentalAssetId, cancellationToken);
+
+            var rental = await dbContext.RentalAssets
+                .Include(r => r.Asset)
+                    .ThenInclude(a => a.Category)
+                .FirstOrDefaultAsync(
+                    r => r.Id == rentalAssetId && r.TenantId == tenantId && r.IsActive,
+                    cancellationToken)
+                ?? throw new KeyNotFoundException("Rentable was not found.");
+
+            if (rental.DirectRental != directRental)
+            {
+                if (!directRental
+                    && await PricedOfferQueries.IsOnMenuAsync(dbContext, tenantId, rental.Id, cancellationToken)
+                    && !await PricedOfferQueries.CatalogReachesAsync(dbContext, tenantId, rental.Id, cancellationToken))
+                {
+                    throw new PricedOfferRequiredException(PricedOfferRequiredException.DirectRentalMessage);
+                }
+
+                rental.DirectRental = directRental;
+                rental.Touch();
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
+            var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
+            return ToResponse(rental, categories.GetValueOrDefault(rental.Asset.CategoryId), tenantPolicy);
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
+
+            throw;
+        }
+    }
 }

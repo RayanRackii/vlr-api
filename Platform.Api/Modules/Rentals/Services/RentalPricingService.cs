@@ -355,9 +355,9 @@ public sealed class RentalPricingService(
             throw new ArgumentException("EndTime must be greater than StartTime.");
         }
 
-        if (pricePerHour < 0)
+        if (RoundMoney(pricePerHour) <= 0)
         {
-            throw new ArgumentException("PricePerHour cannot be negative.");
+            throw new ArgumentException("PricePerHour must be greater than zero.");
         }
 
         if (depositPercentage < 0 || depositPercentage > 100)

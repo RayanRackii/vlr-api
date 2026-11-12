@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.ModuleMenuItems.Services;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
@@ -63,6 +64,10 @@ public sealed class ModuleMenuItemsController(
                 cancellationToken);
             return CreatedAtAction(nameof(List), new { id = created.Id }, created);
         }
+        catch (PricedOfferRequiredException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PricedOfferRequiredException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -91,6 +96,10 @@ public sealed class ModuleMenuItemsController(
                 request,
                 cancellationToken);
             return Ok(updated);
+        }
+        catch (PricedOfferRequiredException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PricedOfferRequiredException.Code });
         }
         catch (ArgumentException ex)
         {

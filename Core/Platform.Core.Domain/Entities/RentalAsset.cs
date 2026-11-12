@@ -69,6 +69,18 @@ public class RentalAsset : Entity, ITenantScoped
     /// </summary>
     public int? DepositPercent { get; set; }
 
+    /// <summary>
+    /// When true, this resource's own price is the offer a customer books.
+    /// When false, a priced catalog offer must reach the resource.
+    /// Existing rows stay true so a published court keeps its price.
+    /// </summary>
+    public bool DirectRental { get; set; } = true;
+
+    /// <summary>
+    /// Tenant resource type (Quadra, Caçamba, or a company type). Null keeps the rental enum only.
+    /// </summary>
+    public Guid? ResourceTypeId { get; set; }
+
     /// <summary>Fixed published visual revision; null uses the generic resource presentation.</summary>
     public Guid? VisualTemplateRevisionId { get; set; }
 

@@ -5,6 +5,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Constants;
@@ -144,6 +145,31 @@ public sealed class RentalAssetsController(
         {
             return Ok(
                 await rentalAssetService.UpdateSchedulePolicyAsync(id, request, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
+    [HttpPut("{id:guid}/direct-rental")]
+    public async Task<ActionResult<RentalAssetResponse>> SetDirectRental(
+        Guid id,
+        [FromBody] SetDirectRentalRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await rentalAssetService.SetDirectRentalAsync(id, request.DirectRental, cancellationToken));
+        }
+        catch (PricedOfferRequiredException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PricedOfferRequiredException.Code });
         }
         catch (KeyNotFoundException ex)
         {

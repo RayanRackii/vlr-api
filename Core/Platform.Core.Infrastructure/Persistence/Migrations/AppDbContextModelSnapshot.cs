@@ -1812,9 +1812,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("AssetCategoryId")
+                    b.Property<Guid?>("AssetCategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("asset_category_id");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
 
                     b.Property<bool>("AutoGenerateEnabled")
                         .HasColumnType("boolean")
@@ -1881,6 +1885,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("AssetCategoryId")
                         .HasDatabaseName("ix_maintenance_plans_asset_category_id");
 
+                    b.HasIndex("AssetId")
+                        .HasDatabaseName("ix_maintenance_plans_asset_id");
+
                     b.HasIndex("SourceTemplateId")
                         .HasDatabaseName("ix_maintenance_plans_source_template_id");
 
@@ -1889,6 +1896,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "AssetCategoryId")
                         .HasDatabaseName("ix_maintenance_plans_tenant_id_asset_category_id");
+
+                    b.HasIndex("TenantId", "AssetId")
+                        .HasDatabaseName("ix_maintenance_plans_tenant_id_asset_id");
 
                     b.HasIndex("TenantId", "Name")
                         .HasDatabaseName("ix_maintenance_plans_tenant_id_name");
@@ -1899,6 +1909,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("maintenance_plans", "pmoc", t =>
                         {
                             t.HasCheckConstraint("ck_maintenance_plans_interval_days", "interval_days >= 1 AND interval_days <= 3650");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_one_target", "(asset_id IS NULL AND asset_category_id IS NOT NULL) OR (asset_id IS NOT NULL AND asset_category_id IS NULL)");
                         });
                 });
 
@@ -2599,6 +2611,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("deposit_percent");
 
+                    b.Property<bool>("DirectRental")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("direct_rental");
+
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -2632,6 +2650,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("requires_deposit");
+
+                    b.Property<Guid?>("ResourceTypeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resource_type_id");
 
                     b.Property<string>("SchedulePolicy")
                         .IsRequired()
@@ -2672,6 +2694,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("AssetId")
                         .IsUnique()
                         .HasDatabaseName("ix_rental_assets_asset_id");
+
+                    b.HasIndex("ResourceTypeId")
+                        .HasDatabaseName("ix_rental_assets_resource_type_id");
 
                     b.HasIndex("VisualTemplateRevisionId")
                         .HasDatabaseName("ix_rental_assets_visual_template_revision_id");
@@ -3176,6 +3201,96 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_reservation_queue_tickets_queue_session_id_sequence");
 
                     b.ToTable("reservation_queue_tickets", "rentals");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Article")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("article");
+
+                    b.Property<bool>("Bookable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("bookable");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("Deliverable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("deliverable");
+
+                    b.Property<string>("FieldsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("fields_json");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("key");
+
+                    b.Property<bool>("Maintenance")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("maintenance");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Plural")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("plural");
+
+                    b.Property<bool>("Seeded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("seeded");
+
+                    b.Property<string>("Singular")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("singular");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_resource_types");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("ix_resource_types_tenant_id_key");
+
+                    b.ToTable("resource_types", "rentals", t =>
+                        {
+                            t.HasCheckConstraint("ck_resource_types_article", "article IN ('um', 'uma')");
+                        });
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTag", b =>
@@ -5050,8 +5165,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("AssetCategoryId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_maintenance_plans_asset_categories_asset_category_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_maintenance_plans_assets_asset_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.GlobalMaintenanceTemplate", null)
                         .WithMany()
@@ -5065,6 +5185,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_maintenance_plans_units_unit_id");
+
+                    b.Navigation("Asset");
 
                     b.Navigation("AssetCategory");
 
@@ -5151,6 +5273,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_rental_assets_assets_asset_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.ResourceType", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_rental_assets_resource_types_resource_type_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
                         .WithMany()
@@ -5310,6 +5438,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("QueueSession");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceType", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_resource_types_tenants_tenant_id");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.ResourceVisualTemplateRevision", b =>
