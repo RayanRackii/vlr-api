@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -77,6 +78,11 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
 
         await EnsureModuleActiveAsync(tenantId, moduleName, cancellationToken);
         await EnsureRentalAssetAsync(tenantId, moduleName, request.RentalAssetId, cancellationToken);
+        if (request.IsActive)
+        {
+            await PricedOfferQueries.EnsureCanPublishAsync(
+                dbContext, tenantId, moduleName, request.RentalAssetId, cancellationToken);
+        }
 
         var entity = new TenantModuleMenuItem(
             tenantId,
@@ -111,6 +117,11 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
             entity.ModuleName,
             request.RentalAssetId,
             cancellationToken);
+        if (request.IsActive && (!entity.IsActive || entity.RentalAssetId != request.RentalAssetId))
+        {
+            await PricedOfferQueries.EnsureCanPublishAsync(
+                dbContext, tenantId, entity.ModuleName, request.RentalAssetId, cancellationToken);
+        }
 
         entity.Update(
             request.Label,

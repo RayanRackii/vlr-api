@@ -156,6 +156,31 @@ public sealed class RentalAssetsController(
     }
 
     [RequirePermission(Permissions.Rentals.AssetsWrite)]
+    [HttpPut("{id:guid}/direct-rental")]
+    public async Task<ActionResult<RentalAssetResponse>> SetDirectRental(
+        Guid id,
+        [FromBody] SetDirectRentalRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await rentalAssetService.SetDirectRentalAsync(id, request.DirectRental, cancellationToken));
+        }
+        catch (PricedOfferRequiredException ex)
+        {
+            return Conflict(new { error = ex.Message, code = PricedOfferRequiredException.Code });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [RequirePermission(Permissions.Rentals.AssetsWrite)]
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<RentalAssetResponse>> Update(
         Guid id,

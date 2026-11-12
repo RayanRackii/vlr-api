@@ -1112,6 +1112,12 @@ public sealed class ModuleRuntimeGateTests
             JsonOptional<int> maxAdvanceBookingDays,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<RentalAssetResponse> SetDirectRentalAsync(
+            Guid rentalAssetId,
+            bool directRental,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubReservationQueueService : IReservationQueueService

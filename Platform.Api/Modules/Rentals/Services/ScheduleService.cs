@@ -260,12 +260,14 @@ public sealed class ScheduleService(
                 throw new InvalidOperationException("Insufficient quantity for this slot.");
             }
 
+            BookingQuote.RequireDirectRental(slot.RentalAsset);
             var pricing = await ResolvePricingAsync(
                 slot.RentalAssetId,
                 slot.Date,
                 slot.StartTime,
                 slot.EndTime,
                 cancellationToken);
+            BookingQuote.RequirePositive(pricing.PricePerHour);
 
             var subTotal = BookingOffer.Total(pricing, hours, quantity);
             if (request.ExpectedTotalAmount is decimal expected && expected != subTotal)

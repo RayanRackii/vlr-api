@@ -26,4 +26,9 @@ public interface IRentalAssetService
         Guid rentalAssetId,
         JsonOptional<int> maxAdvanceBookingDays,
         CancellationToken cancellationToken);
+
+    Task<RentalAssetResponse> SetDirectRentalAsync(
+        Guid rentalAssetId,
+        bool directRental,
+        CancellationToken cancellationToken);
 }

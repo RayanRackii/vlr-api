@@ -170,15 +170,15 @@ public sealed class DailyAvailabilityTests
     }
 
     [Fact]
-    public async Task Zero_is_priced_and_null_is_unpriced_even_when_taken()
+    public async Task Zero_is_unpriced_and_a_missing_price_stays_unpriced_even_when_taken()
     {
         await using var h = await AvailabilityHarness.CreateAsync();
         h.Db.RentalPricings.RemoveRange(await h.Db.RentalPricings.ToListAsync());
         h.Db.RentalPricings.Add(AvailabilityHarness.Price(h.Primary, 10, 11, 0));
         await h.ReserveAsync(h.Primary, 5, new(11, 0), new(12, 0));
         var windows = Assert.Single((await h.ReadAsync()).Resources).Windows;
-        Assert.Equal(AvailabilityWindowState.Available, windows[0].State);
-        Assert.Equal(0, windows[0].TotalAmount);
+        Assert.Equal(AvailabilityWindowState.Unpriced, windows[0].State);
+        Assert.Null(windows[0].TotalAmount);
         Assert.Equal(AvailabilityWindowState.Taken, windows[1].State);
         Assert.Null(windows[1].TotalAmount);
         h.Db.Reservations.RemoveRange(await h.Db.Reservations.ToListAsync());

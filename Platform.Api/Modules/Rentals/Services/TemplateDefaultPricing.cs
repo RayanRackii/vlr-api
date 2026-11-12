@@ -12,8 +12,8 @@ public static class TemplateDefaultPricing
         {
             if (row.EndTime <= row.StartTime)
                 throw new ArgumentException("Default pricing end time must be greater than its start time.");
-            if (row.PricePerHour < 0)
-                throw new ArgumentException("Default pricing price per hour cannot be negative.");
+            if (row.PricePerHour <= 0)
+                throw new ArgumentException("Default pricing price per hour must be greater than zero.");
             if (row.DepositPercentage is < 0 or > 100)
                 throw new ArgumentException("Default pricing deposit percentage must be between 0 and 100.");
             if (!windows.Add((row.DayOfWeek, row.StartTime, row.EndTime)))

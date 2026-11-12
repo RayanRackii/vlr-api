@@ -149,6 +149,12 @@ public sealed class ReservationService(
             }
         }
 
+        if (isAvailable && reason is null && !rental.DirectRental)
+        {
+            isAvailable = false;
+            reason = BookingQuote.NotDirectRental;
+        }
+
         if (isAvailable && reason is null)
         {
             try
@@ -389,6 +395,7 @@ public sealed class ReservationService(
                 }
 
                 requiresDeposit |= rental.RequiresDeposit;
+                BookingQuote.RequireDirectRental(rental);
 
                 decimal subTotal;
                 decimal itemUnitPrice;
@@ -414,6 +421,7 @@ public sealed class ReservationService(
                     itemUnitPrice = pricing.PricePerHour;
                 }
 
+                BookingQuote.RequirePositive(itemUnitPrice);
                 totalAmount += subTotal;
 
                 var item = new ReservationItem
