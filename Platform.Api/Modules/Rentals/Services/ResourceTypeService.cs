@@ -225,7 +225,9 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Capabilities);
         var name = Required(request.Name, "Name", 80);
-        var key = string.IsNullOrWhiteSpace(request.Key) ? Slug(name) : Slug(request.Key);
+        var key = string.IsNullOrWhiteSpace(request.Key)
+            ? currentKey ?? Slug(name)
+            : Slug(request.Key);
         if (key.Length is < 1 or > 40)
         {
             throw new ArgumentException("Key must be between 1 and 40 characters.");

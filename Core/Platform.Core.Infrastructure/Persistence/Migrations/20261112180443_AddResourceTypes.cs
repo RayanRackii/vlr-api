@@ -84,7 +84,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 SET resource_type_id = rt.id
                 FROM assets.assets a
                 JOIN assets.asset_categories c ON c.id = a.category_id AND c.tenant_id = a.tenant_id
-                JOIN rentals.resource_types rt ON rt.tenant_id = ra.tenant_id
+                JOIN rentals.resource_types rt ON rt.tenant_id = a.tenant_id
                 WHERE a.id = ra.asset_id
                   AND a.tenant_id = ra.tenant_id
                   AND ra.resource_type_id IS NULL
