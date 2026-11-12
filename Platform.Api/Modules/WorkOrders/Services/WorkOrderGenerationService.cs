@@ -46,7 +46,8 @@ public sealed class WorkOrderGenerationService(
             .FirstOrDefaultAsync(item => item.Id == command.AssetId, cancellationToken)
             ?? throw new KeyNotFoundException($"Asset '{command.AssetId}' was not found.");
 
-        if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId))
+        if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId, plan.AssetId)
+            || await SpecificPlanCoversAsync(plan, asset.Id, cancellationToken))
         {
             throw new ArgumentException(
                 $"Asset '{asset.Id}' is not eligible for this maintenance plan.");
@@ -158,14 +159,16 @@ public sealed class WorkOrderGenerationService(
                     cancellationToken);
 
             if (asset is null
-                || !PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId))
+                || !PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId, plan.AssetId)
+                || await SpecificPlanCoversAsync(plan, asset.Id, cancellationToken))
             {
                 return SkippedRevalidation();
             }
 
             await dbContext.Entry(asset).ReloadAsync(cancellationToken);
 
-            if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId))
+            if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId, plan.AssetId)
+                || await SpecificPlanCoversAsync(plan, asset.Id, cancellationToken))
             {
                 return SkippedRevalidation();
             }
@@ -295,6 +298,22 @@ public sealed class WorkOrderGenerationService(
         dbContext.WorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync(cancellationToken);
         return workOrder;
+    }
+
+    private Task<bool> SpecificPlanCoversAsync(MaintenancePlan plan, Guid assetId, CancellationToken cancellationToken)
+    {
+        if (plan.AssetId is not null)
+        {
+            return Task.FromResult(false);
+        }
+
+        return dbContext.MaintenancePlans.AsNoTracking().AnyAsync(
+            item => item.TenantId == plan.TenantId
+                && item.UnitId == plan.UnitId
+                && item.IsActive
+                && item.AssetId == assetId
+                && item.Id != plan.Id,
+            cancellationToken);
     }
 
     private static PmocAutomaticGenerationResult SkippedRevalidation() =>

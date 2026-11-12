@@ -53,7 +53,7 @@ public sealed class MaintenancePlanService(
         var tenantId = EnsureTenantContext();
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
-        await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
+        var target = await ResolveTargetAsync(request.UnitId, request.AssetCategoryId, request.AssetId, cancellationToken);
         ValidateCreateTasks(request.Tasks);
         PmocDueCalculator.EnsureIntervalDays(request.IntervalDays);
 
@@ -69,7 +69,8 @@ public sealed class MaintenancePlanService(
                 Description = NormalizeOptional(request.Description),
                 IntervalDays = request.IntervalDays,
                 FirstDueDate = request.FirstDueDate,
-                AssetCategoryId = request.AssetCategoryId,
+                AssetCategoryId = target.CategoryId,
+                AssetId = target.AssetId,
                 IsActive = request.IsActive,
                 OriginKind = MaintenancePlanOriginKind.Custom,
                 AutoGenerateEnabled = request.AutoGenerateEnabled,
@@ -123,7 +124,7 @@ public sealed class MaintenancePlanService(
         }
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
-        await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
+        var target = await ResolveTargetAsync(request.UnitId, request.AssetCategoryId, request.AssetId, cancellationToken);
 
         var taskDtos = template.Tasks
             .OrderBy(task => task.Order)
@@ -159,7 +160,8 @@ public sealed class MaintenancePlanService(
                 Description = description,
                 IntervalDays = request.IntervalDays,
                 FirstDueDate = request.FirstDueDate,
-                AssetCategoryId = request.AssetCategoryId,
+                AssetCategoryId = target.CategoryId,
+                AssetId = target.AssetId,
                 IsActive = request.IsActive,
                 OriginKind = MaintenancePlanOriginKind.RolvixTemplate,
                 SourceTemplateId = template.Id,
@@ -211,7 +213,7 @@ public sealed class MaintenancePlanService(
         }
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
-        await EnsureAssetCategoryExistsAsync(request.AssetCategoryId, cancellationToken);
+        var target = await ResolveTargetAsync(request.UnitId, request.AssetCategoryId, request.AssetId, cancellationToken);
         PmocDueCalculator.EnsureIntervalDays(request.IntervalDays);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -225,7 +227,8 @@ public sealed class MaintenancePlanService(
             plan.Description = NormalizeOptional(request.Description);
             plan.IntervalDays = request.IntervalDays;
             plan.FirstDueDate = request.FirstDueDate;
-            plan.AssetCategoryId = request.AssetCategoryId;
+            plan.AssetCategoryId = target.CategoryId;
+            plan.AssetId = target.AssetId;
             plan.IsActive = request.IsActive;
             plan.AutoGenerateEnabled = request.AutoGenerateEnabled;
             plan.Touch();
@@ -423,6 +426,42 @@ public sealed class MaintenancePlanService(
         await assetRegistry.RequireCategoryAsync(assetCategoryId, cancellationToken);
     }
 
+    private async Task<(Guid? CategoryId, Guid? AssetId)> ResolveTargetAsync(
+        Guid unitId,
+        Guid? assetCategoryId,
+        Guid? assetId,
+        CancellationToken cancellationToken)
+    {
+        var hasCategory = assetCategoryId is Guid;
+        var hasAsset = assetId is Guid;
+        if (hasCategory == hasAsset)
+        {
+            throw new ArgumentException("A maintenance plan must target exactly one asset or one type.");
+        }
+
+        if (assetCategoryId is Guid categoryId)
+        {
+            await EnsureAssetCategoryExistsAsync(categoryId, cancellationToken);
+            return (categoryId, null);
+        }
+
+        var tenantId = EnsureTenantContext();
+        var asset = await dbContext.Assets.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == assetId && item.TenantId == tenantId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Asset '{assetId}' was not found.");
+        if (asset.UnitId != unitId)
+        {
+            throw new ArgumentException("The asset must belong to the plan unit.");
+        }
+
+        if (asset.Status != AssetStatus.Active || asset.ScheduledDeletionAt is not null)
+        {
+            throw new ArgumentException("The asset is not eligible for a maintenance plan.");
+        }
+
+        return (null, asset.Id);
+    }
+
     private static void ValidateCreateTasks(IReadOnlyList<CreatePlanTaskDto> tasks)
     {
         if (tasks.Count == 0)
@@ -519,7 +558,8 @@ public sealed class MaintenancePlanService(
                 .Select(ToTaskResponse)
                 .ToList(),
             plan.CreatedAt,
-            plan.UpdatedAt);
+            plan.UpdatedAt,
+            plan.AssetId);
 
     private static PlanTaskResponse ToTaskResponse(PlanTask task) =>
         new(

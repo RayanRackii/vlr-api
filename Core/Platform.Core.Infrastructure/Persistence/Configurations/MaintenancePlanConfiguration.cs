@@ -11,9 +11,14 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
     public void Configure(EntityTypeBuilder<MaintenancePlan> builder)
     {
         builder.ToTable("maintenance_plans", "pmoc", table =>
+        {
             table.HasCheckConstraint(
                 "ck_maintenance_plans_interval_days",
-                $"interval_days >= {PmocScheduling.MinIntervalDays} AND interval_days <= {PmocScheduling.MaxIntervalDays}"));
+                $"interval_days >= {PmocScheduling.MinIntervalDays} AND interval_days <= {PmocScheduling.MaxIntervalDays}");
+            table.HasCheckConstraint(
+                "ck_maintenance_plans_one_target",
+                "(asset_id IS NULL AND asset_category_id IS NOT NULL) OR (asset_id IS NOT NULL AND asset_category_id IS NULL)");
+        });
 
         builder.HasKey(p => p.Id);
 
@@ -39,8 +44,9 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
         builder.Property(p => p.FirstDueDate)
             .IsRequired();
 
-        builder.Property(p => p.AssetCategoryId)
-            .IsRequired();
+        builder.Property(p => p.AssetCategoryId);
+
+        builder.Property(p => p.AssetId);
 
         builder.Property(p => p.IsActive)
             .HasDefaultValue(true)
@@ -76,6 +82,13 @@ public sealed class MaintenancePlanConfiguration : IEntityTypeConfiguration<Main
             .WithMany()
             .HasForeignKey(p => p.AssetCategoryId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(p => p.Asset)
+            .WithMany()
+            .HasForeignKey(p => p.AssetId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(p => new { p.TenantId, p.AssetId });
 
         builder.HasOne<GlobalMaintenanceTemplate>()
             .WithMany()

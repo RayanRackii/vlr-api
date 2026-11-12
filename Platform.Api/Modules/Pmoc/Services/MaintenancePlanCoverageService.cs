@@ -34,9 +34,22 @@ public sealed class MaintenancePlanCoverageService(
                 dbContext.Assets.AsNoTracking(),
                 plan.TenantId,
                 plan.UnitId,
-                plan.AssetCategoryId)
+                plan.AssetCategoryId,
+                plan.AssetId)
             .Select(asset => new EligibleAssetRow(asset.Id, asset.Name, asset.Tag))
             .ToListAsync(cancellationToken);
+        if (plan.AssetId is null)
+        {
+            var covered = await dbContext.MaintenancePlans.AsNoTracking()
+                .Where(item => item.TenantId == plan.TenantId
+                    && item.UnitId == plan.UnitId
+                    && item.IsActive
+                    && item.AssetId != null)
+                .Select(item => item.AssetId!.Value)
+                .ToListAsync(cancellationToken);
+            var specific = covered.ToHashSet();
+            eligibleAssets = eligibleAssets.Where(asset => !specific.Contains(asset.Id)).ToList();
+        }
 
         var workOrders = await dbContext.WorkOrders
             .AsNoTracking()

@@ -2087,6 +2087,12 @@
         "properties": {
           "assetCategoryId": {
             "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
             "type": "string"
           },
           "autoGenerateEnabled": {
@@ -2121,7 +2127,6 @@
           }
         },
         "required": [
-          "assetCategoryId",
           "firstDueDate",
           "intervalDays",
           "templateId",
@@ -2134,6 +2139,12 @@
         "properties": {
           "assetCategoryId": {
             "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
             "type": "string"
           },
           "autoGenerateEnabled": {
@@ -2171,7 +2182,6 @@
           }
         },
         "required": [
-          "assetCategoryId",
           "firstDueDate",
           "intervalDays",
           "name",
@@ -3612,6 +3622,12 @@
         "properties": {
           "assetCategoryId": {
             "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
             "type": "string"
           },
           "autoGenerateEnabled": {
@@ -7257,6 +7273,12 @@
         "properties": {
           "assetCategoryId": {
             "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
             "type": "string"
           },
           "autoGenerateEnabled": {
@@ -7287,7 +7309,6 @@
           }
         },
         "required": [
-          "assetCategoryId",
           "autoGenerateEnabled",
           "firstDueDate",
           "intervalDays",

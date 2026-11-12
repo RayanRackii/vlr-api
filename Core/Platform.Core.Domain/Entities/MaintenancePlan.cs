@@ -17,7 +17,11 @@ public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public required DateOnly FirstDueDate { get; set; }
 
-    public required Guid AssetCategoryId { get; set; }
+    /// <summary>Type target. Exactly one of this and <see cref="AssetId"/> is set. Existing plans stay type-scoped.</summary>
+    public Guid? AssetCategoryId { get; set; }
+
+    /// <summary>Specific asset target. When set, this plan wins over a type plan for that asset.</summary>
+    public Guid? AssetId { get; set; }
 
     public required bool IsActive { get; set; }
 
@@ -31,7 +35,9 @@ public class MaintenancePlan : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public Unit Unit { get; set; } = null!;
 
-    public AssetCategory AssetCategory { get; set; } = null!;
+    public AssetCategory? AssetCategory { get; set; }
+
+    public Asset? Asset { get; set; }
 
     private readonly List<PlanTask> _tasks = [];
 

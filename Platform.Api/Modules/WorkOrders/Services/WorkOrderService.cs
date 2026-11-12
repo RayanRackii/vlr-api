@@ -103,7 +103,7 @@ public sealed class WorkOrderService(
                 throw new ArgumentException("Maintenance plan is not active.");
             }
 
-            if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId))
+            if (!PmocAssetEligibility.Matches(asset, plan.TenantId, plan.UnitId, plan.AssetCategoryId, plan.AssetId))
             {
                 throw new ArgumentException(
                     $"Asset '{asset.Id}' is not eligible for this maintenance plan.");
