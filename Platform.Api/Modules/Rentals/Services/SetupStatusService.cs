@@ -49,7 +49,7 @@ public sealed class SetupStatusService(
             .Where(item => item.TenantId == tenantId && item.IsActive)
             .Select(item => new { item.ModuleName, item.RentalAssetId })
             .ToListAsync(cancellationToken);
-        var offerAssetIds = await (
+        var offerAssetIds = (await (
             from requirement in dbContext.CatalogProductResourceRequirements.AsNoTracking()
             join product in dbContext.CatalogProducts.AsNoTracking()
                 on requirement.ProductId equals product.Id
@@ -58,9 +58,11 @@ public sealed class SetupStatusService(
                 && requirement.RentalAssetId != null
                 && product.IsActive
                 && product.Price > 0
-            select requirement.RentalAssetId!.Value)
+            select requirement.RentalAssetId)
+            .ToListAsync(cancellationToken))
+            .OfType<Guid>()
             .Distinct()
-            .ToListAsync(cancellationToken);
+            .ToList();
         var invites = await dbContext.UserInvites.AsNoTracking()
             .Where(invite => invite.TenantId == tenantId)
             .Select(invite => new { invite.AcceptedAt, invite.RevokedAt, invite.ExpiresAt })
