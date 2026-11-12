@@ -1980,6 +1980,11 @@
           "requiresMaintenance": {
             "type": "boolean"
           },
+          "resourceTypeId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "serialNumber": {
             "nullable": true,
             "type": "string"
@@ -7098,6 +7103,11 @@
           },
           "requiresMaintenance": {
             "type": "boolean"
+          },
+          "resourceTypeId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           },
           "serialNumber": {
             "nullable": true,

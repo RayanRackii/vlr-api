@@ -110,6 +110,7 @@ public sealed class AssetService(
             asset,
             new(request.IsRentable, request.RentalType, request.TotalQuantity, effectiveRequiresDeposit,
                 request.QueueEnabled, request.QueueOpeningTime));
+        await ApplyResourceTypeAsync(asset, request.ResourceTypeId, tenantId, cancellationToken);
         ApplyVisualConfiguration(asset, JsonOptional<Guid>.Specified(request.VisualTemplateRevisionId),
             request.CapacityPeople is null ? default : JsonOptional<int>.Specified(request.CapacityPeople), request.ConfirmVisualSuggestions,
             JsonOptional<int>.Specified(effectiveMaxAdvanceBookingDays), visual);
@@ -188,6 +189,7 @@ public sealed class AssetService(
             asset,
             new(request.IsRentable, request.RentalType, request.TotalQuantity, request.RequiresDeposit,
                 request.QueueEnabled, request.QueueOpeningTime));
+        await ApplyResourceTypeAsync(asset, request.ResourceTypeId, tenantId, cancellationToken);
         ApplyVisualConfiguration(asset, request.VisualTemplateRevisionId, request.CapacityPeople,
             request.ConfirmVisualSuggestions, request.MaxAdvanceBookingDays, visual);
 
@@ -354,6 +356,7 @@ public sealed class AssetService(
                 RequiresDeposit = request.RequiresDeposit.Value ?? true,
                 QueueEnabled = request.QueueEnabled,
                 QueueOpeningTime = request.QueueOpeningTime,
+                ResourceTypeId = request.ResourceTypeId,
                 VisualTemplateRevisionId = request.VisualTemplateRevisionId,
                 CapacityPeople = request.CapacityPeople,
                 ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
@@ -364,7 +367,6 @@ public sealed class AssetService(
                 request.ApplyTemplateDefaults,
                 request.RequiresDeposit,
                 request.MaxAdvanceBookingDays));
-        await AssignResourceTypeAsync(created.Id, request.ResourceTypeId, cancellationToken);
         return created;
     }
 
@@ -404,6 +406,7 @@ public sealed class AssetService(
                 RequiresDeposit = request.RequiresDeposit,
                 QueueEnabled = request.QueueEnabled,
                 QueueOpeningTime = request.QueueOpeningTime,
+                ResourceTypeId = request.ResourceTypeId,
                 VisualTemplateRevisionId = request.VisualTemplateRevisionId,
                 CapacityPeople = request.CapacityPeople,
                 ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
@@ -411,20 +414,18 @@ public sealed class AssetService(
                 Attributes = asset.Attributes,
             },
             cancellationToken);
-        await AssignResourceTypeAsync(id, request.ResourceTypeId, cancellationToken);
 
         return updated
             ?? throw new KeyNotFoundException($"Rentable asset '{id}' was not found.");
     }
 
-    private async Task AssignResourceTypeAsync(Guid assetId, Guid? resourceTypeId, CancellationToken cancellationToken)
+    private async Task ApplyResourceTypeAsync(Asset asset, Guid? resourceTypeId, Guid tenantId, CancellationToken cancellationToken)
     {
-        if (resourceTypeId is not Guid typeId)
+        if (resourceTypeId is not Guid typeId || asset.RentalConfiguration is null)
         {
             return;
         }
 
-        var tenantId = EnsureTenantContext();
         var exists = await dbContext.ResourceTypes.AsNoTracking()
             .AnyAsync(type => type.TenantId == tenantId && type.Id == typeId, cancellationToken);
         if (!exists)
@@ -432,12 +433,7 @@ public sealed class AssetService(
             throw new ArgumentException("Resource type was not found for this tenant.");
         }
 
-        var rental = await dbContext.RentalAssets
-            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.AssetId == assetId, cancellationToken)
-            ?? throw new KeyNotFoundException("Rentable configuration was not found.");
-        rental.ResourceTypeId = typeId;
-        rental.Touch();
-        await dbContext.SaveChangesAsync(cancellationToken);
+        asset.RentalConfiguration.ResourceTypeId = typeId;
     }
 
     private async Task<ResourceVisualTemplateRevision?> ValidateVisualAssignmentAsync(

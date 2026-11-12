@@ -7,11 +7,12 @@ using Platform.Core.Domain.Constants;
 namespace Platform.Api.Modules.Rentals.Controllers;
 
 [ApiController]
+[RequireActiveModule(PlatformModules.Rentals)]
 [Route("api/rentals/resource-types")]
 public sealed class ResourceTypesController(IResourceTypeService resourceTypeService) : ControllerBase
 {
     [HttpGet]
-    [RequirePermission(Permissions.Inventory.CategoriesRead)]
+    [RequireAnyPermission(Permissions.Inventory.CategoriesRead, Permissions.Rentals.AssetsRead)]
     public async Task<ActionResult<IReadOnlyList<ResourceTypeResponse>>> List(CancellationToken cancellationToken)
     {
         try
@@ -25,7 +26,7 @@ public sealed class ResourceTypesController(IResourceTypeService resourceTypeSer
     }
 
     [HttpGet("{id:guid}")]
-    [RequirePermission(Permissions.Inventory.CategoriesRead)]
+    [RequireAnyPermission(Permissions.Inventory.CategoriesRead, Permissions.Rentals.AssetsRead)]
     public async Task<ActionResult<ResourceTypeResponse>> Get(Guid id, CancellationToken cancellationToken)
     {
         try
@@ -43,7 +44,7 @@ public sealed class ResourceTypesController(IResourceTypeService resourceTypeSer
     }
 
     [HttpPost]
-    [RequirePermission(Permissions.Inventory.CategoriesWrite)]
+    [RequireAnyPermission(Permissions.Inventory.CategoriesWrite, Permissions.Rentals.AssetsWrite)]
     public async Task<ActionResult<ResourceTypeResponse>> Create(
         [FromBody] ResourceTypeWriteRequest request,
         CancellationToken cancellationToken)
@@ -68,7 +69,7 @@ public sealed class ResourceTypesController(IResourceTypeService resourceTypeSer
     }
 
     [HttpPut("{id:guid}")]
-    [RequirePermission(Permissions.Inventory.CategoriesWrite)]
+    [RequireAnyPermission(Permissions.Inventory.CategoriesWrite, Permissions.Rentals.AssetsWrite)]
     public async Task<ActionResult<ResourceTypeResponse>> Update(
         Guid id,
         [FromBody] ResourceTypeWriteRequest request,

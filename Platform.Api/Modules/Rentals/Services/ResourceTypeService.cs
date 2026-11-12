@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -73,7 +74,15 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
             FieldsJson = draft.FieldsJson,
         };
         dbContext.ResourceTypes.Add(type);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueKey(ex))
+        {
+            throw new InvalidOperationException($"Resource type key '{draft.Key}' already exists.", ex);
+        }
+
         return ToResponse(type, 0);
     }
 
@@ -102,7 +111,14 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
         type.Maintenance = draft.Maintenance;
         type.FieldsJson = draft.FieldsJson;
         type.Touch();
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueKey(ex))
+        {
+            throw new InvalidOperationException($"Resource type key '{draft.Key}' already exists.", ex);
+        }
         var counts = await CountsAsync(tenantId, cancellationToken);
         return ToResponse(type, counts.GetValueOrDefault(type.Id));
     }
@@ -144,9 +160,23 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
 
         if (db.ChangeTracker.HasChanges())
         {
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsUniqueKey(ex))
+            {
+                foreach (var entry in db.ChangeTracker.Entries<ResourceType>().Where(item => item.State == EntityState.Added).ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
         }
     }
+
+    private static bool IsUniqueKey(DbUpdateException exception) =>
+        exception.InnerException is PostgresException postgres
+        && postgres.SqlState == PostgresErrorCodes.UniqueViolation;
 
     private async Task EnsureSeedsAsync(Guid tenantId, CancellationToken cancellationToken) =>
         await EnsureSeedsAsync(dbContext, tenantId, cancellationToken);
