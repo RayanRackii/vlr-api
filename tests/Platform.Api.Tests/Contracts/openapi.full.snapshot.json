@@ -2307,6 +2307,11 @@
             "nullable": true,
             "type": "boolean"
           },
+          "resourceTypeId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "tag": {
             "nullable": true,
             "type": "string"
@@ -4957,6 +4962,11 @@
           "requiresDeposit": {
             "type": "boolean"
           },
+          "resourceTypeId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "schedulePolicy": {
             "$ref": "#/components/schemas/SchedulePolicy"
           },
@@ -5577,6 +5587,160 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "ResourceTypeCapabilitiesDto": {
+        "additionalProperties": false,
+        "properties": {
+          "bookable": {
+            "type": "boolean"
+          },
+          "deliverable": {
+            "type": "boolean"
+          },
+          "maintenance": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ResourceTypeFieldDto": {
+        "additionalProperties": false,
+        "properties": {
+          "askOnBooking": {
+            "type": "boolean"
+          },
+          "filterable": {
+            "type": "boolean"
+          },
+          "key": {
+            "nullable": true,
+            "type": "string"
+          },
+          "label": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "responseType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "nullable": true,
+            "type": "string"
+          },
+          "visibility": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "ResourceTypeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "article": {
+            "nullable": true,
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ResourceTypeCapabilitiesDto"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceTypeFieldDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "key": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "plural": {
+            "nullable": true,
+            "type": "string"
+          },
+          "resourceCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "seeded": {
+            "type": "boolean"
+          },
+          "singular": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResourceTypeWriteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "article": {
+            "nullable": true,
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ResourceTypeCapabilitiesDto"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceTypeFieldDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "key": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "plural": {
+            "nullable": true,
+            "type": "string"
+          },
+          "singular": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "article",
+          "capabilities",
+          "name",
+          "plural",
+          "singular"
+        ],
         "type": "object"
       },
       "ResourceVisualTagKind": {
@@ -7249,6 +7413,11 @@
           },
           "requiresDeposit": {
             "type": "boolean"
+          },
+          "resourceTypeId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           },
           "tag": {
             "nullable": true,
@@ -17393,6 +17562,187 @@
         ]
       }
     },
+    "/api/rentals/resource-types": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceTypeResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceTypeResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceTypeResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ResourceTypes"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTypeWriteRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTypeWriteRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTypeWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ResourceTypes"
+        ]
+      }
+    },
+    "/api/rentals/resource-types/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ResourceTypes"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTypeWriteRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTypeWriteRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceTypeWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceTypeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ResourceTypes"
+        ]
+      }
+    },
     "/api/rentals/setup-status": {
       "get": {
         "responses": {
@@ -20310,6 +20660,9 @@
     },
     {
       "name": "ResourceAgenda"
+    },
+    {
+      "name": "ResourceTypes"
     },
     {
       "name": "ResourceVisualPicker"

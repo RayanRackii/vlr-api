@@ -328,7 +328,7 @@ public sealed class AssetService(
         return new BulkCreateAssetsResponse(responses.Count, responses);
     }
 
-    public Task<AssetResponse> CreateRentableAsync(
+    public async Task<AssetResponse> CreateRentableAsync(
         CreateRentableRequest request,
         CancellationToken cancellationToken)
     {
@@ -337,7 +337,7 @@ public sealed class AssetService(
             throw new ArgumentException("RequiresDeposit must be true or false when supplied.");
         }
 
-        return CreateAsync(
+        var created = await CreateAsync(
             new CreateAssetRequest
             {
                 UnitId = request.UnitId,
@@ -364,6 +364,8 @@ public sealed class AssetService(
                 request.ApplyTemplateDefaults,
                 request.RequiresDeposit,
                 request.MaxAdvanceBookingDays));
+        await AssignResourceTypeAsync(created.Id, request.ResourceTypeId, cancellationToken);
+        return created;
     }
 
     public async Task<AssetResponse> UpdateRentableAsync(
@@ -409,9 +411,33 @@ public sealed class AssetService(
                 Attributes = asset.Attributes,
             },
             cancellationToken);
+        await AssignResourceTypeAsync(id, request.ResourceTypeId, cancellationToken);
 
         return updated
             ?? throw new KeyNotFoundException($"Rentable asset '{id}' was not found.");
+    }
+
+    private async Task AssignResourceTypeAsync(Guid assetId, Guid? resourceTypeId, CancellationToken cancellationToken)
+    {
+        if (resourceTypeId is not Guid typeId)
+        {
+            return;
+        }
+
+        var tenantId = EnsureTenantContext();
+        var exists = await dbContext.ResourceTypes.AsNoTracking()
+            .AnyAsync(type => type.TenantId == tenantId && type.Id == typeId, cancellationToken);
+        if (!exists)
+        {
+            throw new ArgumentException("Resource type was not found for this tenant.");
+        }
+
+        var rental = await dbContext.RentalAssets
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.AssetId == assetId, cancellationToken)
+            ?? throw new KeyNotFoundException("Rentable configuration was not found.");
+        rental.ResourceTypeId = typeId;
+        rental.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<ResourceVisualTemplateRevision?> ValidateVisualAssignmentAsync(

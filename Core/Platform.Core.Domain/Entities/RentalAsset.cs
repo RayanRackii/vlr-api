@@ -76,6 +76,11 @@ public class RentalAsset : Entity, ITenantScoped
     /// </summary>
     public bool DirectRental { get; set; } = true;
 
+    /// <summary>
+    /// Tenant resource type (Quadra, Caçamba, or a company type). Null keeps the rental enum only.
+    /// </summary>
+    public Guid? ResourceTypeId { get; set; }
+
     /// <summary>Fixed published visual revision; null uses the generic resource presentation.</summary>
     public Guid? VisualTemplateRevisionId { get; set; }
 

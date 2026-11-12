@@ -103,6 +103,8 @@ public class AppDbContext : DbContext
     // --- Schema: rentals (isolated; no FKs to inventory/maintenance) ---
     public DbSet<RentalAsset> RentalAssets => Set<RentalAsset>();
 
+    public DbSet<ResourceType> ResourceTypes => Set<ResourceType>();
+
     public DbSet<RentalPricing> RentalPricings => Set<RentalPricing>();
 
     public DbSet<Reservation> Reservations => Set<Reservation>();
