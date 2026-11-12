@@ -45,6 +45,7 @@ public sealed class PmocEngineJob(
                 plan.TenantId,
                 plan.UnitId,
                 plan.AssetCategoryId,
+                plan.AssetId,
                 plan.IntervalDays,
                 plan.FirstDueDate))
             .ToListAsync(cancellationToken);
@@ -80,9 +81,24 @@ public sealed class PmocEngineJob(
                 dbContext.Assets.IgnoreQueryFilters().AsNoTracking(),
                 plan.TenantId,
                 plan.UnitId,
-                plan.CategoryId)
+                plan.CategoryId,
+                plan.AssetId)
             .Select(asset => asset.Id)
             .ToListAsync(cancellationToken);
+        if (plan.AssetId is null)
+        {
+            var specific = await dbContext.MaintenancePlans
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(item => item.TenantId == plan.TenantId
+                    && item.UnitId == plan.UnitId
+                    && item.IsActive
+                    && item.AssetId != null)
+                .Select(item => item.AssetId!.Value)
+                .ToListAsync(cancellationToken);
+            var covered = specific.ToHashSet();
+            assets = assets.Where(id => !covered.Contains(id)).ToList();
+        }
 
         var workOrders = await dbContext.WorkOrders
             .IgnoreQueryFilters()
@@ -211,7 +227,8 @@ public sealed class PmocEngineJob(
         Guid Id,
         Guid TenantId,
         Guid UnitId,
-        Guid CategoryId,
+        Guid? CategoryId,
+        Guid? AssetId,
         int IntervalDays,
         DateOnly FirstDueDate);
 

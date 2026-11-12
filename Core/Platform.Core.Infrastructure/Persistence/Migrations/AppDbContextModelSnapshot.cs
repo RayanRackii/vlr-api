@@ -1812,9 +1812,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("AssetCategoryId")
+                    b.Property<Guid?>("AssetCategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("asset_category_id");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
 
                     b.Property<bool>("AutoGenerateEnabled")
                         .HasColumnType("boolean")
@@ -1881,6 +1885,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasIndex("AssetCategoryId")
                         .HasDatabaseName("ix_maintenance_plans_asset_category_id");
 
+                    b.HasIndex("AssetId")
+                        .HasDatabaseName("ix_maintenance_plans_asset_id");
+
                     b.HasIndex("SourceTemplateId")
                         .HasDatabaseName("ix_maintenance_plans_source_template_id");
 
@@ -1889,6 +1896,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "AssetCategoryId")
                         .HasDatabaseName("ix_maintenance_plans_tenant_id_asset_category_id");
+
+                    b.HasIndex("TenantId", "AssetId")
+                        .HasDatabaseName("ix_maintenance_plans_tenant_id_asset_id");
 
                     b.HasIndex("TenantId", "Name")
                         .HasDatabaseName("ix_maintenance_plans_tenant_id_name");
@@ -1899,6 +1909,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("maintenance_plans", "pmoc", t =>
                         {
                             t.HasCheckConstraint("ck_maintenance_plans_interval_days", "interval_days >= 1 AND interval_days <= 3650");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_one_target", "(asset_id IS NULL AND asset_category_id IS NOT NULL) OR (asset_id IS NOT NULL AND asset_category_id IS NULL)");
                         });
                 });
 
@@ -5153,8 +5165,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("AssetCategoryId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_maintenance_plans_asset_categories_asset_category_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_maintenance_plans_assets_asset_id");
 
                     b.HasOne("Platform.Core.Domain.Entities.GlobalMaintenanceTemplate", null)
                         .WithMany()
@@ -5168,6 +5185,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_maintenance_plans_units_unit_id");
+
+                    b.Navigation("Asset");
 
                     b.Navigation("AssetCategory");
 

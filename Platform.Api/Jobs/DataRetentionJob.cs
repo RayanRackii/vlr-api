@@ -45,8 +45,8 @@ public sealed class DataRetentionJob(
                 .ToListAsync(cancellationToken);
 
             var blockedByPlans = await dbContext.MaintenancePlans
-                .Where(plan => expiredCategoryIds.Contains(plan.AssetCategoryId))
-                .Select(plan => plan.AssetCategoryId)
+                .Where(plan => plan.AssetCategoryId != null && expiredCategoryIds.Contains(plan.AssetCategoryId.Value))
+                .Select(plan => plan.AssetCategoryId!.Value)
                 .Distinct()
                 .ToListAsync(cancellationToken);
 

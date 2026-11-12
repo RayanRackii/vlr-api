@@ -27,7 +27,10 @@ public sealed record CreateMaintenancePlanRequest
 
     public required DateOnly FirstDueDate { get; init; }
 
-    public required Guid AssetCategoryId { get; init; }
+    public Guid? AssetCategoryId { get; init; }
+
+    /// <summary>Specific asset. Exactly one of this and <see cref="AssetCategoryId"/> is set.</summary>
+    public Guid? AssetId { get; init; }
 
     public bool IsActive { get; init; } = true;
 
@@ -42,7 +45,9 @@ public sealed record CreateFromTemplateRequest
 
     public required Guid UnitId { get; init; }
 
-    public required Guid AssetCategoryId { get; init; }
+    public Guid? AssetCategoryId { get; init; }
+
+    public Guid? AssetId { get; init; }
 
     public required int IntervalDays { get; init; }
 
@@ -69,7 +74,9 @@ public sealed record UpdateMaintenancePlanRequest
 
     public required DateOnly FirstDueDate { get; init; }
 
-    public required Guid AssetCategoryId { get; init; }
+    public Guid? AssetCategoryId { get; init; }
+
+    public Guid? AssetId { get; init; }
 
     public required bool IsActive { get; init; }
 
@@ -116,7 +123,7 @@ public sealed record MaintenancePlanResponse(
     string? Description,
     int IntervalDays,
     DateOnly FirstDueDate,
-    Guid AssetCategoryId,
+    Guid? AssetCategoryId,
     bool IsActive,
     MaintenancePlanOriginKind OriginKind,
     Guid? SourceTemplateId,
@@ -124,4 +131,5 @@ public sealed record MaintenancePlanResponse(
     bool AutoGenerateEnabled,
     IReadOnlyList<PlanTaskResponse> Tasks,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    Guid? AssetId = null);

@@ -654,6 +654,49 @@ public sealed class WorkOrderGenerationServiceTests
             harness.CreateRegistry());
     }
 
+    [Fact]
+    public async Task Specific_plan_wins_and_the_same_period_is_not_created_twice()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var asset = await CreateMatchingAssetAsync(harness);
+        var typePlan = await CreatePlanAsync(harness, "Type");
+        var plans = CreatePlanService(harness);
+        var specific = await plans.CreatePlanWithTasksAsync(new CreateMaintenancePlanRequest
+        {
+            UnitId = harness.UnitId,
+            Name = "Specific",
+            IntervalDays = 1,
+            FirstDueDate = new DateOnly(2026, 9, 1),
+            AssetId = asset.Id,
+            IsActive = true,
+            Tasks = [new CreatePlanTaskDto { Title = "Filtro", InputType = TaskInputType.Checkbox, Order = 1 }],
+        }, CancellationToken.None);
+        Assert.Null(specific.AssetCategoryId);
+        Assert.Equal(asset.Id, specific.AssetId);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => plans.CreatePlanWithTasksAsync(new CreateMaintenancePlanRequest
+        {
+            UnitId = harness.UnitId,
+            Name = "Both",
+            IntervalDays = 1,
+            FirstDueDate = new DateOnly(2026, 9, 1),
+            AssetCategoryId = harness.CategoryId,
+            AssetId = asset.Id,
+            Tasks = [new CreatePlanTaskDto { Title = "Filtro", InputType = TaskInputType.Checkbox, Order = 1 }],
+        }, CancellationToken.None));
+
+        var generator = CreateGenerator(harness);
+        var date = new DateOnly(2026, 9, 18);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            generator.GenerateAsync(new GenerateWorkOrderCommand(typePlan.Id, asset.Id, date, null), CancellationToken.None));
+        var created = await generator.GenerateAsync(
+            new GenerateWorkOrderCommand(specific.Id, asset.Id, date, null), CancellationToken.None);
+        await Assert.ThrowsAsync<DuplicateWorkOrderException>(() =>
+            generator.GenerateAsync(new GenerateWorkOrderCommand(specific.Id, asset.Id, date, null), CancellationToken.None));
+        Assert.Equal(specific.Id, (await harness.Db.WorkOrders.SingleAsync()).MaintenancePlanId);
+        Assert.Equal(created.Id, (await harness.Db.WorkOrders.SingleAsync()).Id);
+    }
+
     private static async Task<MaintenancePlanResponse> CreatePlanAsync(
         BulkCreateAssetsHarness harness,
         string name,
