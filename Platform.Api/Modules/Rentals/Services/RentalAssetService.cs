@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
 using Platform.Api.Modules.ModuleMenuItems.Services;
-using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Tests.Infrastructure;

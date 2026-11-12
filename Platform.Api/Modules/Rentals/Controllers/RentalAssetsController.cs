@@ -5,6 +5,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Constants;

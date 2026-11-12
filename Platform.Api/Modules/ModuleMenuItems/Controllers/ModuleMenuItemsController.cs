@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
-using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.ModuleMenuItems.Services;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;

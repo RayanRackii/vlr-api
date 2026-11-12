@@ -1,4 +1,4 @@
-namespace Platform.Api.Modules.Rentals;
+namespace Platform.Api.Modules.Rentals.Contracts;
 
 public sealed class PricedOfferRequiredException(string message) : InvalidOperationException(message)
 {
