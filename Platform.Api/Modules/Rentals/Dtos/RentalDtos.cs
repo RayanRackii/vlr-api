@@ -39,7 +39,13 @@ public sealed record RentalAssetResponse(
     int? MinimumBookingLeadMinutes = null,
     int? EffectiveMinimumBookingLeadMinutes = null,
     int? DepositPercent = null,
-    int? EffectiveDepositPercent = null);
+    int? EffectiveDepositPercent = null,
+    bool DirectRental = true);
+
+public sealed record SetDirectRentalRequest
+{
+    public required bool DirectRental { get; init; }
+}
 
 public sealed record UpdateRentalSchedulePolicyRequestDto
 {

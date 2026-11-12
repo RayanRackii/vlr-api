@@ -4888,6 +4888,9 @@
             "nullable": true,
             "type": "integer"
           },
+          "directRental": {
+            "type": "boolean"
+          },
           "effectiveCancelCutoffHours": {
             "format": "int32",
             "nullable": true,
@@ -6086,6 +6089,18 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "SetDirectRentalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "directRental": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "directRental"
+        ],
         "type": "object"
       },
       "SetupChecklistItemResponse": {
@@ -16513,6 +16528,65 @@
             "text/json": {
               "schema": {
                 "$ref": "#/components/schemas/UpdateRentableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RentalAssetResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RentalAssetResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/RentalAssetResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RentalAssets"
+        ]
+      }
+    },
+    "/api/rental-assets/{id}/direct-rental": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDirectRentalRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDirectRentalRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDirectRentalRequest"
               }
             }
           }

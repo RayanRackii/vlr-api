@@ -25,6 +25,7 @@ public sealed class SetupStatusService(
                 asset.AssetId,
                 asset.Type,
                 asset.IsActive,
+                asset.DirectRental,
                 asset.OpenTime,
                 asset.CloseTime,
                 asset.QueueEnabled,
@@ -86,7 +87,7 @@ public sealed class SetupStatusService(
         foreach (var asset in assets)
         {
             var hasHours = (asset.OpenTime is not null && asset.CloseTime is not null) || templated.Contains(asset.Id);
-            var hasPrice = priced.Contains(asset.Id) || offered.Contains(asset.Id);
+            var hasPrice = (asset.DirectRental && priced.Contains(asset.Id)) || offered.Contains(asset.Id);
             var onMenu = generalMenu || menuAssets.Contains(asset.Id);
             var queueBlocked = asset.Type == RentalAssetType.Location
                 && asset.QueueEnabled
@@ -109,7 +110,7 @@ public sealed class SetupStatusService(
             !string.IsNullOrWhiteSpace(tenant.LegalName)
                 && !string.IsNullOrWhiteSpace(tenant.TaxId)
                 && !string.IsNullOrWhiteSpace(tenant.TradeName),
-            priced.Count > 0 || offered.Count > 0,
+            assets.Any(asset => (asset.DirectRental && priced.Contains(asset.Id)) || offered.Contains(asset.Id)),
             templated.Count > 0 || assets.Any(asset => asset.OpenTime is not null && asset.CloseTime is not null),
             assets.Count,
             published,

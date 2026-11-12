@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
+using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -77,6 +78,10 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
 
         await EnsureModuleActiveAsync(tenantId, moduleName, cancellationToken);
         await EnsureRentalAssetAsync(tenantId, moduleName, request.RentalAssetId, cancellationToken);
+        if (request.IsActive)
+        {
+            await EnsurePricedOfferAsync(tenantId, moduleName, request.RentalAssetId, cancellationToken);
+        }
 
         var entity = new TenantModuleMenuItem(
             tenantId,
@@ -111,6 +116,10 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
             entity.ModuleName,
             request.RentalAssetId,
             cancellationToken);
+        if (request.IsActive && (!entity.IsActive || entity.RentalAssetId != request.RentalAssetId))
+        {
+            await EnsurePricedOfferAsync(tenantId, entity.ModuleName, request.RentalAssetId, cancellationToken);
+        }
 
         entity.Update(
             request.Label,
@@ -199,6 +208,53 @@ public sealed class ModuleMenuItemService(AppDbContext dbContext) : IModuleMenuI
         if (!ok)
         {
             throw new ArgumentException("Rental asset not found for this tenant.");
+        }
+    }
+
+    private async Task EnsurePricedOfferAsync(
+        Guid tenantId,
+        string moduleName,
+        Guid? rentalAssetId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(moduleName, PlatformModules.Rentals, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var ids = rentalAssetId is Guid id
+            ? new List<Guid> { id }
+            : await dbContext.RentalAssets.IgnoreQueryFilters().AsNoTracking()
+                .Where(asset => asset.TenantId == tenantId && asset.IsActive)
+                .Select(asset => asset.Id)
+                .ToListAsync(cancellationToken);
+
+        foreach (var resourceId in ids)
+        {
+            var directPrice = await dbContext.RentalAssets.IgnoreQueryFilters().AsNoTracking()
+                .Where(asset => asset.TenantId == tenantId && asset.Id == resourceId && asset.DirectRental)
+                .AnyAsync(cancellationToken)
+                && await dbContext.RentalPricings.IgnoreQueryFilters().AsNoTracking().AnyAsync(
+                    price => price.TenantId == tenantId
+                        && price.RentalAssetId == resourceId
+                        && price.PricePerHour > 0,
+                    cancellationToken);
+            var catalogOffer = await (
+                from requirement in dbContext.CatalogProductResourceRequirements.IgnoreQueryFilters().AsNoTracking()
+                join product in dbContext.CatalogProducts.IgnoreQueryFilters().AsNoTracking()
+                    on requirement.ProductId equals product.Id
+                where requirement.TenantId == tenantId
+                    && product.TenantId == tenantId
+                    && requirement.RentalAssetId == resourceId
+                    && requirement.IsActive
+                    && product.IsActive
+                    && product.Price > 0
+                select requirement.Id).AnyAsync(cancellationToken);
+
+            if (!directPrice && !catalogOffer)
+            {
+                throw new PricedOfferRequiredException(PricedOfferRequiredException.PublishMessage);
+            }
         }
     }
 

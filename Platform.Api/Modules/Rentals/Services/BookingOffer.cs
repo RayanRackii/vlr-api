@@ -7,12 +7,16 @@ namespace Platform.Api.Modules.Rentals.Services;
 internal static class BookingOffer
 {
     public static IOrderedQueryable<RentalPricing> ForPersistedSlot(IQueryable<RentalPricing> prices) =>
-        prices.OrderByDescending(price => price.StartTime);
+        prices.Where(price => price.PricePerHour > 0).OrderByDescending(price => price.StartTime);
 
     public static RentalPricing? ForDerivedWindow(IEnumerable<RentalPricing> prices, decimal hours, int quantity) =>
-        prices.OrderBy(price => price.PricePerHour)
+        prices.Where(price => price.PricePerHour > 0)
+            .OrderBy(price => price.PricePerHour)
             .OrderBy(price => Total(price, hours, quantity))
             .FirstOrDefault();
+
+    /// <summary>A missing or non-positive price is not a quote. Callers must not substitute zero.</summary>
+    public static decimal? PositivePrice(decimal? price) => price is > 0 ? price : null;
 
     public static decimal Total(RentalPricing pricing, decimal hours, int quantity, int? calendarDays = null) =>
         Total(pricing.PricePerHour, pricing.PricingUnit, hours, quantity, calendarDays);

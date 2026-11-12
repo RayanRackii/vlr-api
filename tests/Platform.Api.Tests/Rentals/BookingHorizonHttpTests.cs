@@ -319,6 +319,12 @@ public sealed class BookingHorizonHttpTests
             JsonOptional<int> maxAdvanceBookingDays,
             CancellationToken cancellationToken) =>
             throw new NotImplementedException();
+
+        public Task<RentalAssetResponse> SetDirectRentalAsync(
+            Guid rentalAssetId,
+            bool directRental,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 
     private sealed class SingleControllerFeatureProvider(Type controllerType) : ControllerFeatureProvider

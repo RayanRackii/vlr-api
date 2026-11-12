@@ -82,6 +82,12 @@ public sealed class RentalAssetConfiguration : IEntityTypeConfiguration<RentalAs
 
         builder.Property(a => a.DepositPercent);
 
+        // Database default covers rows that already exist. The sentinel stays the CLR
+        // default so an explicit false is written on update; true matches the default.
+        builder.Property(a => a.DirectRental)
+            .HasDefaultValue(true)
+            .IsRequired();
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 

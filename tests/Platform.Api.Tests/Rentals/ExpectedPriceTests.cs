@@ -170,9 +170,8 @@ public sealed class ExpectedPriceTests
 
     [Theory]
     [InlineData(false, null)] [InlineData(true, null)]
-    [InlineData(false, 0)] [InlineData(true, 0)]
     [InlineData(false, 100)] [InlineData(true, 100)]
-    public async Task Null_preserves_legacy_and_zero_and_matching_prices_are_accepted(bool persisted, int? quotedAmount)
+    public async Task Null_preserves_legacy_and_matching_prices_are_accepted(bool persisted, int? quotedAmount)
     {
         decimal? expected = quotedAmount;
         await using var h = await ReservationQueueHarness.CreateAsync(queueEnabled: false, includeSlot: true);
