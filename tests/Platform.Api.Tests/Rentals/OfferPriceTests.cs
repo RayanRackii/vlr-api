@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Modules.Admin.Services;
 using Platform.Api.Modules.ModuleMenuItems.Dtos;
 using Platform.Api.Modules.ModuleMenuItems.Services;
 using Platform.Api.Modules.Rentals.Contracts;
@@ -39,6 +40,8 @@ public sealed class OfferPriceTests
 
         var error = Assert.Throws<ArgumentException>(() => TemplateDefaultPricing.Validate([row]));
         Assert.Contains("greater than zero", error.Message, StringComparison.OrdinalIgnoreCase);
+        row = row with { PricePerHour = 0.004m };
+        Assert.Throws<ArgumentException>(() => TemplateDefaultPricing.Validate([row]));
     }
 
     [Fact]
@@ -164,6 +167,22 @@ public sealed class OfferPriceTests
         await h.Db.SaveChangesAsync();
         status = await new SetupStatusService(h.Db, h.TenantProvider).GetAsync(CancellationToken.None);
         Assert.Contains("preco", status.Resources.Single().Missing);
+    }
+
+    [Fact]
+    public async Task Default_rentals_menu_is_withheld_while_an_active_resource_has_no_offer()
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync(queueEnabled: false);
+        (await h.Db.RentalPricings.SingleAsync()).PricePerHour = 0m;
+        await h.Db.SaveChangesAsync();
+
+        Assert.True(await AdminTenantService.DefaultRentalsMenuWouldPublishUnpricedAsync(
+            h.Db, h.TenantId, CancellationToken.None));
+
+        (await h.Db.RentalPricings.SingleAsync()).PricePerHour = 100m;
+        await h.Db.SaveChangesAsync();
+        Assert.False(await AdminTenantService.DefaultRentalsMenuWouldPublishUnpricedAsync(
+            h.Db, h.TenantId, CancellationToken.None));
     }
 
     private static CheckAvailabilityRequestDto Request(ReservationQueueHarness h) => new()

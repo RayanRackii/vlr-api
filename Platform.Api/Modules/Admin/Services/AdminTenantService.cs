@@ -327,6 +327,12 @@ public sealed class AdminTenantService(
                 welcomeTagline: request.WelcomeTagline);
 
             var enabledModules = SyncTenantModules(tenant, modules);
+            if (await DefaultRentalsMenuWouldPublishUnpricedAsync(dbContext, tenant.Id, cancellationToken))
+            {
+                enabledModules.RemoveAll(module =>
+                    string.Equals(module, PlatformModules.Rentals, StringComparison.OrdinalIgnoreCase));
+            }
+
             ModuleDefaultMenuItems.Ensure(
                 dbContext,
                 tenant.Id,
@@ -412,6 +418,46 @@ public sealed class AdminTenantService(
         platformAdminMembershipService.ExitTenantAsync(principal, cancellationToken);
 
     /// <returns>Modules newly added or re-activated by this sync.</returns>
+    /// <summary>
+    /// The default rentals menu covers every resource. Do not insert it while an active resource has no priced offer.
+    /// A brand-new tenant has no resources, so provisioning still creates the menu.
+    /// </summary>
+    internal static async Task<bool> DefaultRentalsMenuWouldPublishUnpricedAsync(
+        AppDbContext db,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var resources = await db.RentalAssets.IgnoreQueryFilters().AsNoTracking()
+            .Where(asset => asset.TenantId == tenantId && asset.IsActive)
+            .Select(asset => new { asset.Id, asset.DirectRental })
+            .ToListAsync(cancellationToken);
+        if (resources.Count == 0)
+        {
+            return false;
+        }
+
+        var priced = (await db.RentalPricings.IgnoreQueryFilters().AsNoTracking()
+            .Where(price => price.TenantId == tenantId && price.PricePerHour > 0)
+            .Select(price => price.RentalAssetId)
+            .Distinct()
+            .ToListAsync(cancellationToken)).ToHashSet();
+        var offered = (await (
+            from requirement in db.CatalogProductResourceRequirements.IgnoreQueryFilters().AsNoTracking()
+            join product in db.CatalogProducts.IgnoreQueryFilters().AsNoTracking()
+                on requirement.ProductId equals product.Id
+            where requirement.TenantId == tenantId
+                && product.TenantId == tenantId
+                && requirement.IsActive
+                && requirement.RentalAssetId != null
+                && product.IsActive
+                && product.Price > 0
+            select requirement.RentalAssetId)
+            .ToListAsync(cancellationToken)).OfType<Guid>().ToHashSet();
+
+        return resources.Any(asset =>
+            !(asset.DirectRental && priced.Contains(asset.Id)) && !offered.Contains(asset.Id));
+    }
+
     private List<string> SyncTenantModules(Tenant tenant, IReadOnlyList<string> desiredModules)
     {
         var enabled = new List<string>();
