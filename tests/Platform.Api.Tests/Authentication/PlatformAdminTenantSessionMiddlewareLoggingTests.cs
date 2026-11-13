@@ -162,6 +162,7 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
         await middleware.InvokeAsync(context, session, checker, client, db, logger);
 
         Assert.False(continued);
+        Assert.False(session.IsResolved);
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
         Assert.Equal("1", context.Response.Headers.RetryAfter.ToString());
         context.Response.Body.Position = 0;
