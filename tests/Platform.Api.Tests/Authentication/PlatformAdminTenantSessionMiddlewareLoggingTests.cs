@@ -1,10 +1,13 @@
+using System.Data.Common;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using Platform.Api.Authentication;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
@@ -122,6 +125,62 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
 
         Assert.Null(session.TenantId);
         Assert.Equal(1, handler.Gets);
+    }
+
+    [Fact]
+    public async Task Database_failure_in_membership_check_responds_503_instead_of_withholding_tenant()
+    {
+        // PROD 2026-11-13: the Supabase session pooler refused clients (EMAXCONNSESSION).
+        // Withholding the tenant turned that into 403 "forbidden" on tenant routes.
+        var handler = new CountingTenantHandler { TenantId = Guid.NewGuid() };
+        var client = CreateAuthClient(handler, new SupabaseUserTenantMetadataCache());
+        var logger = new CaptureLogger<PlatformAdminTenantSessionMiddleware>();
+        var session = new PlatformAdminTenantSession();
+        var continued = false;
+        var middleware = new PlatformAdminTenantSessionMiddleware(_ =>
+        {
+            continued = true;
+            return Task.CompletedTask;
+        });
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(
+                new ClaimsIdentity(
+                    [
+                        new Claim("sub", AuthId),
+                        new Claim("email", AdminEmail),
+                    ],
+                    authenticationType: "Test")),
+        };
+        context.Response.Body = new MemoryStream();
+        var checker = new PlatformAdminChecker(
+            Options.Create(new PlatformAdminOptions { Emails = [AdminEmail] }));
+        // Opening a connection throws the PostgresException PROD logged; no network involved.
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=postgres")
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(new PoolerFullInterceptor())
+            .Options;
+        await using var db = new AppDbContext(options, new FakeTenantProvider());
+
+        await middleware.InvokeAsync(context, session, checker, client, db, logger);
+
+        Assert.False(
+            continued,
+            "Request continued. Logged: " + string.Join(
+                " | ",
+                logger.Entries.Select(item => $"{item.Exception?.GetType().FullName}: {item.Exception?.Message}")));
+        Assert.False(session.IsResolved);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.Equal("1", context.Response.Headers.RetryAfter.ToString());
+        context.Response.Body.Position = 0;
+        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        Assert.Contains("tenant_session_unavailable", body, StringComparison.Ordinal);
+        var entry = Assert.Single(logger.Entries);
+        Assert.IsType<PostgresException>(entry.Exception);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.DoesNotContain(AuthId, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(AdminEmail, entry.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -249,6 +308,29 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),
             });
         }
+    }
+
+    private sealed class PoolerFullInterceptor : DbConnectionInterceptor
+    {
+        public override InterceptionResult ConnectionOpening(
+            DbConnection connection,
+            ConnectionEventData eventData,
+            InterceptionResult result) =>
+            throw PoolerFull();
+
+        public override ValueTask<InterceptionResult> ConnectionOpeningAsync(
+            DbConnection connection,
+            ConnectionEventData eventData,
+            InterceptionResult result,
+            CancellationToken cancellationToken = default) =>
+            throw PoolerFull();
+
+        private static PostgresException PoolerFull() =>
+            new(
+                "(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15",
+                "FATAL",
+                "FATAL",
+                "XX000");
     }
 
     private sealed class ThrowingAuthAdminClient(Exception failure) : ISupabaseAuthAdminClient

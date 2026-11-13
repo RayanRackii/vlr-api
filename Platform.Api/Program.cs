@@ -58,7 +58,9 @@ try
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
     builder.Services.AddSingleton(TimeProvider.System);
-    builder.Services.AddCorePersistence(connectionString);
+    builder.Services.AddCorePersistence(
+        connectionString,
+        builder.Configuration.GetValue<int?>("Database:MaxPoolSize"));
     builder.Services.Configure<TenancyOptions>(
         builder.Configuration.GetSection(TenancyOptions.SectionName));
     builder.Services.AddSupabaseAdminClient(builder.Configuration);
@@ -90,7 +92,9 @@ try
     var enableHangfire = !builder.Environment.IsEnvironment("Test");
     if (enableHangfire)
     {
-        builder.Services.AddPlatformHangfire(connectionString);
+        builder.Services.AddPlatformHangfire(
+            connectionString,
+            builder.Configuration.GetValue<int?>("Hangfire:MaxPoolSize"));
     }
 
     if (builder.Environment.IsDevelopment())

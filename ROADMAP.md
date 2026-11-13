@@ -1,5 +1,9 @@
 # ROADMAP — vlr-api
 
+### Pool de conexões para 2 máquinas da API (2026-11-13)
+
+- [x] PROD roda 2 máquinas e o pooler de sessão do Supabase aceita 15 clientes no projeto todo. Com EF 5 + Hangfire 3 por processo (16 no total), rajadas de uma tela (ex.: `/agendas`) falhavam com `EMAXCONNSESSION`: 500 nos handlers e 403 para super-admin. Agora o padrão é EF 4 + Hangfire 3 por processo (14 para 2 máquinas), configurável por `Database:MaxPoolSize` e `Hangfire:MaxPoolSize` (no Fly: `Database__MaxPoolSize`, `Hangfire__MaxPoolSize`; o valor só reduz um `Max Pool Size` já presente na connection string; valor < 1 ou não numérico derruba o startup). Ao mudar o número de máquinas, refazer a conta: máquinas × (EF + Hangfire) + 2 da ferramenta de migration ≤ 15, ou rodar migrations fora de pico. Falha de banco na checagem de tenant do super-admin responde 503 `tenant_session_unavailable` (com `Retry-After: 1`) em vez de retirar o tenant; falhas da Auth do Supabase seguem em modo plataforma. Sem migration e sem mudança de contrato.
+
 ### Antecedência mínima e percentual de sinal (2026-11-10)
 
 - [x] `minimumBookingLeadMinutes` (0–525600, null = sem mínimo) e `depositPercent` (0–100, null = sem percentual) na política de reserva: tenant, categoria e override do recurso. Precedência: recurso > categoria > tenant. Cliente: `POST /api/reservations`, `POST /api/schedule/slots/book` e a consulta de disponibilidade rejeitam início curto com `booking_lead_time_not_met`. Staff (ocupação de uso interno) não lê o mínimo. Não há reagendamento. `depositPercent` só é gravado e exposto; o total da reserva e o e-mail de sinal continuam na janela de preço (`depositPercentage`). Sem coluna em produto ou `CatalogPolicy`. Migration aditiva `AddBookingLeadTimeAndDepositPercent`.
