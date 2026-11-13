@@ -10,16 +10,24 @@ namespace Platform.Core.Infrastructure;
 
 public static class DependencyInjection
 {
-    /// <summary>EF pool budget — keep low for Supabase session pooler (pool_size ≈ 15).</summary>
-    private const int EfMaxPoolSize = 5;
+    /// <summary>
+    /// Default EF pool cap per API process. The Supabase session pooler admits 15 clients
+    /// for the whole project, shared by every API machine (EF + Hangfire each) and ops tools:
+    /// 2 machines x (4 EF + 3 Hangfire) = 14. Override with <c>Database:MaxPoolSize</c>
+    /// when the machine count or the Supabase pool size changes.
+    /// </summary>
+    public const int DefaultEfMaxPoolSize = 4;
 
     public static IServiceCollection AddCorePersistence(
         this IServiceCollection services,
-        string connectionString)
+        string connectionString,
+        int? maxPoolSize = null)
     {
+        var cap = maxPoolSize ?? DefaultEfMaxPoolSize;
+        ArgumentOutOfRangeException.ThrowIfLessThan(cap, 1, nameof(maxPoolSize));
         var bounded = NpgsqlConnectionStringHelper.WithBoundedPoolSize(
             connectionString,
-            EfMaxPoolSize);
+            cap);
 
         // Dictionary/POCO → jsonb requires explicit opt-in (Npgsql 8+).
         // Build the data source ONCE (singleton) — a new builder per request leaks pool slots.

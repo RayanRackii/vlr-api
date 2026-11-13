@@ -20,15 +20,19 @@ public static class HangfireExtensions
 
     public const string ReservationReminderJobId = ReservationReminderSchedule.HangfireJobId;
 
-    private const int HangfireMaxPoolSize = 3;
+    /// <summary>
+    /// Default Hangfire pool cap per API process. Budget with
+    /// <see cref="Platform.Core.Infrastructure.DependencyInjection.DefaultEfMaxPoolSize"/>.
+    /// Override with <c>Hangfire:MaxPoolSize</c>.
+    /// </summary>
+    public const int DefaultMaxPoolSize = 3;
 
     public static IServiceCollection AddPlatformHangfire(
         this IServiceCollection services,
-        string connectionString)
+        string connectionString,
+        int? maxPoolSize = null)
     {
-        var bounded = NpgsqlConnectionStringHelper.WithBoundedPoolSize(
-            connectionString,
-            HangfireMaxPoolSize);
+        var bounded = BoundedConnectionString(connectionString, maxPoolSize);
 
         services.AddHangfire(configuration => configuration
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -44,6 +48,13 @@ public static class HangfireExtensions
         });
 
         return services;
+    }
+
+    public static string BoundedConnectionString(string connectionString, int? maxPoolSize = null)
+    {
+        var cap = maxPoolSize ?? DefaultMaxPoolSize;
+        ArgumentOutOfRangeException.ThrowIfLessThan(cap, 1, nameof(maxPoolSize));
+        return NpgsqlConnectionStringHelper.WithBoundedPoolSize(connectionString, cap);
     }
 
     public static WebApplication UsePlatformHangfireDashboard(this WebApplication app)
