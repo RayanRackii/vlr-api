@@ -42,7 +42,7 @@ Sweep after `LogoSvg` branding work. Scope: monorepo `C:\Free` (backend + fronte
 |------|----------|
 | `SvgMarkupValidator` + client DOMPurify | Defense in depth (API reject + render sanitize). |
 | Empty `LogoSvg` → initials fallback | Product requirement. |
-| Obsolete `LogoUrl` column until drop migration | Safer than surprise schema break on Railway/Supabase. |
+| Obsolete `LogoUrl` column until drop migration | Safer than surprise schema break on Supabase. |
 
 ## Suggested follow-ups (priority)
 

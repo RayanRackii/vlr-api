@@ -41,7 +41,7 @@ try
     var builder = WebApplication.CreateBuilder(args);
 
     // Console sink comes only from Serilog:WriteTo in appsettings — do not add
-    // WriteTo.Console() here or every log line is duplicated in Railway/Docker.
+    // WriteTo.Console() here or every log line is duplicated in Fly/Docker.
     builder.Host.UseSerilog((context, services, configuration) => configuration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
