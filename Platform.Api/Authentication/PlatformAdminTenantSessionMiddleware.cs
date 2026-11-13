@@ -9,8 +9,8 @@ namespace Platform.Api.Authentication;
 /// <summary>
 /// Resolves the Super-Admin support tenant from live Supabase <c>app_metadata</c>
 /// plus an active <c>core.users</c> membership. Exit clears that metadata while the
-/// access token can still carry the previous <c>tenant_id</c>; this middleware
-/// does not read that claim.
+/// access token can still carry the previous <c>tenant_id</c>. The token's
+/// <c>tenant_id</c> is only a hint for the per-process cache and is never the tenant.
 /// A database failure in the membership check answers 503: withholding the tenant
 /// there would turn an outage (e.g. a full Supabase pooler) into 403 on tenant routes.
 /// </summary>
@@ -28,12 +28,16 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
     {
         if (ShouldResolve(context, platformAdminChecker, out var authId))
         {
+            // Hint only: it decides whether the per-process cache may be used.
+            var hint = new TenantMetadataCacheHint(
+                SupabaseAppMetadataParser.TryExtractTenantId(context.User));
             var verified = await ResolveAsync(
                 session,
                 supabaseAuthAdminClient,
                 dbContext,
                 logger,
                 authId,
+                hint,
                 context.RequestAborted);
             if (!verified)
             {
@@ -95,6 +99,7 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
         AppDbContext dbContext,
         ILogger logger,
         string authId,
+        TenantMetadataCacheHint hint,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(authId))
@@ -107,6 +112,7 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
         {
             var liveTenantId = await supabaseAuthAdminClient.GetUserTenantAppMetadataAsync(
                 authId,
+                hint,
                 cancellationToken);
 
             if (liveTenantId is not Guid tenantId || tenantId == Guid.Empty)

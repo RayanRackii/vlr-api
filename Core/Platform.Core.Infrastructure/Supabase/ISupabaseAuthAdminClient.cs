@@ -4,6 +4,13 @@ public sealed record SupabaseRecoveryLink(
     string HashedToken,
     string? ActionLink);
 
+/// <summary>
+/// The <c>tenant_id</c> carried by the request's access token (null when it has none).
+/// A cached live value may be served only when it equals this value. The token is never
+/// a source of the tenant.
+/// </summary>
+public readonly record struct TenantMetadataCacheHint(Guid? TokenTenantId);
+
 public interface ISupabaseAuthAdminClient
 {
     Task<string> CreateUserAsync(
@@ -41,6 +48,18 @@ public interface ISupabaseAuthAdminClient
     Task<Guid?> GetUserTenantAppMetadataAsync(
         string supabaseUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Same live read, but <paramref name="hint"/> decides whether a cached value may be used.
+    /// The hint is only a reason to skip the cache; the returned tenant always comes from
+    /// Auth admin (directly or from a cache entry that agrees with the hint).
+    /// The default implementation ignores the hint, so fakes need not implement it.
+    /// </summary>
+    Task<Guid?> GetUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        TenantMetadataCacheHint hint,
+        CancellationToken cancellationToken = default) =>
+        GetUserTenantAppMetadataAsync(supabaseUserId, cancellationToken);
 
     Task SetUserPasswordAsync(
         string supabaseUserId,

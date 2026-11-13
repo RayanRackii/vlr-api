@@ -70,6 +70,80 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
     }
 
     [Fact]
+    public async Task Hint_differing_from_a_cached_null_forces_a_live_read()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var liveTenant = Guid.NewGuid();
+        var handler = new TenantMetadataHandler { TenantId = null };
+        var client = CreateClient(handler, new SupabaseUserTenantMetadataCache());
+
+        Assert.Null(await client.GetUserTenantAppMetadataAsync(authId, new TenantMetadataCacheHint(null)));
+        Assert.Equal(1, handler.Gets);
+
+        // Another replica ran "enter": this process was not invalidated.
+        handler.TenantId = liveTenant;
+        var resolved = await client.GetUserTenantAppMetadataAsync(authId, new TenantMetadataCacheHint(liveTenant));
+
+        Assert.Equal(liveTenant, resolved);
+        Assert.Equal(2, handler.Gets);
+        Assert.Equal(liveTenant, await client.GetUserTenantAppMetadataAsync(authId));
+        Assert.Equal(2, handler.Gets);
+    }
+
+    [Fact]
+    public async Task Hint_equal_to_the_cached_tenant_skips_the_live_read()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var tenantId = Guid.NewGuid();
+        var handler = new TenantMetadataHandler { TenantId = tenantId };
+        var client = CreateClient(handler, new SupabaseUserTenantMetadataCache());
+
+        Assert.Equal(tenantId, await client.GetUserTenantAppMetadataAsync(authId, new TenantMetadataCacheHint(tenantId)));
+        Assert.Equal(1, handler.Gets);
+        Assert.Equal(tenantId, await client.GetUserTenantAppMetadataAsync(authId, new TenantMetadataCacheHint(tenantId)));
+        Assert.Equal(1, handler.Gets);
+    }
+
+    [Fact]
+    public async Task Hint_that_disagrees_with_the_cached_tenant_forces_a_live_read()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var cachedTenant = Guid.NewGuid();
+        var otherTenant = Guid.NewGuid();
+        var handler = new TenantMetadataHandler { TenantId = cachedTenant };
+        var client = CreateClient(handler, new SupabaseUserTenantMetadataCache());
+
+        Assert.Equal(cachedTenant, await client.GetUserTenantAppMetadataAsync(authId));
+        Assert.Equal(1, handler.Gets);
+
+        // Switch X -> Y on another replica, then the token carries Y.
+        handler.TenantId = otherTenant;
+        Assert.Equal(
+            otherTenant,
+            await client.GetUserTenantAppMetadataAsync(authId, new TenantMetadataCacheHint(otherTenant)));
+        Assert.Equal(2, handler.Gets);
+
+        // Exit on another replica, then the token carries no tenant while the cache holds Y.
+        handler.TenantId = null;
+        Assert.Null(await client.GetUserTenantAppMetadataAsync(authId, new TenantMetadataCacheHint(null)));
+        Assert.Equal(3, handler.Gets);
+    }
+
+    [Fact]
+    public async Task Overload_without_hint_keeps_serving_the_cache()
+    {
+        var authId = Guid.NewGuid().ToString("D");
+        var tenantId = Guid.NewGuid();
+        var handler = new TenantMetadataHandler { TenantId = tenantId };
+        var client = CreateClient(handler, new SupabaseUserTenantMetadataCache());
+
+        Assert.Equal(tenantId, await client.GetUserTenantAppMetadataAsync(authId));
+        handler.TenantId = Guid.NewGuid();
+        Assert.Equal(tenantId, await client.GetUserTenantAppMetadataAsync(authId));
+        Assert.Equal(1, handler.Gets);
+    }
+
+    [Fact]
     public async Task Enter_and_exit_invalidate_the_cached_tenant()
     {
         var authId = Guid.NewGuid();
@@ -326,7 +400,7 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
             TimeSpan.FromMilliseconds(200));
         var methods = AuthAdminMethods();
 
-        Assert.Equal(9, methods.Length);
+        Assert.Equal(10, methods.Length);
 
         foreach (var method in methods)
         {
@@ -508,6 +582,11 @@ public sealed class SupabaseAuthAdminTenantMetadataCacheTests
         if (type == typeof(CancellationToken))
         {
             return CancellationToken.None;
+        }
+
+        if (type == typeof(TenantMetadataCacheHint))
+        {
+            return new TenantMetadataCacheHint(null);
         }
 
         throw new InvalidOperationException($"No sample argument for {type.Name}.");
