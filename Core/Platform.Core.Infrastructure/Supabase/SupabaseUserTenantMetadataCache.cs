@@ -4,9 +4,10 @@ namespace Platform.Core.Infrastructure.Supabase;
 
 /// <summary>
 /// In-process, per-auth-id copy of live <c>app_metadata.tenant_id</c>.
-/// Assumes a single API replica: the dictionary is not shared, so another
-/// process can still serve the previous tenant until this TTL after exit.
-/// Enter and exit drop the entry on this process so the next read hits Auth again.
+/// The dictionary is not shared between replicas, so a cached value is served only when it
+/// equals the tenant in the request's access token (<see cref="TenantMetadataCacheHint"/>);
+/// otherwise the caller reads Auth again, which covers enter and exit handled by another replica.
+/// Enter and exit also drop the entry on this process so the next read hits Auth again.
 /// Epoch keys are dropped once they are older than <see cref="Duration"/>. The
 /// sweep runs at most once a second, and the map stops tracking new auth ids at
 /// <see cref="DefaultMaxTrackedAuthIds"/>. An epoch value may be reused after that
