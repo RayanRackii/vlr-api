@@ -125,6 +125,56 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
     }
 
     [Fact]
+    public async Task Database_failure_in_membership_check_responds_503_instead_of_withholding_tenant()
+    {
+        // PROD 2026-11-13: the Supabase session pooler refused clients (EMAXCONNSESSION).
+        // Withholding the tenant turned that into 403 "forbidden" on tenant routes.
+        var handler = new CountingTenantHandler { TenantId = Guid.NewGuid() };
+        var client = CreateAuthClient(handler, new SupabaseUserTenantMetadataCache());
+        var logger = new CaptureLogger<PlatformAdminTenantSessionMiddleware>();
+        var session = new PlatformAdminTenantSession();
+        var continued = false;
+        var middleware = new PlatformAdminTenantSessionMiddleware(_ =>
+        {
+            continued = true;
+            return Task.CompletedTask;
+        });
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(
+                new ClaimsIdentity(
+                    [
+                        new Claim("sub", AuthId),
+                        new Claim("email", AdminEmail),
+                    ],
+                    authenticationType: "Test")),
+        };
+        context.Response.Body = new MemoryStream();
+        var checker = new PlatformAdminChecker(
+            Options.Create(new PlatformAdminOptions { Emails = [AdminEmail] }));
+        // Nothing listens on port 1: opening the connection throws NpgsqlException (a DbException).
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=127.0.0.1;Port=1;Database=postgres;Username=postgres;Password=postgres;Timeout=2;Pooling=false")
+            .UseSnakeCaseNamingConvention()
+            .Options;
+        await using var db = new AppDbContext(options, new FakeTenantProvider());
+
+        await middleware.InvokeAsync(context, session, checker, client, db, logger);
+
+        Assert.False(continued);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.Equal("1", context.Response.Headers.RetryAfter.ToString());
+        context.Response.Body.Position = 0;
+        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        Assert.Contains("tenant_session_unavailable", body, StringComparison.Ordinal);
+        var entry = Assert.Single(logger.Entries);
+        Assert.IsAssignableFrom<System.Data.Common.DbException>(entry.Exception);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.DoesNotContain(AuthId, entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(AdminEmail, entry.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Request_abort_is_not_logged_as_a_tenant_failure()
     {
         var logger = new CaptureLogger<PlatformAdminTenantSessionMiddleware>();

@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Platform.Core.Infrastructure.Persistence;
@@ -10,9 +11,13 @@ namespace Platform.Api.Authentication;
 /// plus an active <c>core.users</c> membership. Exit clears that metadata while the
 /// access token can still carry the previous <c>tenant_id</c>; this middleware
 /// does not read that claim.
+/// A database failure in the membership check answers 503: withholding the tenant
+/// there would turn an outage (e.g. a full Supabase pooler) into 403 on tenant routes.
 /// </summary>
 public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
 {
+    public const string TenantSessionUnavailableError = "tenant_session_unavailable";
+
     public async Task InvokeAsync(
         HttpContext context,
         PlatformAdminTenantSession session,
@@ -23,13 +28,22 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
     {
         if (ShouldResolve(context, platformAdminChecker, out var authId))
         {
-            await ResolveAsync(
+            var verified = await ResolveAsync(
                 session,
                 supabaseAuthAdminClient,
                 dbContext,
                 logger,
                 authId,
                 context.RequestAborted);
+            if (!verified)
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                context.Response.Headers.RetryAfter = "1";
+                await context.Response.WriteAsJsonAsync(
+                    new { error = TenantSessionUnavailableError },
+                    context.RequestAborted);
+                return;
+            }
         }
 
         await next(context);
@@ -74,7 +88,8 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
         return true;
     }
 
-    private static async Task ResolveAsync(
+    /// <returns>False when the database could not be read; the request must not continue.</returns>
+    private static async Task<bool> ResolveAsync(
         PlatformAdminTenantSession session,
         ISupabaseAuthAdminClient supabaseAuthAdminClient,
         AppDbContext dbContext,
@@ -85,7 +100,7 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
         if (string.IsNullOrWhiteSpace(authId))
         {
             session.Resolve(null);
-            return;
+            return true;
         }
 
         try
@@ -97,7 +112,7 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
             if (liveTenantId is not Guid tenantId || tenantId == Guid.Empty)
             {
                 session.Resolve(null);
-                return;
+                return true;
             }
 
             // The lookup runs before the session is resolved, so the global query
@@ -117,10 +132,20 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
                     cancellationToken);
 
             session.Resolve(isMember ? tenantId : null);
+            return true;
         }
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (DbException ex)
+        {
+            // The template stays free of tokens, passwords, and user payloads.
+            logger.LogWarning(
+                ex,
+                "Platform admin tenant session could not be verified: database unavailable ({ExceptionType}). Responding 503.",
+                ex.GetType().Name);
+            return false;
         }
         catch (Exception ex)
         {
@@ -133,6 +158,7 @@ public sealed class PlatformAdminTenantSessionMiddleware(RequestDelegate next)
                 ex.GetType().Name,
                 status);
             session.Resolve(null);
+            return true;
         }
     }
 }
