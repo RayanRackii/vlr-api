@@ -205,6 +205,27 @@ public sealed class SupabaseAuthAdminClient : ISupabaseAuthAdminClient
             return cached;
         }
 
+        return await ReadAndStoreUserTenantAppMetadataAsync(supabaseUserId, cancellationToken);
+    }
+
+    public async Task<Guid?> GetUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        TenantMetadataCacheHint hint,
+        CancellationToken cancellationToken = default)
+    {
+        if (_tenantMetadataCache.TryGet(supabaseUserId, out var cached)
+            && cached == hint.TokenTenantId)
+        {
+            return cached;
+        }
+
+        return await ReadAndStoreUserTenantAppMetadataAsync(supabaseUserId, cancellationToken);
+    }
+
+    private async Task<Guid?> ReadAndStoreUserTenantAppMetadataAsync(
+        string supabaseUserId,
+        CancellationToken cancellationToken)
+    {
         var epoch = _tenantMetadataCache.CaptureEpoch(supabaseUserId);
         var tenantId = await ReadUserTenantAppMetadataAsync(supabaseUserId, cancellationToken);
         _tenantMetadataCache.Store(supabaseUserId, tenantId, epoch);

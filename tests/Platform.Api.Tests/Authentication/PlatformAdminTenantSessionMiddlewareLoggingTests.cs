@@ -70,7 +70,7 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
             await seed.SaveChangesAsync();
         }
 
-        var active = await InvokeResolvedAsync(client, authId, databaseName);
+        var active = await InvokeResolvedAsync(client, authId, databaseName, tenant.Id);
         Assert.Equal(tenant.Id, active.TenantId);
         Assert.Equal(1, handler.Gets);
 
@@ -81,7 +81,7 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
             await db.SaveChangesAsync();
         }
 
-        var inactive = await InvokeResolvedAsync(client, authId, databaseName);
+        var inactive = await InvokeResolvedAsync(client, authId, databaseName, tenant.Id);
         Assert.Null(inactive.TenantId);
         Assert.Equal(1, handler.Gets);
 
@@ -92,9 +92,38 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
             await db.SaveChangesAsync();
         }
 
-        var restored = await InvokeResolvedAsync(client, authId, databaseName);
+        var restored = await InvokeResolvedAsync(client, authId, databaseName, tenant.Id);
         Assert.Equal(tenant.Id, restored.TenantId);
         Assert.Equal(1, handler.Gets);
+    }
+
+    [Fact]
+    public async Task Stale_cached_null_does_not_hide_a_tenant_entered_on_another_machine()
+    {
+        // PROD 2026-11-13: "exit" ran on machine B (B cached "no tenant"), "enter" on machine A.
+        // B kept answering 403 until the TTL. The token now carries the tenant, so B re-reads.
+        var authId = Guid.NewGuid().ToString("D");
+        var databaseName = $"stale-null-{Guid.NewGuid():N}";
+        var tenant = new Tenant("Club A", "11111111000191", subdomain: "cluba");
+        var handler = new CountingTenantHandler { TenantId = null };
+        var client = CreateAuthClient(handler, new SupabaseUserTenantMetadataCache());
+
+        await using (var seed = InMemoryAppDb.Create(new FakeTenantProvider(), databaseName))
+        {
+            seed.Tenants.Add(tenant);
+            seed.Users.Add(new User(tenant.Id, authId, "Super Admin", AdminEmail));
+            await seed.SaveChangesAsync();
+        }
+
+        var beforeEnter = await InvokeResolvedAsync(client, authId, databaseName, tokenTenantId: null);
+        Assert.Null(beforeEnter.TenantId);
+        Assert.Equal(1, handler.Gets);
+
+        handler.TenantId = tenant.Id;
+        var afterEnter = await InvokeResolvedAsync(client, authId, databaseName, tenant.Id);
+
+        Assert.Equal(tenant.Id, afterEnter.TenantId);
+        Assert.Equal(2, handler.Gets);
     }
 
     [Fact]
@@ -242,18 +271,25 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
     private static async Task<PlatformAdminTenantSession> InvokeResolvedAsync(
         ISupabaseAuthAdminClient auth,
         string authId,
-        string databaseName)
+        string databaseName,
+        Guid? tokenTenantId = null)
     {
         var middleware = new PlatformAdminTenantSessionMiddleware(_ => Task.CompletedTask);
+        var claims = new List<Claim>
+        {
+            new("sub", authId),
+            new("email", AdminEmail),
+        };
+        if (tokenTenantId is Guid tokenTenant)
+        {
+            claims.Add(new Claim(
+                TenantClaimTypes.AppMetadata,
+                "{\"tenant_id\":\"" + tokenTenant.ToString("D") + "\"}"));
+        }
+
         var context = new DefaultHttpContext
         {
-            User = new ClaimsPrincipal(
-                new ClaimsIdentity(
-                    [
-                        new Claim("sub", authId),
-                        new Claim("email", AdminEmail),
-                    ],
-                    authenticationType: "Test")),
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test")),
         };
         var session = new PlatformAdminTenantSession();
         var checker = new PlatformAdminChecker(
@@ -291,7 +327,7 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
     {
         public int Gets { get; private set; }
 
-        public Guid TenantId { get; set; }
+        public Guid? TenantId { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -302,7 +338,9 @@ public sealed class PlatformAdminTenantSessionMiddlewareLoggingTests
                 Gets++;
             }
 
-            var body = "{\"app_metadata\":{\"tenant_id\":\"" + TenantId.ToString("D") + "\"}}";
+            var body = TenantId is Guid tenantId
+                ? "{\"app_metadata\":{\"tenant_id\":\"" + tenantId.ToString("D") + "\"}}"
+                : "{\"app_metadata\":{}}";
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json"),

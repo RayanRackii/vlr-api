@@ -52,6 +52,10 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Cache de tenant do super-admin com 2 máquinas (2026-11-13)
+
+- [x] `fix/admin-tenant-cache-token-hint`: o cache de 10 s do `app_metadata.tenant_id` ao vivo é por processo, então após enter/exit tratado na outra máquina a máquina velha respondia 403 por até 10 s (PROD v18, log 19:24). O cache só vale quando o valor guardado é igual ao `tenant_id` do access token (hint, nunca fonte do tenant); em divergência lê o Supabase de novo. Overload `GetUserTenantAppMetadataAsync(id, TenantMetadataCacheHint)` com implementação padrão na interface; `PlatformAdminTenantSessionMiddleware` usa o hint. Sem migration, sem mudança de contrato. Spec: `docs/plans/active/2026-11-13-admin-tenant-cache-token-hint.md`. Sem SDK .NET 10 local: CI do PR é o gate
+
 ## Shared transactional email layout (2026-11-09, local)
 
 - [x] Rayan t1377u: header/footer/CSS compartilhados, HTML + texto no Resend, conteúdo genérico escapado e texto de reservas preservado. Review fresco do executor encontrou Medium: faltava paleta dark explícita. Adicionados CSS dark compartilhado (media query/Outlook), fallback light inline e assertions de superfícies/textos/ações e contraste mínimo 4.5:1. Inventário: [`email-layout-inventory`](docs/notifications/email-layout-inventory.md); 20 pares de previews anteriores em `artifacts/email-layout/`, refresh pendente. Nenhum gate canônico Claude executado; autoavaliação do autor não é gate. [Handoff](docs/sessions/2026-11-09-shared-email-layout.md).
