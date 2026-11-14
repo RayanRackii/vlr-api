@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -105,9 +106,10 @@ public sealed class OccupancyKindService(
             return;
         }
 
+        var added = new List<OccupancyKind>(Defaults.Length);
         foreach (var item in Defaults)
         {
-            dbContext.OccupancyKinds.Add(new OccupancyKind
+            var kind = new OccupancyKind
             {
                 TenantId = tenantId,
                 Key = item.Key,
@@ -125,10 +127,40 @@ public sealed class OccupancyKindService(
                 BlocksCapacity = item.Blocks,
                 SortOrder = item.Order,
                 IsActive = true,
-            });
+            };
+            added.Add(kind);
+            dbContext.OccupancyKinds.Add(kind);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsDefaultKeyUniqueViolation(ex))
+        {
+            // Parallel GETs on a tenant's first load can both seed; the other request won, with the same defaults.
+            foreach (var kind in added)
+            {
+                dbContext.Entry(kind).State = EntityState.Detached;
+            }
+        }
+    }
+
+    private static bool IsDefaultKeyUniqueViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException
+                {
+                    SqlState: PostgresErrorCodes.UniqueViolation,
+                    ConstraintName: "ix_occupancy_kinds_tenant_id_key",
+                })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Guid EnsureTenant() =>
