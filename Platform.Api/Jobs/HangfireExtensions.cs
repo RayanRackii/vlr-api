@@ -127,7 +127,7 @@ public static class HangfireExtensions
     }
 
     /// <summary>
-    /// Windows uses "E. South America Standard Time"; Linux (Railway Docker) uses "America/Sao_Paulo".
+    /// Windows uses "E. South America Standard Time"; Linux (Fly.io Docker) uses "America/Sao_Paulo".
     /// </summary>
     public static TimeZoneInfo ResolveBrazilTimeZone() => BrazilTimeZone.Resolve();
 

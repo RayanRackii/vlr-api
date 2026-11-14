@@ -20,8 +20,6 @@ public sealed class RateLimitClientIpHostTests
         "Supabase__JwtSecret",
         "RateLimit__ClientIpHeader",
         "FLY_APP_NAME",
-        "RAILWAY_ENVIRONMENT",
-        "RAILWAY_PROJECT_ID",
         "Tenancy__FailClosed",
     ];
 
@@ -114,8 +112,6 @@ public sealed class RateLimitClientIpHostTests
                 "Supabase__JwtSecret",
                 "test-secret-test-secret-test-secret");
             Environment.SetEnvironmentVariable("FLY_APP_NAME", "");
-            Environment.SetEnvironmentVariable("RAILWAY_ENVIRONMENT", "");
-            Environment.SetEnvironmentVariable("RAILWAY_PROJECT_ID", "");
             Environment.SetEnvironmentVariable("RateLimit__ClientIpHeader", null);
             Environment.SetEnvironmentVariable("Tenancy__FailClosed", null);
             foreach (var (name, value) in overrides)

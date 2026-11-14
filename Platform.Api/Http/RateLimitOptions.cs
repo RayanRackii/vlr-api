@@ -19,10 +19,6 @@ internal static class RateLimitPlatformRules
     internal static readonly RateLimitPlatformRule[] All =
     [
         new("Fly", ["FLY_APP_NAME"], RateLimitClientIp.FlyClientIpHeaderName),
-        new(
-            "Railway",
-            ["RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID"],
-            RateLimitClientIp.DefaultHeaderName),
     ];
 }
 

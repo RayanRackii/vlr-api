@@ -10,7 +10,7 @@
 Você atua como Arquiteto de Software e Desenvolvedor Full-Stack Sênior. O sistema é a plataforma **Rolvix**: um SaaS B2B modular e multi-tenant. Não é software de um nicho só — pense num sistema operacional / Hub corporativo. O Core é agnóstico ao negócio: gerencia Tenants, Users, Units, Roles e Permissions. Sobre o Core, "Módulos" são aplicativos ativáveis por tenant.
 
 ### Hospedagem
-API: Fly.io (`rolvix-api-prod`). Web: Vercel. Banco e Auth: Supabase. Railway é hospedagem legada e não representa o ambiente atual.
+API: Fly.io (`rolvix-api-prod`). Web: Vercel. Banco e Auth: Supabase.
 
 ### Beachhead atual (prioridade de execução)
 A visão de Hub permanece. O primeiro cliente pagante é um **clube** que precisa (1) avisar clientes sobre o estado das quadras e (2) permitir **reserva de horários**. O módulo **Rentals** (`rentals`) é o foco do ciclo atual. Inventário, PMOC e OS já existem como espinha dorsal e continuam no cardápio; não expandir RH, Financeiro, Estoque etc. enquanto o beachhead não estiver operacional.
