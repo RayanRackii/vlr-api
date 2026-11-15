@@ -42,6 +42,10 @@ public sealed class CatalogProductConfiguration : IEntityTypeConfiguration<Catal
             .HasDefaultValue(true)
             .IsRequired();
 
+        builder.Property(p => p.UsesSchedule)
+            .HasDefaultValue(true)
+            .IsRequired();
+
         builder.Property(p => p.Visibility)
             .HasConversion<string>()
             .HasMaxLength(16)

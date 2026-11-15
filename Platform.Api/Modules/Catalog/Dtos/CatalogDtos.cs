@@ -123,6 +123,9 @@ public sealed record CreateCatalogProductRequest
     /// <summary>Optional initial status: "Active" (default) or "Inactive". Creating inactive never
     /// publishes the product (it stays unpublished until explicitly activated).</summary>
     public string? Status { get; init; }
+
+    /// <summary>Whether the product is fulfilled through the schedule. Absent defaults to true.</summary>
+    public bool? UsesSchedule { get; init; }
 }
 
 public sealed record UpdateCatalogProductRequest
@@ -138,6 +141,8 @@ public sealed record UpdateCatalogProductRequest
     public string? Currency { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
+    /// <summary>Whether the product is fulfilled through the schedule. Absent leaves the stored value unchanged.</summary>
+    public bool? UsesSchedule { get; init; }
 }
 
 public sealed record CatalogProductFileDto(
@@ -163,6 +168,8 @@ public sealed record CatalogProductResponse(
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
 
     public CatalogProductVisibility Visibility { get; init; } = CatalogProductVisibility.Public;
+
+    public bool UsesSchedule { get; init; } = true;
 
     public bool HasFiles => Files.Count > 0;
 

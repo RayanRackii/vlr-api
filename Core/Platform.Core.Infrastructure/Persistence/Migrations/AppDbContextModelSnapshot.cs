@@ -1028,6 +1028,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<bool>("UsesSchedule")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("uses_schedule");
+
                     b.Property<string>("Visibility")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
