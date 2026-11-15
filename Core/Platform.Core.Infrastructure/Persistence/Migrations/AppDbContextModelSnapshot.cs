@@ -1029,7 +1029,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("updated_at");
 
                     b.Property<bool>("UsesSchedule")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("uses_schedule");
