@@ -22,9 +22,12 @@ public sealed class CatalogProductUsesSchedulePostgresTests(PostgresContainerFix
         var tenant = new Tenant("Uses schedule test", Guid.NewGuid().ToString("N")[..20]);
         provider.TenantId = tenant.Id;
         db.Tenants.Add(tenant);
-        var legacy = new CatalogProduct { TenantId = tenant.Id, Name = "Legacy" };
-        db.CatalogProducts.Add(legacy);
         await db.SaveChangesAsync();
+        // Raw SQL: the current EF model has columns that do not exist at this older migration.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO catalog.catalog_products (id, tenant_id, name, created_at)
+            VALUES ({Guid.NewGuid()}, {tenant.Id}, 'Legacy', now())
+            """);
 
         await migrator.MigrateAsync();
 
