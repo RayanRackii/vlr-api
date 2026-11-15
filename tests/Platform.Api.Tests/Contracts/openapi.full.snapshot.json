@@ -1738,6 +1738,9 @@
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyResponse"
           },
+          "usesSchedule": {
+            "type": "boolean"
+          },
           "visibility": {
             "$ref": "#/components/schemas/CatalogProductVisibility"
           }
@@ -2048,6 +2051,10 @@
           },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyAssignmentRequest"
+          },
+          "usesSchedule": {
+            "nullable": true,
+            "type": "boolean"
           }
         },
         "required": [
@@ -7211,6 +7218,10 @@
           },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyAssignmentRequest"
+          },
+          "usesSchedule": {
+            "nullable": true,
+            "type": "boolean"
           }
         },
         "required": [

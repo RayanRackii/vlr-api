@@ -999,7 +999,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("description");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
@@ -1027,6 +1026,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<bool>("UsesSchedule")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("uses_schedule");
 
                     b.Property<string>("Visibility")
                         .IsRequired()

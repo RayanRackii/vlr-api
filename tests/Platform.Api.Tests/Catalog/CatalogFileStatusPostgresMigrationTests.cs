@@ -25,9 +25,13 @@ public sealed class CatalogFileStatusPostgresMigrationTests(PostgresContainerFix
         var tenant = new Tenant("Migration test", Guid.NewGuid().ToString("N")[..20]);
         provider.TenantId = tenant.Id;
         db.Tenants.Add(tenant);
-        var product = new CatalogProduct { TenantId = tenant.Id, Name = "Migration product" };
-        db.CatalogProducts.Add(product);
         await db.SaveChangesAsync();
+        var product = new { Id = Guid.NewGuid() };
+        // Raw SQL: the current EF model has columns that do not exist at this older migration.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO catalog.catalog_products (id, tenant_id, name, created_at)
+            VALUES ({product.Id}, {tenant.Id}, 'Migration product', now())
+            """);
         foreach (var visibility in new[] { "CustomerVisible", "InternalB2B" })
         {
             await db.Database.ExecuteSqlInterpolatedAsync($"""

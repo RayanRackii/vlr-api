@@ -40,6 +40,14 @@ public sealed class CatalogProductConfiguration : IEntityTypeConfiguration<Catal
 
         builder.Property(p => p.IsActive)
             .HasDefaultValue(true)
+            .ValueGeneratedNever()
+            .IsRequired();
+
+        // ValueGeneratedNever: with a bare HasDefaultValue(true) EF treats CLR false as "unset", omits the
+        // column on INSERT and Postgres would store TRUE. The DB default only backfills existing rows.
+        builder.Property(p => p.UsesSchedule)
+            .HasDefaultValue(true)
+            .ValueGeneratedNever()
             .IsRequired();
 
         builder.Property(p => p.Visibility)

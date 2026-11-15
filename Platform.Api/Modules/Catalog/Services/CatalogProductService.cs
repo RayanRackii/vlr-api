@@ -124,6 +124,7 @@ public sealed class CatalogProductService(
             Price = RoundPrice(request.Price),
             Currency = NormalizeCurrency(request.Currency),
             IsActive = isActive,
+            UsesSchedule = request.UsesSchedule ?? true,
         };
 
         dbContext.CatalogProducts.Add(product);
@@ -161,6 +162,7 @@ public sealed class CatalogProductService(
         product.Description = NormalizeOptional(request.Description);
         product.Price = price;
         product.Currency = currency;
+        if (request.UsesSchedule is { } usesSchedule) product.UsesSchedule = usesSchedule;
         product.Touch();
         await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
         await TaxonomyService.SaveAsync(dbContext, cancellationToken);
@@ -414,6 +416,7 @@ public sealed class CatalogProductService(
         {
             Taxonomy = assignments[p.Id],
             Visibility = p.Visibility,
+            UsesSchedule = p.UsesSchedule,
             GrantedCustomerCount = grants.TryGetValue(p.Id, out var g) ? g.Customers : 0,
             GrantedGroupCount = grants.TryGetValue(p.Id, out var g2) ? g2.Groups : 0,
         }).ToArray();
