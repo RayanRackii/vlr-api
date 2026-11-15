@@ -40,6 +40,7 @@ public sealed class CatalogProductConfiguration : IEntityTypeConfiguration<Catal
 
         builder.Property(p => p.IsActive)
             .HasDefaultValue(true)
+            .ValueGeneratedNever()
             .IsRequired();
 
         // ValueGeneratedNever: with a bare HasDefaultValue(true) EF treats CLR false as "unset", omits the

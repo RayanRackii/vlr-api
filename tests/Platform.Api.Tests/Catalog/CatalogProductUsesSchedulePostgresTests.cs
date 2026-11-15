@@ -28,7 +28,7 @@ public sealed class CatalogProductUsesSchedulePostgresTests(PostgresContainerFix
 
         await migrator.MigrateAsync();
 
-        var off = new CatalogProduct { TenantId = tenant.Id, Name = "Off", UsesSchedule = false };
+        var off = new CatalogProduct { TenantId = tenant.Id, Name = "Off", UsesSchedule = false, IsActive = false };
         var on = new CatalogProduct { TenantId = tenant.Id, Name = "On" };
         db.CatalogProducts.AddRange(off, on);
         await db.SaveChangesAsync();
@@ -38,5 +38,8 @@ public sealed class CatalogProductUsesSchedulePostgresTests(PostgresContainerFix
         Assert.True(rows["Legacy"].UsesSchedule);
         Assert.False(rows["Off"].UsesSchedule);
         Assert.True(rows["On"].UsesSchedule);
+        Assert.True(rows["Legacy"].IsActive);
+        Assert.False(rows["Off"].IsActive);
+        Assert.True(rows["On"].IsActive);
     }
 }
