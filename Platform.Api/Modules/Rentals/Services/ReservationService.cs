@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
+using Platform.Api.Services.Brazil;
 using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
@@ -201,9 +202,173 @@ public sealed class ReservationService(
             PricedUnits: pricedUnits);
     }
 
-    public async Task<ReservationResponseDto> CreateReservationAsync(
+    public Task<ReservationResponseDto> CreateReservationAsync(
         Guid customerId,
         CreateReservationRequestDto request,
+        CancellationToken cancellationToken) =>
+        CreateCoreAsync(
+            request,
+            inferUnit: false,
+            staffOptions: null,
+            async (tenantId, ct) =>
+            {
+                var customer = await dbContext.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == customerId, ct)
+                    ?? throw new UnauthorizedAccessException("Authenticated customer was not found.");
+
+                if (customer.TenantId != tenantId)
+                {
+                    throw new UnauthorizedAccessException("Customer does not belong to the current tenant.");
+                }
+
+                return (customer, false);
+            },
+            cancellationToken);
+
+    public async Task<ReservationResponseDto> CreateStaffReservationAsync(
+        StaffCreateReservationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if ((request.CustomerId is null) == (request.NewCustomer is null))
+        {
+            throw new ArgumentException("Provide exactly one of customerId or newCustomer.");
+        }
+
+        var coreRequest = new CreateReservationRequestDto
+        {
+            UnitId = request.UnitId ?? Guid.Empty,
+            Date = request.Date,
+            EndDate = request.EndDate,
+            StartTime = request.StartTime,
+            EndTime = request.EndTime,
+            Items = request.Items,
+        };
+
+        try
+        {
+            return await CreateCoreAsync(
+                coreRequest,
+                inferUnit: request.UnitId is null,
+                new StaffBookingOptions(request.AwaitingDeposit),
+                (tenantId, ct) => ResolveStaffCustomerAsync(tenantId, request, ct),
+                cancellationToken);
+        }
+        catch (DbUpdateException) when (request.NewCustomer is not null)
+        {
+            // Lost a race on the per-tenant unique phone/email indexes: surface the winner.
+            var tenantId = EnsureTenantContext();
+            var existing = await FindExistingCustomerAsync(
+                tenantId,
+                NormalizeStaffPhone(request.NewCustomer.WhatsApp),
+                NormalizeStaffEmail(request.NewCustomer.Email),
+                cancellationToken);
+            if (existing is not null)
+            {
+                throw new CustomerAlreadyExistsException(existing.Id);
+            }
+
+            throw;
+        }
+    }
+
+    private sealed record StaffBookingOptions(bool AwaitingDeposit);
+
+    private async Task<(Customer Customer, bool IsNew)> ResolveStaffCustomerAsync(
+        Guid tenantId,
+        StaffCreateReservationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (request.CustomerId is Guid customerId)
+        {
+            var existing = await dbContext.Customers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == customerId && c.TenantId == tenantId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Customer '{customerId}' was not found.");
+            return (existing, false);
+        }
+
+        var input = request.NewCustomer!;
+        var name = input.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Customer name is required.");
+        }
+
+        var phone = NormalizeStaffPhone(input.WhatsApp);
+        var email = NormalizeStaffEmail(input.Email);
+        var duplicate = await FindExistingCustomerAsync(tenantId, phone, email, cancellationToken);
+        if (duplicate is not null)
+        {
+            throw new CustomerAlreadyExistsException(duplicate.Id);
+        }
+
+        // No password and no verified e-mail: the customer cannot log in until they register or use OTP.
+        var created = new Customer
+        {
+            TenantId = tenantId,
+            Name = name,
+            Phone = phone,
+            Email = email,
+        };
+        return (created, true);
+    }
+
+    private static string NormalizeStaffPhone(string? whatsApp) =>
+        BrazilianDocumentValidator.NormalizePhoneBr(whatsApp);
+
+    private static string? NormalizeStaffEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return null;
+        }
+
+        var normalized = email.Trim().ToLowerInvariant();
+        if (!normalized.Contains('@') || normalized.Length < 5)
+        {
+            throw new ArgumentException("Email format is invalid.");
+        }
+
+        return normalized;
+    }
+
+    private Task<Customer?> FindExistingCustomerAsync(
+        Guid tenantId,
+        string phone,
+        string? email,
+        CancellationToken cancellationToken) =>
+        dbContext.Customers
+            .AsNoTracking()
+            .Where(c => c.TenantId == tenantId
+                && (c.Phone == phone || (email != null && c.Email == email)))
+            .OrderBy(c => c.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<Guid> ResolveUnitFromItemsAsync(
+        IReadOnlyList<CreateReservationItemRequestDto> items,
+        CancellationToken cancellationToken)
+    {
+        var assetId = items[0].AssetId;
+        var unitId = await dbContext.RentalAssets
+            .AsNoTracking()
+            .Where(r => r.AssetId == assetId && r.IsActive && r.Asset.IsRentable)
+            .Select(r => (Guid?)r.Asset.UnitId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return unitId
+            ?? throw new KeyNotFoundException($"Rentable asset '{assetId}' was not found.");
+    }
+
+    /// <summary>
+    /// Shared booking core. <paramref name="staffOptions"/> is null for the customer portal and set
+    /// for staff; staff skip the customer-only policies (horizon, lead time, daily limit, price
+    /// guard, queue turn) and choose the opening status.
+    /// </summary>
+    private async Task<ReservationResponseDto> CreateCoreAsync(
+        CreateReservationRequestDto request,
+        bool inferUnit,
+        StaffBookingOptions? staffOptions,
+        Func<Guid, CancellationToken, Task<(Customer Customer, bool IsNew)>> resolveCustomer,
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
@@ -221,14 +386,12 @@ public sealed class ReservationService(
             throw new ArgumentException("Each assetId may appear only once per reservation.");
         }
 
-        var customer = await dbContext.Customers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken)
-            ?? throw new UnauthorizedAccessException("Authenticated customer was not found.");
+        var (customer, isNewCustomer) = await resolveCustomer(tenantId, cancellationToken);
+        var customerId = customer.Id;
 
-        if (customer.TenantId != tenantId)
+        if (inferUnit)
         {
-            throw new UnauthorizedAccessException("Customer does not belong to the current tenant.");
+            request = request with { UnitId = await ResolveUnitFromItemsAsync(request.Items, cancellationToken) };
         }
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
@@ -250,13 +413,16 @@ public sealed class ReservationService(
 
         try
         {
-            // A multi-day reservation counts once, against its start civil date only.
-            await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
-                dbContext,
-                tenantId,
-                customer.Id,
-                request.Date,
-                cancellationToken);
+            if (staffOptions is null)
+            {
+                // A multi-day reservation counts once, against its start civil date only.
+                await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
+                    dbContext,
+                    tenantId,
+                    customer.Id,
+                    request.Date,
+                    cancellationToken);
+            }
 
             var assetIds = request.Items
                 .Select(item => item.AssetId)
@@ -274,24 +440,27 @@ public sealed class ReservationService(
                 rentalAssetsToLock,
                 cancellationToken);
 
-            var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-                dbContext, tenantId, cancellationToken);
-            await BookingHorizon.EnsureAssetsAsync(
-                dbContext,
-                tenantId,
-                request.Items.Select(item => item.AssetId).ToList(),
-                // The last day is at or after the start, so this enforces both endpoints.
-                request.EndDate ?? request.Date,
-                today,
-                tenantHorizon,
-                cancellationToken);
-            await BookingLeadTime.EnsureAssetsAsync(
-                dbContext,
-                tenantId,
-                assetIds,
-                start,
-                timeProvider.GetUtcNow(),
-                cancellationToken);
+            if (staffOptions is null)
+            {
+                var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
+                    dbContext, tenantId, cancellationToken);
+                await BookingHorizon.EnsureAssetsAsync(
+                    dbContext,
+                    tenantId,
+                    request.Items.Select(item => item.AssetId).ToList(),
+                    // The last day is at or after the start, so this enforces both endpoints.
+                    request.EndDate ?? request.Date,
+                    today,
+                    tenantHorizon,
+                    cancellationToken);
+                await BookingLeadTime.EnsureAssetsAsync(
+                    dbContext,
+                    tenantId,
+                    assetIds,
+                    start,
+                    timeProvider.GetUtcNow(),
+                    cancellationToken);
+            }
 
             var reservation = new Reservation
             {
@@ -332,14 +501,17 @@ public sealed class ReservationService(
                         $"Asset '{rental.Asset.Name}' does not belong to the given unit.");
                 }
 
-                await reservationQueueService.EnsureActiveTurnForBookingAsync(
-                    customerId,
-                    rental,
-                    cancellationToken);
-
-                if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
+                if (staffOptions is null)
                 {
-                    queuedLocations.Add(rental);
+                    await reservationQueueService.EnsureActiveTurnForBookingAsync(
+                        customerId,
+                        rental,
+                        cancellationToken);
+
+                    if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
+                    {
+                        queuedLocations.Add(rental);
+                    }
                 }
 
                 var multiDayPricing = calendarDays.HasValue
@@ -440,12 +612,24 @@ public sealed class ReservationService(
             }
 
             reservation.TotalAmount = RoundMoney(totalAmount);
-            if (request.ExpectedTotalAmount is decimal expected && expected != reservation.TotalAmount)
+            if (staffOptions is null
+                && request.ExpectedTotalAmount is decimal expected
+                && expected != reservation.TotalAmount)
             {
                 throw new PriceChangedException(reservation.TotalAmount);
             }
 
-            reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
+            // Staff open Confirmed unless they ask to wait for a deposit the resource actually requires.
+            reservation.OpenAccordingToPaymentPolicy(
+                staffOptions is null ? requiresDeposit : requiresDeposit && staffOptions.AwaitingDeposit);
+
+            if (isNewCustomer)
+            {
+                // Persist the customer first so the domain events can see it; the transaction
+                // rolls it back with the reservation on any later failure.
+                dbContext.Customers.Add(customer);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
 
             dbContext.Reservations.Add(reservation);
 
