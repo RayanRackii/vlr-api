@@ -11,6 +11,9 @@ public static class CatalogModuleExtensions
     {
         services.AddScoped<CatalogPolicyService>();
         services.AddScoped<CatalogTaxonomyOptionsService>();
+        services.AddScoped<CatalogProductHistoryService>();
+        services.AddScoped<IProductHistoryRecorder>(sp => sp.GetRequiredService<CatalogProductHistoryService>());
+        services.AddScoped<ICatalogProductHistoryService>(sp => sp.GetRequiredService<CatalogProductHistoryService>());
         services.AddScoped<ICatalogProductService, CatalogProductService>();
         services.AddScoped<ICatalogOrderService, CatalogOrderService>();
         services.AddScoped<ICatalogPortalService, CatalogPortalService>();

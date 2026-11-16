@@ -171,6 +171,9 @@ public sealed record CatalogProductResponse(
 
     public bool UsesSchedule { get; init; } = true;
 
+    /// <summary>Last time the product (fields, activation, files, requirements, access) changed; null if never touched.</summary>
+    public DateTimeOffset? UpdatedAt { get; init; }
+
     public bool HasFiles => Files.Count > 0;
 
     public int GrantedCustomerCount { get; init; }

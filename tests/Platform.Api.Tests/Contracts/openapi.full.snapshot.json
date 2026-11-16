@@ -1623,6 +1623,53 @@
         },
         "type": "object"
       },
+      "CatalogProductHistoryChange": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "nullable": true,
+            "type": "string"
+          },
+          "new": {
+            "nullable": true,
+            "type": "string"
+          },
+          "old": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CatalogProductHistoryEntryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "nullable": true,
+            "type": "string"
+          },
+          "actorName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogProductHistoryChange"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CatalogProductResourceRequirementDto": {
         "additionalProperties": false,
         "properties": {
@@ -1740,6 +1787,11 @@
           },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyResponse"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
           },
           "usesSchedule": {
             "type": "boolean"
@@ -14089,6 +14141,72 @@
               "text/plain": {
                 "schema": {
                   "$ref": "#/components/schemas/CatalogFileUrlResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CatalogProducts"
+        ]
+      }
+    },
+    "/api/catalog/products/{id}/history": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogProductHistoryEntryResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogProductHistoryEntryResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogProductHistoryEntryResponse"
+                  },
+                  "type": "array"
                 }
               }
             },
