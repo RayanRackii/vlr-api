@@ -13,6 +13,7 @@ using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.ModuleMenuItems;
 using Platform.Api.Modules.Notifications;
+using Platform.Api.Modules.Payments;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
@@ -87,6 +88,7 @@ try
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
     builder.Services.AddWebhooksModule();
+    builder.Services.AddPaymentsModule(builder.Configuration);
     builder.Services.AddStorage(builder.Configuration, builder.Environment);
     builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     var enableHangfire = !builder.Environment.IsEnvironment("Test");
