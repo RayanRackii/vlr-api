@@ -9,6 +9,9 @@ public class WorkOrder : Entity, ITenantScoped, IMaintenanceModuleEntity
 
     public required Guid AssetId { get; set; }
 
+    /// <summary>Per-tenant sequential number shown to users as "OS #n".</summary>
+    public int Number { get; set; }
+
     public Guid? MaintenancePlanId { get; set; }
 
     public Guid? AssignedUserId { get; set; }

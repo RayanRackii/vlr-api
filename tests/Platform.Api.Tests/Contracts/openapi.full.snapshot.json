@@ -8344,6 +8344,10 @@
             "nullable": true,
             "type": "string"
           },
+          "number": {
+            "format": "int32",
+            "type": "integer"
+          },
           "scheduledDate": {
             "format": "date",
             "type": "string"

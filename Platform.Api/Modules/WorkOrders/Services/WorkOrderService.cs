@@ -147,6 +147,7 @@ public sealed class WorkOrderService(
             var workOrder = new WorkOrder
             {
                 TenantId = tenantId,
+                Number = await WorkOrderNumberAllocator.AllocateAsync(dbContext, tenantId, cancellationToken),
                 AssetId = asset.Id,
                 MaintenancePlanId = plan?.Id,
                 AssignedUserId = assignedUser?.Id,

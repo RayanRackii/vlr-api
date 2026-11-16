@@ -4621,6 +4621,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("notes");
 
+                    b.Property<int>("Number")
+                        .HasColumnType("integer")
+                        .HasColumnName("number");
+
                     b.Property<DateOnly>("ScheduledDate")
                         .HasColumnType("date")
                         .HasColumnName("scheduled_date");
@@ -4670,7 +4674,27 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ux_os_work_orders_pmoc_period")
                         .HasFilter("maintenance_plan_id IS NOT NULL AND status IN ('Pending', 'InProgress')");
 
+                    b.HasIndex("TenantId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_work_orders_tenant_id_number");
+
                     b.ToTable("work_orders", "os");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrderNumberSequence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("LastNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_number");
+
+                    b.HasKey("TenantId")
+                        .HasName("pk_work_order_number_sequences");
+
+                    b.ToTable("work_order_number_sequences", "os");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrderTask", b =>
