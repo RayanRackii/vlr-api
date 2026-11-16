@@ -76,10 +76,10 @@ public class BookingPolicy : Entity, ITenantScoped
     public int? MinimumBookingLeadMinutes { get; set; }
 
     /// <summary>
-    /// Optional deposit percent from 0 to 100 for setup and display.
-    /// Null means no deposit percent is configured. This value is not applied
-    /// to a reservation total or to any charge. The pending-deposit email still
-    /// uses the pricing window's <see cref="RentalPricing.DepositPercentage"/>.
+    /// Optional deposit percent from 0 to 100. Null means no percent is configured here.
+    /// When online payment is active it is applied to the online deposit charge
+    /// (see ADR 0009); 0 means no online charge. Without a value the pricing window's
+    /// <see cref="RentalPricing.DepositPercentage"/> applies, then 100.
     /// A resource value on <see cref="RentalAsset.DepositPercent"/> wins when set.
     /// </summary>
     public int? DepositPercent { get; set; }
