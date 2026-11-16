@@ -58,7 +58,7 @@ public sealed class DashboardService(
         WorkOrderMetricsDto? workOrders = null;
         if (modules.Contains(PlatformModules.WorkOrders))
         {
-            workOrders = await BuildWorkOrderMetricsAsync(monthStart, nextMonthStart, cancellationToken);
+            workOrders = await BuildWorkOrderMetricsAsync(civilToday, monthStart, nextMonthStart, cancellationToken);
         }
 
         PmocMetricsDto? pmoc = null;
@@ -167,6 +167,7 @@ public sealed class DashboardService(
     }
 
     private async Task<WorkOrderMetricsDto> BuildWorkOrderMetricsAsync(
+        DateOnly today,
         DateOnly monthStart,
         DateOnly nextMonthStart,
         CancellationToken cancellationToken)
@@ -186,12 +187,21 @@ public sealed class DashboardService(
         var canceled = await workOrdersThisMonth
             .CountAsync(w => w.Status == WorkOrderStatus.Canceled, cancellationToken);
 
+        // Open and due: Pending + InProgress scheduled up to the tenant civil today, any month.
+        var openDue = await dbContext.WorkOrders
+            .CountAsync(
+                w => (w.Status == WorkOrderStatus.Pending
+                      || w.Status == WorkOrderStatus.InProgress)
+                     && w.ScheduledDate <= today,
+                cancellationToken);
+
         return new WorkOrderMetricsDto(
             totalThisMonth,
             pending,
             inProgress,
             completed,
-            canceled);
+            canceled,
+            openDue);
     }
 
     private async Task<PmocMetricsDto> BuildPmocMetricsAsync(
@@ -253,7 +263,10 @@ public sealed class DashboardService(
         var monthStart = TenantTimeZoneProvider.CivilDay(civilMonthStart, zone).Start;
         var nextMonthStart = TenantTimeZoneProvider.CivilDay(civilNextMonthStart, zone).Start;
         var reservationsToday = dbContext.Reservations
-            .Where(r => r.StartDateTime >= todayStart && r.StartDateTime < tomorrowStart);
+            .Where(r =>
+                r.Purpose == ReservationPurpose.CustomerBooking
+                && r.EndDateTime > todayStart
+                && r.StartDateTime < tomorrowStart);
 
         var pendingToday = await reservationsToday
             .CountAsync(r => r.Status == ReservationStatus.PendingDeposit, cancellationToken);
@@ -266,13 +279,15 @@ public sealed class DashboardService(
 
         var confirmedLast7 = await dbContext.Reservations
             .CountAsync(
-                r => r.Status == ReservationStatus.Confirmed
+                r => r.Purpose == ReservationPurpose.CustomerBooking
+                     && r.Status == ReservationStatus.Confirmed
                      && (r.UpdatedAt ?? r.CreatedAt) >= confirmationWindowStart,
                 cancellationToken);
 
         var canceledLast7 = await dbContext.Reservations
             .CountAsync(
-                r => r.Status == ReservationStatus.Canceled
+                r => r.Purpose == ReservationPurpose.CustomerBooking
+                     && r.Status == ReservationStatus.Canceled
                      && (r.UpdatedAt ?? r.CreatedAt) >= confirmationWindowStart,
                 cancellationToken);
 
@@ -292,7 +307,8 @@ public sealed class DashboardService(
 
         var reservedRevenue = await dbContext.Reservations
             .Where(r =>
-                (r.Status == ReservationStatus.PendingDeposit
+                r.Purpose == ReservationPurpose.CustomerBooking
+                && (r.Status == ReservationStatus.PendingDeposit
                  || r.Status == ReservationStatus.Confirmed)
                 && r.StartDateTime >= monthStart
                 && r.StartDateTime < nextMonthStart)
