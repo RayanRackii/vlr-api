@@ -176,7 +176,13 @@ public sealed record CatalogProductResponse(
     public int GrantedCustomerCount { get; init; }
 
     public int GrantedGroupCount { get; init; }
+
+    /// <summary>Whether the product can be sold in the portal, and what is missing when it cannot.</summary>
+    public CatalogProductSaleReadiness SaleReadiness { get; init; } = new(true, []);
 }
+
+/// <summary>Missing codes: NAME, RESOURCE, AUDIENCE, PRICE (see <c>CatalogProductReadiness</c>).</summary>
+public sealed record CatalogProductSaleReadiness(bool Ready, IReadOnlyList<string> Missing);
 
 public sealed record CatalogFileUrlResponse(string Url, bool IsPublic);
 

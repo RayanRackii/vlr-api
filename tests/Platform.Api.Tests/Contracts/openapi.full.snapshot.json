@@ -1735,6 +1735,9 @@
             "nullable": true,
             "type": "number"
           },
+          "saleReadiness": {
+            "$ref": "#/components/schemas/CatalogProductSaleReadiness"
+          },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyResponse"
           },
@@ -1743,6 +1746,22 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/CatalogProductVisibility"
+          }
+        },
+        "type": "object"
+      },
+      "CatalogProductSaleReadiness": {
+        "additionalProperties": false,
+        "properties": {
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
           }
         },
         "type": "object"

@@ -127,6 +127,14 @@ public sealed class CatalogProductService(
             UsesSchedule = request.UsesSchedule ?? true,
         };
 
+        if (isActive)
+        {
+            // A new product has no resource requirements or grants yet, and is Public.
+            var rentalsActive = await CatalogProductReadiness.IsRentalsActiveAsync(dbContext, tenantId, cancellationToken);
+            var missing = CatalogProductReadiness.Missing(product, hasResource: false, hasAudience: false, rentalsActive);
+            if (missing.Count > 0) throw new ProductNotReadyException(missing);
+        }
+
         dbContext.CatalogProducts.Add(product);
         await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
         await TaxonomyService.SaveAsync(dbContext, cancellationToken);
@@ -198,6 +206,10 @@ public sealed class CatalogProductService(
         {
             return null;
         }
+
+        var tenantId = EnsureTenant();
+        var missing = (await CatalogProductReadiness.MissingForAsync(dbContext, tenantId, [product], cancellationToken))[product.Id];
+        if (missing.Count > 0) throw new ProductNotReadyException(missing);
 
         product.Activate();
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -412,8 +424,10 @@ public sealed class CatalogProductService(
             .GroupBy(a => a.ProductId)
             .Select(g => new { g.Key, Customers = g.Count(a => a.CustomerId != null), Groups = g.Count(a => a.GroupId != null) })
             .ToDictionaryAsync(x => x.Key, ct);
+        var readiness = await CatalogProductReadiness.MissingForAsync(dbContext, tenantId, products.ToList(), ct);
         return products.Select(p => Map(p, true) with
         {
+            SaleReadiness = new CatalogProductSaleReadiness(readiness[p.Id].Count == 0, readiness[p.Id]),
             Taxonomy = assignments[p.Id],
             Visibility = p.Visibility,
             UsesSchedule = p.UsesSchedule,

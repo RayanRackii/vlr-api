@@ -60,6 +60,10 @@ public sealed class CatalogProductsController(
         {
             return BadRequest(new { error = ex.Message });
         }
+        catch (ProductNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });
@@ -104,9 +108,19 @@ public sealed class CatalogProductsController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var product = await productService.ActivateAsync(id, cancellationToken);
-        return product is null ? NotFound() : Ok(product);
+        try
+        {
+            var product = await productService.ActivateAsync(id, cancellationToken);
+            return product is null ? NotFound() : Ok(product);
+        }
+        catch (ProductNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
     }
+
+    private ConflictObjectResult NotReady(ProductNotReadyException ex) =>
+        Conflict(new { error = ex.Message, code = ProductNotReadyException.Code, missing = ex.Missing });
 
     [HttpPost("{id:guid}/files")]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
