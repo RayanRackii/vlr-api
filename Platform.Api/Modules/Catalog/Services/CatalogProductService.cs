@@ -127,14 +127,6 @@ public sealed class CatalogProductService(
             UsesSchedule = request.UsesSchedule ?? true,
         };
 
-        if (isActive)
-        {
-            // A new product has no resource requirements or grants yet, and is Public.
-            var rentalsActive = await CatalogProductReadiness.IsRentalsActiveAsync(dbContext, tenantId, cancellationToken);
-            var missing = CatalogProductReadiness.Missing(product, hasResource: false, hasAudience: false, rentalsActive);
-            if (missing.Count > 0) throw new ProductNotReadyException(missing);
-        }
-
         dbContext.CatalogProducts.Add(product);
         await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
         await TaxonomyService.SaveAsync(dbContext, cancellationToken);

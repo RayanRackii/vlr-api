@@ -228,14 +228,17 @@ public sealed class CatalogProductReadinessTests
     }
 
     [Fact]
-    public async Task Create_as_active_is_refused_when_a_scheduled_product_has_no_resource_yet()
+    public async Task Create_as_active_still_works_but_the_product_is_hidden_and_reported_not_ready()
     {
         await using var h = await CatalogHarness.CreateAsync();
         await EnableRentalsAsync(h);
 
-        var ex = await Assert.ThrowsAsync<ProductNotReadyException>(() => h.Products.CreateAsync(
-            new CreateCatalogProductRequest { Name = "Item", Price = 5m, UsesSchedule = true }, Ct));
-        Assert.Equal([CatalogProductReadiness.Resource], ex.Missing);
+        var created = await h.Products.CreateAsync(
+            new CreateCatalogProductRequest { Name = "Item", Price = 5m, UsesSchedule = true }, Ct);
+        Assert.True(created.IsActive);
+        Assert.False(created.SaleReadiness.Ready);
+        Assert.Equal([CatalogProductReadiness.Resource], created.SaleReadiness.Missing);
+        Assert.DoesNotContain(created.Id, await PortalIdsAsync(h));
 
         var inactive = await h.Products.CreateAsync(
             new CreateCatalogProductRequest { Name = "Rascunho", UsesSchedule = true, Status = "Inactive" }, Ct);
@@ -245,14 +248,15 @@ public sealed class CatalogProductReadinessTests
     }
 
     [Fact]
-    public async Task Create_as_active_is_refused_for_a_zero_price()
+    public async Task Create_as_active_with_a_zero_price_is_reported_not_ready()
     {
         await using var h = await CatalogHarness.CreateAsync();
 
-        var ex = await Assert.ThrowsAsync<ProductNotReadyException>(() => h.Products.CreateAsync(
-            new CreateCatalogProductRequest { Name = "Item", Price = 0m, UsesSchedule = false }, Ct));
+        var created = await h.Products.CreateAsync(
+            new CreateCatalogProductRequest { Name = "Item", Price = 0m, UsesSchedule = false }, Ct);
 
-        Assert.Equal([CatalogProductReadiness.Price], ex.Missing);
+        Assert.True(created.IsActive);
+        Assert.Equal([CatalogProductReadiness.Price], created.SaleReadiness.Missing);
     }
 
     [Fact]

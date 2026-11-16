@@ -60,10 +60,6 @@ public sealed class CatalogProductsController(
         {
             return BadRequest(new { error = ex.Message });
         }
-        catch (ProductNotReadyException ex)
-        {
-            return NotReady(ex);
-        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { error = ex.Message });
