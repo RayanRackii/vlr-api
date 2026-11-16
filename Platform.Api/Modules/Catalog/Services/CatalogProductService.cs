@@ -199,6 +199,10 @@ public sealed class CatalogProductService(
             return null;
         }
 
+        var tenantId = EnsureTenant();
+        var missing = (await CatalogProductReadiness.MissingForAsync(dbContext, tenantId, [product], cancellationToken))[product.Id];
+        if (missing.Count > 0) throw new ProductNotReadyException(missing);
+
         product.Activate();
         await dbContext.SaveChangesAsync(cancellationToken);
         return await MapOneAsync(product, cancellationToken);
@@ -412,8 +416,10 @@ public sealed class CatalogProductService(
             .GroupBy(a => a.ProductId)
             .Select(g => new { g.Key, Customers = g.Count(a => a.CustomerId != null), Groups = g.Count(a => a.GroupId != null) })
             .ToDictionaryAsync(x => x.Key, ct);
+        var readiness = await CatalogProductReadiness.MissingForAsync(dbContext, tenantId, products.ToList(), ct);
         return products.Select(p => Map(p, true) with
         {
+            SaleReadiness = new CatalogProductSaleReadiness(readiness[p.Id].Count == 0, readiness[p.Id]),
             Taxonomy = assignments[p.Id],
             Visibility = p.Visibility,
             UsesSchedule = p.UsesSchedule,

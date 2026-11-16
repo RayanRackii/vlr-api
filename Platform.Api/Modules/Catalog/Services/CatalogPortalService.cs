@@ -92,12 +92,12 @@ public sealed class CatalogPortalService(
         TaxonomyFilter? taxonomy = null)
     {
         EnsureTenant();
-        var products = ApplyVisibility(
+        var products = await ApplySellableAsync(ApplyVisibility(
             dbContext.CatalogProducts
                 .AsNoTracking()
                 .Include(p => p.Files)
                 .Where(p => p.IsActive),
-            customerId);
+            customerId), cancellationToken);
         products = await CatalogTaxonomy.FilterAsync(dbContext, EnsureTenant(), products, taxonomy, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -141,12 +141,12 @@ public sealed class CatalogPortalService(
         CancellationToken cancellationToken)
     {
         EnsureTenant();
-        var product = await ApplyVisibility(
+        var product = await (await ApplySellableAsync(ApplyVisibility(
                 dbContext.CatalogProducts
                     .AsNoTracking()
                     .Include(p => p.Files)
                     .Where(p => p.TenantId == tenantProvider.TenantId && p.Id == id && p.IsActive),
-                customerId)
+                customerId), cancellationToken))
             .FirstOrDefaultAsync(cancellationToken);
 
         return product is null ? null : (await MapProductsAsync([product], cancellationToken))[0];
@@ -178,6 +178,18 @@ public sealed class CatalogPortalService(
                         m.TenantId == tenantId && m.GroupId == a.GroupId && m.CustomerId == id)))));
     }
 
+    /// <summary>
+    /// Hides products that cannot be sold (see <see cref="CatalogProductReadiness"/>). Data is not changed:
+    /// an already-active product that is not ready simply stops appearing in the portal.
+    /// </summary>
+    private async Task<IQueryable<CatalogProduct>> ApplySellableAsync(
+        IQueryable<CatalogProduct> products, CancellationToken cancellationToken)
+    {
+        var tenantId = EnsureTenant();
+        var rentalsActive = await CatalogProductReadiness.IsRentalsActiveAsync(dbContext, tenantId, cancellationToken);
+        return products.Where(CatalogProductReadiness.IsSellable(dbContext, tenantId, rentalsActive));
+    }
+
     public async Task<CatalogOrderResponse> CreateOrderAsync(
         Guid customerId,
         CreatePortalOrderRequest request,
@@ -198,9 +210,10 @@ public sealed class CatalogPortalService(
         // Re-check visibility server-side: a Restricted product the customer may not see is simply
         // absent from this dictionary, so the loop below treats it as an unavailable product (the same
         // path a non-existent id takes today) and never leaks that the product exists.
-        var products = await ApplyVisibility(
+        // Products that are not ready for sale are treated like unavailable ones as well.
+        var products = await (await ApplySellableAsync(ApplyVisibility(
                 dbContext.CatalogProducts.Where(p => productIds.Contains(p.Id) && p.IsActive),
-                customerId)
+                customerId), cancellationToken))
             .ToDictionaryAsync(p => p.Id, cancellationToken);
 
         // Snapshot each product's currently-active resource requirement rows onto the order item at
