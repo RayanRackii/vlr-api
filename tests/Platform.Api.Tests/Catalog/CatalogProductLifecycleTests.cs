@@ -1,5 +1,7 @@
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Catalog.Controllers;
@@ -7,6 +9,7 @@ using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
 using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
+using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
@@ -21,7 +24,8 @@ public sealed class CatalogProductLifecycleTests
         CatalogHarness H,
         RecordingStorageProvider Storage,
         CatalogProductService Products,
-        CatalogProductLifecycleService Lifecycle);
+        CatalogProductLifecycleService Lifecycle,
+        CollectingLogger<CatalogProductLifecycleService> Log);
 
     private static async Task<Ctx> CreateAsync()
     {
@@ -29,8 +33,9 @@ public sealed class CatalogProductLifecycleTests
         var storage = new RecordingStorageProvider();
         var options = Options.Create(Opts);
         var products = new CatalogProductService(h.Db, h.TenantProvider, storage, options);
-        var lifecycle = new CatalogProductLifecycleService(h.Db, h.TenantProvider, storage, options);
-        return new Ctx(h, storage, products, lifecycle);
+        var log = new CollectingLogger<CatalogProductLifecycleService>();
+        var lifecycle = new CatalogProductLifecycleService(h.Db, h.TenantProvider, storage, options, log);
+        return new Ctx(h, storage, products, lifecycle, log);
     }
 
     private static async Task<CatalogProductResponse> NewProductAsync(Ctx c, string name = "Item", string? code = null) =>
@@ -300,7 +305,7 @@ public sealed class CatalogProductLifecycleTests
     }
 
     [Fact]
-    public async Task Delete_keeps_the_product_when_storage_deletion_fails()
+    public async Task Delete_succeeds_and_logs_a_warning_when_storage_deletion_fails()
     {
         var c = await CreateAsync();
         await using var _ = c.H;
@@ -311,14 +316,48 @@ public sealed class CatalogProductLifecycleTests
                 CatalogFileVisibility.InternalB2B, CancellationToken.None);
         }
 
+        var key = (await c.H.Db.CatalogProductFiles.SingleAsync(f => f.ProductId == product.Id)).StorageKey;
         c.Storage.FailRequiredDelete = true;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => c.Lifecycle.DeleteAsync(product.Id, CancellationToken.None));
+        Assert.True(await c.Lifecycle.DeleteAsync(product.Id, CancellationToken.None));
 
         c.H.Db.ChangeTracker.Clear();
-        Assert.True(await c.H.Db.CatalogProducts.AnyAsync(p => p.Id == product.Id));
-        Assert.Single(await c.H.Db.CatalogProductFiles.Where(f => f.ProductId == product.Id).ToListAsync());
+        Assert.False(await c.H.Db.CatalogProducts.AnyAsync(p => p.Id == product.Id));
+        Assert.Empty(await c.H.Db.CatalogProductFiles.Where(f => f.ProductId == product.Id).ToListAsync());
+        var warning = Assert.Single(c.Log.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(key, warning.Message);
+        Assert.Contains(product.Id.ToString(), warning.Message);
+        Assert.Contains(c.H.Tenant.Id.ToString(), warning.Message);
+    }
+
+    [Fact]
+    public async Task Delete_removes_no_storage_object_when_the_database_save_fails()
+    {
+        var tenant = new FakeTenantProvider { TenantId = Guid.NewGuid() };
+        var failing = new FailingSaveInterceptor();
+        await using var db = InMemoryAppDb.Create(tenant, interceptors: [failing]);
+        var storage = new RecordingStorageProvider();
+        var options = Options.Create(Opts);
+        var products = new CatalogProductService(db, tenant, storage, options);
+        var lifecycle = new CatalogProductLifecycleService(
+            db, tenant, storage, options, new CollectingLogger<CatalogProductLifecycleService>());
+        var product = await products.CreateAsync(
+            new CreateCatalogProductRequest { Name = "Item", Price = 1m }, CancellationToken.None);
+        await using (var doc = new MemoryStream("%PDF-1.4 dummy"u8.ToArray()))
+        {
+            await products.AddFileAsync(product.Id, "doc.pdf", "application/pdf", doc,
+                CatalogFileVisibility.InternalB2B, CancellationToken.None);
+        }
+
+        failing.Fail = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => lifecycle.DeleteAsync(product.Id, CancellationToken.None));
+
+        Assert.Empty(storage.Deletes);
+        failing.Fail = false;
+        db.ChangeTracker.Clear();
+        Assert.True(await db.CatalogProducts.AnyAsync(p => p.Id == product.Id));
+        Assert.Single(await db.CatalogProductFiles.Where(f => f.ProductId == product.Id).ToListAsync());
     }
 
     [Fact]
@@ -329,6 +368,36 @@ public sealed class CatalogProductLifecycleTests
 
         Assert.False(await c.Lifecycle.DeleteAsync(Guid.NewGuid(), CancellationToken.None));
         Assert.Null(await c.Lifecycle.DuplicateAsync(Guid.NewGuid(), CancellationToken.None));
+    }
+
+    private sealed class FailingSaveInterceptor : SaveChangesInterceptor
+    {
+        public bool Fail { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default) =>
+            Fail
+                ? throw new InvalidOperationException("Simulated database failure.")
+                : base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+
+    private sealed class CollectingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
     }
 
     [Theory]

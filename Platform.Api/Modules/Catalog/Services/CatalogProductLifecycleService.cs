@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Taxonomy.Services;
 using Platform.Api.Storage;
@@ -38,7 +39,8 @@ public sealed class CatalogProductLifecycleService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IStorageProvider storageProvider,
-    IOptions<StorageOptions> storageOptions) : ICatalogProductLifecycleService
+    IOptions<StorageOptions> storageOptions,
+    ILogger<CatalogProductLifecycleService> logger) : ICatalogProductLifecycleService
 {
     private const int MaxNameLength = 200;
     private const int MaxCodeLength = 80;
@@ -155,14 +157,11 @@ public sealed class CatalogProductLifecycleService(
         if (await dbContext.CatalogOrderItems.AnyAsync(i => i.TenantId == tenantId && i.ProductId == id, cancellationToken))
             throw new ProductHasOrdersException();
 
-        // Storage deletion is idempotent (a missing object is success), so a failure part-way rolls the
-        // rows back and a retry finishes the job. Pending/Failed uploads are included on purpose.
+        // Collected before the rows go away; the objects are removed only after the commit.
         var files = product.Files.ToList();
-        foreach (var file in files)
-        {
-            var bucket = CatalogFileBuckets.For(storageOptions.Value, file);
-            await storageProvider.DeleteRequiredAsync(bucket, file.StorageKey, cancellationToken);
-        }
+        var storedObjects = files
+            .Select(f => (Bucket: CatalogFileBuckets.For(storageOptions.Value, f), Key: f.StorageKey))
+            .ToList();
 
         dbContext.CatalogProductFiles.RemoveRange(files);
         dbContext.CatalogProductAccess.RemoveRange(await dbContext.CatalogProductAccess
@@ -180,6 +179,26 @@ public sealed class CatalogProductLifecycleService(
         // in the same SaveChanges, once the product history recorder (V1) is merged.
         await dbContext.SaveChangesAsync(cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+
+        // Best-effort: an orphan object is harmless, a missing image behind a live row is not, so a
+        // storage failure never fails the request. Pending/Failed uploads are included on purpose.
+        foreach (var (bucket, key) in storedObjects)
+        {
+            try
+            {
+                await storageProvider.DeleteRequiredAsync(bucket, key, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not delete storage object of deleted catalog product. Tenant {TenantId}, product {ProductId}, key {StorageKey}.",
+                    tenantId,
+                    id,
+                    key);
+            }
+        }
+
         return true;
     }
 
