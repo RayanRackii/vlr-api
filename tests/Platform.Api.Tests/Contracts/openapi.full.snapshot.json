@@ -6506,10 +6506,6 @@
           "newCustomer": {
             "$ref": "#/components/schemas/StaffNewCustomerDto"
           },
-          "notes": {
-            "nullable": true,
-            "type": "string"
-          },
           "startTime": {
             "format": "time",
             "type": "string"

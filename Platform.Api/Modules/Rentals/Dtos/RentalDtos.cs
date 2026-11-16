@@ -205,13 +205,6 @@ public sealed record StaffCreateReservationRequestDto
 
     /// <summary>True opens PendingDeposit when the resource requires a deposit; otherwise Confirmed.</summary>
     public bool AwaitingDeposit { get; init; }
-
-    /// <summary>
-    /// Accepted for the contract but not persisted yet: <c>Reservation</c> has no notes column and
-    /// adding one is a schema decision.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Notes { get; init; }
 }
 
 public sealed record ReservationItemResponseDto(
