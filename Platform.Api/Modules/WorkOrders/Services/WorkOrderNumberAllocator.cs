@@ -21,7 +21,9 @@ internal static class WorkOrderNumberAllocator
         {
             // Single atomic upsert: creates the counter at 1 or increments it, taking the row
             // lock until the surrounding transaction ends. No read-then-write race.
-            return await dbContext.Database
+            // ToListAsync, not SingleAsync: LINQ operators would make EF wrap the INSERT in a
+            // subquery, which Postgres rejects. ToListAsync runs the SQL as written.
+            var rows = await dbContext.Database
                 .SqlQuery<int>(
                     $"""
                     INSERT INTO os.work_order_number_sequences (tenant_id, last_number)
@@ -30,7 +32,8 @@ internal static class WorkOrderNumberAllocator
                     DO UPDATE SET last_number = work_order_number_sequences.last_number + 1
                     RETURNING last_number AS "Value"
                     """)
-                .SingleAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
+            return rows.Single();
         }
 
         var sequence = await dbContext.WorkOrderNumberSequences
