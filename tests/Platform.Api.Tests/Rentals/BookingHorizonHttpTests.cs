@@ -202,6 +202,11 @@ public sealed class BookingHorizonHttpTests
             CancellationToken cancellationToken) =>
             throw new BookingHorizonExceededException();
 
+        public Task<ReservationResponseDto> CreateStaffReservationAsync(
+            StaffCreateReservationRequestDto request,
+            CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
         public Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
             Guid customerId,
             CancellationToken cancellationToken) =>

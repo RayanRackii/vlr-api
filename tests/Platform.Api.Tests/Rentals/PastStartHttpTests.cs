@@ -151,6 +151,59 @@ public sealed class PastStartHttpTests
             })
             .Start();
 
+    private static readonly Guid ExistingCustomerId = Guid.Parse("4f0f3f5e-8a52-4c5b-9a6d-1d3a4a2b9c01");
+
+    [Fact]
+    public async Task Post_staff_reservation_in_the_past_returns_400_with_stable_code()
+    {
+        using var host = StartHost(typeof(ReservationsController));
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(StaffAuthHandler.HeaderName, "staff@club.test");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/reservations/staff",
+            new
+            {
+                customerId = Guid.NewGuid(),
+                date = "2026-08-25",
+                startTime = "10:00:00",
+                endTime = "11:00:00",
+                items = new[] { new { assetId = Guid.NewGuid(), quantity = 1 } },
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorBody>();
+        Assert.NotNull(body);
+        Assert.Equal(StartInThePastException.Code, body.Code);
+    }
+
+    [Fact]
+    public async Task Post_staff_reservation_for_a_known_phone_returns_409_with_the_customer_id()
+    {
+        using var host = StartHost(typeof(ReservationsController));
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(StaffAuthHandler.HeaderName, "staff@club.test");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/reservations/staff",
+            new
+            {
+                newCustomer = new { name = "Maria", whatsApp = "11988887777" },
+                date = "2026-08-25",
+                startTime = "10:00:00",
+                endTime = "11:00:00",
+                items = new[] { new { assetId = Guid.NewGuid(), quantity = 1 } },
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<CustomerExistsBody>();
+        Assert.NotNull(body);
+        Assert.Equal("CUSTOMER_EXISTS", body.Code);
+        Assert.Equal(ExistingCustomerId, body.CustomerId);
+    }
+
+    private sealed record CustomerExistsBody(string? Code, Guid CustomerId);
+
     private sealed record ErrorBody(string? Error, string? Code);
 
     private sealed class AllowPermissionHandler : AuthorizationHandler<PermissionRequirement>
@@ -201,6 +254,13 @@ public sealed class PastStartHttpTests
             CreateReservationRequestDto request,
             CancellationToken cancellationToken) =>
             throw new StartInThePastException("O início do horário solicitado já passou.");
+
+        public Task<ReservationResponseDto> CreateStaffReservationAsync(
+            StaffCreateReservationRequestDto request,
+            CancellationToken cancellationToken) =>
+            request.NewCustomer is not null
+                ? throw new CustomerAlreadyExistsException(ExistingCustomerId)
+                : throw new StartInThePastException("O início do horário solicitado já passou.");
 
         public Task<CheckAvailabilityResponseDto> CheckAvailabilityAsync(
             CheckAvailabilityRequestDto request,

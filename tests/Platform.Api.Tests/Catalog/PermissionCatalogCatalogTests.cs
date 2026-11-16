@@ -7,8 +7,14 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(59, PermissionCatalog.All.Length);
-        Assert.Equal(59, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(60, PermissionCatalog.All.Length);
+        Assert.Equal(60, PermissionCatalog.AllKeys.Count);
+        Assert.Contains(Permissions.Rentals.ReservationsCreate, PermissionCatalog.AllKeys);
+        Assert.Equal(
+            PlatformModules.Rentals,
+            Assert.Single(PermissionCatalog.All, item => item.Key == Permissions.Rentals.ReservationsCreate).ModuleKey);
+        Assert.DoesNotContain(Permissions.Rentals.ReservationsCreate, PermissionCatalog.DefaultUserKeys);
+        Assert.DoesNotContain(Permissions.Rentals.ReservationsCreate, PermissionCatalog.TechnicianLegacyKeys);
         foreach (var key in new[] { Permissions.Rentals.SegmentsRead, Permissions.Rentals.SegmentsWrite,
             Permissions.Rentals.MapSettingsRead, Permissions.Rentals.MapSettingsWrite })
         {

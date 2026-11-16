@@ -6491,6 +6491,80 @@
         "format": "int32",
         "type": "integer"
       },
+      "StaffCreateReservationRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "awaitingDeposit": {
+            "type": "boolean"
+          },
+          "customerId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "endDate": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "endTime": {
+            "format": "time",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreateReservationItemRequestDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "newCustomer": {
+            "$ref": "#/components/schemas/StaffNewCustomerDto"
+          },
+          "startTime": {
+            "format": "time",
+            "type": "string"
+          },
+          "unitId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "endTime",
+          "items",
+          "startTime"
+        ],
+        "type": "object"
+      },
+      "StaffNewCustomerDto": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "whatsApp": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "whatsApp"
+        ],
+        "type": "object"
+      },
       "StaffReservationQueueDto": {
         "additionalProperties": false,
         "properties": {
@@ -18091,6 +18165,54 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationResponseDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationResponseDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
+    "/api/reservations/staff": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCreateReservationRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCreateReservationRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCreateReservationRequestDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

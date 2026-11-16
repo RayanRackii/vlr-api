@@ -95,6 +95,50 @@ public sealed class ReservationsController(
         }
     }
 
+    /// <summary>
+    /// Staff creates a reservation for an existing customer, or one created on the spot.
+    /// Skips customer-only policies (horizon, lead time, daily limit, price guard).
+    /// </summary>
+    [RequirePermission(Permissions.Rentals.ReservationsCreate)]
+    [HttpPost("staff")]
+    public async Task<ActionResult<ReservationResponseDto>> CreateStaff(
+        [FromBody] StaffCreateReservationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var reservation = await reservationService.CreateStaffReservationAsync(
+                request,
+                cancellationToken);
+
+            return Created($"/api/reservations/{reservation.Id}", reservation);
+        }
+        catch (CustomerAlreadyExistsException ex)
+        {
+            return Conflict(new { error = ex.Message, code = CustomerAlreadyExistsException.Code, customerId = ex.CustomerId });
+        }
+        catch (StartInThePastException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = StartInThePastException.Code });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
     /// <summary>Confirm a pending reservation (B2B staff).</summary>
     [RequirePermission(Permissions.Rentals.ReservationsConfirm)]
     [HttpPost("{id:guid}/confirm")]
