@@ -649,7 +649,7 @@ public sealed class WorkOrderGenerationServiceTests
         Assert.Equal(2, second.Number);
         Assert.Equal(3, manual.Number);
         var stored = await harness.Db.WorkOrders.OrderBy(w => w.Number).Select(w => w.Number).ToListAsync();
-        Assert.Equal([1, 2, 3], stored);
+        Assert.Equal(new[] { 1, 2, 3 }, stored);
     }
 
     private static WorkOrderGenerationService CreateGenerator(BulkCreateAssetsHarness harness) =>
