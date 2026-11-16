@@ -43,7 +43,6 @@ public static class CatalogProductReadiness
         AppDbContext dbContext, Guid tenantId, CancellationToken cancellationToken)
     {
         var names = await dbContext.TenantModules
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(m => m.TenantId == tenantId && m.IsActive)
             .Select(m => m.ModuleName)
