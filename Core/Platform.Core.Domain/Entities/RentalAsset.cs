@@ -65,7 +65,8 @@ public class RentalAsset : Entity, ITenantScoped
 
     /// <summary>
     /// Deposit percent from 0 to 100. Null inherits the category policy, then
-    /// the tenant policy. Stored for setup and display; it does not change the charged total.
+    /// the tenant policy. When online payment is active it is applied to the online
+    /// deposit charge (see ADR 0009).
     /// </summary>
     public int? DepositPercent { get; set; }
 
