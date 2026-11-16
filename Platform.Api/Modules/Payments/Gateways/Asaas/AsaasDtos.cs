@@ -22,7 +22,17 @@ internal sealed record AsaasAccountResponse(
     [property: JsonPropertyName("id")] string? Id,
     [property: JsonPropertyName("apiKey")] string? ApiKey,
     [property: JsonPropertyName("walletId")] string? WalletId,
-    [property: JsonPropertyName("onboardingUrl")] string? OnboardingUrl);
+    [property: JsonPropertyName("onboardingUrl")] string? OnboardingUrl)
+{
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append("Id = ").Append(Id)
+            .Append(", ApiKey = ***")
+            .Append(", WalletId = ").Append(WalletId)
+            .Append(", OnboardingUrl = ").Append(OnboardingUrl);
+        return true;
+    }
+}
 
 internal sealed record AsaasWebhookBody(
     [property: JsonPropertyName("name")] string Name,
@@ -32,7 +42,17 @@ internal sealed record AsaasWebhookBody(
     [property: JsonPropertyName("apiVersion")] int ApiVersion,
     [property: JsonPropertyName("authToken")] string AuthToken,
     [property: JsonPropertyName("sendType")] string SendType,
-    [property: JsonPropertyName("events")] IReadOnlyCollection<string> Events);
+    [property: JsonPropertyName("events")] IReadOnlyCollection<string> Events)
+{
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append("Name = ").Append(Name)
+            .Append(", Url = ").Append(Url)
+            .Append(", AuthToken = ***")
+            .Append(", Events = ").Append(string.Join('|', Events));
+        return true;
+    }
+}
 
 internal sealed record AsaasCustomerBody(
     [property: JsonPropertyName("name")] string Name,

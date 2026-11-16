@@ -74,7 +74,18 @@ public sealed record SubaccountRequest(
     DateOnly? BirthDate = null);
 
 /// <summary>The <see cref="ApiKey"/> is a secret: store it only through the payment secret protector.</summary>
-public sealed record SubaccountResult(string ExternalAccountId, string WalletId, string ApiKey, string? OnboardingUrl);
+public sealed record SubaccountResult(string ExternalAccountId, string WalletId, string ApiKey, string? OnboardingUrl)
+{
+    // The compiler-generated ToString would print ApiKey; keep the secret out of any log of this record.
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append("ExternalAccountId = ").Append(ExternalAccountId)
+            .Append(", WalletId = ").Append(WalletId)
+            .Append(", ApiKey = ***")
+            .Append(", OnboardingUrl = ").Append(OnboardingUrl);
+        return true;
+    }
+}
 
 public sealed record CustomerRequest(string Name, string Email, string Cpf, string? Phone = null);
 
