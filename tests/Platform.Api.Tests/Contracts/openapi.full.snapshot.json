@@ -8289,6 +8289,10 @@
             "format": "int32",
             "type": "integer"
           },
+          "openDue": {
+            "format": "int32",
+            "type": "integer"
+          },
           "pending": {
             "format": "int32",
             "type": "integer"

@@ -225,6 +225,60 @@ public sealed class DashboardMetricsDefinitionTests
         Assert.Equal(80m, metrics.Rentals.ReservedRevenueThisMonth);
     }
 
+    [Fact]
+    public async Task Reservations_today_exclude_internal_use_and_include_midnight_overlap()
+    {
+        await using var h = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = h.TenantProvider.TenantId!.Value;
+        h.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.Rentals, isActive: true));
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = tenantId, Key = TenantSettingKeys.BookingTimeZoneId, Value = "UTC",
+        });
+        var customer = new Customer { TenantId = tenantId, Name = "Socio" };
+        h.Db.Customers.Add(customer);
+        // Today (UTC) is 2026-10-15.
+        AddReservation(h, customer.Id, new DateTimeOffset(2026, 10, 15, 10, 0, 0, TimeSpan.Zero),
+            ReservationStatus.Confirmed, 10m);
+        AddReservation(h, customer.Id, new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero),
+            ReservationStatus.Confirmed, 10m, ReservationPurpose.InternalUse);
+        // Starts 23:30 on the 14th and ends 00:30 on the 15th: overlaps today.
+        AddReservation(h, customer.Id, new DateTimeOffset(2026, 10, 14, 23, 30, 0, TimeSpan.Zero),
+            ReservationStatus.Confirmed, 10m);
+        // Ends exactly at today's start: does not overlap.
+        AddReservation(h, customer.Id, new DateTimeOffset(2026, 10, 14, 23, 0, 0, TimeSpan.Zero),
+            ReservationStatus.Confirmed, 10m);
+        await h.Db.SaveChangesAsync();
+
+        var metrics = await CreateService(h, new DateTimeOffset(2026, 10, 15, 15, 0, 0, TimeSpan.Zero))
+            .GetMetricsAsync(CancellationToken.None);
+
+        Assert.Equal(2, metrics.Rentals!.ReservationsTodayConfirmed);
+        // Revenue this month: the 10:00 booking plus the two on the 14th; internal use is excluded.
+        Assert.Equal(30m, metrics.Rentals.ReservedRevenueThisMonth);
+    }
+
+    [Fact]
+    public async Task Open_due_counts_overdue_open_work_orders_from_any_month()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = harness.TenantProvider.TenantId!.Value;
+        harness.Db.TenantModules.Add(new TenantModule(tenantId, PlatformModules.WorkOrders, isActive: true));
+        var asset = AddAsset(harness, "Q1", AssetStatus.Active, requiresMaintenance: false);
+        await harness.Db.SaveChangesAsync();
+        AddWorkOrder(harness, asset.Id, new DateOnly(2026, 8, 20), WorkOrderStatus.Pending);
+        AddWorkOrder(harness, asset.Id, new DateOnly(2026, 10, 15), WorkOrderStatus.InProgress);
+        AddWorkOrder(harness, asset.Id, new DateOnly(2026, 9, 1), WorkOrderStatus.Completed);
+        AddWorkOrder(harness, asset.Id, new DateOnly(2026, 9, 2), WorkOrderStatus.Canceled);
+        AddWorkOrder(harness, asset.Id, new DateOnly(2026, 10, 16), WorkOrderStatus.Pending);
+        await harness.Db.SaveChangesAsync();
+
+        var metrics = await CreateService(harness, new DateTimeOffset(2026, 10, 15, 15, 0, 0, TimeSpan.Zero))
+            .GetMetricsAsync(CancellationToken.None);
+
+        Assert.Equal(2, metrics.WorkOrders!.OpenDue);
+    }
+
     private static DashboardService CreateService(BulkCreateAssetsHarness harness, DateTimeOffset utcNow) =>
         new(harness.Db, harness.TenantProvider, new TestTimeProvider(utcNow));
 
@@ -269,11 +323,12 @@ public sealed class DashboardMetricsDefinitionTests
         Guid customerId,
         DateTimeOffset start,
         ReservationStatus status,
-        decimal totalAmount)
+        decimal totalAmount,
+        ReservationPurpose purpose = ReservationPurpose.CustomerBooking)
     {
         harness.Db.Reservations.Add(new Reservation
         {
-            Purpose = ReservationPurpose.CustomerBooking,
+            Purpose = purpose,
             TenantId = harness.TenantProvider.TenantId!.Value,
             UnitId = harness.UnitId,
             CustomerId = customerId,
