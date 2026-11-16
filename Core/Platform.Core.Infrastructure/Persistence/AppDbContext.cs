@@ -91,6 +91,9 @@ public class AppDbContext : DbContext
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
 
+    public DbSet<WorkOrderNumberSequence> WorkOrderNumberSequences =>
+        Set<WorkOrderNumberSequence>();
+
     public DbSet<WorkOrderTask> WorkOrderTasks => Set<WorkOrderTask>();
 
     public DbSet<WorkOrderTaskFile> WorkOrderTaskFiles => Set<WorkOrderTaskFile>();

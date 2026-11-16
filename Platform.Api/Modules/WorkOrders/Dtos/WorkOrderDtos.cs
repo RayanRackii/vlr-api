@@ -98,6 +98,7 @@ public sealed record WorkOrderAssignedUserResponse(
 public sealed record WorkOrderResponse(
     Guid Id,
     Guid TenantId,
+    int Number,
     Guid AssetId,
     Guid? MaintenancePlanId,
     string? SourcePlanName,

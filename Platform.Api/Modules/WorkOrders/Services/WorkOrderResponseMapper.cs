@@ -9,6 +9,7 @@ internal static class WorkOrderResponseMapper
         new(
             workOrder.Id,
             workOrder.TenantId,
+            workOrder.Number,
             workOrder.AssetId,
             workOrder.MaintenancePlanId,
             workOrder.SourcePlanName,

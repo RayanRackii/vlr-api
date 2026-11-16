@@ -24,6 +24,12 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
 
         builder.Property(w => w.AssignedUserId);
 
+        builder.Property(w => w.Number)
+            .IsRequired();
+
+        builder.HasIndex(w => new { w.TenantId, w.Number })
+            .IsUnique();
+
         builder.Property(w => w.Status)
             .HasConversion<string>()
             .HasMaxLength(32)

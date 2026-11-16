@@ -619,6 +619,39 @@ public sealed class WorkOrderGenerationServiceTests
         IWorkOrderGenerationService generator) =>
         new(CreateWorkOrderService(harness), generator, harness.CreateRegistry());
 
+    [Fact]
+    public async Task Generated_and_manual_work_orders_get_sequential_numbers_in_the_response()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var plan = await CreatePlanAsync(harness, "Numbered");
+        var asset = await CreateMatchingAssetAsync(harness);
+        var generator = CreateGenerator(harness);
+
+        var first = await generator.GenerateAsync(
+            new GenerateWorkOrderCommand(plan.Id, asset.Id, new DateOnly(2026, 9, 18), null),
+            CancellationToken.None);
+        var second = await generator.GenerateAsync(
+            new GenerateWorkOrderCommand(plan.Id, asset.Id, new DateOnly(2026, 9, 19), null),
+            CancellationToken.None);
+        var manual = await CreateWorkOrderService(harness).CreateAsync(
+            new CreateWorkOrderRequest
+            {
+                AssetId = asset.Id,
+                ScheduledDate = new DateOnly(2026, 9, 20),
+                Tasks =
+                [
+                    new CreateWorkOrderTaskDto { Title = "Check", InputType = TaskInputType.Checkbox, Order = 1 },
+                ],
+            },
+            CancellationToken.None);
+
+        Assert.Equal(1, first.Number);
+        Assert.Equal(2, second.Number);
+        Assert.Equal(3, manual.Number);
+        var stored = await harness.Db.WorkOrders.OrderBy(w => w.Number).Select(w => w.Number).ToListAsync();
+        Assert.Equal([1, 2, 3], stored);
+    }
+
     private static WorkOrderGenerationService CreateGenerator(BulkCreateAssetsHarness harness) =>
         new(
             harness.Db,
