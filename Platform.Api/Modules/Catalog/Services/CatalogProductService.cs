@@ -181,14 +181,16 @@ public sealed class CatalogProductService(
             var requestedCategories = request.Taxonomy!.CategoryIds!.Distinct().ToArray();
             var requestedTags = request.Taxonomy.TagIds!.Distinct().ToArray();
             var taxonomyChanges = CatalogProductHistoryDiff.ForTaxonomy(
-                taxonomyBefore.Categories,
-                taxonomyBefore.Tags,
+                taxonomyBefore.Categories.Select(c => (c.Id, c.Name)).ToList(),
+                taxonomyBefore.Tags.Select(t => (t.Id, t.Name)).ToList(),
                 (await dbContext.TaxonomyCategories.AsNoTracking()
                     .Where(x => x.TenantId == tenantId && requestedCategories.Contains(x.Id))
-                    .ToListAsync(cancellationToken)).Select(x => TaxonomyService.Map(x)).ToList(),
+                    .Select(x => new { x.Id, x.Name })
+                    .ToListAsync(cancellationToken)).Select(x => (x.Id, x.Name)).ToList(),
                 (await dbContext.TaxonomyTags.AsNoTracking()
                     .Where(x => x.TenantId == tenantId && requestedTags.Contains(x.Id))
-                    .ToListAsync(cancellationToken)).Select(x => TaxonomyService.Map(x)).ToList());
+                    .Select(x => new { x.Id, x.Name })
+                    .ToListAsync(cancellationToken)).Select(x => (x.Id, x.Name)).ToList());
             if (taxonomyChanges.Count > 0)
                 await _history.RecordAsync(product.Id, CatalogProductHistoryActions.TaxonomyChanged, taxonomyChanges, cancellationToken);
         }

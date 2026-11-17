@@ -1,6 +1,5 @@
 using System.Globalization;
 using Platform.Api.Modules.Catalog.Dtos;
-using Platform.Api.Modules.Taxonomy.Dtos;
 
 namespace Platform.Api.Modules.Catalog.Services;
 
@@ -40,23 +39,21 @@ public static class CatalogProductHistoryDiff
 
     /// <summary>Categories/tags changes by name; empty when the id sets are equal.</summary>
     public static List<CatalogProductHistoryChange> ForTaxonomy(
-        IReadOnlyList<CategoryDto> oldCategories,
-        IReadOnlyList<TagDto> oldTags,
-        IReadOnlyList<CategoryDto> newCategories,
-        IReadOnlyList<TagDto> newTags) =>
+        IReadOnlyCollection<(Guid Id, string Name)> oldCategories,
+        IReadOnlyCollection<(Guid Id, string Name)> oldTags,
+        IReadOnlyCollection<(Guid Id, string Name)> newCategories,
+        IReadOnlyCollection<(Guid Id, string Name)> newTags) =>
         Compact(
-            oldCategories.Select(c => c.Id).ToHashSet().SetEquals(newCategories.Select(c => c.Id))
-                ? null
-                : new CatalogProductHistoryChange(
-                    "categories",
-                    Names(oldCategories.Select(c => c.Name)),
-                    Names(newCategories.Select(c => c.Name))),
-            oldTags.Select(t => t.Id).ToHashSet().SetEquals(newTags.Select(t => t.Id))
-                ? null
-                : new CatalogProductHistoryChange(
-                    "tags",
-                    Names(oldTags.Select(t => t.Name)),
-                    Names(newTags.Select(t => t.Name))));
+            Set("categories", oldCategories, newCategories),
+            Set("tags", oldTags, newTags));
+
+    private static CatalogProductHistoryChange? Set(
+        string field,
+        IReadOnlyCollection<(Guid Id, string Name)> before,
+        IReadOnlyCollection<(Guid Id, string Name)> after) =>
+        before.Select(x => x.Id).ToHashSet().SetEquals(after.Select(x => x.Id))
+            ? null
+            : new CatalogProductHistoryChange(field, Names(before.Select(x => x.Name)), Names(after.Select(x => x.Name)));
 
     public static string RequirementLine(string? assetName, int quantity, int durationMinutes, int prepMinutes, int cleanupMinutes) =>
         $"{assetName ?? "?"} x{quantity}, {durationMinutes}min, prep {prepMinutes}min, cleanup {cleanupMinutes}min";
