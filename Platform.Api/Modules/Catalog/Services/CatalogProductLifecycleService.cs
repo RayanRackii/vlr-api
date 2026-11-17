@@ -1,3 +1,4 @@
+using Platform.Api.Modules.Catalog.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -40,8 +41,10 @@ public sealed class CatalogProductLifecycleService(
     ITenantProvider tenantProvider,
     IStorageProvider storageProvider,
     IOptions<StorageOptions> storageOptions,
-    ILogger<CatalogProductLifecycleService> logger) : ICatalogProductLifecycleService
+    ILogger<CatalogProductLifecycleService> logger,
+    IProductHistoryRecorder? historyRecorder = null) : ICatalogProductLifecycleService
 {
+    private readonly IProductHistoryRecorder _history = historyRecorder ?? new CatalogProductHistoryService(dbContext, tenantProvider);
     private const int MaxNameLength = 200;
     private const int MaxCodeLength = 80;
     private const string NamePrefix = "Cópia de ";
@@ -126,8 +129,10 @@ public sealed class CatalogProductLifecycleService(
             }
         }
 
-        // TODO(history): record "duplicated" on both products (from = source.Id, to = copy.Id) here,
-        // in the same SaveChanges, once the product history recorder (V1) is merged.
+        await _history.RecordAsync(source.Id, CatalogProductHistoryActions.Duplicated,
+            [new CatalogProductHistoryChange("copy", null, copy.Id.ToString())], cancellationToken);
+        await _history.RecordAsync(copy.Id, CatalogProductHistoryActions.Duplicated,
+            [new CatalogProductHistoryChange("source", source.Name, null)], cancellationToken);
         await TaxonomyService.SaveAsync(dbContext, cancellationToken);
         await scope.CommitAsync(cancellationToken);
         return copy.Id;
@@ -175,8 +180,9 @@ public sealed class CatalogProductLifecycleService(
             .Where(r => r.TenantId == tenantId && r.ProductId == id).ToListAsync(cancellationToken));
         dbContext.CatalogProducts.Remove(product);
 
-        // TODO(history): record "deleted" (keyed by product id, so the row survives the product) here,
-        // in the same SaveChanges, once the product history recorder (V1) is merged.
+        // Keyed by product id with no FK, so the audit row survives the product. Same SaveChanges.
+        await _history.RecordAsync(id, CatalogProductHistoryActions.Deleted,
+            [new CatalogProductHistoryChange("name", product.Name, null)], cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
 

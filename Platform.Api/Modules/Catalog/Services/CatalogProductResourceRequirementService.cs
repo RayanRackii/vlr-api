@@ -28,8 +28,11 @@ public interface ICatalogProductResourceRequirementService
 /// </summary>
 public sealed class CatalogProductResourceRequirementService(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : ICatalogProductResourceRequirementService
+    ITenantProvider tenantProvider,
+    IProductHistoryRecorder? historyRecorder = null) : ICatalogProductResourceRequirementService
 {
+    private readonly IProductHistoryRecorder _history = historyRecorder ?? new CatalogProductHistoryService(dbContext, tenantProvider);
+
     public async Task<CatalogProductResourceRequirementsResponse> GetAsync(
         Guid productId,
         CancellationToken cancellationToken)
@@ -184,6 +187,27 @@ public sealed class CatalogProductResourceRequirementService(
 
             product.ResourceRequirementsVersion = newVersion;
             product.Touch();
+
+            var assetIds = existing.Select(r => r.RentalAssetId)
+                .Concat(request.Requirements.Select(r => r.RentalAssetId))
+                .OfType<Guid>()
+                .Distinct()
+                .ToList();
+            var assetNames = assetIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : await (from rental in dbContext.RentalAssets.AsNoTracking()
+                         join asset in dbContext.Assets.AsNoTracking() on rental.AssetId equals asset.Id
+                         where rental.TenantId == tenantId && assetIds.Contains(rental.Id)
+                         select new { rental.Id, asset.Name })
+                    .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+            string? NameOf(Guid? id) => id is { } key && assetNames.TryGetValue(key, out var n) ? n : null;
+            var requirementChanges = CatalogProductHistoryDiff.ForRequirements(
+                existing.Select(r => CatalogProductHistoryDiff.RequirementLine(
+                    NameOf(r.RentalAssetId), r.ResourceQuantity, r.DurationMinutesPerUnit, r.PrepMinutes, r.CleanupMinutes)),
+                request.Requirements.Select(r => CatalogProductHistoryDiff.RequirementLine(
+                    NameOf(r.RentalAssetId), r.ResourceQuantity, r.DurationMinutesPerUnit, r.PrepMinutes, r.CleanupMinutes)));
+            if (requirementChanges.Count > 0)
+                await _history.RecordAsync(productId, CatalogProductHistoryActions.RequirementsChanged, requirementChanges, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
 

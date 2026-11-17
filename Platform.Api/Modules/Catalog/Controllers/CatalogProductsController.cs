@@ -45,6 +45,21 @@ public sealed class CatalogProductsController(
         return product is null ? NotFound() : Ok(product);
     }
 
+    /// <summary>Product change history, newest first. <c>before</c>/<c>beforeId</c> are the createdAt and id of the last item already loaded.</summary>
+    [HttpGet("{id:guid}/history")]
+    [RequirePermission(Permissions.Catalog.ProductsRead)]
+    public async Task<ActionResult<IReadOnlyList<CatalogProductHistoryEntryResponse>>> History(
+        Guid id,
+        [FromServices] ICatalogProductHistoryService historyService,
+        CancellationToken cancellationToken,
+        [FromQuery] int limit = CatalogProductHistoryService.DefaultLimit,
+        [FromQuery] DateTimeOffset? before = null,
+        [FromQuery] Guid? beforeId = null)
+    {
+        var entries = await historyService.ListAsync(id, limit, before, cancellationToken, beforeId);
+        return entries is null ? NotFound() : Ok(entries);
+    }
+
     [HttpPost]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
     public async Task<ActionResult<CatalogProductResponse>> Create(
