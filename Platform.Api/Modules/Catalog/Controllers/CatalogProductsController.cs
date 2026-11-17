@@ -132,6 +132,56 @@ public sealed class CatalogProductsController(
     private ConflictObjectResult NotReady(ProductNotReadyException ex) =>
         Conflict(new { error = ex.Message, code = ProductNotReadyException.Code, missing = ex.Missing });
 
+    /// <summary>
+    /// Creates an inactive copy ("Cópia de ..."). Copies taxonomy, active resource requirements and
+    /// access grants. Files (photos and documents) are NOT copied, because they live in storage.
+    /// </summary>
+    [HttpPost("{id:guid}/duplicate")]
+    [RequirePermission(Permissions.Catalog.ProductsManage)]
+    public async Task<ActionResult<CatalogProductResponse>> Duplicate(
+        Guid id,
+        [FromServices] ICatalogProductLifecycleService lifecycleService,
+        CancellationToken cancellationToken)
+    {
+        var copyId = await lifecycleService.DuplicateAsync(id, cancellationToken);
+        if (copyId is null) return NotFound();
+
+        var copy = await productService.GetByIdAsync(copyId.Value, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = copyId.Value }, copy);
+    }
+
+    /// <summary>
+    /// Deletes the product and its dependants. 409 <c>PRODUCT_HAS_ORDERS</c> when any order references it.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Catalog.ProductsManage)]
+    public async Task<IActionResult> Delete(
+        Guid id,
+        [FromServices] ICatalogProductLifecycleService lifecycleService,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await lifecycleService.DeleteAsync(id, cancellationToken) ? NoContent() : NotFound();
+        }
+        catch (ProductHasOrdersException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ProductHasOrdersException.Code });
+        }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
+        }
+    }
+
     [HttpPost("{id:guid}/files")]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
     [RequestSizeLimit(CatalogFileRules.InternalB2BMaxBytes)]

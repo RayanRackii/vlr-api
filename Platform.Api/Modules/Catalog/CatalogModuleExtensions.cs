@@ -15,6 +15,7 @@ public static class CatalogModuleExtensions
         services.AddScoped<IProductHistoryRecorder>(sp => sp.GetRequiredService<CatalogProductHistoryService>());
         services.AddScoped<ICatalogProductHistoryService>(sp => sp.GetRequiredService<CatalogProductHistoryService>());
         services.AddScoped<ICatalogProductService, CatalogProductService>();
+        services.AddScoped<ICatalogProductLifecycleService, CatalogProductLifecycleService>();
         services.AddScoped<ICatalogOrderService, CatalogOrderService>();
         services.AddScoped<ICatalogPortalService, CatalogPortalService>();
         services.AddScoped<ICustomerGroupService, CustomerGroupService>();
