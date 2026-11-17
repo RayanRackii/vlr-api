@@ -45,7 +45,8 @@ public interface ICatalogProductHistoryService : IProductHistoryRecorder
         Guid productId,
         int limit,
         DateTimeOffset? before,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        Guid? beforeId = null);
 }
 
 public sealed class CatalogProductHistoryService(
@@ -84,7 +85,8 @@ public sealed class CatalogProductHistoryService(
         Guid productId,
         int limit,
         DateTimeOffset? before,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? beforeId = null)
     {
         var tenantId = EnsureTenant();
         var exists = await dbContext.CatalogProducts.AsNoTracking()
@@ -96,7 +98,13 @@ public sealed class CatalogProductHistoryService(
             .Where(a => a.TenantId == tenantId
                 && a.EntityType == CatalogProductHistoryActions.EntityType
                 && a.EntityId == productId);
-        if (before is { } cursor) query = query.Where(a => a.CreatedAt < cursor);
+        // Compound cursor (createdAt, id) < (before, beforeId): equal timestamps are never skipped.
+        if (before is { } cursor)
+        {
+            query = beforeId is { } cursorId
+                ? query.Where(a => a.CreatedAt < cursor || (a.CreatedAt == cursor && a.Id.CompareTo(cursorId) < 0))
+                : query.Where(a => a.CreatedAt < cursor);
+        }
 
         var rows = await query
             .OrderByDescending(a => a.CreatedAt)

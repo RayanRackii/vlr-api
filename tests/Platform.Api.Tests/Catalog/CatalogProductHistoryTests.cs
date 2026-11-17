@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Catalog.Controllers;
 using Platform.Api.Modules.Catalog.Dtos;
@@ -17,11 +18,16 @@ public sealed class CatalogProductHistoryTests
 {
     private static readonly CancellationToken Ct = CancellationToken.None;
 
-    private sealed class Rig(CatalogHarness h, CatalogProductService products, CatalogProductHistoryService history) : IAsyncDisposable
+    private sealed class Rig(
+        CatalogHarness h,
+        CatalogProductService products,
+        CatalogProductHistoryService history,
+        CatalogProductLifecycleService lifecycle) : IAsyncDisposable
     {
         public CatalogHarness H { get; } = h;
         public CatalogProductService Products { get; } = products;
         public CatalogProductHistoryService History { get; } = history;
+        public CatalogProductLifecycleService Lifecycle { get; } = lifecycle;
 
         public async Task<IReadOnlyList<CatalogProductHistoryEntryResponse>> ListAsync(Guid productId) =>
             (await History.ListAsync(productId, 50, null, Ct))!;
@@ -47,7 +53,9 @@ public sealed class CatalogProductHistoryTests
         var options = Options.Create(new StorageOptions());
         var storage = new DevStorageProvider(new FakeHostEnvironment(), options);
         var products = new CatalogProductService(h.Db, h.TenantProvider, storage, options, null, history);
-        return new Rig(h, products, history);
+        var lifecycle = new CatalogProductLifecycleService(
+            h.Db, h.TenantProvider, storage, options, NullLogger<CatalogProductLifecycleService>.Instance, history);
+        return new Rig(h, products, history, lifecycle);
     }
 
     private static UpdateCatalogProductRequest Update(
@@ -278,6 +286,77 @@ public sealed class CatalogProductHistoryTests
         Assert.Equal([start.AddMinutes(4), start.AddMinutes(3)], first.Select(e => e.CreatedAt).ToArray());
         Assert.Equal([start.AddMinutes(2), start.AddMinutes(1)], second.Select(e => e.CreatedAt).ToArray());
         Assert.Equal([start], third.Select(e => e.CreatedAt).ToArray());
+    }
+
+    [Fact]
+    public async Task Paging_with_equal_timestamps_never_skips_rows_when_before_id_is_sent()
+    {
+        await using var r = await CreateRigAsync();
+        var product = new CatalogProduct { TenantId = r.H.Tenant.Id, Name = "Ties" };
+        r.H.Db.CatalogProducts.Add(product);
+        await r.H.Db.SaveChangesAsync();
+        for (var i = 0; i < 5; i++)
+        {
+            await r.History.RecordAsync(
+                product.Id,
+                CatalogProductHistoryActions.Updated,
+                [new CatalogProductHistoryChange("name", $"v{i}", $"v{i + 1}")],
+                Ct);
+        }
+
+        var sameInstant = new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
+        foreach (var staged in r.H.Db.CatalogAccessAudit.Local.ToList())
+        {
+            r.H.Db.Entry(staged).Property(a => a.CreatedAt).CurrentValue = sameInstant;
+        }
+
+        await r.H.Db.SaveChangesAsync();
+
+        var seen = new List<Guid>();
+        DateTimeOffset? before = null;
+        Guid? beforeId = null;
+        for (var page = 0; page < 5; page++)
+        {
+            var rows = (await r.History.ListAsync(product.Id, 2, before, Ct, beforeId))!;
+            if (rows.Count == 0) break;
+            seen.AddRange(rows.Select(e => e.Id));
+            before = rows[^1].CreatedAt;
+            beforeId = rows[^1].Id;
+        }
+
+        Assert.Equal(5, seen.Count);
+        Assert.Equal(5, seen.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Duplicate_records_duplicated_on_both_products()
+    {
+        await using var r = await CreateRigAsync();
+        var product = await CreateProductAsync(r);
+
+        var copyId = await r.Lifecycle.DuplicateAsync(product.Id, Ct);
+
+        Assert.NotNull(copyId);
+        var onSource = Assert.Single(await r.ListAsync(product.Id), e => e.Action == CatalogProductHistoryActions.Duplicated);
+        Assert.Contains(onSource.Changes, c => c.Field == "copy" && c.Old is null && c.New == copyId.ToString());
+        var onCopy = Assert.Single(await r.ListAsync(copyId!.Value), e => e.Action == CatalogProductHistoryActions.Duplicated);
+        Assert.Contains(onCopy.Changes, c => c.Field == "source" && c.Old == "Item" && c.New is null);
+    }
+
+    [Fact]
+    public async Task Delete_keeps_a_deleted_history_row_keyed_by_product_id()
+    {
+        await using var r = await CreateRigAsync();
+        var product = await CreateProductAsync(r);
+
+        Assert.True(await r.Lifecycle.DeleteAsync(product.Id, Ct));
+
+        Assert.Null(await r.History.ListAsync(product.Id, 50, null, Ct));
+        var row = Assert.Single(
+            r.H.Db.CatalogAccessAudit.Where(a => a.EntityId == product.Id && a.Action == CatalogProductHistoryActions.Deleted));
+        Assert.Equal("product", row.EntityType);
+        Assert.Equal("Rita Ops", row.ActorName);
+        Assert.Contains("Item", row.AfterJson!);
     }
 
     [Fact]
