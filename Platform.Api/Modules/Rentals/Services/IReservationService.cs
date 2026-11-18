@@ -14,6 +14,10 @@ public interface IReservationService
         CreateReservationRequestDto request,
         CancellationToken cancellationToken);
 
+    Task<ReservationResponseDto> CreateStaffReservationAsync(
+        StaffCreateReservationRequestDto request,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
         Guid customerId,
         CancellationToken cancellationToken);
@@ -35,6 +39,12 @@ public interface IReservationService
 
     Task<ReservationResponseDto> CancelAsync(
         Guid reservationId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Sets or clears the internal staff note of a customer booking (staff only).</summary>
+    Task<ReservationResponseDto> UpdateNotesAsync(
+        Guid reservationId,
+        string? notes,
         CancellationToken cancellationToken);
 
     Task<ReservationResponseDto> CancelByCustomerAsync(

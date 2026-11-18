@@ -142,7 +142,9 @@ public sealed class RestrictedProductFileStoragePostgresTests(PostgresContainerF
             productId, new("Public", null, [groupId]), CancellationToken.None));
         await using var verify = factory.Create(provider);
         Assert.Empty(await verify.CatalogProductAccess.Where(a => a.ProductId == productId).ToListAsync());
-        Assert.Empty(await verify.CatalogAccessAudit.Where(a => a.EntityId == productId).ToListAsync());
+        Assert.Empty(await verify.CatalogAccessAudit
+            .Where(a => a.EntityId == productId && a.EntityType == "product" && a.Action == "product.accessChanged")
+            .ToListAsync());
     }
 
     private sealed class FailSave : SaveChangesInterceptor

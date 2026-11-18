@@ -18,6 +18,7 @@ public static class Permissions
         public const string RolesManage = "core.roles.manage";
         public const string UnitsRead = "core.units.read";
         public const string UnitsWrite = "core.units.write";
+        public const string CompanyWrite = "core.company.write";
         public const string RegistrationFieldsRead = "core.registration_fields.read";
         public const string RegistrationFieldsWrite = "core.registration_fields.write";
         public const string ModuleMenuRead = "core.module_menu.read";
@@ -54,6 +55,7 @@ public static class Permissions
     public static class Rentals
     {
         public const string ReservationsRead = "rentals.reservations.read";
+        public const string ReservationsCreate = "rentals.reservations.create";
         public const string ReservationsConfirm = "rentals.reservations.confirm";
         public const string ReservationsComplete = "rentals.reservations.complete";
         public const string ReservationsCancel = "rentals.reservations.cancel";

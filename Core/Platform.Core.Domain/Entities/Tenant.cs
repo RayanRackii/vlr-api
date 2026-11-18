@@ -34,6 +34,28 @@ public class Tenant : Entity
     /// <summary>Short welcome line on the B2C login/register shell (max ~120 chars).</summary>
     public string? WelcomeTagline { get; private set; }
 
+    /// <summary>Company contact e-mail (staff-editable company profile).</summary>
+    public string? ContactEmail { get; private set; }
+
+    /// <summary>Company contact phone, normalized E.164 (+55...).</summary>
+    public string? ContactPhone { get; private set; }
+
+    /// <summary>CEP, 8 digits.</summary>
+    public string? AddressPostalCode { get; private set; }
+
+    public string? AddressStreet { get; private set; }
+
+    public string? AddressNumber { get; private set; }
+
+    public string? AddressComplement { get; private set; }
+
+    public string? AddressDistrict { get; private set; }
+
+    public string? AddressCity { get; private set; }
+
+    /// <summary>UF, 2 uppercase letters.</summary>
+    public string? AddressState { get; private set; }
+
     public bool IsActive { get; private set; }
 
     /// <summary>Self-serve trial tenant (limits + lifecycle purge).</summary>
@@ -119,6 +141,72 @@ public class Tenant : Entity
         WelcomeTagline = NormalizeTagline(welcomeTagline);
         MarkAsUpdated();
     }
+
+    /// <summary>
+    /// Staff-editable company profile. Callers pass already-normalized document, phone and CEP
+    /// (see <c>CompanyProfileService</c>); this method trims, blanks to null and enforces shape/length.
+    /// Platform-only fields (subdomain, branding, trial, active) are untouched.
+    /// </summary>
+    public void UpdateCompanyProfile(
+        string legalName,
+        string? tradeName,
+        string taxId,
+        string? contactEmail,
+        string? contactPhone,
+        string? postalCode,
+        string? street,
+        string? number,
+        string? complement,
+        string? district,
+        string? city,
+        string? state)
+    {
+        var legal = legalName?.Trim();
+        if (string.IsNullOrEmpty(legal))
+        {
+            throw new ArgumentException("Legal name is required.");
+        }
+
+        var tax = taxId?.Trim();
+        if (string.IsNullOrEmpty(tax) || !tax.All(char.IsAsciiDigit) || tax.Length is not (11 or 14))
+        {
+            throw new ArgumentException("Tax id must be a CPF (11 digits) or CNPJ (14 digits).");
+        }
+
+        var uf = BlankToNull(state)?.ToUpperInvariant();
+        if (uf is not null && (uf.Length != 2 || !uf.All(char.IsAsciiLetter)))
+        {
+            throw new ArgumentException("State must be a 2-letter UF.");
+        }
+
+        var cep = BlankToNull(postalCode);
+        if (cep is not null && (cep.Length != 8 || !cep.All(char.IsAsciiDigit)))
+        {
+            throw new ArgumentException("CEP must have 8 digits.");
+        }
+
+        LegalName = Limit(legal, 200, "Legal name");
+        TradeName = Limit(BlankToNull(tradeName), 200, "Trade name");
+        TaxId = tax;
+        ContactEmail = Limit(BlankToNull(contactEmail), 254, "E-mail");
+        ContactPhone = Limit(BlankToNull(contactPhone), 20, "Phone");
+        AddressPostalCode = cep;
+        AddressStreet = Limit(BlankToNull(street), 200, "Street");
+        AddressNumber = Limit(BlankToNull(number), 20, "Number");
+        AddressComplement = Limit(BlankToNull(complement), 100, "Complement");
+        AddressDistrict = Limit(BlankToNull(district), 100, "District");
+        AddressCity = Limit(BlankToNull(city), 100, "City");
+        AddressState = uf;
+        MarkAsUpdated();
+    }
+
+    private static string? BlankToNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? Limit(string? value, int max, string field) =>
+        value is not null && value.Length > max
+            ? throw new ArgumentException($"{field} must be at most {max} characters.")
+            : value;
 
     public void Activate()
     {

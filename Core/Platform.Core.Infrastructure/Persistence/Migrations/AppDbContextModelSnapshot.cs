@@ -999,7 +999,6 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnName("description");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
@@ -1014,6 +1013,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("price");
 
+                    b.Property<string>("PriceUnit")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("price_unit");
+
                     b.Property<int>("ResourceRequirementsVersion")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -1027,6 +1031,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<bool>("UsesSchedule")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("uses_schedule");
 
                     b.Property<string>("Visibility")
                         .IsRequired()
@@ -2964,6 +2973,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("end_date_time");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notes");
+
                     b.Property<string>("Purpose")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -3901,6 +3915,51 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(7)")
                         .HasColumnName("accent_color");
 
+                    b.Property<string>("AddressCity")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("address_city");
+
+                    b.Property<string>("AddressComplement")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("address_complement");
+
+                    b.Property<string>("AddressDistrict")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("address_district");
+
+                    b.Property<string>("AddressNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("address_number");
+
+                    b.Property<string>("AddressPostalCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("address_postal_code");
+
+                    b.Property<string>("AddressState")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("address_state");
+
+                    b.Property<string>("AddressStreet")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("address_street");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("contact_email");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_phone");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -4617,6 +4676,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("notes");
 
+                    b.Property<int>("Number")
+                        .HasColumnType("integer")
+                        .HasColumnName("number");
+
                     b.Property<DateOnly>("ScheduledDate")
                         .HasColumnType("date")
                         .HasColumnName("scheduled_date");
@@ -4666,7 +4729,27 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ux_os_work_orders_pmoc_period")
                         .HasFilter("maintenance_plan_id IS NOT NULL AND status IN ('Pending', 'InProgress')");
 
+                    b.HasIndex("TenantId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_work_orders_tenant_id_number");
+
                     b.ToTable("work_orders", "os");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrderNumberSequence", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<int>("LastNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_number");
+
+                    b.HasKey("TenantId")
+                        .HasName("pk_work_order_number_sequences");
+
+                    b.ToTable("work_order_number_sequences", "os");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.WorkOrderTask", b =>

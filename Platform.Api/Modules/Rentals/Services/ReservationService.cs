@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
+using Platform.Api.Services.Brazil;
 using Platform.Api.Services.Trial;
 using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
@@ -201,9 +202,207 @@ public sealed class ReservationService(
             PricedUnits: pricedUnits);
     }
 
-    public async Task<ReservationResponseDto> CreateReservationAsync(
+    public Task<ReservationResponseDto> CreateReservationAsync(
         Guid customerId,
         CreateReservationRequestDto request,
+        CancellationToken cancellationToken) =>
+        CreateCoreAsync(
+            request,
+            inferUnit: false,
+            staffOptions: null,
+            async (tenantId, ct) =>
+            {
+                var customer = await dbContext.Customers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == customerId, ct)
+                    ?? throw new UnauthorizedAccessException("Authenticated customer was not found.");
+
+                if (customer.TenantId != tenantId)
+                {
+                    throw new UnauthorizedAccessException("Customer does not belong to the current tenant.");
+                }
+
+                return (customer, false);
+            },
+            cancellationToken);
+
+    public async Task<ReservationResponseDto> CreateStaffReservationAsync(
+        StaffCreateReservationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if ((request.CustomerId is null) == (request.NewCustomer is null))
+        {
+            throw new ArgumentException("Provide exactly one of customerId or newCustomer.");
+        }
+
+        var notes = NormalizeNotes(request.Notes);
+
+        var coreRequest = new CreateReservationRequestDto
+        {
+            UnitId = request.UnitId ?? Guid.Empty,
+            Date = request.Date,
+            EndDate = request.EndDate,
+            StartTime = request.StartTime,
+            EndTime = request.EndTime,
+            Items = request.Items,
+        };
+
+        try
+        {
+            return await CreateCoreAsync(
+                coreRequest,
+                inferUnit: request.UnitId is null,
+                new StaffBookingOptions(request.AwaitingDeposit, notes),
+                (tenantId, ct) => ResolveStaffCustomerAsync(tenantId, request, ct),
+                cancellationToken);
+        }
+        catch (DbUpdateException) when (request.NewCustomer is not null)
+        {
+            // Lost a race on the per-tenant unique phone/email indexes: surface the winner.
+            var tenantId = EnsureTenantContext();
+            var existing = await FindExistingCustomerAsync(
+                tenantId,
+                NormalizeStaffPhone(request.NewCustomer.WhatsApp),
+                NormalizeStaffEmail(request.NewCustomer.Email),
+                cancellationToken);
+            if (existing is not null)
+            {
+                throw new CustomerAlreadyExistsException(existing.Id);
+            }
+
+            throw;
+        }
+    }
+
+    private sealed record StaffBookingOptions(bool AwaitingDeposit, string? Notes = null);
+
+    private static string? NormalizeNotes(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return null;
+        }
+
+        var trimmed = notes.Trim();
+        return trimmed.Length > Reservation.NotesMaxLength
+            ? throw new ArgumentException($"Notes must be at most {Reservation.NotesMaxLength} characters.")
+            : trimmed;
+    }
+
+    public async Task<ReservationResponseDto> UpdateNotesAsync(
+        Guid reservationId,
+        string? notes,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
+        var normalized = NormalizeNotes(notes);
+
+        var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+        EnsureNotInternalUse(reservation);
+
+        reservation.Notes = normalized;
+        reservation.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
+    }
+
+    private async Task<(Customer Customer, bool IsNew)> ResolveStaffCustomerAsync(
+        Guid tenantId,
+        StaffCreateReservationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (request.CustomerId is Guid customerId)
+        {
+            var existing = await dbContext.Customers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == customerId && c.TenantId == tenantId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Customer '{customerId}' was not found.");
+            return (existing, false);
+        }
+
+        var input = request.NewCustomer!;
+        var name = input.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Customer name is required.");
+        }
+
+        var phone = NormalizeStaffPhone(input.WhatsApp);
+        var email = NormalizeStaffEmail(input.Email);
+        var duplicate = await FindExistingCustomerAsync(tenantId, phone, email, cancellationToken);
+        if (duplicate is not null)
+        {
+            throw new CustomerAlreadyExistsException(duplicate.Id);
+        }
+
+        // No password and no verified e-mail: the customer cannot log in until they register or use OTP.
+        var created = new Customer
+        {
+            TenantId = tenantId,
+            Name = name,
+            Phone = phone,
+            Email = email,
+        };
+        return (created, true);
+    }
+
+    private static string NormalizeStaffPhone(string? whatsApp) =>
+        BrazilianDocumentValidator.NormalizePhoneBr(whatsApp);
+
+    private static string? NormalizeStaffEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return null;
+        }
+
+        var normalized = email.Trim().ToLowerInvariant();
+        if (!normalized.Contains('@') || normalized.Length < 5)
+        {
+            throw new ArgumentException("Email format is invalid.");
+        }
+
+        return normalized;
+    }
+
+    private Task<Customer?> FindExistingCustomerAsync(
+        Guid tenantId,
+        string phone,
+        string? email,
+        CancellationToken cancellationToken) =>
+        dbContext.Customers
+            .AsNoTracking()
+            .Where(c => c.TenantId == tenantId
+                && (c.Phone == phone || (email != null && c.Email == email)))
+            .OrderBy(c => c.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<Guid> ResolveUnitFromItemsAsync(
+        IReadOnlyList<CreateReservationItemRequestDto> items,
+        CancellationToken cancellationToken)
+    {
+        var assetId = items[0].AssetId;
+        var unitId = await dbContext.RentalAssets
+            .AsNoTracking()
+            .Where(r => r.AssetId == assetId && r.IsActive && r.Asset.IsRentable)
+            .Select(r => (Guid?)r.Asset.UnitId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return unitId
+            ?? throw new KeyNotFoundException($"Rentable asset '{assetId}' was not found.");
+    }
+
+    /// <summary>
+    /// Shared booking core. <paramref name="staffOptions"/> is null for the customer portal and set
+    /// for staff; staff skip the customer-only policies (horizon, lead time, daily limit, price
+    /// guard, queue turn) and choose the opening status.
+    /// </summary>
+    private async Task<ReservationResponseDto> CreateCoreAsync(
+        CreateReservationRequestDto request,
+        bool inferUnit,
+        StaffBookingOptions? staffOptions,
+        Func<Guid, CancellationToken, Task<(Customer Customer, bool IsNew)>> resolveCustomer,
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
@@ -221,14 +420,12 @@ public sealed class ReservationService(
             throw new ArgumentException("Each assetId may appear only once per reservation.");
         }
 
-        var customer = await dbContext.Customers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == customerId, cancellationToken)
-            ?? throw new UnauthorizedAccessException("Authenticated customer was not found.");
+        var (customer, isNewCustomer) = await resolveCustomer(tenantId, cancellationToken);
+        var customerId = customer.Id;
 
-        if (customer.TenantId != tenantId)
+        if (inferUnit)
         {
-            throw new UnauthorizedAccessException("Customer does not belong to the current tenant.");
+            request = request with { UnitId = await ResolveUnitFromItemsAsync(request.Items, cancellationToken) };
         }
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
@@ -250,13 +447,16 @@ public sealed class ReservationService(
 
         try
         {
-            // A multi-day reservation counts once, against its start civil date only.
-            await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
-                dbContext,
-                tenantId,
-                customer.Id,
-                request.Date,
-                cancellationToken);
+            if (staffOptions is null)
+            {
+                // A multi-day reservation counts once, against its start civil date only.
+                await BookingPolicyEnforcement.EnsureCustomerCanBookAsync(
+                    dbContext,
+                    tenantId,
+                    customer.Id,
+                    request.Date,
+                    cancellationToken);
+            }
 
             var assetIds = request.Items
                 .Select(item => item.AssetId)
@@ -274,24 +474,27 @@ public sealed class ReservationService(
                 rentalAssetsToLock,
                 cancellationToken);
 
-            var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
-                dbContext, tenantId, cancellationToken);
-            await BookingHorizon.EnsureAssetsAsync(
-                dbContext,
-                tenantId,
-                request.Items.Select(item => item.AssetId).ToList(),
-                // The last day is at or after the start, so this enforces both endpoints.
-                request.EndDate ?? request.Date,
-                today,
-                tenantHorizon,
-                cancellationToken);
-            await BookingLeadTime.EnsureAssetsAsync(
-                dbContext,
-                tenantId,
-                assetIds,
-                start,
-                timeProvider.GetUtcNow(),
-                cancellationToken);
+            if (staffOptions is null)
+            {
+                var tenantHorizon = await BookingHorizon.ReadTenantDaysAsync(
+                    dbContext, tenantId, cancellationToken);
+                await BookingHorizon.EnsureAssetsAsync(
+                    dbContext,
+                    tenantId,
+                    request.Items.Select(item => item.AssetId).ToList(),
+                    // The last day is at or after the start, so this enforces both endpoints.
+                    request.EndDate ?? request.Date,
+                    today,
+                    tenantHorizon,
+                    cancellationToken);
+                await BookingLeadTime.EnsureAssetsAsync(
+                    dbContext,
+                    tenantId,
+                    assetIds,
+                    start,
+                    timeProvider.GetUtcNow(),
+                    cancellationToken);
+            }
 
             var reservation = new Reservation
             {
@@ -306,6 +509,7 @@ public sealed class ReservationService(
                 Status = ReservationStatus.PendingDeposit,
                 TotalAmount = 0m,
                 DepositPaid = 0m,
+                Notes = staffOptions?.Notes,
             };
 
             decimal totalAmount = 0m;
@@ -332,14 +536,17 @@ public sealed class ReservationService(
                         $"Asset '{rental.Asset.Name}' does not belong to the given unit.");
                 }
 
-                await reservationQueueService.EnsureActiveTurnForBookingAsync(
-                    customerId,
-                    rental,
-                    cancellationToken);
-
-                if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
+                if (staffOptions is null)
                 {
-                    queuedLocations.Add(rental);
+                    await reservationQueueService.EnsureActiveTurnForBookingAsync(
+                        customerId,
+                        rental,
+                        cancellationToken);
+
+                    if (rental.Type == RentalAssetType.Location && rental.QueueEnabled)
+                    {
+                        queuedLocations.Add(rental);
+                    }
                 }
 
                 var multiDayPricing = calendarDays.HasValue
@@ -440,12 +647,24 @@ public sealed class ReservationService(
             }
 
             reservation.TotalAmount = RoundMoney(totalAmount);
-            if (request.ExpectedTotalAmount is decimal expected && expected != reservation.TotalAmount)
+            if (staffOptions is null
+                && request.ExpectedTotalAmount is decimal expected
+                && expected != reservation.TotalAmount)
             {
                 throw new PriceChangedException(reservation.TotalAmount);
             }
 
-            reservation.OpenAccordingToPaymentPolicy(requiresDeposit);
+            // Staff open Confirmed unless they ask to wait for a deposit the resource actually requires.
+            reservation.OpenAccordingToPaymentPolicy(
+                staffOptions is null ? requiresDeposit : requiresDeposit && staffOptions.AwaitingDeposit);
+
+            if (isNewCustomer)
+            {
+                // Persist the customer first so the domain events can see it; the transaction
+                // rolls it back with the reservation on any later failure.
+                dbContext.Customers.Add(customer);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
 
             dbContext.Reservations.Add(reservation);
 
@@ -474,7 +693,8 @@ public sealed class ReservationService(
             var response = ToResponse(reservation, itemResponses,
                 await policies.ReadTenantAsync(tenantId, cancellationToken),
                 await policies.ReadCategoriesAsync(tenantId, cancellationToken),
-                await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
+                await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken),
+                includeNotes: staffOptions is not null);
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -583,7 +803,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList(), tenantPolicy, categories, pricing))
+                    .ToList(), tenantPolicy, categories, pricing, includeNotes: true))
             .ToList();
     }
 
@@ -619,7 +839,7 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Confirmed)
             {
-                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
                 await CommitIfPresentAsync(transaction, cancellationToken);
                 return unchangedResponse;
             }
@@ -636,7 +856,7 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationConfirmed),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
-            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
@@ -681,7 +901,7 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Completed)
             {
-                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
                 await CommitIfPresentAsync(transaction, cancellationToken);
                 return unchangedResponse;
             }
@@ -698,7 +918,7 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCompleted),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
-            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
@@ -737,7 +957,7 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
-                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
                 await CommitIfPresentAsync(transaction, cancellationToken);
                 return unchangedResponse;
             }
@@ -752,7 +972,7 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCanceled),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
-            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
@@ -885,7 +1105,7 @@ public sealed class ReservationService(
     }
 
     private async Task<ReservationResponseDto> ToResponseFromEntityAsync(
-        Reservation reservation, CancellationToken cancellationToken) =>
+        Reservation reservation, CancellationToken cancellationToken, bool includeNotes = false) =>
         ToResponse(
             reservation,
             reservation.Items
@@ -896,7 +1116,8 @@ public sealed class ReservationService(
                 .ToList(),
             await policies.ReadTenantAsync(reservation.TenantId, cancellationToken),
             await policies.ReadCategoriesAsync(reservation.TenantId, cancellationToken),
-            await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
+            await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken),
+            includeNotes);
 
     private Task<Reservation?> LoadReservationWithItemsAsync(
         Guid reservationId,
@@ -1225,7 +1446,8 @@ public sealed class ReservationService(
         Reservation reservation,
         IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items,
         BookingPolicy? tenantPolicy, IReadOnlyDictionary<Guid, BookingPolicy> categories,
-        IReadOnlyDictionary<Guid, ReservationItemPricing> pricing) =>
+        IReadOnlyDictionary<Guid, ReservationItemPricing> pricing,
+        bool includeNotes = false) =>
         new(
             reservation.Id,
             reservation.TenantId,
@@ -1250,5 +1472,7 @@ public sealed class ReservationService(
                 pricing.GetValueOrDefault(x.Item.Id)?.Unit,
                 pricing.GetValueOrDefault(x.Item.Id)?.Days)).ToList(),
             PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime,
-                items.Select(x => x.Item.RentalAsset), categories, tenantPolicy));
+                items.Select(x => x.Item.RentalAsset), categories, tenantPolicy),
+            // Staff-only: customer and portal responses are built with includeNotes = false.
+            includeNotes ? reservation.Notes : null);
 }

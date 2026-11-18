@@ -270,6 +270,7 @@ public sealed class WorkOrderGenerationService(
         var workOrder = new WorkOrder
         {
             TenantId = plan.TenantId,
+            Number = await WorkOrderNumberAllocator.AllocateAsync(dbContext, plan.TenantId, cancellationToken),
             AssetId = asset.Id,
             MaintenancePlanId = plan.Id,
             AssignedUserId = assignedUserId,

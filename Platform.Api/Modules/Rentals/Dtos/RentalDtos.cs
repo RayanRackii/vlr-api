@@ -168,6 +168,55 @@ public sealed record CreateReservationRequestDto
     public decimal? ExpectedTotalAmount { get; init; }
 }
 
+public sealed record StaffNewCustomerDto
+{
+    public required string Name { get; init; }
+
+    /// <summary>Brazilian mobile; normalised to +55DDDNNNNNNNNN like portal sign-up.</summary>
+    public required string WhatsApp { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Email { get; init; }
+}
+
+/// <summary>Staff books on behalf of a customer. Exactly one of CustomerId / NewCustomer.</summary>
+public sealed record StaffCreateReservationRequestDto
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? CustomerId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StaffNewCustomerDto? NewCustomer { get; init; }
+
+    /// <summary>Omitted/null: taken from the first item's asset.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? UnitId { get; init; }
+
+    public required DateOnly Date { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateOnly? EndDate { get; init; }
+
+    public required TimeOnly StartTime { get; init; }
+
+    public required TimeOnly EndTime { get; init; }
+
+    public required IReadOnlyList<CreateReservationItemRequestDto> Items { get; init; }
+
+    /// <summary>True opens PendingDeposit when the resource requires a deposit; otherwise Confirmed.</summary>
+    public bool AwaitingDeposit { get; init; }
+
+    /// <summary>Internal staff note (at most 1000 characters); never shown to the customer.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Notes { get; init; }
+}
+
+public sealed record UpdateReservationNotesRequestDto
+{
+    /// <summary>Internal staff note (at most 1000 characters). Null or blank clears it.</summary>
+    public string? Notes { get; init; }
+}
+
 public sealed record ReservationItemResponseDto(
     Guid Id,
     Guid AssetId,
@@ -193,7 +242,8 @@ public sealed record ReservationResponseDto(
     decimal DepositPaid,
     DateTimeOffset CreatedAt,
     IReadOnlyList<ReservationItemResponseDto> Items,
-    DateTimeOffset? CancelDeadlineUtc = null);
+    DateTimeOffset? CancelDeadlineUtc = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Notes = null);
 
 public sealed record UpdateRentalPricingDto
 {

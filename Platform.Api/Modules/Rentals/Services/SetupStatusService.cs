@@ -107,9 +107,13 @@ public sealed class SetupStatusService(
             invite.AcceptedAt is null && invite.RevokedAt is null && invite.ExpiresAt > now);
         var inviteAccepted = invites.Any(invite => invite.AcceptedAt is not null) || userCount > 1;
         var checklist = SetupStatusCalculator.Checklist(new SetupStatusCalculator.ChecklistInput(
-            !string.IsNullOrWhiteSpace(tenant.LegalName)
-                && !string.IsNullOrWhiteSpace(tenant.TaxId)
-                && !string.IsNullOrWhiteSpace(tenant.TradeName),
+            SetupStatusCalculator.CompanyProfileReady(
+                tenant.LegalName,
+                tenant.TradeName,
+                tenant.TaxId,
+                tenant.ContactEmail,
+                tenant.ContactPhone,
+                tenant.AddressCity),
             assets.Any(asset => (asset.DirectRental && priced.Contains(asset.Id)) || offered.Contains(asset.Id)),
             templated.Count > 0 || assets.Any(asset => asset.OpenTime is not null && asset.CloseTime is not null),
             assets.Count,

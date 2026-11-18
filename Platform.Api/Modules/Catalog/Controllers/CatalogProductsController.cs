@@ -45,6 +45,21 @@ public sealed class CatalogProductsController(
         return product is null ? NotFound() : Ok(product);
     }
 
+    /// <summary>Product change history, newest first. <c>before</c>/<c>beforeId</c> are the createdAt and id of the last item already loaded.</summary>
+    [HttpGet("{id:guid}/history")]
+    [RequirePermission(Permissions.Catalog.ProductsRead)]
+    public async Task<ActionResult<IReadOnlyList<CatalogProductHistoryEntryResponse>>> History(
+        Guid id,
+        [FromServices] ICatalogProductHistoryService historyService,
+        CancellationToken cancellationToken,
+        [FromQuery] int limit = CatalogProductHistoryService.DefaultLimit,
+        [FromQuery] DateTimeOffset? before = null,
+        [FromQuery] Guid? beforeId = null)
+    {
+        var entries = await historyService.ListAsync(id, limit, before, cancellationToken, beforeId);
+        return entries is null ? NotFound() : Ok(entries);
+    }
+
     [HttpPost]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
     public async Task<ActionResult<CatalogProductResponse>> Create(
@@ -104,8 +119,68 @@ public sealed class CatalogProductsController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        var product = await productService.ActivateAsync(id, cancellationToken);
-        return product is null ? NotFound() : Ok(product);
+        try
+        {
+            var product = await productService.ActivateAsync(id, cancellationToken);
+            return product is null ? NotFound() : Ok(product);
+        }
+        catch (ProductNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
+    }
+
+    private ConflictObjectResult NotReady(ProductNotReadyException ex) =>
+        Conflict(new { error = ex.Message, code = ProductNotReadyException.Code, missing = ex.Missing });
+
+    /// <summary>
+    /// Creates an inactive copy ("Cópia de ..."). Copies taxonomy, active resource requirements and
+    /// access grants. Files (photos and documents) are NOT copied, because they live in storage.
+    /// </summary>
+    [HttpPost("{id:guid}/duplicate")]
+    [RequirePermission(Permissions.Catalog.ProductsManage)]
+    public async Task<ActionResult<CatalogProductResponse>> Duplicate(
+        Guid id,
+        [FromServices] ICatalogProductLifecycleService lifecycleService,
+        CancellationToken cancellationToken)
+    {
+        var copyId = await lifecycleService.DuplicateAsync(id, cancellationToken);
+        if (copyId is null) return NotFound();
+
+        var copy = await productService.GetByIdAsync(copyId.Value, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = copyId.Value }, copy);
+    }
+
+    /// <summary>
+    /// Deletes the product and its dependants. 409 <c>PRODUCT_HAS_ORDERS</c> when any order references it.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Catalog.ProductsManage)]
+    public async Task<IActionResult> Delete(
+        Guid id,
+        [FromServices] ICatalogProductLifecycleService lifecycleService,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await lifecycleService.DeleteAsync(id, cancellationToken) ? NoContent() : NotFound();
+        }
+        catch (ProductHasOrdersException ex)
+        {
+            return Conflict(new { error = ex.Message, code = ProductHasOrdersException.Code });
+        }
+        catch (StorageProviderException ex)
+        {
+            return StorageProviderActionResults.From(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StorageProviderActionResults.FromInvalidOperation(ex);
+        }
+        catch (HttpRequestException)
+        {
+            return StorageProviderActionResults.FromHttpRequestException();
+        }
     }
 
     [HttpPost("{id:guid}/files")]

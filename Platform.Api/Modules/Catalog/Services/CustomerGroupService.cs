@@ -251,6 +251,8 @@ public sealed class CustomerGroupService(
         if (entityType is not ("group" or "product")) throw new ArgumentException("entityType must be group or product.");
         return await dbContext.CatalogAccessAudit.AsNoTracking()
             .Where(a => a.TenantId == tenantId && a.EntityType == entityType && a.EntityId == entityId)
+            // Product rows written by the product history (catalog.product*) have their own endpoint.
+            .Where(a => entityType != "product" || a.Action == "product.accessChanged")
             .OrderByDescending(a => a.CreatedAt)
             .Take(200)
             .Select(a => new CatalogAccessAuditResponse(a.Id, a.Action, a.EntityType, a.EntityId,

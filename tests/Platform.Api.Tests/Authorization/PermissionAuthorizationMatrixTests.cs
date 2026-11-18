@@ -81,6 +81,33 @@ public sealed class PermissionAuthorizationMatrixTests
     }
 
     [Fact]
+    public async Task Reservations_create_needs_its_own_permission_and_rejects_customers()
+    {
+        await using var harness = await AuthzMatrixHarness.CreateAsync();
+        harness.Db.TenantModules.Add(new TenantModule(harness.Tenant.Id, PlatformModules.Rentals, isActive: true));
+        await harness.Db.SaveChangesAsync();
+
+        var creator = harness.SeedUserWithKeys("reservation-creator", Permissions.Rentals.ReservationsCreate);
+        var confirmer = harness.SeedUserWithKeys("reservation-confirmer", Permissions.Rentals.ReservationsConfirm);
+        var creatorPrincipal = AuthenticatedPrincipal(
+            new Claim("sub", creator.SupabaseAuthId),
+            new Claim("email", creator.Email));
+        var confirmerPrincipal = AuthenticatedPrincipal(
+            new Claim("sub", confirmer.SupabaseAuthId),
+            new Claim("email", confirmer.Email));
+        var customer = AuthenticatedPrincipal(
+            new Claim(ClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.Role, AuthRoles.Customer),
+            new Claim(CustomerClaimTypes.CustomerId, Guid.NewGuid().ToString()),
+            new Claim("email", "member@club.test"));
+        var policy = PermissionPolicies.Name(Permissions.Rentals.ReservationsCreate);
+
+        Assert.True((await harness.Authorization.AuthorizeAsync(creatorPrincipal, policy)).Succeeded);
+        Assert.False((await harness.Authorization.AuthorizeAsync(confirmerPrincipal, policy)).Succeeded);
+        Assert.False((await harness.Authorization.AuthorizeAsync(customer, policy)).Succeeded);
+    }
+
+    [Fact]
     public async Task Customer_cannot_authorize_reservations_complete()
     {
         await using var harness = await AuthzMatrixHarness.CreateAsync();

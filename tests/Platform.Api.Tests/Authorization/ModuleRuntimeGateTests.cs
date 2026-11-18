@@ -1173,6 +1173,11 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<ReservationResponseDto> CreateStaffReservationAsync(
+            StaffCreateReservationRequestDto request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
             Guid customerId,
             CancellationToken cancellationToken) =>
@@ -1198,6 +1203,12 @@ public sealed class ModuleRuntimeGateTests
 
         public Task<ReservationResponseDto> CancelAsync(
             Guid reservationId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<ReservationResponseDto> UpdateNotesAsync(
+            Guid reservationId,
+            string? notes,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 

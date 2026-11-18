@@ -152,7 +152,8 @@ public sealed class ResourceVisualPostgresMigrationTests(PostgresContainerFixtur
             XPercent = 12, YPercent = 18, WidthPercent = 25, HeightPercent = 30, ZIndex = 7,
         };
         var role = new Role(tenant.Id, "Admin", isSystemRole: true);
-        db.AddRange(tenant, unit, family, category, asset, rental, layout, item, role);
+        await LegacyTenantSql.InsertAsync(db, tenant);
+        db.AddRange(unit, family, category, asset, rental, layout, item, role);
         await db.SaveChangesAsync();
         return new(asset.Id, rental.Id, layout.Id, item.Id, role.Id);
     }

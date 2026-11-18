@@ -52,9 +52,11 @@ public sealed class CatalogProductService(
     ITenantProvider tenantProvider,
     IStorageProvider storageProvider,
     IOptions<StorageOptions> storageOptions,
-    TimeProvider? timeProvider = null) : ICatalogProductService
+    TimeProvider? timeProvider = null,
+    IProductHistoryRecorder? historyRecorder = null) : ICatalogProductService
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+    private readonly IProductHistoryRecorder _history = historyRecorder ?? new CatalogProductHistoryService(dbContext, tenantProvider);
 
     public async Task<IReadOnlyList<CatalogProductResponse>> ListAsync(
         CatalogProductListQuery query,
@@ -123,10 +125,13 @@ public sealed class CatalogProductService(
             Description = NormalizeOptional(request.Description),
             Price = RoundPrice(request.Price),
             Currency = NormalizeCurrency(request.Currency),
+            PriceUnit = NormalizePriceUnit(request.PriceUnit),
             IsActive = isActive,
+            UsesSchedule = request.UsesSchedule ?? true,
         };
 
         dbContext.CatalogProducts.Add(product);
+        await _history.RecordAsync(product.Id, CatalogProductHistoryActions.Created, CreatedChanges(product), cancellationToken);
         await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
         await TaxonomyService.SaveAsync(dbContext, cancellationToken);
         await scope.CommitAsync(cancellationToken);
@@ -153,15 +158,48 @@ public sealed class CatalogProductService(
         var name = NormalizeName(request.Name);
         var price = RoundPrice(request.Price);
         var currency = NormalizeCurrency(request.Currency);
+        var priceUnit = request.PriceUnit.IsSpecified
+            ? NormalizePriceUnit(request.PriceUnit.Value)
+            : product.PriceUnit;
         var code = NormalizeCode(request.Code);
         await EnsureCodeAvailableAsync(code, product.Id, cancellationToken);
+
+        var beforeFields = HistoryFields(product);
+        var taxonomyBefore = request.Taxonomy is null
+            ? null
+            : (await CatalogTaxonomy.LoadAsync(dbContext, tenantId, [product.Id], cancellationToken))[product.Id];
 
         product.Name = name;
         product.Code = code;
         product.Description = NormalizeOptional(request.Description);
         product.Price = price;
         product.Currency = currency;
+        product.PriceUnit = priceUnit;
+        if (request.UsesSchedule is { } usesSchedule) product.UsesSchedule = usesSchedule;
         product.Touch();
+
+        var fieldChanges = CatalogProductHistoryDiff.ForUpdate(beforeFields, HistoryFields(product));
+        if (fieldChanges.Count > 0)
+            await _history.RecordAsync(product.Id, CatalogProductHistoryActions.Updated, fieldChanges, cancellationToken);
+        if (taxonomyBefore is not null)
+        {
+            var requestedCategories = request.Taxonomy!.CategoryIds!.Distinct().ToArray();
+            var requestedTags = request.Taxonomy.TagIds!.Distinct().ToArray();
+            var taxonomyChanges = CatalogProductHistoryDiff.ForTaxonomy(
+                taxonomyBefore.Categories.Select(c => (c.Id, c.Name)).ToList(),
+                taxonomyBefore.Tags.Select(t => (t.Id, t.Name)).ToList(),
+                (await dbContext.TaxonomyCategories.AsNoTracking()
+                    .Where(x => x.TenantId == tenantId && requestedCategories.Contains(x.Id))
+                    .Select(x => new { x.Id, x.Name })
+                    .ToListAsync(cancellationToken)).Select(x => (x.Id, x.Name)).ToList(),
+                (await dbContext.TaxonomyTags.AsNoTracking()
+                    .Where(x => x.TenantId == tenantId && requestedTags.Contains(x.Id))
+                    .Select(x => new { x.Id, x.Name })
+                    .ToListAsync(cancellationToken)).Select(x => (x.Id, x.Name)).ToList());
+            if (taxonomyChanges.Count > 0)
+                await _history.RecordAsync(product.Id, CatalogProductHistoryActions.TaxonomyChanged, taxonomyChanges, cancellationToken);
+        }
+
         await CatalogTaxonomy.ReplaceAsync(dbContext, tenantId, product.Id, request.Taxonomy, cancellationToken);
         await TaxonomyService.SaveAsync(dbContext, cancellationToken);
         await scope.CommitAsync(cancellationToken);
@@ -180,6 +218,12 @@ public sealed class CatalogProductService(
             return null;
         }
 
+        if (product.IsActive)
+        {
+            await _history.RecordAsync(product.Id, CatalogProductHistoryActions.Deactivated,
+                [new CatalogProductHistoryChange("isActive", "true", "false")], cancellationToken);
+        }
+
         product.Deactivate();
         await dbContext.SaveChangesAsync(cancellationToken);
         return await MapOneAsync(product, cancellationToken);
@@ -195,6 +239,16 @@ public sealed class CatalogProductService(
         if (product is null)
         {
             return null;
+        }
+
+        var tenantId = EnsureTenant();
+        var missing = (await CatalogProductReadiness.MissingForAsync(dbContext, tenantId, [product], cancellationToken))[product.Id];
+        if (missing.Count > 0) throw new ProductNotReadyException(missing);
+
+        if (!product.IsActive)
+        {
+            await _history.RecordAsync(product.Id, CatalogProductHistoryActions.Activated,
+                [new CatalogProductHistoryChange("isActive", "false", "true")], cancellationToken);
         }
 
         product.Activate();
@@ -284,6 +338,8 @@ public sealed class CatalogProductService(
             buffer.Position = 0;
             await storageProvider.UploadAsync(bucket, file.StorageKey, buffer, contentType, uploadCancellation.Token);
             file.Status = CatalogFileStatus.Ready;
+            await _history.RecordAsync(product.Id, CatalogProductHistoryActions.FileAdded,
+                [new CatalogProductHistoryChange("file", null, file.FileName)], cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
@@ -333,6 +389,8 @@ public sealed class CatalogProductService(
         // deletion succeeds, including for Pending/Failed uploads with an uncertain object state.
         await storageProvider.DeleteRequiredAsync(bucket, file.StorageKey, cancellationToken);
         dbContext.CatalogProductFiles.Remove(file);
+        await _history.RecordAsync(productId, CatalogProductHistoryActions.FileRemoved,
+            [new CatalogProductHistoryChange("file", file.FileName, null)], cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(CancellationToken.None);
     }
@@ -410,10 +468,15 @@ public sealed class CatalogProductService(
             .GroupBy(a => a.ProductId)
             .Select(g => new { g.Key, Customers = g.Count(a => a.CustomerId != null), Groups = g.Count(a => a.GroupId != null) })
             .ToDictionaryAsync(x => x.Key, ct);
+        var readiness = await CatalogProductReadiness.MissingForAsync(dbContext, tenantId, products.ToList(), ct);
         return products.Select(p => Map(p, true) with
         {
+            SaleReadiness = new CatalogProductSaleReadiness(readiness[p.Id].Count == 0, readiness[p.Id]),
             Taxonomy = assignments[p.Id],
             Visibility = p.Visibility,
+            UsesSchedule = p.UsesSchedule,
+            PriceUnit = p.PriceUnit?.ToString(),
+            UpdatedAt = p.UpdatedAt,
             GrantedCustomerCount = grants.TryGetValue(p.Id, out var g) ? g.Customers : 0,
             GrantedGroupCount = grants.TryGetValue(p.Id, out var g2) ? g2.Groups : 0,
         }).ToArray();
@@ -457,6 +520,22 @@ public sealed class CatalogProductService(
             product.CreatedAt,
             files);
     }
+
+    private static CatalogProductHistoryFields HistoryFields(CatalogProduct p) =>
+        new(p.Name, p.Code, p.Description, p.Price, p.Currency, p.UsesSchedule, p.PriceUnit?.ToString());
+
+    private static List<CatalogProductHistoryChange> CreatedChanges(CatalogProduct p) =>
+        new[]
+        {
+            CatalogProductHistoryDiff.Field("name", null, p.Name),
+            CatalogProductHistoryDiff.Field("code", null, p.Code),
+            CatalogProductHistoryDiff.Field("description", null, p.Description),
+            CatalogProductHistoryDiff.Field("price", null, CatalogProductHistoryDiff.Money(p.Price)),
+            CatalogProductHistoryDiff.Field("currency", null, p.Currency),
+            CatalogProductHistoryDiff.Field("priceUnit", null, p.PriceUnit?.ToString()),
+            CatalogProductHistoryDiff.Field("usesSchedule", null, CatalogProductHistoryDiff.Bool(p.UsesSchedule)),
+            CatalogProductHistoryDiff.Field("isActive", null, CatalogProductHistoryDiff.Bool(p.IsActive)),
+        }.OfType<CatalogProductHistoryChange>().ToList();
 
     private async Task EnsureCodeAvailableAsync(
         string? code,
@@ -543,6 +622,26 @@ public sealed class CatalogProductService(
         }
 
         return CatalogMoney.Round(price.Value);
+    }
+
+    /// <summary>Blank means no unit; otherwise one of the closed list (case-insensitive), never free text.</summary>
+    private static CatalogProductPriceUnit? NormalizePriceUnit(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        foreach (var unit in Enum.GetValues<CatalogProductPriceUnit>())
+        {
+            if (string.Equals(unit.ToString(), trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return unit;
+            }
+        }
+
+        throw new ArgumentException("PriceUnit must be one of: Unit, Hour, Day, Person, Booking, Package.");
     }
 
     private static string NormalizeCurrency(string? currency)

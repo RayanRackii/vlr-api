@@ -37,7 +37,8 @@ public sealed class ResourceTypeMigrationTests(PostgresContainerFixture postgres
             TenantId = tenant.Id, UnitId = unit.Id, CategoryId = salaCategory.Id, FamilyId = family.Id,
             Name = "Sala 1", Tag = "S1", Status = Platform.Core.Domain.Enums.AssetStatus.Active,
         };
-        db.AddRange(tenant, unit, family, quadraCategory, salaCategory, quadraAsset, salaAsset);
+        await LegacyTenantSql.InsertAsync(db, tenant);
+        db.AddRange(unit, family, quadraCategory, salaCategory, quadraAsset, salaAsset);
         await db.SaveChangesAsync();
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO rentals.rental_assets

@@ -8,11 +8,13 @@ using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Auth;
 using Platform.Api.Modules.Catalog;
+using Platform.Api.Modules.Company;
 using Platform.Api.Modules.Taxonomy;
 using Platform.Api.Modules.CustomerAuth;
 using Platform.Api.Modules.Dashboard;
 using Platform.Api.Modules.ModuleMenuItems;
 using Platform.Api.Modules.Notifications;
+using Platform.Api.Modules.Payments;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
@@ -73,6 +75,7 @@ try
     builder.Services.AddRentalsModule();
     builder.Services.AddResourceVisuals();
     builder.Services.AddCatalogModule();
+    builder.Services.AddCompanyModule();
     builder.Services.AddTaxonomyModule();
     builder.Services.AddTenantNotificationsModule();
     builder.Services.AddUsersModule();
@@ -87,6 +90,7 @@ try
     builder.Services.AddMediatR(configuration =>
         configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
     builder.Services.AddWebhooksModule();
+    builder.Services.AddPaymentsModule(builder.Configuration);
     builder.Services.AddStorage(builder.Configuration, builder.Environment);
     builder.Services.AddNotificationInfrastructure(builder.Configuration, builder.Environment);
     var enableHangfire = !builder.Environment.IsEnvironment("Test");

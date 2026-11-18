@@ -4,6 +4,29 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class SetupStatusCalculatorTests
 {
+    [Theory]
+    [InlineData("Acme Ltda", "Acme", "11222333000181", "a@acme.com", null, "Sao Paulo", true)]
+    [InlineData("Acme Ltda", "Acme", "11222333000181", null, "+5511999998888", "Sao Paulo", true)]
+    [InlineData("Acme Ltda", "Acme", "11222333000181", null, null, "Sao Paulo", false)]
+    [InlineData("Acme Ltda", "Acme", "11222333000181", "a@acme.com", null, null, false)]
+    [InlineData("Acme Ltda", "Acme", "11222333000181", "a@acme.com", null, "  ", false)]
+    [InlineData("Acme Ltda", null, "11222333000181", "a@acme.com", null, "Sao Paulo", false)]
+    [InlineData("Acme Ltda", "Acme", "", "a@acme.com", null, "Sao Paulo", false)]
+    [InlineData("", "Acme", "11222333000181", "a@acme.com", null, "Sao Paulo", false)]
+    public void Company_profile_is_ready_only_with_identity_contact_and_city(
+        string? legalName,
+        string? tradeName,
+        string? taxId,
+        string? email,
+        string? phone,
+        string? city,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            SetupStatusCalculator.CompanyProfileReady(legalName, tradeName, taxId, email, phone, city));
+    }
+
     [Fact]
     public void Resource_without_hours_or_price_is_missing_those_items()
     {

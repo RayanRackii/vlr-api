@@ -38,6 +38,14 @@ public class Reservation : Entity, ITenantScoped
 
     public required decimal DepositPaid { get; set; }
 
+    public const int NotesMaxLength = 1000;
+
+    /// <summary>
+    /// Internal staff note (at most <see cref="NotesMaxLength"/> characters). Never shown to the
+    /// customer: customer and portal DTOs must not map it.
+    /// </summary>
+    public string? Notes { get; set; }
+
     public Unit Unit { get; set; } = null!;
 
     public Customer? Customer { get; set; }

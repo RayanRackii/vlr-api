@@ -17,7 +17,17 @@ public class CatalogProduct : Entity, ITenantScoped
 
     public string Currency { get; set; } = "BRL";
 
+    /// <summary>Optional unit the price is charged per. Null shows the price with no unit.</summary>
+    public CatalogProductPriceUnit? PriceUnit { get; set; }
+
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Whether the product is fulfilled through the schedule (agenda/queue, i.e. it needs a linked
+    /// resource). When false the product has no resource-scheduling step. Defaults to true to keep
+    /// the original semantics for existing products.
+    /// </summary>
+    public bool UsesSchedule { get; set; } = true;
 
     /// <summary>
     /// Portal visibility. <see cref="CatalogProductVisibility.Public"/> (default) is visible to
