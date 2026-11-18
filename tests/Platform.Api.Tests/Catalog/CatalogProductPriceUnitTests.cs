@@ -1,5 +1,6 @@
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Catalog.Services;
+using Platform.Api.Serialization;
 
 namespace Platform.Api.Tests.Catalog;
 
@@ -84,9 +85,39 @@ public sealed class CatalogProductPriceUnitTests
         h.Db.ChangeTracker.Clear();
         Assert.Equal("Package", (await h.Products.GetByIdAsync(product.Id, Ct))!.PriceUnit);
 
-        await h.Products.UpdateAsync(product.Id, new UpdateCatalogProductRequest { Name = "Item", Price = 5m }, Ct);
+        await h.Products.UpdateAsync(product.Id, new UpdateCatalogProductRequest { Name = "Item", Price = 5m, PriceUnit = JsonOptionalString.Specified(null) }, Ct);
         h.Db.ChangeTracker.Clear();
         Assert.Null((await h.Products.GetByIdAsync(product.Id, Ct))!.PriceUnit);
+    }
+
+    [Fact]
+    public async Task Update_without_a_unit_keeps_it_and_blank_clears_it()
+    {
+        await using var h = await CatalogHarness.CreateAsync();
+        var product = await h.Products.CreateAsync(new CreateCatalogProductRequest { Name = "Item", Price = 5m, PriceUnit = "Hour" }, Ct);
+
+        await h.Products.UpdateAsync(product.Id, new UpdateCatalogProductRequest { Name = "Renamed", Price = 5m }, Ct);
+        h.Db.ChangeTracker.Clear();
+        Assert.Equal("Hour", (await h.Products.GetByIdAsync(product.Id, Ct))!.PriceUnit);
+
+        await h.Products.UpdateAsync(product.Id, new UpdateCatalogProductRequest { Name = "Renamed", Price = 5m, PriceUnit = "  " }, Ct);
+        h.Db.ChangeTracker.Clear();
+        Assert.Null((await h.Products.GetByIdAsync(product.Id, Ct))!.PriceUnit);
+    }
+
+    [Fact]
+    public void Update_request_distinguishes_absent_null_and_value_in_json()
+    {
+        var web = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var absent = System.Text.Json.JsonSerializer.Deserialize<UpdateCatalogProductRequest>("{\"name\":\"a\"}", web)!;
+        var explicitNull = System.Text.Json.JsonSerializer.Deserialize<UpdateCatalogProductRequest>("{\"name\":\"a\",\"priceUnit\":null}", web)!;
+        var value = System.Text.Json.JsonSerializer.Deserialize<UpdateCatalogProductRequest>("{\"name\":\"a\",\"priceUnit\":\"Day\"}", web)!;
+
+        Assert.False(absent.PriceUnit.IsSpecified);
+        Assert.True(explicitNull.PriceUnit.IsSpecified);
+        Assert.Null(explicitNull.PriceUnit.Value);
+        Assert.True(value.PriceUnit.IsSpecified);
+        Assert.Equal("Day", value.PriceUnit.Value);
     }
 
     [Fact]

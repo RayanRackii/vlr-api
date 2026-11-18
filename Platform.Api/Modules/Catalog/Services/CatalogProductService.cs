@@ -158,7 +158,9 @@ public sealed class CatalogProductService(
         var name = NormalizeName(request.Name);
         var price = RoundPrice(request.Price);
         var currency = NormalizeCurrency(request.Currency);
-        var priceUnit = NormalizePriceUnit(request.PriceUnit);
+        var priceUnit = request.PriceUnit.IsSpecified
+            ? NormalizePriceUnit(request.PriceUnit.Value)
+            : product.PriceUnit;
         var code = NormalizeCode(request.Code);
         await EnsureCodeAvailableAsync(code, product.Id, cancellationToken);
 

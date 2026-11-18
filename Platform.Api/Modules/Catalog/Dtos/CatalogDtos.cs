@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using Platform.Api.Modules.Taxonomy.Dtos;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Catalog.Dtos;
@@ -143,8 +145,13 @@ public sealed record UpdateCatalogProductRequest
 
     public string? Currency { get; init; }
 
-    /// <summary>Unit the price is charged per (Unit, Hour, Day, Person, Booking, Package). Like the price, an update replaces it: absent or blank clears it.</summary>
-    public string? PriceUnit { get; init; }
+    /// <summary>
+    /// Unit the price is charged per (Unit, Hour, Day, Person, Booking, Package). Absent keeps the
+    /// stored unit (wizard steps that do not send it must not wipe it); explicit null or blank clears it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalStringConverter))]
+    public JsonOptionalString PriceUnit { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
     /// <summary>Whether the product is fulfilled through the schedule. Absent leaves the stored value unchanged.</summary>
