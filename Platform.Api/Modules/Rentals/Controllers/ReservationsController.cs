@@ -139,6 +139,43 @@ public sealed class ReservationsController(
         }
     }
 
+    /// <summary>
+    /// Sets or clears the internal staff note of a customer booking. The note is never shown to the
+    /// customer. Internal-use occupancies keep the catalog order workflow guard.
+    /// </summary>
+    [RequireAnyPermission(Permissions.Rentals.ReservationsCreate, Permissions.Rentals.ReservationsConfirm)]
+    [HttpPut("{id:guid}/notes")]
+    public async Task<ActionResult<ReservationResponseDto>> UpdateNotes(
+        Guid id,
+        [FromBody] UpdateReservationNotesRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await reservationService.UpdateNotesAsync(id, request.Notes, cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InternalUseRequiresOrderWorkflowException ex)
+        {
+            return Conflict(new { error = ex.Message, code = InternalUseRequiresOrderWorkflowException.Code });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { error = ex.Message });
+        }
+    }
+
     /// <summary>Confirm a pending reservation (B2B staff).</summary>
     [RequirePermission(Permissions.Rentals.ReservationsConfirm)]
     [HttpPost("{id:guid}/confirm")]

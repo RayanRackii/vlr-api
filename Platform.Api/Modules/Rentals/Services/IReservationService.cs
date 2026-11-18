@@ -41,6 +41,12 @@ public interface IReservationService
         Guid reservationId,
         CancellationToken cancellationToken);
 
+    /// <summary>Sets or clears the internal staff note of a customer booking (staff only).</summary>
+    Task<ReservationResponseDto> UpdateNotesAsync(
+        Guid reservationId,
+        string? notes,
+        CancellationToken cancellationToken);
+
     Task<ReservationResponseDto> CancelByCustomerAsync(
         Guid customerId,
         Guid reservationId,

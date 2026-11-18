@@ -235,6 +235,8 @@ public sealed class ReservationService(
             throw new ArgumentException("Provide exactly one of customerId or newCustomer.");
         }
 
+        var notes = NormalizeNotes(request.Notes);
+
         var coreRequest = new CreateReservationRequestDto
         {
             UnitId = request.UnitId ?? Guid.Empty,
@@ -250,7 +252,7 @@ public sealed class ReservationService(
             return await CreateCoreAsync(
                 coreRequest,
                 inferUnit: request.UnitId is null,
-                new StaffBookingOptions(request.AwaitingDeposit),
+                new StaffBookingOptions(request.AwaitingDeposit, notes),
                 (tenantId, ct) => ResolveStaffCustomerAsync(tenantId, request, ct),
                 cancellationToken);
         }
@@ -272,7 +274,39 @@ public sealed class ReservationService(
         }
     }
 
-    private sealed record StaffBookingOptions(bool AwaitingDeposit);
+    private sealed record StaffBookingOptions(bool AwaitingDeposit, string? Notes = null);
+
+    private static string? NormalizeNotes(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return null;
+        }
+
+        var trimmed = notes.Trim();
+        return trimmed.Length > Reservation.NotesMaxLength
+            ? throw new ArgumentException($"Notes must be at most {Reservation.NotesMaxLength} characters.")
+            : trimmed;
+    }
+
+    public async Task<ReservationResponseDto> UpdateNotesAsync(
+        Guid reservationId,
+        string? notes,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantContext();
+        await trialGuard.EnsureWritableAsync(cancellationToken);
+        var normalized = NormalizeNotes(notes);
+
+        var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Reservation '{reservationId}' was not found.");
+        EnsureNotInternalUse(reservation);
+
+        reservation.Notes = normalized;
+        reservation.Touch();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
+    }
 
     private async Task<(Customer Customer, bool IsNew)> ResolveStaffCustomerAsync(
         Guid tenantId,
@@ -475,6 +509,7 @@ public sealed class ReservationService(
                 Status = ReservationStatus.PendingDeposit,
                 TotalAmount = 0m,
                 DepositPaid = 0m,
+                Notes = staffOptions?.Notes,
             };
 
             decimal totalAmount = 0m;
@@ -658,7 +693,8 @@ public sealed class ReservationService(
             var response = ToResponse(reservation, itemResponses,
                 await policies.ReadTenantAsync(tenantId, cancellationToken),
                 await policies.ReadCategoriesAsync(tenantId, cancellationToken),
-                await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
+                await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken),
+                includeNotes: staffOptions is not null);
             if (transaction is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -767,7 +803,7 @@ public sealed class ReservationService(
                         i,
                         i.RentalAsset.AssetId,
                         i.RentalAsset.Asset.Name))
-                    .ToList(), tenantPolicy, categories, pricing))
+                    .ToList(), tenantPolicy, categories, pricing, includeNotes: true))
             .ToList();
     }
 
@@ -803,7 +839,7 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Confirmed)
             {
-                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
                 await CommitIfPresentAsync(transaction, cancellationToken);
                 return unchangedResponse;
             }
@@ -820,7 +856,7 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationConfirmed),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
-            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
@@ -865,7 +901,7 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Completed)
             {
-                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
                 await CommitIfPresentAsync(transaction, cancellationToken);
                 return unchangedResponse;
             }
@@ -882,7 +918,7 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCompleted),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
-            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
@@ -921,7 +957,7 @@ public sealed class ReservationService(
 
             if (reservation.Status == ReservationStatus.Canceled)
             {
-                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken);
+                var unchangedResponse = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
                 await CommitIfPresentAsync(transaction, cancellationToken);
                 return unchangedResponse;
             }
@@ -936,7 +972,7 @@ public sealed class ReservationService(
                 new ReservationEvent(reservation, RentalEventTypes.ReservationCanceled),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
-            var response = await ToResponseFromEntityAsync(reservation, cancellationToken);
+            var response = await ToResponseFromEntityAsync(reservation, cancellationToken, includeNotes: true);
             await CommitIfPresentAsync(transaction, cancellationToken);
             ScheduleDeliveries(queuedDeliveries);
 
@@ -1069,7 +1105,7 @@ public sealed class ReservationService(
     }
 
     private async Task<ReservationResponseDto> ToResponseFromEntityAsync(
-        Reservation reservation, CancellationToken cancellationToken) =>
+        Reservation reservation, CancellationToken cancellationToken, bool includeNotes = false) =>
         ToResponse(
             reservation,
             reservation.Items
@@ -1080,7 +1116,8 @@ public sealed class ReservationService(
                 .ToList(),
             await policies.ReadTenantAsync(reservation.TenantId, cancellationToken),
             await policies.ReadCategoriesAsync(reservation.TenantId, cancellationToken),
-            await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken));
+            await ReservationItemPricing.ReadAsync(dbContext, [reservation], cancellationToken),
+            includeNotes);
 
     private Task<Reservation?> LoadReservationWithItemsAsync(
         Guid reservationId,
@@ -1409,7 +1446,8 @@ public sealed class ReservationService(
         Reservation reservation,
         IReadOnlyList<(ReservationItem Item, Guid AssetId, string AssetName)> items,
         BookingPolicy? tenantPolicy, IReadOnlyDictionary<Guid, BookingPolicy> categories,
-        IReadOnlyDictionary<Guid, ReservationItemPricing> pricing) =>
+        IReadOnlyDictionary<Guid, ReservationItemPricing> pricing,
+        bool includeNotes = false) =>
         new(
             reservation.Id,
             reservation.TenantId,
@@ -1434,5 +1472,7 @@ public sealed class ReservationService(
                 pricing.GetValueOrDefault(x.Item.Id)?.Unit,
                 pricing.GetValueOrDefault(x.Item.Id)?.Days)).ToList(),
             PolicyResolver.CancelDeadlineUtc(reservation.StartDateTime,
-                items.Select(x => x.Item.RentalAsset), categories, tenantPolicy));
+                items.Select(x => x.Item.RentalAsset), categories, tenantPolicy),
+            // Staff-only: customer and portal responses are built with includeNotes = false.
+            includeNotes ? reservation.Notes : null);
 }

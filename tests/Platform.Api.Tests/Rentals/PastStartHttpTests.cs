@@ -289,6 +289,12 @@ public sealed class PastStartHttpTests
         public Task<ReservationResponseDto> CancelAsync(Guid reservationId, CancellationToken cancellationToken) =>
             throw new NotImplementedException();
 
+        public Task<ReservationResponseDto> UpdateNotesAsync(
+            Guid reservationId,
+            string? notes,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ReservationResponseDto> CancelByCustomerAsync(
             Guid customerId,
             Guid reservationId,
