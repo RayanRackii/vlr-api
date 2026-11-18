@@ -1782,6 +1782,10 @@
             "nullable": true,
             "type": "number"
           },
+          "priceUnit": {
+            "nullable": true,
+            "type": "string"
+          },
           "saleReadiness": {
             "$ref": "#/components/schemas/CatalogProductSaleReadiness"
           },
@@ -1936,6 +1940,73 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "CompanyAddressDto": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "nullable": true,
+            "type": "string"
+          },
+          "complement": {
+            "nullable": true,
+            "type": "string"
+          },
+          "district": {
+            "nullable": true,
+            "type": "string"
+          },
+          "number": {
+            "nullable": true,
+            "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "type": "string"
+          },
+          "street": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CompanyProfileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/CompanyAddressDto"
+          },
+          "contactEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "contactPhone": {
+            "nullable": true,
+            "type": "string"
+          },
+          "legalName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "subdomain": {
+            "nullable": true,
+            "type": "string"
+          },
+          "taxId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tradeName": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "type": "object"
@@ -2115,6 +2186,10 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "priceUnit": {
+            "nullable": true,
+            "type": "string"
           },
           "status": {
             "nullable": true,
@@ -4602,6 +4677,10 @@
             "nullable": true,
             "type": "number"
           },
+          "priceUnit": {
+            "nullable": true,
+            "type": "string"
+          },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyResponse"
           }
@@ -5608,6 +5687,10 @@
             "nullable": true,
             "type": "array"
           },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
           "startDateTime": {
             "format": "date-time",
             "type": "string"
@@ -6577,6 +6660,10 @@
           "newCustomer": {
             "$ref": "#/components/schemas/StaffNewCustomerDto"
           },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
           "startTime": {
             "format": "time",
             "type": "string"
@@ -7361,6 +7448,10 @@
             "nullable": true,
             "type": "number"
           },
+          "priceUnit": {
+            "nullable": true,
+            "type": "string"
+          },
           "taxonomy": {
             "$ref": "#/components/schemas/TaxonomyAssignmentRequest"
           },
@@ -7393,6 +7484,35 @@
           "sortOrder": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateCompanyProfileRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/CompanyAddressDto"
+          },
+          "contactEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "contactPhone": {
+            "nullable": true,
+            "type": "string"
+          },
+          "legalName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "taxId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tradeName": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "type": "object"
@@ -7710,6 +7830,16 @@
         "required": [
           "schedulePolicy"
         ],
+        "type": "object"
+      },
+      "UpdateReservationNotesRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "UpdateTagRequest": {
@@ -14413,6 +14543,81 @@
         ]
       }
     },
+    "/api/company": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Company"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyProfileRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyProfileRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Company"
+        ]
+      }
+    },
     "/api/customers": {
       "get": {
         "parameters": [
@@ -18555,6 +18760,65 @@
         ]
       }
     },
+    "/api/reservations/{id}/notes": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReservationNotesRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReservationNotesRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReservationNotesRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationResponseDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationResponseDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Reservations"
+        ]
+      }
+    },
     "/api/roles": {
       "get": {
         "responses": {
@@ -20960,6 +21224,9 @@
     },
     {
       "name": "CatalogTaxonomy"
+    },
+    {
+      "name": "Company"
     },
     {
       "name": "CustomerAuth"

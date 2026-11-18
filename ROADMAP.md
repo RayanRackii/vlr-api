@@ -1,5 +1,13 @@
 # ROADMAP — vlr-api
 
+### Dados da empresa, unidade de cobrança e observações da reserva (2026-11-18, feat/company-profile-price-unit-notes)
+
+- [x] Migration aditiva `AddCompanyContactPriceUnitAndReservationNotes` (todas as colunas nulas, sem backfill): `core.tenants` ganha `contact_email`, `contact_phone`, `address_postal_code/street/number/complement/district/city/state`; `catalog.catalog_products.price_unit`; `rentals.reservations.notes`. Insere (idempotente) a permissão `core.company.write` e a concede aos papéis de sistema Admin/SuperAdmin, como a migration de `core.units.write`.
+- [x] `GET/PUT /api/company` (tenant atual, nunca por id). GET: qualquer staff autenticado do tenant. PUT: `core.company.write`, bloqueado em trial somente leitura; valida razão social, CPF/CNPJ, e-mail, telefone (+55) e CEP; CPF/CNPJ duplicado devolve 409. Primeiros passos: a linha "empresa" exige razão social, nome fantasia, CPF/CNPJ, e-mail ou telefone e cidade.
+- [x] Produto do catálogo: `priceUnit` opcional (`Unit|Hour|Day|Person|Booking|Package`), aceito em criar/atualizar (atualizar substitui, como o preço), devolvido nos DTOs de staff e do portal, copiado ao duplicar e registrado no diff do histórico.
+- [x] Reserva: `notes` (≤ 1000) interno da equipe. `POST /api/reservations/staff` aceita `notes`; `PUT /api/reservations/{id}/notes` (`rentals.reservations.create` ou `.confirm`, só CustomerBooking). Respostas de staff devolvem `notes`; respostas de cliente e portal nunca.
+- [ ] Web (`vlr-web`): tela Dados da empresa, seletor de cobrança, observações na Nova reserva/agenda/Reservas (depois que este PR entrar).
+
 ### Histórico de alterações do produto (2026-11-17)
 
 - [x] `GET /api/catalog/products/{id}/history?limit=50&before=` (ProductsRead), mais novo primeiro. Reusa a tabela `catalog.catalog_access_audit` (sem migration): criado, atualizado (campo com antes/depois), ativado, desativado, taxonomia, requisitos de recurso, arquivo adicionado/removido e acesso (linhas antigas mantidas). `CatalogProductResponse.updatedAt` exposto. `IProductHistoryRecorder` fica para duplicar/excluir (V2).
