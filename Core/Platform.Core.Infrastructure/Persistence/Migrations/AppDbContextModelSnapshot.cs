@@ -1013,6 +1013,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(18,2)")
                         .HasColumnName("price");
 
+                    b.Property<string>("PriceUnit")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("price_unit");
+
                     b.Property<int>("ResourceRequirementsVersion")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -2968,6 +2973,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("end_date_time");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notes");
+
                     b.Property<string>("Purpose")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -3904,6 +3914,51 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasMaxLength(7)
                         .HasColumnType("character varying(7)")
                         .HasColumnName("accent_color");
+
+                    b.Property<string>("AddressCity")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("address_city");
+
+                    b.Property<string>("AddressComplement")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("address_complement");
+
+                    b.Property<string>("AddressDistrict")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("address_district");
+
+                    b.Property<string>("AddressNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("address_number");
+
+                    b.Property<string>("AddressPostalCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("address_postal_code");
+
+                    b.Property<string>("AddressState")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("address_state");
+
+                    b.Property<string>("AddressStreet")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("address_street");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)")
+                        .HasColumnName("contact_email");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_phone");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")

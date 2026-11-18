@@ -17,6 +17,9 @@ public class CatalogProduct : Entity, ITenantScoped
 
     public string Currency { get; set; } = "BRL";
 
+    /// <summary>Optional unit the price is charged per. Null shows the price with no unit.</summary>
+    public CatalogProductPriceUnit? PriceUnit { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     /// <summary>

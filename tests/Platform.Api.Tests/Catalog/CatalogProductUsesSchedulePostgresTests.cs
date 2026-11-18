@@ -21,8 +21,7 @@ public sealed class CatalogProductUsesSchedulePostgresTests(PostgresContainerFix
         await migrator.MigrateAsync("20261112183916_AddMaintenancePlanAssetTarget");
         var tenant = new Tenant("Uses schedule test", Guid.NewGuid().ToString("N")[..20]);
         provider.TenantId = tenant.Id;
-        db.Tenants.Add(tenant);
-        await db.SaveChangesAsync();
+        await LegacyTenantSql.InsertAsync(db, tenant);
         // Raw SQL: the current EF model has columns that do not exist at this older migration.
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO catalog.catalog_products (id, tenant_id, name, created_at)

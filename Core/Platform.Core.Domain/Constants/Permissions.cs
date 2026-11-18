@@ -18,6 +18,7 @@ public static class Permissions
         public const string RolesManage = "core.roles.manage";
         public const string UnitsRead = "core.units.read";
         public const string UnitsWrite = "core.units.write";
+        public const string CompanyWrite = "core.company.write";
         public const string RegistrationFieldsRead = "core.registration_fields.read";
         public const string RegistrationFieldsWrite = "core.registration_fields.write";
         public const string ModuleMenuRead = "core.module_menu.read";

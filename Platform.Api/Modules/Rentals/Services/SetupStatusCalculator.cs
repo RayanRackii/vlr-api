@@ -26,6 +26,23 @@ public static class SetupStatusCalculator
         bool PendingInvite,
         bool InviteAccepted);
 
+    /// <summary>
+    /// "Dados da empresa" step: legal name, trade name, tax id, a contact (e-mail or phone) and the city.
+    /// Extends (never loosens) the earlier name + tax id + trade name rule.
+    /// </summary>
+    public static bool CompanyProfileReady(
+        string? legalName,
+        string? tradeName,
+        string? taxId,
+        string? contactEmail,
+        string? contactPhone,
+        string? addressCity) =>
+        !string.IsNullOrWhiteSpace(legalName)
+        && !string.IsNullOrWhiteSpace(tradeName)
+        && !string.IsNullOrWhiteSpace(taxId)
+        && (!string.IsNullOrWhiteSpace(contactEmail) || !string.IsNullOrWhiteSpace(contactPhone))
+        && !string.IsNullOrWhiteSpace(addressCity);
+
     public static (string State, string[] Missing) Resource(ResourceInput input)
     {
         var missing = new List<string>(4);

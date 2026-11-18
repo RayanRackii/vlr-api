@@ -1206,6 +1206,12 @@ public sealed class ModuleRuntimeGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<ReservationResponseDto> UpdateNotesAsync(
+            Guid reservationId,
+            string? notes,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ReservationResponseDto> CancelByCustomerAsync(
             Guid customerId,
             Guid reservationId,

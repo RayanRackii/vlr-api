@@ -205,6 +205,16 @@ public sealed record StaffCreateReservationRequestDto
 
     /// <summary>True opens PendingDeposit when the resource requires a deposit; otherwise Confirmed.</summary>
     public bool AwaitingDeposit { get; init; }
+
+    /// <summary>Internal staff note (at most 1000 characters); never shown to the customer.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Notes { get; init; }
+}
+
+public sealed record UpdateReservationNotesRequestDto
+{
+    /// <summary>Internal staff note (at most 1000 characters). Null or blank clears it.</summary>
+    public string? Notes { get; init; }
 }
 
 public sealed record ReservationItemResponseDto(
@@ -232,7 +242,8 @@ public sealed record ReservationResponseDto(
     decimal DepositPaid,
     DateTimeOffset CreatedAt,
     IReadOnlyList<ReservationItemResponseDto> Items,
-    DateTimeOffset? CancelDeadlineUtc = null);
+    DateTimeOffset? CancelDeadlineUtc = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Notes = null);
 
 public sealed record UpdateRentalPricingDto
 {

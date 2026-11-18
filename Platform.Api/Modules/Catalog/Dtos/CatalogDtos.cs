@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using Platform.Api.Modules.Taxonomy.Dtos;
+using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
 
 namespace Platform.Api.Modules.Catalog.Dtos;
@@ -118,6 +120,9 @@ public sealed record CreateCatalogProductRequest
     public decimal? Price { get; init; }
 
     public string? Currency { get; init; }
+
+    /// <summary>Optional unit the price is charged per: Unit, Hour, Day, Person, Booking or Package. Absent or blank means none.</summary>
+    public string? PriceUnit { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
     /// <summary>Optional initial status: "Active" (default) or "Inactive". Creating inactive never
@@ -139,6 +144,14 @@ public sealed record UpdateCatalogProductRequest
     public decimal? Price { get; init; }
 
     public string? Currency { get; init; }
+
+    /// <summary>
+    /// Unit the price is charged per (Unit, Hour, Day, Person, Booking, Package). Absent keeps the
+    /// stored unit (wizard steps that do not send it must not wipe it); explicit null or blank clears it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonConverter(typeof(JsonOptionalStringConverter))]
+    public JsonOptionalString PriceUnit { get; init; }
     public TaxonomyAssignmentRequest? Taxonomy { get; init; }
 
     /// <summary>Whether the product is fulfilled through the schedule. Absent leaves the stored value unchanged.</summary>
@@ -170,6 +183,9 @@ public sealed record CatalogProductResponse(
     public CatalogProductVisibility Visibility { get; init; } = CatalogProductVisibility.Public;
 
     public bool UsesSchedule { get; init; } = true;
+
+    /// <summary>Unit the price is charged per (Unit, Hour, Day, Person, Booking, Package); null when none.</summary>
+    public string? PriceUnit { get; init; }
 
     /// <summary>Last time the product (fields, activation, files, requirements, access) changed; null if never touched.</summary>
     public DateTimeOffset? UpdatedAt { get; init; }
@@ -362,6 +378,9 @@ public sealed record PortalProductResponse(
     IReadOnlyList<PortalProductFileDto> Files)
 {
     public TaxonomyResponse Taxonomy { get; init; } = TaxonomyResponse.Empty;
+
+    /// <summary>Unit the price is charged per (Unit, Hour, Day, Person, Booking, Package); null when none.</summary>
+    public string? PriceUnit { get; init; }
 
     /// <summary>True when the product is Restricted and this customer was granted it (direct or via group).</summary>
     public bool IsExclusive { get; init; }

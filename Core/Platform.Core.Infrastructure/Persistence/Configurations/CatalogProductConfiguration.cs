@@ -38,6 +38,10 @@ public sealed class CatalogProductConfiguration : IEntityTypeConfiguration<Catal
             .HasDefaultValue("BRL")
             .IsRequired();
 
+        builder.Property(p => p.PriceUnit)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
         builder.Property(p => p.IsActive)
             .HasDefaultValue(true)
             .ValueGeneratedNever()

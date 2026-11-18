@@ -44,6 +44,33 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.WelcomeTagline)
             .HasMaxLength(120);
 
+        builder.Property(t => t.ContactEmail)
+            .HasMaxLength(254);
+
+        builder.Property(t => t.ContactPhone)
+            .HasMaxLength(20);
+
+        builder.Property(t => t.AddressPostalCode)
+            .HasMaxLength(8);
+
+        builder.Property(t => t.AddressStreet)
+            .HasMaxLength(200);
+
+        builder.Property(t => t.AddressNumber)
+            .HasMaxLength(20);
+
+        builder.Property(t => t.AddressComplement)
+            .HasMaxLength(100);
+
+        builder.Property(t => t.AddressDistrict)
+            .HasMaxLength(100);
+
+        builder.Property(t => t.AddressCity)
+            .HasMaxLength(100);
+
+        builder.Property(t => t.AddressState)
+            .HasMaxLength(2);
+
         builder.Property(t => t.IsActive)
             .HasDefaultValue(true)
             .IsRequired();

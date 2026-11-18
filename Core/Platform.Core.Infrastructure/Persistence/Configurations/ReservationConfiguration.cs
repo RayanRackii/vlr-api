@@ -64,6 +64,9 @@ public sealed class ReservationConfiguration : IEntityTypeConfiguration<Reservat
             .HasColumnType("decimal(18,2)")
             .IsRequired();
 
+        builder.Property(r => r.Notes)
+            .HasMaxLength(Reservation.NotesMaxLength);
+
         builder.Property(r => r.CreatedAt)
             .IsRequired();
 

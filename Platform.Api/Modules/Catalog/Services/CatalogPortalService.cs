@@ -764,7 +764,10 @@ public sealed class CatalogPortalService(
             product.Description,
             product.Price,
             product.Currency,
-            files);
+            files)
+        {
+            PriceUnit = product.PriceUnit?.ToString(),
+        };
     }
 
     private Guid EnsureTenant() =>

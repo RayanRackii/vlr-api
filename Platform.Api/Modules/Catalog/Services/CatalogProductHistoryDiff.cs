@@ -10,7 +10,8 @@ public readonly record struct CatalogProductHistoryFields(
     string? Description,
     decimal? Price,
     string? Currency,
-    bool UsesSchedule);
+    bool UsesSchedule,
+    string? PriceUnit = null);
 
 /// <summary>Pure helpers that turn before/after values into product history changes.</summary>
 public static class CatalogProductHistoryDiff
@@ -35,6 +36,7 @@ public static class CatalogProductHistoryDiff
             Field("description", before.Description, after.Description),
             Field("price", Money(before.Price), Money(after.Price)),
             Field("currency", before.Currency, after.Currency),
+            Field("priceUnit", before.PriceUnit, after.PriceUnit),
             Field("usesSchedule", Bool(before.UsesSchedule), Bool(after.UsesSchedule)));
 
     /// <summary>Categories/tags changes by name; empty when the id sets are equal.</summary>
