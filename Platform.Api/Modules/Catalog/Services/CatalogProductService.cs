@@ -125,6 +125,7 @@ public sealed class CatalogProductService(
             Description = NormalizeOptional(request.Description),
             Price = RoundPrice(request.Price),
             Currency = NormalizeCurrency(request.Currency),
+            PriceUnit = NormalizePriceUnit(request.PriceUnit),
             IsActive = isActive,
             UsesSchedule = request.UsesSchedule ?? true,
         };
@@ -157,6 +158,7 @@ public sealed class CatalogProductService(
         var name = NormalizeName(request.Name);
         var price = RoundPrice(request.Price);
         var currency = NormalizeCurrency(request.Currency);
+        var priceUnit = NormalizePriceUnit(request.PriceUnit);
         var code = NormalizeCode(request.Code);
         await EnsureCodeAvailableAsync(code, product.Id, cancellationToken);
 
@@ -170,6 +172,7 @@ public sealed class CatalogProductService(
         product.Description = NormalizeOptional(request.Description);
         product.Price = price;
         product.Currency = currency;
+        product.PriceUnit = priceUnit;
         if (request.UsesSchedule is { } usesSchedule) product.UsesSchedule = usesSchedule;
         product.Touch();
 
@@ -470,6 +473,7 @@ public sealed class CatalogProductService(
             Taxonomy = assignments[p.Id],
             Visibility = p.Visibility,
             UsesSchedule = p.UsesSchedule,
+            PriceUnit = p.PriceUnit?.ToString(),
             UpdatedAt = p.UpdatedAt,
             GrantedCustomerCount = grants.TryGetValue(p.Id, out var g) ? g.Customers : 0,
             GrantedGroupCount = grants.TryGetValue(p.Id, out var g2) ? g2.Groups : 0,
@@ -516,7 +520,7 @@ public sealed class CatalogProductService(
     }
 
     private static CatalogProductHistoryFields HistoryFields(CatalogProduct p) =>
-        new(p.Name, p.Code, p.Description, p.Price, p.Currency, p.UsesSchedule);
+        new(p.Name, p.Code, p.Description, p.Price, p.Currency, p.UsesSchedule, p.PriceUnit?.ToString());
 
     private static List<CatalogProductHistoryChange> CreatedChanges(CatalogProduct p) =>
         new[]
@@ -526,6 +530,7 @@ public sealed class CatalogProductService(
             CatalogProductHistoryDiff.Field("description", null, p.Description),
             CatalogProductHistoryDiff.Field("price", null, CatalogProductHistoryDiff.Money(p.Price)),
             CatalogProductHistoryDiff.Field("currency", null, p.Currency),
+            CatalogProductHistoryDiff.Field("priceUnit", null, p.PriceUnit?.ToString()),
             CatalogProductHistoryDiff.Field("usesSchedule", null, CatalogProductHistoryDiff.Bool(p.UsesSchedule)),
             CatalogProductHistoryDiff.Field("isActive", null, CatalogProductHistoryDiff.Bool(p.IsActive)),
         }.OfType<CatalogProductHistoryChange>().ToList();
@@ -615,6 +620,26 @@ public sealed class CatalogProductService(
         }
 
         return CatalogMoney.Round(price.Value);
+    }
+
+    /// <summary>Blank means no unit; otherwise one of the closed list (case-insensitive), never free text.</summary>
+    private static CatalogProductPriceUnit? NormalizePriceUnit(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        foreach (var unit in Enum.GetValues<CatalogProductPriceUnit>())
+        {
+            if (string.Equals(unit.ToString(), trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return unit;
+            }
+        }
+
+        throw new ArgumentException("PriceUnit must be one of: Unit, Hour, Day, Person, Booking, Package.");
     }
 
     private static string NormalizeCurrency(string? currency)

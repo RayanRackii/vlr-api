@@ -71,6 +71,7 @@ public sealed class CatalogProductLifecycleService(
             Description = source.Description,
             Price = source.Price,
             Currency = source.Currency,
+            PriceUnit = source.PriceUnit,
             UsesSchedule = source.UsesSchedule,
             Visibility = source.Visibility,
             // A copy is never published automatically: the owner reviews it and activates it.

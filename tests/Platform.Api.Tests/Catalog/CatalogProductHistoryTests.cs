@@ -99,6 +99,32 @@ public sealed class CatalogProductHistoryTests
     }
 
     [Fact]
+    public async Task Price_unit_is_recorded_on_create_and_in_the_update_diff_and_copied_on_duplicate()
+    {
+        await using var r = await CreateRigAsync();
+        var product = await r.Products.CreateAsync(
+            new CreateCatalogProductRequest { Name = "Item", Code = "C9", Price = 10m, PriceUnit = "Hour" }, Ct);
+
+        var created = Assert.Single(await r.ListAsync(product.Id));
+        Assert.Contains(created.Changes, c => c is { Field: "priceUnit", Old: null, New: "Hour" });
+
+        await r.Products.UpdateAsync(
+            product.Id,
+            new UpdateCatalogProductRequest { Name = "Item", Code = "C9", Price = 10m, Currency = "BRL", PriceUnit = "Day" },
+            Ct);
+
+        var updated = (await r.ListAsync(product.Id)).Single(e => e.Action == CatalogProductHistoryActions.Updated);
+        var change = Assert.Single(updated.Changes);
+        Assert.Equal("priceUnit", change.Field);
+        Assert.Equal("Hour", change.Old);
+        Assert.Equal("Day", change.New);
+
+        var copyId = await r.Lifecycle.DuplicateAsync(product.Id, Ct);
+        r.H.Db.ChangeTracker.Clear();
+        Assert.Equal("Day", (await r.Products.GetByIdAsync(copyId!.Value, Ct))!.PriceUnit);
+    }
+
+    [Fact]
     public async Task Update_without_changes_writes_no_entry()
     {
         await using var r = await CreateRigAsync();
