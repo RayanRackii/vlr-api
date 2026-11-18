@@ -24,8 +24,7 @@ public sealed class CatalogFileStatusPostgresMigrationTests(PostgresContainerFix
         await migrator.MigrateAsync(before);
         var tenant = new Tenant("Migration test", Guid.NewGuid().ToString("N")[..20]);
         provider.TenantId = tenant.Id;
-        db.Tenants.Add(tenant);
-        await db.SaveChangesAsync();
+        await LegacyTenantSql.InsertAsync(db, tenant);
         var product = new { Id = Guid.NewGuid() };
         // Raw SQL: the current EF model has columns that do not exist at this older migration.
         await db.Database.ExecuteSqlInterpolatedAsync($"""
