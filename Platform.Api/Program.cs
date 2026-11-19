@@ -18,6 +18,7 @@ using Platform.Api.Modules.Payments;
 using Platform.Api.Modules.Pmoc;
 using Platform.Api.Modules.RegistrationFields;
 using Platform.Api.Modules.Rentals;
+using Platform.Api.Modules.ResourcePlanning;
 using Platform.Api.Modules.ResourceVisuals;
 using Platform.Api.Modules.Roles;
 using Platform.Api.Modules.Users;
@@ -75,6 +76,7 @@ try
     builder.Services.AddRentalsModule();
     builder.Services.AddResourceVisuals();
     builder.Services.AddCatalogModule();
+    builder.Services.AddResourcePlanningModule();
     builder.Services.AddCompanyModule();
     builder.Services.AddTaxonomyModule();
     builder.Services.AddTenantNotificationsModule();
