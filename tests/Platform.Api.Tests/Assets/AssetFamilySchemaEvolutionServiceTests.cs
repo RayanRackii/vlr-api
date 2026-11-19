@@ -408,6 +408,161 @@ public sealed class AssetFamilySchemaEvolutionServiceTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Type_change_cannot_hide_behind_the_archived_flag_in_a_two_step_save()
+    {
+        var (db, service, family, tenants) = await ArrangeAsync([F("weight", "text")]);
+        await using var _ = db;
+        await SeedAssetAsync(db, tenants[0], family, "A1", ("weight", "abc"));
+
+        // Step 1: text -> number while archiving the field is checked like an active type change.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UpdateAsync(
+                family.Id,
+                new UpdateAssetFamilyRequest("Fam", [F("weight", "number") with { Archived = true }], 1, true),
+                CancellationToken.None));
+        Assert.Contains("from text to number", ex.Message, StringComparison.Ordinal);
+
+        // Archiving without a type change is fine; restoring or retyping it is blocked.
+        await service.UpdateAsync(
+            family.Id,
+            new UpdateAssetFamilyRequest("Fam", [F("weight", "text") with { Archived = true }], 1, true),
+            CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UpdateAsync(
+                family.Id,
+                new UpdateAssetFamilyRequest("Fam", [F("weight", "number")], 1, true),
+                CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UpdateAsync(
+                family.Id,
+                new UpdateAssetFamilyRequest("Fam", [F("weight", "number") with { Archived = true }], 1, true),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Adding_an_archived_field_over_incompatible_orphan_values_is_blocked()
+    {
+        var (db, service, family, tenants) = await ArrangeAsync([F("surface", "text")]);
+        await using var _ = db;
+        await SeedAssetAsync(db, tenants[0], family, "A1", ("legacy_weight", "abc"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UpdateAsync(
+                family.Id,
+                new UpdateAssetFamilyRequest(
+                    "Fam",
+                    [F("surface", "text"), F("legacy_weight", "number") with { Archived = true }],
+                    1,
+                    true),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Explicit_archive_keeps_the_field_and_its_values()
+    {
+        var (db, service, family, tenants) = await ArrangeAsync([F("capacity", "number"), F("surface", "text")]);
+        await using var _ = db;
+        await SeedAssetAsync(db, tenants[0], family, "A1", ("capacity", 10));
+
+        var updated = await service.UpdateAsync(
+            family.Id,
+            new UpdateAssetFamilyRequest(
+                "Fam", [F("surface", "text"), F("capacity", "number") with { Archived = true }], 1, true),
+            CancellationToken.None);
+
+        Assert.True(updated.Fields.Single(f => f.Key == "capacity").Archived);
+        Assert.Equal(2, updated.SchemaVersion);
+    }
+
+    [Fact]
+    public async Task Round_trip_with_archived_fields_does_not_hit_the_active_field_limit()
+    {
+        var (db, service, family, _) = await ArrangeAsync([]);
+        await using var _db = db;
+        var fields = Enumerable.Range(0, 60).Select(i => F($"f{i}", "text"))
+            .Concat(Enumerable.Range(0, 5).Select(i => F($"old{i}", "text") with { Archived = true }))
+            .ToArray();
+
+        var saved = await service.UpdateAsync(
+            family.Id, new UpdateAssetFamilyRequest("Fam", fields, 1, true), CancellationToken.None);
+        Assert.Equal(65, saved.Fields.Count);
+
+        var again = await service.UpdateAsync(
+            family.Id, new UpdateAssetFamilyRequest("Fam", saved.Fields, 1, true), CancellationToken.None);
+        Assert.Equal(saved.SchemaVersion, again.SchemaVersion);
+
+        var tooManyActive = Enumerable.Range(0, 61).Select(i => F($"g{i}", "text")).ToArray();
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.UpdateAsync(
+                family.Id, new UpdateAssetFamilyRequest("Fam", tooManyActive, 1, true), CancellationToken.None));
+
+        var tooManyTotal = Enumerable.Range(0, 201).Select(i => F($"h{i}", "text") with { Archived = true }).ToArray();
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.UpdateAsync(
+                family.Id, new UpdateAssetFamilyRequest("Fam", tooManyTotal, 1, true), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task No_op_save_with_archived_fields_listed_last_does_not_bump_the_version()
+    {
+        await using var db = InMemoryAppDb.Create(new FakeTenantProvider { TenantId = null });
+        var family = new AssetFamily
+        {
+            Key = "ordered",
+            Label = "Ordered",
+            FieldSchemaJson = """{"fields":[{"key":"old","type":"text","required":false,"label":"Old","archived":true},{"key":"surface","type":"text","required":false,"label":"Surface"}],"version":4}""",
+            SortOrder = 1,
+            IsActive = true,
+        };
+        db.AssetFamilies.Add(family);
+        await db.SaveChangesAsync();
+        var service = new AssetFamilyService(db);
+
+        var updated = await service.UpdateAsync(
+            family.Id,
+            new UpdateAssetFamilyRequest(
+                "Ordered",
+                [
+                    new AssetFamilyFieldDto("surface", "text", false, "Surface"),
+                    new AssetFamilyFieldDto("old", "text", false, "Old", Archived: true),
+                ],
+                1,
+                true,
+                ExpectedSchemaVersion: 4),
+            CancellationToken.None);
+
+        Assert.Equal(4, updated.SchemaVersion);
+        Assert.Equal(new[] { "old", "surface" }, updated.Fields.Select(f => f.Key).ToArray());
+    }
+
+    [Fact]
+    public async Task Concurrent_schema_save_makes_the_stale_save_a_conflict()
+    {
+        var provider = new FakeTenantProvider { TenantId = null };
+        var name = $"evolution-{Guid.NewGuid():N}";
+        await using var first = InMemoryAppDb.Create(provider, name);
+        await using var second = InMemoryAppDb.Create(provider, name);
+        var created = await new AssetFamilyService(first).CreateAsync(
+            new CreateAssetFamilyRequest("fam", "Fam", [F("surface", "text")], 1, true),
+            CancellationToken.None);
+
+        // The first context has already loaded (and tracks) the family at version 1.
+        await first.AssetFamilies.SingleAsync(f => f.Id == created.Id);
+
+        await new AssetFamilyService(second).UpdateAsync(
+            created.Id,
+            new UpdateAssetFamilyRequest("Fam", [F("surface", "text"), F("extra", "text")], 1, true),
+            CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new AssetFamilyService(first).UpdateAsync(
+                created.Id,
+                new UpdateAssetFamilyRequest("Fam", [F("surface", "text"), F("other", "text")], 1, true),
+                CancellationToken.None));
+        Assert.Contains("changed since it was loaded", ex.Message, StringComparison.Ordinal);
+    }
+
     private static AssetFamilyFieldDto F(string key, string type) =>
         new(key, type, false, key);
 

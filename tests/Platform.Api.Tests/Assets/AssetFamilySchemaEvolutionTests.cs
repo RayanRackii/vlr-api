@@ -179,7 +179,7 @@ public sealed class AssetFamilySchemaEvolutionTests
 
         Assert.False(bad.CanSave);
         Assert.True(good.CanSave);
-        Assert.True(archivedAdd.CanSave);
+        Assert.False(archivedAdd.CanSave);
         Assert.Equal(AssetFamilySchemaEvolution.Added, bad.Impacts.Single(i => i.Key == "legacy").Change);
     }
 
@@ -196,6 +196,79 @@ public sealed class AssetFamilySchemaEvolutionTests
         Assert.False(blocked.CanSave);
         Assert.True(sameType.CanSave);
         Assert.Equal(AssetFamilySchemaEvolution.Unarchived, sameType.Impacts.Single().Change);
+    }
+
+    [Fact]
+    public void Type_change_cannot_hide_behind_archive_for_stored_values()
+    {
+        var stored = Schema(Def("weight", "text"));
+        var assets = new[] { Asset(TenantA, ("weight", "abc")) };
+
+        // Step 1 of a two-step save: change the type and archive in the same request.
+        var archiveWithNewType = AssetFamilySchemaEvolution.Plan(
+            stored, [Def("weight", "number") with { Archived = true }], assets);
+        Assert.False(archiveWithNewType.CanSave);
+
+        // Same sequence starting from an already archived text field: retype while archived, then restore.
+        var archivedStored = Schema(Def("weight", "text") with { Archived = true });
+        var retypeArchived = AssetFamilySchemaEvolution.Plan(
+            archivedStored, [Def("weight", "number") with { Archived = true }], assets);
+        var restoreAsNumber = AssetFamilySchemaEvolution.Plan(
+            archivedStored, [Def("weight", "number")], assets);
+        Assert.False(retypeArchived.CanSave);
+        Assert.False(restoreAsNumber.CanSave);
+
+        // Archiving without a type change stays free.
+        Assert.True(AssetFamilySchemaEvolution.Plan(
+            stored, [Def("weight", "text") with { Archived = true }], assets).CanSave);
+    }
+
+    [Fact]
+    public void Archived_add_over_orphan_values_checks_the_type()
+    {
+        var plan = AssetFamilySchemaEvolution.Plan(
+            Schema(),
+            [Def("legacy", "number") with { Archived = true }],
+            [Asset(TenantA, ("legacy", "abc"))]);
+
+        Assert.False(plan.CanSave);
+    }
+
+    [Fact]
+    public void Unarchive_with_the_same_type_blocks_on_shape_and_only_warns_on_limits()
+    {
+        var stored = Schema(Def("capacity", "number") with { Archived = true });
+
+        var badShape = AssetFamilySchemaEvolution.Plan(
+            stored, [Def("capacity", "number")], [Asset(TenantA, ("capacity", "not a number"))]);
+        var overLimit = AssetFamilySchemaEvolution.Plan(
+            stored,
+            [Def("capacity", "number") with { Max = 100 }],
+            [Asset(TenantA, ("capacity", 500)), Asset(TenantA, ("capacity", 5))]);
+
+        Assert.False(badShape.CanSave);
+        Assert.Equal(1, badShape.Impacts.Single().IncompatibleCount);
+        Assert.True(overLimit.CanSave);
+        var impact = overLimit.Impacts.Single();
+        Assert.Equal(AssetFamilySchemaEvolution.Unarchived, impact.Change);
+        Assert.Equal(0, impact.IncompatibleCount);
+        Assert.Equal(1, impact.ConstraintViolationCount);
+    }
+
+    [Fact]
+    public void Signature_ignores_the_order_of_archived_fields_only()
+    {
+        var a = Def("a", "text");
+        var b = Def("b", "text");
+        var x = Def("x", "text") with { Archived = true };
+        var y = Def("y", "text") with { Archived = true };
+
+        Assert.Equal(
+            AssetFamilySchemaEvolution.Signature([x, a, y, b]),
+            AssetFamilySchemaEvolution.Signature([a, b, y, x]));
+        Assert.NotEqual(
+            AssetFamilySchemaEvolution.Signature([a, b]),
+            AssetFamilySchemaEvolution.Signature([b, a]));
     }
 
     [Fact]

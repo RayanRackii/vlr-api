@@ -122,6 +122,24 @@ public static class AssetFamilySchemaEvolution
     public static string SerializeFields(IReadOnlyList<AssetFieldDefinitionDto> fields) =>
         JsonSerializer.Serialize(fields, SchemaJsonOptions);
 
+    /// <summary>
+    /// Order-insensitive for archived fields: active fields in order, then archived fields by key.
+    /// A save whose signature equals the stored one is a no-op and must not bump the version.
+    /// </summary>
+    public static string Signature(IReadOnlyList<AssetFieldDefinitionDto> fields)
+    {
+        var active = fields.Where(f => !f.Archived).ToList();
+        var archived = fields.Where(f => f.Archived).OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+        return SerializeFields(active) + "|" + SerializeFields(archived);
+    }
+
+    private enum CheckMode
+    {
+        None,
+        Full,
+        Shape,
+    }
+
     private static AssetFamilyFieldImpactDto Evaluate(
         AssetFieldDefinitionDto field,
         AssetFieldDefinitionDto? previous,
@@ -130,36 +148,38 @@ public static class AssetFamilySchemaEvolution
     {
         message = null;
         string change;
-        var check = false;
-        var countViolations = false;
+        CheckMode mode;
+        var typeChanged = previous is not null && !SameType(previous, field);
 
+        // A type change must never hide behind the archived flag: whenever the type of a key
+        // changes (or a key is added over orphan values) every stored value is checked.
         if (previous is null)
         {
-            // Orphan values left under this key by an earlier removal must fit the new definition.
             change = Added;
-            check = !field.Archived;
+            mode = CheckMode.Full;
         }
         else if (field.Archived)
         {
             change = previous.Archived
                 ? (Same(previous, field) ? Unchanged : Updated)
                 : Archived;
+            mode = typeChanged ? CheckMode.Full : CheckMode.None;
         }
         else if (previous.Archived)
         {
+            // Restoring a field: the shape of every stored value must fit; limits only warn.
             change = Unarchived;
-            check = !SameType(previous, field);
-            countViolations = !check;
+            mode = typeChanged ? CheckMode.Full : CheckMode.Shape;
         }
-        else if (!SameType(previous, field))
+        else if (typeChanged)
         {
             change = TypeChanged;
-            check = true;
+            mode = CheckMode.Full;
         }
         else
         {
-            change = Same(previous, field) ? Unchanged : Updated;
-            countViolations = true;
+            change = Same(previous!, field) ? Unchanged : Updated;
+            mode = CheckMode.None;
         }
 
         var assetCount = values.Count;
@@ -168,33 +188,42 @@ public static class AssetFamilySchemaEvolution
         IReadOnlyList<string> samples = [];
         var violations = 0;
 
-        if (check || countViolations)
+        if (mode == CheckMode.Full)
         {
             var failing = values.Where(v => !Passes(field, v.Value)).ToList();
-            if (check)
-            {
-                incompatible = failing.Count;
-                samples = failing
-                    .Select(v => Sample(v.Value))
-                    .Distinct(StringComparer.Ordinal)
-                    .Take(MaxSamples)
-                    .ToList();
-            }
-            else
-            {
-                violations = failing.Count;
-            }
+            incompatible = failing.Count;
+            samples = Samples(failing);
+        }
+        else if (mode == CheckMode.Shape)
+        {
+            var badShape = values
+                .Where(v => !AssetFamilyAttributeValidator.TryCoerce(field, v.Value, out _))
+                .ToList();
+            incompatible = badShape.Count;
+            samples = Samples(badShape);
+            violations = values.Count(v => !Passes(field, v.Value)) - incompatible;
+        }
+        else if (!field.Archived)
+        {
+            violations = values.Count(v => !Passes(field, v.Value));
         }
 
         var blocking = incompatible > 0;
         if (blocking)
         {
-            message = BlockingMessage(field, previous, change, incompatible, samples);
+            message = BlockingMessage(field, previous, typeChanged, change, incompatible, samples);
         }
 
         return new AssetFamilyFieldImpactDto(
             field.Key, change, assetCount, tenantCount, incompatible, samples, violations, blocking);
     }
+
+    private static IReadOnlyList<string> Samples(List<(Guid TenantId, JsonElement Value)> failing) =>
+        failing
+            .Select(v => Sample(v.Value))
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaxSamples)
+            .ToList();
 
     private static bool Passes(AssetFieldDefinitionDto field, JsonElement value) =>
         AssetFamilyAttributeValidator.TryCoerce(field, value, out var coerced)
@@ -209,16 +238,16 @@ public static class AssetFamilySchemaEvolution
     private static string BlockingMessage(
         AssetFieldDefinitionDto field,
         AssetFieldDefinitionDto? previous,
+        bool typeChanged,
         string change,
         int incompatible,
         IReadOnlyList<string> samples)
     {
-        var action = change switch
-        {
-            TypeChanged => $"cannot change from {previous!.Type} to {field.Type}",
-            Unarchived => $"cannot be restored as {field.Type}",
-            _ => $"cannot be added as {field.Type}",
-        };
+        var action = typeChanged
+            ? $"cannot change from {previous!.Type} to {field.Type}"
+            : change == Unarchived
+                ? $"cannot be restored as {field.Type}"
+                : $"cannot be added as {field.Type}";
         var holders = incompatible == 1
             ? "1 asset holds an incompatible value"
             : $"{incompatible} assets hold incompatible values";
