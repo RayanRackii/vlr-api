@@ -12,7 +12,16 @@ public sealed record AssetFamilyFieldDto(
     string Key,
     string Type,
     bool Required,
-    string? Label);
+    string? Label,
+    string? Help = null,
+    string? Unit = null,
+    decimal? Min = null,
+    decimal? Max = null,
+    int? Decimals = null,
+    IReadOnlyList<string>? Options = null,
+    int? MaxLength = null,
+    string? Group = null,
+    bool Archived = false);
 
 public sealed record AssetFamilyDetailResponse(
     Guid Id,

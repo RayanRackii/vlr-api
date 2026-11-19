@@ -30,7 +30,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Dictionary<string, string>>("Attributes")
+                    b.Property<string>("Attributes")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("jsonb")

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -49,7 +50,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             .ThenBy(f => f.Label)
             .ToListAsync(cancellationToken);
 
-        return families.Select(ToDetail).ToList();
+        return families.Select(f => ToDetail(f, includeArchived: false)).ToList();
     }
 
     public async Task<IReadOnlyList<AssetFamilyDetailResponse>> ListActiveForTenantAsync(
@@ -69,7 +70,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             .ThenBy(f => f.Label)
             .ToListAsync(cancellationToken);
 
-        return families.Select(ToDetail).ToList();
+        return families.Select(f => ToDetail(f, includeArchived: false)).ToList();
     }
 
     public async Task<IReadOnlyList<AssetFamilyDetailResponse>> ListCatalogIncludingInactiveAsync(
@@ -81,7 +82,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             .ThenBy(f => f.Label)
             .ToListAsync(cancellationToken);
 
-        return families.Select(ToDetail).ToList();
+        return families.Select(f => ToDetail(f, includeArchived: false)).ToList();
     }
 
     public async Task<AssetFamilyDetailResponse> GetByIdAsync(
@@ -97,7 +98,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             throw new KeyNotFoundException($"Asset family '{id}' was not found.");
         }
 
-        return ToDetail(family);
+        return ToDetail(family, includeArchived: true);
     }
 
     public async Task<AssetFamilyDetailResponse> CreateAsync(
@@ -140,7 +141,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             throw new InvalidOperationException($"Asset family key '{key}' already exists.", ex);
         }
 
-        return ToDetail(family);
+        return ToDetail(family, includeArchived: true);
     }
 
     public async Task<AssetFamilyDetailResponse> UpdateAsync(
@@ -161,7 +162,9 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         RejectKeyChange(family.Key, request.Key);
 
         var label = NormalizeLabel(request.Label);
-        var schemaJson = SerializeSchema(request.Fields);
+        var schemaJson = SerializeSchema(
+            request.Fields,
+            ParseStoredSchemaOrEmpty(family.FieldSchemaJson));
         RejectSeedDeactivation(family.Key, request.IsActive);
 
         family.Label = label;
@@ -172,7 +175,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return ToDetail(family);
+        return ToDetail(family, includeArchived: true);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
@@ -231,8 +234,13 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
     private static readonly HashSet<string> AllowedFieldTypes = new(StringComparer.Ordinal)
     {
         "text",
+        "longtext",
         "number",
         "boolean",
+        "select",
+        "multiselect",
+        "url",
+        "date",
     };
 
     private static readonly Regex KeyPattern = new(
@@ -243,6 +251,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
     private static readonly JsonSerializerOptions SchemaJsonOptions = new()
     {
         PropertyNamingPolicy = null,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     private static void RejectKeyChange(string currentKey, string? requestedKey)
@@ -300,13 +309,26 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         return trimmed;
     }
 
-    private static string SerializeSchema(IReadOnlyList<AssetFamilyFieldDto>? fields)
+    private const int MaxFieldsPerFamily = 60;
+
+    private static string SerializeSchema(
+        IReadOnlyList<AssetFamilyFieldDto>? fields,
+        AssetFieldSchemaDto? stored = null)
     {
         if (fields is null)
         {
             throw new ArgumentException("Fields are required.");
         }
 
+        if (fields.Count > MaxFieldsPerFamily)
+        {
+            throw new ArgumentException($"A family can have at most {MaxFieldsPerFamily} fields.");
+        }
+
+        // Keys already present in the stored schema are accepted as is (grandfathered).
+        var storedKeys = new HashSet<string>(
+            stored?.Fields.Select(f => f.Key) ?? [],
+            StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var definitions = new List<AssetFieldDefinitionDto>(fields.Count);
 
@@ -323,6 +345,12 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
                 throw new ArgumentException($"Field key '{key}' is duplicated.");
             }
 
+            if (!storedKeys.Contains(key) && !KeyPattern.IsMatch(key))
+            {
+                throw new ArgumentException(
+                    $"Field key '{key}' must start with a letter and contain only lowercase letters, digits, and underscores (max 64 characters).");
+            }
+
             if (string.IsNullOrWhiteSpace(field.Type))
             {
                 throw new ArgumentException($"Field '{key}' type is required.");
@@ -332,14 +360,158 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             if (!AllowedFieldTypes.Contains(type))
             {
                 throw new ArgumentException(
-                    $"Field '{key}' type must be text, number, or boolean.");
+                    $"Field '{key}' type must be one of: text, longtext, number, boolean, select, multiselect, url, date.");
             }
 
-            var label = string.IsNullOrWhiteSpace(field.Label) ? null : field.Label.Trim();
-            definitions.Add(new AssetFieldDefinitionDto(key, type, field.Required, label));
+            definitions.Add(BuildDefinition(key, type, field));
         }
 
-        return JsonSerializer.Serialize(new AssetFieldSchemaDto(definitions), SchemaJsonOptions);
+        return JsonSerializer.Serialize(
+            new AssetFieldSchemaDto(definitions, stored?.Version ?? 1),
+            SchemaJsonOptions);
+    }
+
+    private static AssetFieldDefinitionDto BuildDefinition(string key, string type, AssetFamilyFieldDto field)
+    {
+        var label = LimitedOrNull(field.Label, 120, key, "label");
+        var help = LimitedOrNull(field.Help, 300, key, "help");
+        var group = LimitedOrNull(field.Group, 60, key, "group");
+
+        string? unit = null;
+        decimal? min = null;
+        decimal? max = null;
+        int? decimals = null;
+        IReadOnlyList<string>? options = null;
+        int? maxLength = null;
+
+        switch (type)
+        {
+            case "number":
+                unit = LimitedOrNull(field.Unit, 16, key, "unit");
+                min = NormalizeDecimal(field.Min);
+                max = NormalizeDecimal(field.Max);
+                if (min is { } lo && max is { } hi && lo > hi)
+                {
+                    throw new ArgumentException($"Field '{key}' min must be less than or equal to max.");
+                }
+
+                if (field.Decimals is { } d)
+                {
+                    if (d is < 0 or > 6)
+                    {
+                        throw new ArgumentException($"Field '{key}' decimals must be between 0 and 6.");
+                    }
+
+                    decimals = d;
+                }
+
+                break;
+
+            case "text":
+                maxLength = ValidateMaxLength(key, field.MaxLength, 1000);
+                break;
+
+            case "longtext":
+                maxLength = ValidateMaxLength(key, field.MaxLength, 10000);
+                break;
+
+            case "select":
+            case "multiselect":
+                options = ValidateOptions(key, field.Options);
+                break;
+        }
+
+        // Archived fields are never required.
+        var required = field.Required && !field.Archived;
+
+        return new AssetFieldDefinitionDto(
+            key, type, required, label, help, unit, min, max, decimals, options, maxLength, group, field.Archived);
+    }
+
+    private static string? LimitedOrNull(string? value, int maxLength, string key, string property)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > maxLength)
+        {
+            throw new ArgumentException(
+                $"Field '{key}' {property} must be at most {maxLength} characters.");
+        }
+
+        return trimmed;
+    }
+
+    private static decimal? NormalizeDecimal(decimal? value) =>
+        value is { } v ? v / 1.0000000000000000000000000000m : null;
+
+    private static int? ValidateMaxLength(string key, int? value, int ceiling)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value < 1 || value > ceiling)
+        {
+            throw new ArgumentException($"Field '{key}' maxLength must be between 1 and {ceiling}.");
+        }
+
+        return value;
+    }
+
+    private static IReadOnlyList<string> ValidateOptions(string key, IReadOnlyList<string>? options)
+    {
+        if (options is null || options.Count == 0)
+        {
+            throw new ArgumentException($"Field '{key}' requires at least one option.");
+        }
+
+        if (options.Count > 50)
+        {
+            throw new ArgumentException($"Field '{key}' can have at most 50 options.");
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>(options.Count);
+        foreach (var option in options)
+        {
+            var trimmed = option?.Trim() ?? string.Empty;
+            if (trimmed.Length is < 1 or > 60)
+            {
+                throw new ArgumentException($"Field '{key}' options must have 1 to 60 characters.");
+            }
+
+            if (trimmed.Contains(',', StringComparison.Ordinal))
+            {
+                throw new ArgumentException($"Field '{key}' options cannot contain commas.");
+            }
+
+            if (!seen.Add(trimmed))
+            {
+                throw new ArgumentException($"Field '{key}' option '{trimmed}' is duplicated.");
+            }
+
+            result.Add(trimmed);
+        }
+
+        return result;
+    }
+
+    private static AssetFieldSchemaDto ParseStoredSchemaOrEmpty(string fieldSchemaJson)
+    {
+        try
+        {
+            return AssetFamilyAttributeValidator.ParseSchema(fieldSchemaJson);
+        }
+        catch (ArgumentException)
+        {
+            // A broken stored schema must not prevent an admin from replacing it.
+            return new AssetFieldSchemaDto([]);
+        }
     }
 
     private static bool IsAssetFamilyKeyUniqueViolation(DbUpdateException exception)
@@ -372,11 +544,16 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         return false;
     }
 
-    private static AssetFamilyDetailResponse ToDetail(Platform.Core.Domain.Entities.AssetFamily family)
+    private static AssetFamilyDetailResponse ToDetail(
+        Platform.Core.Domain.Entities.AssetFamily family,
+        bool includeArchived)
     {
         var schema = AssetFamilyAttributeValidator.ParseSchema(family.FieldSchemaJson);
         var fields = schema.Fields
-            .Select(f => new AssetFamilyFieldDto(f.Key, f.Type, f.Required, f.Label))
+            .Where(f => includeArchived || !f.Archived)
+            .Select(f => new AssetFamilyFieldDto(
+                f.Key, f.Type, f.Required, f.Label, f.Help, f.Unit, f.Min, f.Max,
+                f.Decimals, f.Options, f.MaxLength, f.Group, f.Archived))
             .ToList();
 
         return new AssetFamilyDetailResponse(
