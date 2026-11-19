@@ -41,7 +41,8 @@ public sealed record RentalAssetResponse(
     int? DepositPercent = null,
     int? EffectiveDepositPercent = null,
     bool DirectRental = true,
-    Guid? ResourceTypeId = null);
+    Guid? ResourceTypeId = null,
+    Dictionary<string, string?>? Attributes = null);
 
 public sealed record SetDirectRentalRequest
 {
