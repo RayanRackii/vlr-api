@@ -89,4 +89,12 @@ public static class Permissions
         public const string NotificationsRead = "catalog.notifications.read";
         public const string NotificationsResend = "catalog.notifications.resend";
     }
+
+    public static class ResourcePlanning
+    {
+        public const string AgendaRead = "resource-planning.agenda.read";
+        public const string AllocationsManage = "resource-planning.allocations.manage";
+        public const string AllocationsExecute = "resource-planning.allocations.execute";
+        public const string AvailabilityWrite = "resource-planning.availability.write";
+    }
 }

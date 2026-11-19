@@ -7,8 +7,8 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(61, PermissionCatalog.All.Length);
-        Assert.Equal(61, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(65, PermissionCatalog.All.Length);
+        Assert.Equal(65, PermissionCatalog.AllKeys.Count);
         Assert.Contains(Permissions.Rentals.ReservationsCreate, PermissionCatalog.AllKeys);
         Assert.Equal(
             PlatformModules.Rentals,
@@ -98,5 +98,36 @@ public sealed class PermissionCatalogCatalogTests
         Assert.True(PlatformModules.TryNormalize("orders", out var b) && b == PlatformModules.Catalog);
         Assert.True(PlatformModules.TryNormalize("pedidos", out var c) && c == PlatformModules.Catalog);
         Assert.True(PlatformModules.TryNormalize("catalogo", out var d) && d == PlatformModules.Catalog);
+    }
+
+    [Fact]
+    public void Resource_planning_keys_use_the_module_prefix_and_the_technician_may_create_and_execute_but_not_manage()
+    {
+        var keys = new[]
+        {
+            Permissions.ResourcePlanning.AgendaRead,
+            Permissions.ResourcePlanning.AllocationsManage,
+            Permissions.ResourcePlanning.AllocationsExecute,
+            Permissions.ResourcePlanning.AvailabilityWrite,
+        };
+
+        foreach (var key in keys)
+        {
+            Assert.StartsWith("resource-planning.", key, StringComparison.Ordinal);
+            Assert.Contains(key, PermissionCatalog.AllKeys);
+            Assert.Equal(
+                PlatformModules.ResourcePlanning,
+                Assert.Single(PermissionCatalog.All, item => item.Key == key).ModuleKey);
+            Assert.DoesNotContain(key, PermissionCatalog.ExplicitGrantOnlyKeys);
+            Assert.DoesNotContain(key, PermissionCatalog.AdminWildcardExcludedKeys);
+            Assert.DoesNotContain(key, PermissionCatalog.DefaultUserKeys);
+        }
+
+        // Technician (owner decision 5): reads the agenda and creates / starts / finishes / releases.
+        // Editing, cancelling anyone's allocation and the availability profile stay admin-level.
+        Assert.Contains(Permissions.ResourcePlanning.AgendaRead, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.Contains(Permissions.ResourcePlanning.AllocationsExecute, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.DoesNotContain(Permissions.ResourcePlanning.AllocationsManage, PermissionCatalog.TechnicianLegacyKeys);
+        Assert.DoesNotContain(Permissions.ResourcePlanning.AvailabilityWrite, PermissionCatalog.TechnicianLegacyKeys);
     }
 }
