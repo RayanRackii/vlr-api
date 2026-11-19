@@ -120,6 +120,40 @@ public sealed class TenantRbacAccessTests
         Assert.True(await HasPermissionAsync(harness, technician.Id, Permissions.Os.WorkOrdersExecute));
     }
 
+    [Fact]
+    public async Task EnsureAsync_bootstraps_resource_planning_for_admin_and_technician_only()
+    {
+        await using var harness = await RbacAccessHarness.CreateAsync();
+        var admin = new Role(harness.Tenant.Id, SystemRoles.Admin, "Admin (system)", isSystemRole: true);
+        var superAdmin = new Role(harness.Tenant.Id, SystemRoles.SuperAdmin, "SuperAdmin (system)", isSystemRole: true);
+        var user = new Role(harness.Tenant.Id, SystemRoles.User, "User (system)", isSystemRole: true);
+        var technician = new Role(harness.Tenant.Id, SystemRoles.Technician, "Technician (system)", isSystemRole: true);
+        harness.Db.Roles.AddRange(admin, superAdmin, user, technician);
+        await harness.Db.SaveChangesAsync();
+
+        await new TenantAccessBootstrapper(harness.Db, NullLogger<TenantAccessBootstrapper>.Instance).EnsureAsync(harness.Tenant.Id);
+
+        string[] all =
+        [
+            Permissions.ResourcePlanning.AgendaRead,
+            Permissions.ResourcePlanning.AllocationsManage,
+            Permissions.ResourcePlanning.AllocationsExecute,
+            Permissions.ResourcePlanning.AvailabilityWrite,
+        ];
+        foreach (var key in all)
+        {
+            Assert.True(await HasPermissionAsync(harness, admin.Id, key), $"admin {key}");
+            Assert.True(await HasPermissionAsync(harness, superAdmin.Id, key), $"superadmin {key}");
+            Assert.False(await HasPermissionAsync(harness, user.Id, key), $"user {key}");
+        }
+
+        // Technician: read the agenda and create / start / finish / release; nothing admin-level.
+        Assert.True(await HasPermissionAsync(harness, technician.Id, Permissions.ResourcePlanning.AgendaRead));
+        Assert.True(await HasPermissionAsync(harness, technician.Id, Permissions.ResourcePlanning.AllocationsExecute));
+        Assert.False(await HasPermissionAsync(harness, technician.Id, Permissions.ResourcePlanning.AllocationsManage));
+        Assert.False(await HasPermissionAsync(harness, technician.Id, Permissions.ResourcePlanning.AvailabilityWrite));
+    }
+
     private static async Task<bool> HasPermissionAsync(RbacAccessHarness harness, Guid roleId, string key)
     {
         var permissionId = await harness.Db.Permissions

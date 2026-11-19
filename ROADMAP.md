@@ -8,6 +8,14 @@
 - [x] `GET /api/admin/modules` ganha `requiredModules`. `ModuleGateConventionTests`: gate de ação pode somar um segundo módulo se o gate da classe ainda declara o esperado.
 - [ ] O fluxo de pedido segue exigindo `rentals` em runtime (muda na API-5). Próximas fatias: API-2 (perfil e horários), API-3 (alocações manuais e agenda). Espelho do glossário em `vlr-web/CONTEXT.md` e `openapi.json` do web (`requiredModules`) ficam para o PR do web.
 
+### Planejamento de recursos: perfil do ativo e horário de funcionamento (2026-11-20, feat/resource-planning-profile-hours)
+
+- [x] Migration `20261120100000_AddAssetPlanning` (só adição, `Down` com guarda): schema `planning` com `asset_planning_profiles`, `asset_working_hours` e `asset_allocations` (a tabela das alocações só nasce aqui; quem escreve nela chega na API-3). Toda tabela tem `tenant_id` com filtro global e FK composta `(tenant_id, ...)`. Única mudança em tabelas existentes: unique `(tenant_id, id)` em `assets.assets` e `os.work_orders`, alvo das FKs compostas (`id` já é PK, não falha com dados). Antes de aplicar em PROD seguir `docs/runbooks/database-migrations.md` (backup, listar pendentes, só esta migration).
+- [x] Permissões `resource-planning.agenda.read`, `.allocations.manage`, `.allocations.execute`, `.availability.write` (catálogo passa a 65). Admin recebe pelo curinga; Technician recebe `agenda.read` e `allocations.execute` (criar, iniciar, concluir, liberar; cancelar alocação de outro e editar perfil seguem do admin).
+- [x] `GET /api/planning/assets`, `GET`/`PUT /api/planning/assets/{id}/profile` (gate só do módulo `resource-planning`, sem exigir `inventory`, `rentals` ou `catalog`). Plannable é opt-in por ativo; política padrão `StartWithinHours`; horário rejeita, não avisa; ativo alugável com `rentals` ativo recusa horário com 409 (o calendário é o do aluguel).
+- [x] `AssetWorkingHoursRules` (puro): `Anytime`, `StartWithinHours`, `WithinHours`, multi-dia, dia partido e dia de horário de verão, tudo em instantes reais do fuso do tenant. Testes de regra, HTTP (permissão, módulo, isolamento com segundo tenant), SQL da migration e snapshot OpenAPI.
+- [ ] Próximas fatias: API-3 (alocações manuais, conflitos e agenda; passa a contar `AssetAllocation` nas guardas de desativação), WEB-3 usa estes endpoints.
+
 ### Aparência do portal do cliente: imagem e textos da tela de login (2026-11-19, feat/portal-landing-appearance)
 
 - [x] Migration aditiva `AddTenantPortalLanding` (colunas nulas, sem backfill): `core.tenants` ganha `landing_image_key` (300), `landing_kicker` (60), `landing_headline` (120), `landing_subtitle` (240).
