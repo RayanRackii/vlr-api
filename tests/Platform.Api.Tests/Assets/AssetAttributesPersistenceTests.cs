@@ -119,4 +119,33 @@ public sealed class AssetAttributesPersistenceTests
         Assert.Equal(12m, updated.Attributes["capacity"].GetDecimal());
         Assert.Equal(JsonValueKind.True, updated.Attributes["covered"].ValueKind);
     }
+
+    [Fact]
+    public async Task Family_change_with_attributes_omitted_drops_values_and_does_not_enforce_new_required_fields()
+    {
+        // Documents spec rule 4.3.1: existing is not carried over across families.
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await UseSchemaAsync(harness);
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            Create(harness, "P3", Attrs(("capacity", 12), ("surface", "Saibro"))), CancellationToken.None);
+
+        var other = new AssetFamily
+        {
+            Key = $"other-{Guid.NewGuid():N}"[..32],
+            Label = "Other",
+            FieldSchemaJson = """{"fields":[{"key":"capacity","type":"number","required":true}]}""",
+        };
+        harness.Db.AssetFamilies.Add(other);
+        harness.Db.TenantAssetFamilies.Add(new TenantAssetFamily(harness.Db.Assets.Single(a => a.Id == created.Id).TenantId, other.Id));
+        await harness.Db.SaveChangesAsync();
+
+        var updated = await registry.UpdateRentableAsync(
+            created.RentalConfiguration!.Id,
+            Update(harness, "P3", null) with { FamilyId = other.Id },
+            CancellationToken.None);
+
+        Assert.True(updated.FamilyId == other.Id);
+        Assert.Empty(updated.Attributes!);
+    }
 }
