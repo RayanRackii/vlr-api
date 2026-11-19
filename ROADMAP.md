@@ -1,5 +1,12 @@
 # ROADMAP — vlr-api
 
+### Aparência do portal do cliente: imagem e textos da tela de login (2026-11-19, feat/portal-landing-appearance)
+
+- [x] Migration aditiva `AddTenantPortalLanding` (colunas nulas, sem backfill): `core.tenants` ganha `landing_image_key` (300), `landing_kicker` (60), `landing_headline` (120), `landing_subtitle` (240).
+- [x] `GET/PUT /api/portal-appearance`, `POST/DELETE /api/portal-appearance/landing-image` (tenant atual). GET: qualquer staff; escritas: `core.company.write` e bloqueadas em trial somente leitura. Imagem jpg/png/webp (magic bytes), até 3 MB, no bucket público em `tenants/{tenantId:N}/landing/{guid:N}.{ext}`; o objeto anterior é apagado best-effort após o commit.
+- [x] `GET /api/public/tenants/{subdomain}/branding` ganha `landingImageUrl`, `landingKicker`, `landingHeadline`, `landingSubtitle` (anuláveis, ao final).
+- [ ] Web: `PortalAuthLayout` (W1) e Configurações › Aparência do portal (W2).
+
 ### Dados da empresa, unidade de cobrança e observações da reserva (2026-11-18, feat/company-profile-price-unit-notes)
 
 - [x] Migration aditiva `AddCompanyContactPriceUnitAndReservationNotes` (todas as colunas nulas, sem backfill): `core.tenants` ganha `contact_email`, `contact_phone`, `address_postal_code/street/number/complement/district/city/state`; `catalog.catalog_products.price_unit`; `rentals.reservations.notes`. Insere (idempotente) a permissão `core.company.write` e a concede aos papéis de sistema Admin/SuperAdmin, como a migration de `core.units.write`.

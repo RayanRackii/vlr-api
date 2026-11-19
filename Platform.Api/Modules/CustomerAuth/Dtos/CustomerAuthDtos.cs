@@ -108,7 +108,11 @@ public sealed record TenantBrandingResponseDto(
     string? AccentColor,
     string? WelcomeTagline,
     bool NewBookingUiEnabled = false,
-    string TimeZoneId = "America/Sao_Paulo");
+    string TimeZoneId = "America/Sao_Paulo",
+    string? LandingImageUrl = null,
+    string? LandingKicker = null,
+    string? LandingHeadline = null,
+    string? LandingSubtitle = null);
 
 public sealed record CustomerProfileDto(
     Guid Id,

@@ -4515,6 +4515,32 @@
         },
         "type": "object"
       },
+      "PortalAppearanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "landingHeadline": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingImageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingKicker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingSubtitle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "welcomeTagline": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PortalCatalogPolicyResponse": {
         "additionalProperties": false,
         "properties": {
@@ -7086,6 +7112,22 @@
             "nullable": true,
             "type": "string"
           },
+          "landingHeadline": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingImageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingKicker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingSubtitle": {
+            "nullable": true,
+            "type": "string"
+          },
           "logoSvg": {
             "nullable": true,
             "type": "string"
@@ -7626,6 +7668,24 @@
         "required": [
           "label"
         ],
+        "type": "object"
+      },
+      "UpdatePortalAppearanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "landingHeadline": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingKicker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingSubtitle": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "UpdateRegistrationFieldRequestDto": {
@@ -16169,6 +16229,157 @@
         ]
       }
     },
+    "/api/portal-appearance": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortalAppearanceRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortalAppearanceRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortalAppearanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      }
+    },
+    "/api/portal-appearance/landing-image": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "style": "form"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      }
+    },
     "/api/public/resource-visual-revisions/{id}/art.svg": {
       "get": {
         "parameters": [
@@ -21275,6 +21486,9 @@
     },
     {
       "name": "Permissions"
+    },
+    {
+      "name": "PortalAppearance"
     },
     {
       "name": "PublicBookingMaps"
