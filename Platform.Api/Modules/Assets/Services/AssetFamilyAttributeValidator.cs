@@ -41,6 +41,45 @@ public static class AssetFamilyAttributeValidator
         return projected;
     }
 
+    /// <summary>
+    /// Update variant: null <paramref name="incoming"/> keeps <paramref name="existing"/>; a provided
+    /// dictionary replaces it. A required field only fails when it ends up blank AND was not blank in
+    /// the stored values, so assets that predate a newly required field stay editable.
+    /// </summary>
+    public static Dictionary<string, string?> ValidateAndProjectForUpdate(
+        string fieldSchemaJson,
+        IReadOnlyDictionary<string, string?>? incoming,
+        IReadOnlyDictionary<string, string?>? existing)
+    {
+        var schema = ParseSchema(fieldSchemaJson);
+        var source = incoming ?? existing ?? new Dictionary<string, string?>(StringComparer.Ordinal);
+        var projected = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        foreach (var field in schema.Fields)
+        {
+            source.TryGetValue(field.Key, out var raw);
+            var normalized = NormalizeValue(field, raw);
+
+            if (field.Required && string.IsNullOrWhiteSpace(normalized) && HadValue(existing, field.Key))
+            {
+                throw new ArgumentException(
+                    $"Attribute '{field.Key}' is required for this asset family.");
+            }
+
+            if (normalized is not null)
+            {
+                projected[field.Key] = normalized;
+            }
+        }
+
+        return projected;
+    }
+
+    private static bool HadValue(IReadOnlyDictionary<string, string?>? existing, string key) =>
+        existing is not null
+        && existing.TryGetValue(key, out var value)
+        && !string.IsNullOrWhiteSpace(value);
+
     public static AssetFieldSchemaDto ParseSchema(string fieldSchemaJson)
     {
         if (string.IsNullOrWhiteSpace(fieldSchemaJson))
