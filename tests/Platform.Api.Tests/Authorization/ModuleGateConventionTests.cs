@@ -103,7 +103,8 @@ public sealed class ModuleGateConventionTests
         // replace the expected gate (e.g. Catalog's order-allocation endpoints also require
         // `resource-planning`, an optional integration that no longer lists catalog in
         // RequiredModules, ADR 0010).
-        if (ResolveClassDeclaredModule(action) is { } classModule
+        if (CommercialModuleKeys.Contains(declared)
+            && ResolveClassDeclaredModule(action) is { } classModule
             && string.Equals(classModule, expected, StringComparison.Ordinal))
         {
             yield break;

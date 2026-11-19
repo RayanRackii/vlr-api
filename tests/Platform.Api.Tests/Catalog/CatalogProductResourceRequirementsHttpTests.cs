@@ -120,6 +120,35 @@ public sealed class CatalogProductResourceRequirementsHttpTests
     }
 
     [Fact]
+    public async Task Resource_planning_on_with_catalog_off_blocks_order_allocation_endpoints()
+    {
+        var world = await SeedAsync(catalogActive: false);
+        await using (var seed = Verify(world.DatabaseName, world.TenantId))
+        {
+            seed.TenantModules.Add(new TenantModule(world.TenantId, PlatformModules.ResourcePlanning, isActive: true));
+            await seed.SaveChangesAsync();
+        }
+
+        using var host = StartHost(
+            world.DatabaseName,
+            allowPermissionDespiteModule: true,
+            controllerType: typeof(CatalogOrdersController));
+        var client = Client(host, ManagerEmail, world.TenantId);
+        var orderId = Guid.NewGuid();
+        var allocationId = Guid.NewGuid();
+
+        await AssertModuleInactiveAsync(
+            await client.PostAsJsonAsync($"/api/catalog/orders/{orderId}/allocation-preview", new { }, JsonOptions),
+            world.ProductName);
+        await AssertModuleInactiveAsync(
+            await client.PostAsJsonAsync(
+                $"/api/catalog/orders/{orderId}/allocations/{allocationId}/usage",
+                new { },
+                JsonOptions),
+            world.ProductName);
+    }
+
+    [Fact]
     public async Task Catalog_off_staff_role_is_forbidden_before_the_action()
     {
         var world = await SeedAsync(catalogActive: false);
@@ -367,7 +396,10 @@ public sealed class CatalogProductResourceRequirementsHttpTests
         return client;
     }
 
-    private static IHost StartHost(string databaseName, bool allowPermissionDespiteModule) =>
+    private static IHost StartHost(
+        string databaseName,
+        bool allowPermissionDespiteModule,
+        Type? controllerType = null) =>
         new HostBuilder()
             .ConfigureWebHost(web =>
             {
@@ -389,7 +421,11 @@ public sealed class CatalogProductResourceRequirementsHttpTests
                     if (allowPermissionDespiteModule)
                     {
                         services.AddSingleton<IAuthorizationHandler>(
-                            new AllowPermissionHandler(Permissions.Catalog.ProductsManage));
+                            new AllowPermissionHandler(
+                                Permissions.Catalog.ProductsManage,
+                                Permissions.Catalog.OrdersRead,
+                                Permissions.Catalog.OrdersManage,
+                                Permissions.Catalog.OrdersAllocate));
                     }
                     else
                     {
@@ -414,7 +450,8 @@ public sealed class CatalogProductResourceRequirementsHttpTests
                             }
 
                             manager.ApplicationParts.Add(new AssemblyPart(typeof(CatalogProductsController).Assembly));
-                            manager.FeatureProviders.Add(new SingleController(typeof(CatalogProductsController)));
+                            manager.FeatureProviders.Add(
+                                new SingleController(controllerType ?? typeof(CatalogProductsController)));
                         });
                 });
                 web.Configure(app =>
@@ -444,13 +481,13 @@ public sealed class CatalogProductResourceRequirementsHttpTests
         protected override bool IsController(TypeInfo typeInfo) => typeInfo.AsType() == controllerType;
     }
 
-    private sealed class AllowPermissionHandler(string permissionKey) : AuthorizationHandler<PermissionRequirement>
+    private sealed class AllowPermissionHandler(params string[] permissionKeys) : AuthorizationHandler<PermissionRequirement>
     {
         protected override Task HandleRequirementAsync(
             AuthorizationHandlerContext context,
             PermissionRequirement requirement)
         {
-            if (requirement.PermissionKeys.Contains(permissionKey))
+            if (permissionKeys.Any(key => requirement.PermissionKeys.Contains(key)))
             {
                 context.Succeed(requirement);
             }

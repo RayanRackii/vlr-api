@@ -94,7 +94,7 @@ No `RequiredModules`. `catalog`, `os` and `rentals` become optional integrations
 
 The method (`:178-206`) needs no logic change: it skips descriptors with no `RequiredModules`. Update its doc comment and the comment in `AdminTenantService.cs:291-297`. Tests that assert "resource-planning requires catalog and rentals" flip to "activates with inventory only" and "activates alone, capability auto-provisioned".
 
-Capability provisioning: ADR 0004 decision 5 says activating a registry-dependent module provisions a default `TenantAssetFamily`. I did not find a hook keyed on `RequiredCapabilities` in `Platform.Api` (only `AdminModulesController.cs:23` reads it). The implementer must locate the existing provisioning for rentals/pmoc/os near `AdminTenantService.cs:243, 317` and make `resource-planning` follow it. **Unverified item.**
+Capability provisioning: ADR 0004 decision 5 says activating a registry-dependent module provisions a default `TenantAssetFamily`. **Resolved in API-1 (ADR 0010 decision 1):** no module-keyed hook exists and none is needed. `ResolveFamiliesAsync` always falls back to the `generic` family and `SyncTenantAssetFamiliesAsync` always runs, so every tenant already has the capability.
 
 ### 3.3 Business guards replacing the lost static guarantees
 
@@ -138,7 +138,7 @@ One row per plannable asset. Presence plus `IsPlannable` is the opt-in.
 | `asset_id` | uuid | FK `(tenant_id, asset_id)` to `assets.assets`, unique per tenant |
 | `is_plannable` | bool | default true |
 | `capacity` | int | default 1, check `>= 1`. Phase 1 UI fixes 1 |
-| `hours_policy` | varchar(32) | `Anytime` (default), `StartWithinHours`, `WithinHours` |
+| `hours_policy` | varchar(32) | `Anytime`, `StartWithinHours` (default, owner decision 3), `WithinHours` |
 | `default_prep_minutes`, `default_cleanup_minutes` | int | default 0, check `>= 0` |
 
 ### 4.2 `AssetWorkingHours` (`planning.asset_working_hours`)
@@ -211,11 +211,11 @@ New module folder `Platform.Api/Modules/ResourcePlanning/` (`Controllers`, `Serv
 | Key | Allows |
 |---|---|
 | `resource-planning.agenda.read` | list plannable assets, read agenda and allocations |
-| `resource-planning.allocations.manage` | create, edit, cancel allocations |
+| `resource-planning.allocations.manage` | create, edit, and cancel any allocation (admin-level) |
 | `resource-planning.allocations.execute` | start, work-finished, release |
 | `resource-planning.availability.write` | edit an asset's planning profile and working hours |
 
-System-role bootstrap: Admin gets all by wildcard; Technician gets `agenda.read` and `allocations.execute` (decision 5). `catalog.orders.allocate` stays for the order flow.
+System-role bootstrap: Admin gets all by wildcard; Technician gets `agenda.read`, `allocations.execute` and the right to **create** allocations (decision 5: create, start, finish, release; cancel only their own). Creation is therefore allowed to `allocations.manage` or `allocations.execute`; edit stays `allocations.manage`. `catalog.orders.allocate` stays for the order flow.
 
 ### 5.2 Endpoints
 
@@ -226,11 +226,11 @@ System-role bootstrap: Admin gets all by wildcard; Technician gets `agenda.read`
 | `PUT /api/planning/assets/{assetId}/profile` | availability.write | upsert profile and replace hours atomically. 409 when the asset is rental-backed and the caller tries to set hours (rental schedule is the authority) |
 | `GET /api/planning/agenda?from&to&assetIds&unitId` | agenda.read | `resources[]` (with working hours for shading), `items[]` (allocations overlapping by stored occupied window), and for rental-backed assets `externalBusy[]` (customer reservations as anonymous busy intervals). Range validation as `CatalogAgendaController.ValidateRange`. Constant number of round trips regardless of asset count |
 | `POST /api/planning/allocations/preview` | agenda.read | computes occupied window, returns `feasible`, `conflicts[]`, `hoursViolation` |
-| `POST /api/planning/allocations` | allocations.manage | body: `assetId`, `kind`, `title`, `notes`, `workStart`, `workEnd`, `prepMinutes?`, `cleanupMinutes?`, optional `workOrderId` or `catalogOrderItemId` |
+| `POST /api/planning/allocations` | allocations.manage or allocations.execute | body: `assetId`, `kind`, `title`, `notes`, `workStart`, `workEnd`, `prepMinutes?`, `cleanupMinutes?`, optional `workOrderId` or `catalogOrderItemId` |
 | `GET /api/planning/allocations/{id}` | agenda.read | |
 | `GET /api/planning/allocations?workOrderId=|catalogOrderId=|assetId=&status=` | agenda.read | link panels |
 | `PATCH /api/planning/allocations/{id}` | allocations.manage | title, notes, window; only while `Scheduled`; needs `expectedVersion`; re-runs conflict check under lock. Not allowed for `source = CatalogOrder` (the order flow owns those) |
-| `POST /api/planning/allocations/{id}/usage` | allocations.execute (`cancel` needs allocations.manage) | `{ action: start | work-finished | release | cancel, expectedVersion, reason? }`. For `source = CatalogOrder` returns 409 `planning.order_workflow_required`, pointing to the order endpoint, same idea as `InternalUseRequiresOrderWorkflowException` |
+| `POST /api/planning/allocations/{id}/usage` | allocations.execute (`cancel`: see the rule at the end of this row) | `{ action: start | work-finished | release | cancel, expectedVersion, reason? }`. For `source = CatalogOrder` returns 409 `planning.order_workflow_required`, pointing to the order endpoint, same idea as `InternalUseRequiresOrderWorkflowException`. **Cancel rule, enforced by the service:** allowed when `CreatedByUserId == current user` OR the user holds `allocations.manage`; cancelling an allocation created by someone else is admin-only (403 otherwise) |
 
 Errors: 409 `planning.conflict` with `conflicts: [{ source: "allocation" | "reservation", allocationId?, start, end, label }]` (label withheld without read permission on the linked thing); 422 `planning.outside_working_hours`; 409 `planning.version_conflict`; 409 `planning.asset_not_plannable`.
 
@@ -305,7 +305,7 @@ After each slice: update `ROADMAP.md` in the touched repo; after API-1 update `C
 
 1. **Model.** Dedicated allocation record on the asset, with a mirror reservation only for rentable assets (recommended), or keep "internal reservation" and give every plannable asset a hidden rental configuration.
 2. **Module requirement.** Capability only, per ADR 0004 (recommended): the module can be sold without Ativos, but then assets must be created through another module. Alternative: hard-require the `inventory` module.
-3. **Working-hours rule.** Three policies proposed, default `Anytime`. Confirm the three and the default. Confirm that working hours block (reject) rather than only warn.
+3. **Working-hours rule.** Three policies, default `StartWithinHours` (owner answer). Confirm the three and the default. Confirm that working hours block (reject) rather than only warn.
 4. **Overdue allocations.** Started and not released: blocks until released (same as today). Scheduled and never started, past its end: recommended to stop blocking automatically for manual allocations and keep today's behavior for order-linked ones. Confirm.
 5. **Technician role.** Read plus start, finish, release (recommended), or also create and cancel.
 6. **OS link.** Phase 1 manual from the OS page (recommended). Later: auto-block the asset when an OS is scheduled, auto-release on completion.

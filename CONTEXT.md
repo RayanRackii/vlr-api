@@ -183,7 +183,7 @@ An `Asset` that a Tenant opted in to plan (an `AssetPlanningProfile` with `IsPla
 _Avoid_: Treating "rentable" as "plannable"; giving a non-rentable asset a hidden `RentalAsset` just to own a calendar
 
 **Allocation** (resource planning):
-A window on one Plannable resource, with a kind (`Use` or `Unavailable`), a status (`Scheduled`, `Running`, `Cleaning`, `Released`, `Cancelled`) and an optional link to a catalog order item or a work order (or free text only). `AssetAllocation` is the planning record; `CatalogOrderItemResourceAllocation` stays the catalog-side link. A `Scheduled` allocation blocks its occupied window; `Running` and `Cleaning` block until released.
+A window on one Plannable resource, with a kind (`Use` or `Unavailable`), a status (`Scheduled`, `Running`, `Cleaning`, `Released`, `Cancelled`) and an optional link to a catalog order item or a work order (or free text only). `AssetAllocation` is the planning record; `CatalogOrderItemResourceAllocation` stays the catalog-side link. Blocking: a manual allocation that was never started stops blocking after its end; a started one (`Running`, `Cleaning`) blocks until released; order-linked allocations keep today's behavior (an overdue, unreleased `Scheduled` one keeps blocking).
 _Avoid_: Calling it a reservation (a Reservation is a customer booking; `InternalUse` is only the mirror on rental-backed assets)
 
 **Working hours**:
