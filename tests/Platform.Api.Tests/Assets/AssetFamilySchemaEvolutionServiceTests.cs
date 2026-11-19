@@ -563,6 +563,28 @@ public sealed class AssetFamilySchemaEvolutionServiceTests
         Assert.Contains("changed since it was loaded", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Delete_after_a_concurrent_schema_save_is_a_conflict_not_a_server_error()
+    {
+        var provider = new FakeTenantProvider { TenantId = null };
+        var name = $"evolution-del-{Guid.NewGuid():N}";
+        await using var first = InMemoryAppDb.Create(provider, name);
+        await using var second = InMemoryAppDb.Create(provider, name);
+        var created = await new AssetFamilyService(first).CreateAsync(
+            new CreateAssetFamilyRequest("fam", "Fam", [F("surface", "text")], 1, true),
+            CancellationToken.None);
+        await first.AssetFamilies.SingleAsync(f => f.Id == created.Id);
+
+        await new AssetFamilyService(second).UpdateAsync(
+            created.Id,
+            new UpdateAssetFamilyRequest("Fam", [F("surface", "text"), F("extra", "text")], 1, true),
+            CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new AssetFamilyService(first).DeleteAsync(created.Id, CancellationToken.None));
+        Assert.Contains("changed since it was loaded", ex.Message, StringComparison.Ordinal);
+    }
+
     private static AssetFamilyFieldDto F(string key, string type) =>
         new(key, type, false, key);
 

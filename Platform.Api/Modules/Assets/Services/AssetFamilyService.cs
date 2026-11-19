@@ -302,6 +302,12 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new InvalidOperationException(
+                "Asset family schema changed since it was loaded. Reload and try again.",
+                ex);
+        }
         catch (DbUpdateException ex) when (IsAssetFamilyRestrictViolation(ex))
         {
             throw new InvalidOperationException(
