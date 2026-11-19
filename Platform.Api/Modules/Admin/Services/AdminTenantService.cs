@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
+using Platform.Api.Services.Brazil;
 using Platform.Api.Services.Tenancy;
 using Platform.Api.Services.Svg;
 using Platform.Core.Domain.Constants;
@@ -288,43 +289,30 @@ public sealed class AdminTenantService(
                 throw new ArgumentException("At least one active module is required.");
             }
 
-            // NormalizeEntitlements above already rejects statically-invalid module combinations
-            // (module-to-module RequiredModules dependency: resource-planning cannot remain desired
-            // without catalog+rentals also desired). The remaining case it cannot catch is
-            // resource-planning itself being dropped (disabled) while unreleased allocations exist;
-            // that is a business rule enforced here, inside the same LockTenantModulesAsync
-            // advisory-lock scope (see call above), so it serializes against concurrent allocation
-            // admission by a later phase's allocation/approval service.
-            var isResourcePlanningBeingDisabled = existingActive.Contains(PlatformModules.ResourcePlanning)
-                && !modules.Contains(PlatformModules.ResourcePlanning);
-            if (isResourcePlanningBeingDisabled)
-            {
-                // Admin operates across tenants by explicit id, not the ambient ITenantScoped
-                // filter (which may not match `id` at all, e.g. a platform-admin request) —
-                // without IgnoreQueryFilters this guard silently sees zero rows and never blocks.
-                var unreleasedCount = await dbContext.Set<CatalogOrderItemResourceAllocation>()
-                    .IgnoreQueryFilters()
-                    .Where(a => a.TenantId == id && UnreleasedAllocationStatuses.Contains(a.Status))
-                    .CountAsync(cancellationToken);
-                if (unreleasedCount > 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Cannot disable resource-planning: {unreleasedCount} unreleased resource " +
-                        "allocation(s) exist for this tenant.");
-                }
-            }
+            // resource-planning needs only the Asset Registry capability (ADR 0010), so
+            // NormalizeEntitlements no longer ties it to catalog or rentals. The guarantees the old
+            // static dependency gave are business rules enforced here, inside the same
+            // LockTenantModulesAsync advisory-lock scope, so they serialize against concurrent
+            // allocation admission:
+            //   - resource-planning cannot be disabled while allocations are unreleased;
+            //   - rentals and catalog cannot be disabled while resource-planning stays active and
+            //     allocations are unreleased (they are backed by a reservation / an order item);
+            //   - os may be disabled freely (the allocation keeps its label).
+            await EnsureNoUnreleasedAllocationsOnDisableAsync(id, existingActive, modules, cancellationToken);
 
             EnsurePmocHasProvisioningFamily(modules, families.Select(f => f.Key));
 
             tenant.UpdateProfile(
                 legalName,
                 taxId,
-                tradeName: null,
+                tradeName: tenant.TradeName,
                 subdomain: subdomain,
                 logoSvg: logoSvg,
                 primaryColor: request.PrimaryColor,
                 accentColor: request.AccentColor,
                 welcomeTagline: request.WelcomeTagline);
+
+            ApplyCompanyContact(tenant, request);
 
             var enabledModules = SyncTenantModules(tenant, modules);
             if (await DefaultRentalsMenuWouldPublishUnpricedAsync(dbContext, tenant.Id, cancellationToken))
@@ -375,6 +363,46 @@ public sealed class AdminTenantService(
             throw;
         }
     }
+
+    private async Task EnsureNoUnreleasedAllocationsOnDisableAsync(
+        Guid tenantId,
+        IReadOnlyCollection<string> existingActive,
+        IReadOnlyCollection<string> desired,
+        CancellationToken cancellationToken)
+    {
+        var planningDisabled = IsBeingDisabled(PlatformModules.ResourcePlanning, existingActive, desired);
+        var planningStays = desired.Contains(PlatformModules.ResourcePlanning);
+        var dependencyDisabled = planningStays
+            ? new[] { PlatformModules.Rentals, PlatformModules.Catalog }
+                .FirstOrDefault(module => IsBeingDisabled(module, existingActive, desired))
+            : null;
+
+        var disabledModule = planningDisabled ? PlatformModules.ResourcePlanning : dependencyDisabled;
+        if (disabledModule is null)
+        {
+            return;
+        }
+
+        // Admin operates across tenants by explicit id, not the ambient ITenantScoped
+        // filter (which may not match `id` at all, e.g. a platform-admin request) —
+        // without IgnoreQueryFilters this guard silently sees zero rows and never blocks.
+        var unreleasedCount = await dbContext.Set<CatalogOrderItemResourceAllocation>()
+            .IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenantId && UnreleasedAllocationStatuses.Contains(a.Status))
+            .CountAsync(cancellationToken);
+        if (unreleasedCount > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot disable {disabledModule}: {unreleasedCount} unreleased resource " +
+                "allocation(s) exist for this tenant.");
+        }
+    }
+
+    private static bool IsBeingDisabled(
+        string module,
+        IReadOnlyCollection<string> existingActive,
+        IReadOnlyCollection<string> desired) =>
+        existingActive.Contains(module) && !desired.Contains(module);
 
     private async Task LockTenantModulesAsync(Guid tenantId, CancellationToken cancellationToken)
     {
@@ -754,6 +782,53 @@ public sealed class AdminTenantService(
             tenant.IsActive,
             tenant.CreatedAt,
             activeModules,
-            assetFamilyKeys);
+            assetFamilyKeys,
+            tenant.TradeName,
+            tenant.ContactEmail,
+            tenant.ContactPhone,
+            new TenantAdminAddressDto(
+                tenant.AddressPostalCode,
+                tenant.AddressStreet,
+                tenant.AddressNumber,
+                tenant.AddressComplement,
+                tenant.AddressDistrict,
+                tenant.AddressCity,
+                tenant.AddressState),
+            tenant.IsTrial,
+            tenant.IsTrialReadOnly(DateTimeOffset.UtcNow));
+    }
+
+    /// <summary>
+    /// Writes trade name, contact and address on the TARGET tenant (already loaded by id).
+    /// Null request fields leave the stored value unchanged; a present address replaces the whole address.
+    /// </summary>
+    private static void ApplyCompanyContact(Tenant tenant, UpdateTenantRequestDto request)
+    {
+        if (request.TradeName is null
+            && request.ContactEmail is null
+            && request.ContactPhone is null
+            && request.Address is null)
+        {
+            return;
+        }
+
+        var address = request.Address;
+        tenant.UpdateContactAndAddress(
+            request.TradeName ?? tenant.TradeName,
+            request.ContactEmail is null
+                ? tenant.ContactEmail
+                : CompanyContactNormalizer.NormalizeEmail(request.ContactEmail),
+            request.ContactPhone is null
+                ? tenant.ContactPhone
+                : CompanyContactNormalizer.NormalizePhone(request.ContactPhone),
+            address is null
+                ? tenant.AddressPostalCode
+                : CompanyContactNormalizer.NormalizePostalCode(address.PostalCode),
+            address is null ? tenant.AddressStreet : address.Street,
+            address is null ? tenant.AddressNumber : address.Number,
+            address is null ? tenant.AddressComplement : address.Complement,
+            address is null ? tenant.AddressDistrict : address.District,
+            address is null ? tenant.AddressCity : address.City,
+            address is null ? tenant.AddressState : address.State);
     }
 }

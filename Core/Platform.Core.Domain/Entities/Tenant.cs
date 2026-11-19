@@ -185,6 +185,46 @@ public class Tenant : Entity
             throw new ArgumentException("Tax id must be a CPF (11 digits) or CNPJ (14 digits).");
         }
 
+        LegalName = Limit(legal, 200, "Legal name");
+        TaxId = tax;
+        ApplyContactAndAddress(
+            tradeName, contactEmail, contactPhone, postalCode, street, number, complement, district, city, state);
+        MarkAsUpdated();
+    }
+
+    /// <summary>
+    /// Platform-admin edit of trade name, contact and address only (legal name, tax id and platform
+    /// fields untouched). Same trimming, shape and length rules as <see cref="UpdateCompanyProfile"/>.
+    /// </summary>
+    public void UpdateContactAndAddress(
+        string? tradeName,
+        string? contactEmail,
+        string? contactPhone,
+        string? postalCode,
+        string? street,
+        string? number,
+        string? complement,
+        string? district,
+        string? city,
+        string? state)
+    {
+        ApplyContactAndAddress(
+            tradeName, contactEmail, contactPhone, postalCode, street, number, complement, district, city, state);
+        MarkAsUpdated();
+    }
+
+    private void ApplyContactAndAddress(
+        string? tradeName,
+        string? contactEmail,
+        string? contactPhone,
+        string? postalCode,
+        string? street,
+        string? number,
+        string? complement,
+        string? district,
+        string? city,
+        string? state)
+    {
         var uf = BlankToNull(state)?.ToUpperInvariant();
         if (uf is not null && (uf.Length != 2 || !uf.All(char.IsAsciiLetter)))
         {
@@ -197,9 +237,7 @@ public class Tenant : Entity
             throw new ArgumentException("CEP must have 8 digits.");
         }
 
-        LegalName = Limit(legal, 200, "Legal name");
         TradeName = Limit(BlankToNull(tradeName), 200, "Trade name");
-        TaxId = tax;
         ContactEmail = Limit(BlankToNull(contactEmail), 254, "E-mail");
         ContactPhone = Limit(BlankToNull(contactPhone), 20, "Phone");
         AddressPostalCode = cep;
@@ -209,7 +247,6 @@ public class Tenant : Entity
         AddressDistrict = Limit(BlankToNull(district), 100, "District");
         AddressCity = Limit(BlankToNull(city), 100, "City");
         AddressState = uf;
-        MarkAsUpdated();
     }
 
     /// <summary>Staff-editable portal login texts. Trims, blanks to null and enforces length limits.</summary>
