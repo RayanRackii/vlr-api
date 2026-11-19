@@ -112,6 +112,61 @@ public sealed class PlanningAgendaServiceTests
     }
 
     [Fact]
+    public async Task Asset_made_not_plannable_stays_on_the_agenda_while_it_holds_a_blocking_allocation()
+    {
+        await using var rig = await AssetAllocationServiceTests.Rig.CreateAsync();
+        var running = Add(rig, From.AddDays(-2), From.AddDays(-2).AddHours(1), "Still running", AllocationStatus.Running);
+        var held = Add(rig, From.AddDays(1), From.AddDays(1).AddHours(1), "Future job", assetId: rig.Seed.SecondAssetId);
+        foreach (var profile in rig.Db.AssetPlanningProfiles.ToList())
+        {
+            profile.IsPlannable = false;
+        }
+
+        await rig.Db.SaveChangesAsync();
+        rig.Clock.SetUtcNow(From);
+
+        var agenda = await rig.Agenda.GetAgendaAsync(From, To, null, null, default);
+
+        // Both assets hold a non-expired blocking allocation, so both are still listed.
+        Assert.Equal(["P1", "P2"], agenda.Resources.Select(r => r.Tag).ToArray());
+        Assert.Contains(agenda.Items, i => i.Id == running.Id && i.IsOverdue);
+        Assert.Contains(agenda.Items, i => i.Id == held.Id);
+    }
+
+    [Fact]
+    public async Task Not_plannable_asset_with_only_expired_or_finished_allocations_is_not_listed()
+    {
+        await using var rig = await AssetAllocationServiceTests.Rig.CreateAsync();
+        Add(rig, From.AddDays(-5), From.AddDays(-5).AddHours(1), "Expired, never started");
+        Add(rig, From.AddDays(1), From.AddDays(1).AddHours(1), "Released", AllocationStatus.Released, rig.Seed.SecondAssetId);
+        foreach (var profile in rig.Db.AssetPlanningProfiles.ToList())
+        {
+            profile.IsPlannable = false;
+        }
+
+        await rig.Db.SaveChangesAsync();
+        rig.Clock.SetUtcNow(From);
+
+        var agenda = await rig.Agenda.GetAgendaAsync(From, To, null, null, default);
+
+        Assert.Empty(agenda.Resources);
+        Assert.Empty(agenda.Items);
+    }
+
+    [Fact]
+    public async Task Early_started_allocation_is_listed_for_a_range_that_ends_before_its_planned_start()
+    {
+        await using var rig = await AssetAllocationServiceTests.Rig.CreateAsync();
+        var early = Add(rig, To.AddDays(2), To.AddDays(2).AddHours(1), "Started early", AllocationStatus.Running);
+        early.ActualStartAt = From.AddDays(1);
+        await rig.Db.SaveChangesAsync();
+
+        var agenda = await rig.Agenda.GetAgendaAsync(From, To, null, null, default);
+
+        Assert.Equal(early.Id, Assert.Single(agenda.Items).Id);
+    }
+
+    [Fact]
     public async Task Filters_by_asset_ids_and_unit()
     {
         await using var rig = await AssetAllocationServiceTests.Rig.CreateAsync();

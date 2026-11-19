@@ -41,7 +41,8 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                 INSERT INTO core.role_permissions (role_id, permission_id, granted_at)
                 SELECT r.id, p.id, now()
                 FROM core.roles r CROSS JOIN core.permissions p
-                WHERE lower(r.name) = 'technician'
+                WHERE r.is_system_role
+                  AND lower(r.name) = 'technician'
                   AND p.key IN (
                     'resource-planning.agenda.read',
                     'resource-planning.allocations.execute')

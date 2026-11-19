@@ -80,12 +80,21 @@ public sealed class PlanningAgendaService(
             assets = assets.Where(a => requested.Contains(a.Id));
         }
 
-        // Plannable assets only, joined to their profile in the one query.
+        // Plannable assets, plus any asset that still holds a blocking allocation even if its
+        // profile was set to not plannable afterwards: a started job must stay visible until it
+        // is released. Profile joined in the one query (left join; a missing row reads as defaults).
         var rows = await (
                 from a in assets
-                join p in dbContext.AssetPlanningProfiles.AsNoTracking()
-                    on new { a.TenantId, AssetId = a.Id } equals new { p.TenantId, p.AssetId }
-                where p.IsPlannable
+                join p0 in dbContext.AssetPlanningProfiles.AsNoTracking()
+                    on new { a.TenantId, AssetId = a.Id } equals new { p0.TenantId, p0.AssetId } into profileJoin
+                from p in profileJoin.DefaultIfEmpty()
+                where (p != null && p.IsPlannable)
+                    || dbContext.AssetAllocations.Any(x => x.TenantId == tenantId
+                        && x.AssetId == a.Id
+                        && (x.Status == AllocationStatus.Running
+                            || x.Status == AllocationStatus.Cleaning
+                            || (x.Status == AllocationStatus.Scheduled
+                                && (x.Source != AssetAllocationSource.Manual || x.OccupiedEnd > now))))
                 orderby a.Tag, a.Id
                 select new
                 {
@@ -94,8 +103,8 @@ public sealed class PlanningAgendaService(
                     a.Tag,
                     a.UnitId,
                     UnitName = a.Unit.Name,
-                    p.Capacity,
-                    p.HoursPolicy,
+                    Capacity = (int?)p.Capacity,
+                    HoursPolicy = (AssetHoursPolicy?)p.HoursPolicy,
                     HasActiveRental = a.RentalConfiguration != null && a.RentalConfiguration.IsActive,
                 })
             .ToListAsync(cancellationToken);
@@ -119,10 +128,10 @@ public sealed class PlanningAgendaService(
                 .Where(a => a.TenantId == tenantId
                     && resourceIds.Contains(a.AssetId)
                     && a.Status != AllocationStatus.Cancelled
-                    && a.OccupiedStart < rangeEnd
-                    && (a.OccupiedEnd > rangeStart
-                        || a.Status == AllocationStatus.Running
-                        || a.Status == AllocationStatus.Cleaning))
+                    && ((a.OccupiedStart < rangeEnd && a.OccupiedEnd > rangeStart)
+                        || ((a.Status == AllocationStatus.Running || a.Status == AllocationStatus.Cleaning)
+                            && (a.OccupiedStart < rangeEnd
+                                || (a.ActualStartAt != null && a.ActualStartAt < rangeEnd)))))
                 .OrderBy(a => a.OccupiedStart)
                 .ThenBy(a => a.Id)
                 .ToListAsync(cancellationToken);
@@ -135,8 +144,8 @@ public sealed class PlanningAgendaService(
                 r.Tag,
                 r.UnitId,
                 r.UnitName,
-                r.Capacity,
-                r.HoursPolicy.ToString(),
+                r.Capacity ?? 1,
+                (r.HoursPolicy ?? AssetHoursPolicy.Anytime).ToString(),
                 r.HasActiveRental && rentalsActive,
                 zoneId,
                 hoursByAsset[r.Id]

@@ -32,10 +32,29 @@ public static class AssetAllocationRules
             _ => false,
         };
 
-    /// <summary>Started (or finished working) and still held after its planned end.</summary>
+    /// <summary>
+    /// Started and still held after its time: past the planned work end while Running, past the
+    /// occupied end (cleanup included) while Cleaning.
+    /// </summary>
     public static bool IsOverdue(AssetAllocation allocation, DateTimeOffset now) =>
+        allocation.Status switch
+        {
+            AllocationStatus.Running => allocation.PlannedWorkEnd <= now,
+            AllocationStatus.Cleaning => allocation.OccupiedEnd <= now,
+            _ => false,
+        };
+
+    /// <summary>
+    /// Start of the interval the allocation blocks. A started allocation blocks from the earlier of
+    /// its occupied start and the moment it actually started, so an early start holds the asset
+    /// from that moment.
+    /// </summary>
+    public static DateTimeOffset BlockingStart(AssetAllocation allocation) =>
         allocation.Status is AllocationStatus.Running or AllocationStatus.Cleaning
-        && allocation.PlannedWorkEnd <= now;
+        && allocation.ActualStartAt is { } started
+        && started < allocation.OccupiedStart
+            ? started
+            : allocation.OccupiedStart;
 
     /// <summary>End of the interval the allocation blocks: open-ended once started.</summary>
     public static DateTimeOffset BlockingEnd(AssetAllocation allocation) =>

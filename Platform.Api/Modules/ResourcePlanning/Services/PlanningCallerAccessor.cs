@@ -3,8 +3,11 @@ using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.ResourcePlanning.Services;
 
-/// <summary>The authenticated caller of a planning write: the user id and whether they manage allocations.</summary>
-public sealed record PlanningCaller(Guid? UserId, bool CanManageAllocations);
+/// <summary>
+/// The authenticated caller of a planning write: the user id, whether they manage allocations and
+/// whether they may close assets (<c>Unavailable</c> blocks: <c>availability.write</c> or manage).
+/// </summary>
+public sealed record PlanningCaller(Guid? UserId, bool CanManageAllocations, bool CanCloseAssets = false);
 
 public interface IPlanningCallerAccessor
 {
@@ -35,6 +38,14 @@ public sealed class PlanningCallerAccessor(
                     Permissions.ResourcePlanning.AllocationsManage,
                     cancellationToken));
 
-        return new PlanningCaller(actor.UserId, canManage);
+        var canClose = canManage
+            || (actor.UserId is { } closerId
+                && await permissionResolver.HasPermissionAsync(
+                    actor.TenantId,
+                    closerId,
+                    Permissions.ResourcePlanning.AvailabilityWrite,
+                    cancellationToken));
+
+        return new PlanningCaller(actor.UserId, canManage, canClose);
     }
 }

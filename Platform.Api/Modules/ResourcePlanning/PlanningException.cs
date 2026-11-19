@@ -27,6 +27,7 @@ public sealed class PlanningException(
     public const string OutsideWorkingHoursCode = "planning.outside_working_hours";
     public const string InvalidTransitionCode = "planning.invalid_transition";
     public const string OrderWorkflowRequiredCode = "planning.order_workflow_required";
+    public const string UnavailableForbiddenCode = "planning.unavailable_forbidden";
     public const string CancelForbiddenCode = "planning.cancel_forbidden";
     public const string InvalidRangeCode = "planning.invalid_range";
 

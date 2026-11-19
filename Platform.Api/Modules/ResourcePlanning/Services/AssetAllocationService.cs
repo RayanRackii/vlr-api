@@ -85,8 +85,11 @@ public sealed class AssetAllocationService(
         var title = NormalizeTitle(request.Title);
         var notes = NormalizeNotes(request.Notes);
         var caller = await callerAccessor.GetAsync(cancellationToken);
+        EnsureMayClose(caller, kind);
 
         await using var transaction = await BeginAsync(cancellationToken);
+        // Lock order (spec 4.3): the tenant-modules lock first, then the asset row.
+        await PlanningModuleGuard.LockAndRequireActiveAsync(dbContext, tenantId, cancellationToken);
         await occupancy.LockAssetsAsync(tenantId, [request.AssetId], cancellationToken);
 
         // Everything below is read after the lock: a concurrent create on this asset has either
@@ -178,12 +181,15 @@ public sealed class AssetAllocationService(
         var notesChanged = request.Notes is not null;
         var notes = notesChanged ? NormalizeNotes(request.Notes) : null;
 
+        var caller = await callerAccessor.GetAsync(cancellationToken);
         var assetId = await FindAssetIdAsync(tenantId, allocationId, cancellationToken);
 
         await using var transaction = await BeginAsync(cancellationToken);
+        await PlanningModuleGuard.LockAndRequireActiveAsync(dbContext, tenantId, cancellationToken);
         await occupancy.LockAssetsAsync(tenantId, [assetId], cancellationToken);
 
         var allocation = await LoadFreshAsync(tenantId, allocationId, cancellationToken);
+        EnsureMayClose(caller, allocation.Kind);
         EnsureManual(allocation);
         EnsureVersion(allocation, expectedVersion);
         if (allocation.Status != AllocationStatus.Scheduled)
@@ -273,6 +279,7 @@ public sealed class AssetAllocationService(
         var assetId = await FindAssetIdAsync(tenantId, allocationId, cancellationToken);
 
         await using var transaction = await BeginAsync(cancellationToken);
+        await PlanningModuleGuard.LockAndRequireActiveAsync(dbContext, tenantId, cancellationToken);
         await occupancy.LockAssetsAsync(tenantId, [assetId], cancellationToken);
 
         // Reloaded under the lock: the pre-lock read only found which asset to lock.
@@ -297,6 +304,18 @@ public sealed class AssetAllocationService(
         switch (action)
         {
             case "start":
+                // A started allocation blocks without an end, so starting is an admission like a
+                // create: re-run the check against what blocks the asset now (an overdue started
+                // allocation, an early start). Invalid transitions fall through to the rules.
+                if (allocation.Status == AllocationStatus.Scheduled && !AssetAllocationRules.IsExpired(allocation, now))
+                {
+                    var availability = await occupancy.CheckStartAsync(tenantId, allocation, cancellationToken);
+                    if (!availability.IsFree)
+                    {
+                        throw PlanningException.Conflict(availability.Conflicts);
+                    }
+                }
+
                 AssetAllocationRules.Start(allocation, now);
                 break;
             case "work-finished":
@@ -319,6 +338,19 @@ public sealed class AssetAllocationService(
 
         var assetName = await AssetNameAsync(tenantId, assetId, cancellationToken);
         return AllocationMapper.ToResponse(allocation, assetName, now);
+    }
+
+    private static void EnsureMayClose(PlanningCaller caller, AssetAllocationKind kind)
+    {
+        // Closing an asset (an Unavailable block) is not part of using it: a technician runs
+        // machines but does not take them out of service.
+        if (kind == AssetAllocationKind.Unavailable && !caller.CanCloseAssets && !caller.CanManageAllocations)
+        {
+            throw new PlanningException(
+                StatusCodes.Status403Forbidden,
+                PlanningException.UnavailableForbiddenCode,
+                "Creating or editing an Unavailable block needs resource-planning.availability.write or allocations.manage.");
+        }
     }
 
     private async Task<Guid> FindAssetIdAsync(Guid tenantId, Guid allocationId, CancellationToken cancellationToken) =>

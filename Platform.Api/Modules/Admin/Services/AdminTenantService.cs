@@ -292,9 +292,13 @@ public sealed class AdminTenantService(
             // resource-planning needs only the Asset Registry capability (ADR 0010), so
             // NormalizeEntitlements no longer ties it to catalog or rentals. The guarantees the old
             // static dependency gave are business rules enforced here, inside the same
-            // LockTenantModulesAsync advisory-lock scope, so they serialize against concurrent
-            // allocation admission:
-            //   - resource-planning cannot be disabled while allocations are unreleased;
+            // LockTenantModulesAsync advisory-lock scope. They serialize against concurrent
+            // allocation admission only because every admitting path takes the same
+            // "tenant-modules:{tenantId}" lock and re-checks the module inside its transaction:
+            // CatalogOrderAllocationService and, for planning writes (create, edit, usage),
+            // PlanningModuleGuard in resource-planning. A new writer of allocations must do the same:
+            //   - resource-planning cannot be disabled while allocations are unreleased (a manual
+            //     allocation never started whose window has ended is expired and does not count);
             //   - rentals and catalog cannot be disabled while resource-planning stays active and
             //     allocations are unreleased (they are backed by a reservation / an order item);
             //   - os may be disabled freely (the allocation keeps its label).

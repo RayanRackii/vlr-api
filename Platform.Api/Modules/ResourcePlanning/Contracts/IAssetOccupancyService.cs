@@ -92,6 +92,17 @@ public interface IAssetOccupancyService
         Guid? excludeAllocationId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Re-checks occupancy when a Scheduled allocation starts. A started allocation blocks from the
+    /// earlier of its occupied start and now, so the check covers that interval against every other
+    /// blocking allocation (a started one that is overdue still blocks). Null capacity data falls
+    /// back to one unit.
+    /// </summary>
+    Task<AvailabilityResult> CheckStartAsync(
+        Guid tenantId,
+        AssetAllocation allocation,
+        CancellationToken cancellationToken);
+
     /// <summary>Adds the allocation to the context (not saved) and returns it.</summary>
     AssetAllocation Occupy(Guid tenantId, PlannableAsset asset, NewAllocation request);
 

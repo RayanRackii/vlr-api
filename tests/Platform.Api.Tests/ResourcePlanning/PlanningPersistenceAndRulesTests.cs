@@ -124,6 +124,38 @@ public sealed class PlanningPersistenceAndRulesTests
     }
 
     [Fact]
+    public void Cleaning_is_overdue_after_the_occupied_end_not_the_planned_work_end()
+    {
+        // Work ended an hour ago but the cleanup buffer runs another 30 minutes: not overdue yet.
+        var cleaning = Allocation(AllocationStatus.Cleaning, end: Now.AddHours(-1));
+        cleaning.OccupiedEnd = Now.AddMinutes(30);
+
+        Assert.False(AssetAllocationRules.IsOverdue(cleaning, Now));
+        Assert.True(AssetAllocationRules.IsOverdue(cleaning, Now.AddMinutes(30)));
+
+        // Running is still measured against the planned work end.
+        var running = Allocation(AllocationStatus.Running, end: Now.AddHours(-1));
+        running.OccupiedEnd = Now.AddMinutes(30);
+        Assert.True(AssetAllocationRules.IsOverdue(running, Now));
+    }
+
+    [Fact]
+    public void Early_started_allocation_blocks_from_its_actual_start()
+    {
+        var running = Allocation(AllocationStatus.Running, end: Now.AddHours(3));
+        running.ActualStartAt = running.OccupiedStart.AddHours(-1);
+
+        Assert.Equal(running.OccupiedStart.AddHours(-1), AssetAllocationRules.BlockingStart(running));
+
+        running.ActualStartAt = running.OccupiedStart.AddMinutes(5);
+        Assert.Equal(running.OccupiedStart, AssetAllocationRules.BlockingStart(running));
+
+        var scheduled = Allocation(AllocationStatus.Scheduled, end: Now.AddHours(3));
+        scheduled.ActualStartAt = scheduled.OccupiedStart.AddHours(-1);
+        Assert.Equal(scheduled.OccupiedStart, AssetAllocationRules.BlockingStart(scheduled));
+    }
+
+    [Fact]
     public void Transitions_stamp_the_actuals_and_follow_the_order()
     {
         var allocation = Allocation(AllocationStatus.Scheduled, end: Now.AddHours(1));

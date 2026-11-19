@@ -144,7 +144,7 @@ public sealed class AssetOccupancyService(
             violation);
     }
 
-    public async Task<AvailabilityResult> CheckAvailabilityAsync(
+    public Task<AvailabilityResult> CheckAvailabilityAsync(
         Guid tenantId,
         PlannableAsset asset,
         AssetAllocationKind kind,
@@ -155,20 +155,65 @@ public sealed class AssetOccupancyService(
         ArgumentNullException.ThrowIfNull(asset);
         ArgumentNullException.ThrowIfNull(window);
 
-        var start = window.OccupiedStart;
-        var end = window.OccupiedEnd;
+        return CheckCoreAsync(
+            tenantId,
+            asset.AssetId,
+            asset.Capacity,
+            kind,
+            window.OccupiedStart,
+            window.OccupiedEnd,
+            excludeAllocationId,
+            cancellationToken);
+    }
+
+    public async Task<AvailabilityResult> CheckStartAsync(
+        Guid tenantId,
+        AssetAllocation allocation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(allocation);
+
+        var capacity = await dbContext.AssetPlanningProfiles
+            .AsNoTracking()
+            .Where(p => p.TenantId == tenantId && p.AssetId == allocation.AssetId)
+            .Select(p => (int?)p.Capacity)
+            .FirstOrDefaultAsync(cancellationToken) ?? 1;
+
+        var now = timeProvider.GetUtcNow();
+        var start = allocation.OccupiedStart < now ? allocation.OccupiedStart : now;
+        var end = allocation.OccupiedEnd > now ? allocation.OccupiedEnd : now.AddTicks(1);
+        return await CheckCoreAsync(
+            tenantId,
+            allocation.AssetId,
+            capacity,
+            allocation.Kind,
+            start,
+            end,
+            allocation.Id,
+            cancellationToken);
+    }
+
+    private async Task<AvailabilityResult> CheckCoreAsync(
+        Guid tenantId,
+        Guid assetId,
+        int capacity,
+        AssetAllocationKind kind,
+        DateTimeOffset start,
+        DateTimeOffset end,
+        Guid? excludeAllocationId,
+        CancellationToken cancellationToken)
+    {
 
         // Candidates by the stored windows: a Scheduled one must end after the request starts; a
         // started one (Running, Cleaning) has no implicit end, so it only has to have begun.
         var candidates = await dbContext.AssetAllocations
             .AsNoTracking()
             .Where(a => a.TenantId == tenantId
-                && a.AssetId == asset.AssetId
+                && a.AssetId == assetId
                 && (excludeAllocationId == null || a.Id != excludeAllocationId)
-                && a.OccupiedStart < end
-                && (a.Status == AllocationStatus.Running
-                    || a.Status == AllocationStatus.Cleaning
-                    || (a.Status == AllocationStatus.Scheduled && a.OccupiedEnd > start)))
+                && ((a.Status == AllocationStatus.Scheduled && a.OccupiedStart < end && a.OccupiedEnd > start)
+                    || ((a.Status == AllocationStatus.Running || a.Status == AllocationStatus.Cleaning)
+                        && (a.OccupiedStart < end || (a.ActualStartAt != null && a.ActualStartAt < end)))))
             .ToListAsync(cancellationToken);
 
         var now = timeProvider.GetUtcNow();
@@ -176,14 +221,14 @@ public sealed class AssetOccupancyService(
             .Where(a => AssetAllocationRules.IsBlocking(a, now))
             .Select(a => new Blocker(
                 a,
-                a.Kind == AssetAllocationKind.Unavailable ? asset.Capacity : a.Quantity,
-                a.OccupiedStart < start ? start : a.OccupiedStart,
+                a.Kind == AssetAllocationKind.Unavailable ? capacity : a.Quantity,
+                AssetAllocationRules.BlockingStart(a) < start ? start : AssetAllocationRules.BlockingStart(a),
                 AssetAllocationRules.BlockingEnd(a) > end ? end : AssetAllocationRules.BlockingEnd(a)))
             .Where(b => b.Start < b.End)
             .ToList();
 
-        var requested = kind == AssetAllocationKind.Unavailable ? asset.Capacity : 1;
-        var conflicting = FindConflicts(blockers, requested, asset.Capacity);
+        var requested = kind == AssetAllocationKind.Unavailable ? capacity : 1;
+        var conflicting = FindConflicts(blockers, requested, capacity);
 
         return new AvailabilityResult(conflicting
             .OrderBy(a => a.OccupiedStart)

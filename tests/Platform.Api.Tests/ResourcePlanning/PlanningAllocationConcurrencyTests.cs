@@ -188,6 +188,40 @@ public sealed class PlanningAllocationConcurrencyTests : IClassFixture<PostgresC
     }
 
     [DockerFact]
+    public async Task Create_waits_for_the_tenant_modules_lock_and_fails_when_the_module_was_disabled_meanwhile()
+    {
+        var factory = RequireFactory();
+        var seed = await SeedAsync(factory);
+        var holder = factory.Create(new FakeTenantProvider { TenantId = seed.TenantId });
+        await using var holderDb = holder;
+        await using var transaction = await holder.Database.BeginTransactionAsync();
+
+        // What AdminTenantService.LockTenantModulesAsync holds while it disables a module.
+        var key = $"tenant-modules:{seed.TenantId}";
+        long hashSeed = 0;
+        await holder.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({key}, {hashSeed}))");
+
+        var writer = Stack(factory, seed.TenantId, Guid.NewGuid());
+        await using var writerDb = writer.Db;
+        var create = writer.Service.CreateAsync(Request(seed.AssetId, Slot, Slot.AddHours(1), "Late"), default);
+        Assert.False(await CompletesWithinAsync(create, TimeSpan.FromMilliseconds(1500)));
+
+        // The disable commits with no allocation to see; the create must not slip in after it.
+        var module = await holder.TenantModules.SingleAsync(
+            m => m.TenantId == seed.TenantId && m.ModuleName == PlatformModules.ResourcePlanning);
+        module.Deactivate();
+        await holder.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        var ex = await Assert.ThrowsAsync<PlanningException>(() => create.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal("module_inactive", ex.Code);
+
+        await using var verify = factory.Create(new FakeTenantProvider { TenantId = seed.TenantId });
+        Assert.Empty(await verify.AssetAllocations.ToListAsync());
+    }
+
+    [DockerFact]
     public async Task Held_asset_lock_blocks_the_hours_put_so_it_never_interleaves_with_an_allocation()
     {
         var factory = RequireFactory();
@@ -296,6 +330,8 @@ public sealed class PlanningAllocationConcurrencyTests : IClassFixture<PostgresC
         Assert.Single(migration.UpOperations);
         Assert.Empty(migration.DownOperations);
         Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(up, "ON CONFLICT").Count);
+        // Both role grants are limited to system roles.
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(up, "r.is_system_role").Count);
         foreach (var key in new[]
         {
             Permissions.ResourcePlanning.AgendaRead,

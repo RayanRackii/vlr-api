@@ -109,6 +109,8 @@ internal sealed class FakePlanningCaller(Guid? userId, bool canManage) : IPlanni
 
     public bool CanManage { get; set; } = canManage;
 
+    public bool CanClose { get; set; }
+
     public Task<PlanningCaller> GetAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(new PlanningCaller(UserId, CanManage));
+        Task.FromResult(new PlanningCaller(UserId, CanManage, CanClose));
 }

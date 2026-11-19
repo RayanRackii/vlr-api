@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Authorization;
 using Platform.Api.Modules.ResourcePlanning;
 using Platform.Api.Modules.ResourcePlanning.Dtos;
 using Platform.Api.Modules.ResourcePlanning.Services;
@@ -523,6 +524,139 @@ public sealed class AssetAllocationServiceTests
 
         var ex = await Assert.ThrowsAsync<PlanningException>(() => rig.Service.ListAsync(null, "bogus", default));
         Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task Module_disabled_before_the_transaction_rejects_create_edit_and_usage_with_module_inactive()
+    {
+        await using var rig = await Rig.CreateAsync();
+        var created = await rig.Service.CreateAsync(Request(rig, Base, Base.AddHours(1)), default);
+        rig.Db.TenantModules
+            .Single(m => m.TenantId == rig.Seed.TenantId && m.ModuleName == PlatformModules.ResourcePlanning)
+            .Deactivate();
+        await rig.Db.SaveChangesAsync();
+
+        var create = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.CreateAsync(Request(rig, Base.AddHours(2), Base.AddHours(3)), default));
+        var edit = await Assert.ThrowsAsync<PlanningException>(() => rig.Service.UpdateAsync(
+            created.Id, new UpdateAssetAllocationRequest { ExpectedVersion = created.Version, Title = "x" }, default));
+        var usage = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.ApplyUsageAsync(created.Id, Usage("start", created.Version), default));
+
+        foreach (var ex in new[] { create, edit, usage })
+        {
+            Assert.Equal(403, ex.StatusCode);
+            Assert.Equal(RequireActiveModuleAttribute.InactiveModuleCode, ex.Code);
+        }
+
+        Assert.Equal(1, await rig.Db.AssetAllocations.CountAsync());
+        Assert.Equal("Scheduled", (await rig.Service.GetAsync(created.Id, default)).Status);
+    }
+
+    [Fact]
+    public async Task Overdue_started_allocation_blocks_the_start_of_a_back_to_back_one()
+    {
+        await using var rig = await Rig.CreateAsync();
+        var a = await rig.Service.CreateAsync(Request(rig, Base, Base.AddHours(1), title: "A"), default);
+        var b = await rig.Service.CreateAsync(Request(rig, Base.AddHours(1), Base.AddHours(2), title: "B"), default);
+
+        rig.Clock.SetUtcNow(Base);
+        await rig.Service.ApplyUsageAsync(a.Id, Usage("start", a.Version), default);
+
+        // A was never released and is past its end; the window of B has begun but has not expired.
+        rig.Clock.SetUtcNow(Base.AddMinutes(90));
+        var ex = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.ApplyUsageAsync(b.Id, Usage("start", b.Version), default));
+
+        Assert.Equal(409, ex.StatusCode);
+        Assert.Equal(PlanningException.ConflictCode, ex.Code);
+        Assert.Equal(a.Id, Assert.Single(ex.Conflicts!).AllocationId);
+        Assert.Equal("Scheduled", (await rig.Service.GetAsync(b.Id, default)).Status);
+    }
+
+    [Fact]
+    public async Task Start_of_back_to_back_allocation_is_allowed_once_the_previous_one_is_released()
+    {
+        await using var rig = await Rig.CreateAsync();
+        var a = await rig.Service.CreateAsync(Request(rig, Base, Base.AddHours(1), title: "A"), default);
+        var b = await rig.Service.CreateAsync(Request(rig, Base.AddHours(1), Base.AddHours(2), title: "B"), default);
+        rig.Clock.SetUtcNow(Base);
+        var running = await rig.Service.ApplyUsageAsync(a.Id, Usage("start", a.Version), default);
+        var cleaning = await rig.Service.ApplyUsageAsync(a.Id, Usage("work-finished", running.Version), default);
+        await rig.Service.ApplyUsageAsync(a.Id, Usage("release", cleaning.Version), default);
+
+        rig.Clock.SetUtcNow(Base.AddMinutes(70));
+        var started = await rig.Service.ApplyUsageAsync(b.Id, Usage("start", b.Version), default);
+
+        Assert.Equal("Running", started.Status);
+    }
+
+    [Fact]
+    public async Task Early_started_allocation_blocks_a_create_inside_the_gap_before_its_planned_start()
+    {
+        await using var rig = await Rig.CreateAsync();
+        var a = await rig.Service.CreateAsync(Request(rig, Base, Base.AddHours(1), title: "A"), default);
+
+        // Started a day early: it holds the asset from now, not from its occupied start.
+        var started = await rig.Service.ApplyUsageAsync(a.Id, Usage("start", a.Version), default);
+        Assert.Equal(Now, started.ActualStartAt);
+
+        var ex = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.CreateAsync(Request(rig, Now.AddHours(1), Now.AddHours(2), title: "In the gap"), default));
+        Assert.Equal(PlanningException.ConflictCode, ex.Code);
+        Assert.Equal(a.Id, Assert.Single(ex.Conflicts!).AllocationId);
+
+        // Before it actually started nothing is held.
+        await rig.Service.CreateAsync(Request(rig, Now.AddHours(-3), Now.AddHours(-2), title: "Before"), default);
+    }
+
+    [Fact]
+    public async Task Early_start_is_refused_when_another_allocation_holds_the_gap()
+    {
+        await using var rig = await Rig.CreateAsync();
+        await rig.Service.CreateAsync(Request(rig, Now.AddHours(1), Now.AddHours(2), title: "Z"), default);
+        var a = await rig.Service.CreateAsync(Request(rig, Base, Base.AddHours(1), title: "A"), default);
+
+        var ex = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.ApplyUsageAsync(a.Id, Usage("start", a.Version), default));
+
+        Assert.Equal(PlanningException.ConflictCode, ex.Code);
+        Assert.Equal("Z", Assert.Single(ex.Conflicts!).Label);
+    }
+
+    [Fact]
+    public async Task Unavailable_block_needs_availability_write_or_manage_not_execute()
+    {
+        await using var rig = await Rig.CreateAsync();
+        var block = Request(rig, Base, Base.AddHours(4), title: "Maintenance", kind: "Unavailable");
+
+        var denied = await Assert.ThrowsAsync<PlanningException>(() => rig.Service.CreateAsync(block, default));
+        Assert.Equal(403, denied.StatusCode);
+        Assert.Equal(PlanningException.UnavailableForbiddenCode, denied.Code);
+        Assert.Empty(await rig.Db.AssetAllocations.ToListAsync());
+
+        // A technician still creates ordinary allocations.
+        await rig.Service.CreateAsync(Request(rig, Base.AddHours(10), Base.AddHours(11)), default);
+
+        rig.Caller.CanClose = true;
+        var created = await rig.Service.CreateAsync(block, default);
+        Assert.Equal("Unavailable", created.Kind);
+
+        rig.Caller.CanClose = false;
+        rig.Caller.CanManage = true;
+        var byManager = await rig.Service.CreateAsync(
+            Request(rig, Base, Base.AddHours(4), title: "Holiday", kind: "Unavailable", assetId: rig.Seed.SecondAssetId), default);
+        Assert.Equal("Unavailable", byManager.Kind);
+
+        // Editing a block follows the same rule.
+        rig.Caller.CanManage = false;
+        var edit = await Assert.ThrowsAsync<PlanningException>(() => rig.Service.UpdateAsync(
+            created.Id, new UpdateAssetAllocationRequest { ExpectedVersion = created.Version, Title = "Renamed" }, default));
+        Assert.Equal(PlanningException.UnavailableForbiddenCode, edit.Code);
+        rig.Caller.CanClose = true;
+        var renamed = await rig.Service.UpdateAsync(
+            created.Id, new UpdateAssetAllocationRequest { ExpectedVersion = created.Version, Title = "Renamed" }, default);
+        Assert.Equal("Renamed", renamed.Title);
     }
 
     private static CreateAssetAllocationRequest Request(
