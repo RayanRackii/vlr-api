@@ -58,12 +58,13 @@ public sealed class PlatformModuleCatalogTests
 
     [Theory]
     [InlineData("resource-planning")]
-    [InlineData("resource-planning", "inventory")]
-    [InlineData("resource-planning", "catalog")]
-    [InlineData("resource-planning", "rentals")]
-    [InlineData("resource-planning", "os")]
-    public void Resource_planning_is_valid_without_catalog_or_rentals(params string[] modules)
+    [InlineData("resource-planning,inventory")]
+    [InlineData("resource-planning,catalog")]
+    [InlineData("resource-planning,rentals")]
+    [InlineData("resource-planning,os")]
+    public void Resource_planning_is_valid_without_catalog_or_rentals(string moduleList)
     {
+        var modules = moduleList.Split(',');
         var normalized = PlatformModuleCatalog.NormalizeEntitlements(modules);
 
         Assert.Contains(PlatformModules.ResourcePlanning, normalized);

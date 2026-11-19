@@ -26,13 +26,14 @@ public sealed class AdminTenantModuleDisableGuardTests
         [PlatformModules.Catalog, PlatformModules.Rentals, PlatformModules.ResourcePlanning];
 
     [Theory]
-    [InlineData(new[] { "resource-planning" })]
-    [InlineData(new[] { "inventory", "resource-planning" })]
-    [InlineData(new[] { "catalog", "resource-planning" })]
-    [InlineData(new[] { "rentals", "resource-planning" })]
-    [InlineData(new[] { "os", "resource-planning" })]
-    public async Task Resource_planning_activates_without_catalog_or_rentals(string[] modules)
+    [InlineData("resource-planning")]
+    [InlineData("inventory,resource-planning")]
+    [InlineData("catalog,resource-planning")]
+    [InlineData("rentals,resource-planning")]
+    [InlineData("os,resource-planning")]
+    public async Task Resource_planning_activates_without_catalog_or_rentals(string moduleList)
     {
+        var modules = moduleList.Split(',');
         await using var harness = await Harness.CreateAsync();
 
         var created = await harness.CreateTenantAsync("rp", modules);
