@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
@@ -84,7 +85,9 @@ public sealed class AssetService(
             cancellationToken);
         var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
             family.FieldSchemaJson,
-            request.Attributes);
+            request.Attributes,
+            existing: null,
+            isUpdate: false);
         var tag = string.IsNullOrWhiteSpace(request.Tag) ? GenerateRentableTag() : request.Tag.Trim();
         await EnsureTagAvailableAsync(tag, excludeAssetId: null, cancellationToken);
 
@@ -165,14 +168,11 @@ public sealed class AssetService(
             tenantId,
             request.FamilyId,
             cancellationToken);
-        var attributes = request.PreserveLegacyAttributes
-            ? AssetFamilyAttributeValidator.ValidateAndProjectForUpdate(
-                family.FieldSchemaJson,
-                request.Attributes,
-                asset.Attributes)
-            : AssetFamilyAttributeValidator.ValidateAndProject(
-                family.FieldSchemaJson,
-                request.Attributes);
+        var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
+            family.FieldSchemaJson,
+            request.Attributes,
+            existing: asset.FamilyId == family.Id ? asset.Attributes : null,
+            isUpdate: true);
         var tag = string.IsNullOrWhiteSpace(request.Tag) ? asset.Tag : request.Tag.Trim();
         await EnsureTagAvailableAsync(tag, asset.Id, cancellationToken);
 
@@ -281,7 +281,9 @@ public sealed class AssetService(
             cancellationToken);
         var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
             family.FieldSchemaJson,
-            request.Attributes);
+            request.Attributes,
+            existing: null,
+            isUpdate: false);
 
         var baseLocation = request.BaseLocationName.Trim();
 
@@ -313,7 +315,7 @@ public sealed class AssetService(
                 Status = AssetStatus.Active,
                 IsRentable = request.IsRentable,
                 RequiresMaintenance = request.RequiresMaintenance,
-                Attributes = new Dictionary<string, string?>(attributes, StringComparer.Ordinal),
+                Attributes = new Dictionary<string, JsonElement>(attributes, StringComparer.Ordinal),
             };
 
             rentalConfigurationSync.Sync(
@@ -418,7 +420,6 @@ public sealed class AssetService(
                 ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
                 MaxAdvanceBookingDays = request.MaxAdvanceBookingDays,
                 Attributes = request.Attributes,
-                PreserveLegacyAttributes = true,
             },
             cancellationToken);
 

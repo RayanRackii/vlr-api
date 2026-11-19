@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Platform.Core.Domain.Common;
 using Platform.Core.Domain.Enums;
 
@@ -33,7 +34,7 @@ public class Asset : Entity, ITenantScoped, IInventoryModuleEntity
     public bool RequiresMaintenance { get; set; }
 
     /// <summary>Family-specific attribute values validated against AssetFamily.FieldSchemaJson.</summary>
-    public Dictionary<string, string?> Attributes { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, JsonElement> Attributes { get; set; } = new(StringComparer.Ordinal);
 
     public DateTimeOffset? ScheduledDeletionAt { get; set; }
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
@@ -23,7 +24,10 @@ public sealed class AssetRegistryAttributesTests
         await harness.Db.SaveChangesAsync();
     }
 
-    private static CreateRentableRequest Create(BulkCreateAssetsHarness harness, string tag, Dictionary<string, string?>? attributes) =>
+    private static Dictionary<string, JsonElement> Attrs(params (string Key, object? Value)[] items) =>
+        items.ToDictionary(i => i.Key, i => JsonSerializer.SerializeToElement(i.Value), StringComparer.Ordinal);
+
+    private static CreateRentableRequest Create(BulkCreateAssetsHarness harness, string tag, Dictionary<string, JsonElement>? attributes) =>
         new()
         {
             Name = $"Recurso {tag}",
@@ -36,7 +40,7 @@ public sealed class AssetRegistryAttributesTests
             Attributes = attributes,
         };
 
-    private static UpdateRentableRequest Update(BulkCreateAssetsHarness harness, string tag, Dictionary<string, string?>? attributes) =>
+    private static UpdateRentableRequest Update(BulkCreateAssetsHarness harness, string tag, Dictionary<string, JsonElement>? attributes) =>
         new()
         {
             Name = "Renomeado",
@@ -57,11 +61,11 @@ public sealed class AssetRegistryAttributesTests
         var registry = harness.CreateRegistry();
 
         var created = await registry.CreateRentableAsync(
-            Create(harness, "E1", new() { ["voltage"] = "220", ["brand"] = " Acme ", ["unknown"] = "x" }),
+            Create(harness, "E1", Attrs(("voltage", "220"), ("brand", " Acme "), ("unknown", "x"))),
             CancellationToken.None);
 
-        Assert.Equal("220", created.Attributes["voltage"]);
-        Assert.Equal("Acme", created.Attributes["brand"]);
+        Assert.Equal(220m, created.Attributes["voltage"].GetDecimal());
+        Assert.Equal("Acme", created.Attributes["brand"].GetString());
         Assert.DoesNotContain("unknown", created.Attributes.Keys);
     }
 
@@ -84,14 +88,14 @@ public sealed class AssetRegistryAttributesTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         await RequireVoltageAsync(harness, OptionalVoltageSchema);
         var registry = harness.CreateRegistry();
-        var created = await registry.CreateRentableAsync(Create(harness, "E3", new() { ["brand"] = "Acme" }), CancellationToken.None);
+        var created = await registry.CreateRentableAsync(Create(harness, "E3", Attrs(("brand", "Acme"))), CancellationToken.None);
         await RequireVoltageAsync(harness);
 
         var updated = await registry.UpdateRentableAsync(
             created.RentalConfiguration!.Id, Update(harness, "E3", null), CancellationToken.None);
 
         Assert.Equal("Renomeado", updated.Name);
-        Assert.Equal("Acme", updated.Attributes["brand"]);
+        Assert.Equal("Acme", updated.Attributes["brand"].GetString());
         Assert.DoesNotContain("voltage", updated.Attributes.Keys);
     }
 
@@ -102,19 +106,19 @@ public sealed class AssetRegistryAttributesTests
         await RequireVoltageAsync(harness);
         var registry = harness.CreateRegistry();
         var created = await registry.CreateRentableAsync(
-            Create(harness, "E4", new() { ["voltage"] = "110", ["brand"] = "Acme" }), CancellationToken.None);
+            Create(harness, "E4", Attrs(("voltage", "110"), ("brand", "Acme"))), CancellationToken.None);
         var rentalId = created.RentalConfiguration!.Id;
 
         var updated = await registry.UpdateRentableAsync(
-            rentalId, Update(harness, "E4", new() { ["voltage"] = "220" }), CancellationToken.None);
-        Assert.Equal("220", updated.Attributes["voltage"]);
+            rentalId, Update(harness, "E4", Attrs(("voltage", "220"))), CancellationToken.None);
+        Assert.Equal(220m, updated.Attributes["voltage"].GetDecimal());
         Assert.DoesNotContain("brand", updated.Attributes.Keys);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            registry.UpdateRentableAsync(rentalId, Update(harness, "E4", new() { ["voltage"] = "abc" }), CancellationToken.None));
+            registry.UpdateRentableAsync(rentalId, Update(harness, "E4", Attrs(("voltage", "abc"))), CancellationToken.None));
         // Dropping a required value that the asset already had is still rejected.
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            registry.UpdateRentableAsync(rentalId, Update(harness, "E4", new() { ["brand"] = "x" }), CancellationToken.None));
+            registry.UpdateRentableAsync(rentalId, Update(harness, "E4", Attrs(("brand", "x"))), CancellationToken.None));
     }
 
     [Fact]
@@ -139,13 +143,13 @@ public sealed class AssetRegistryAttributesTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         await RequireVoltageAsync(harness, """{"fields":[{"key":"voltage","type":"text","required":true}]}""");
         var registry = harness.CreateRegistry();
-        var created = await registry.CreateRentableAsync(Create(harness, "E6", new() { ["voltage"] = "bivolt" }), CancellationToken.None);
+        var created = await registry.CreateRentableAsync(Create(harness, "E6", Attrs(("voltage", "bivolt"))), CancellationToken.None);
         await RequireVoltageAsync(harness); // voltage is now a required number
 
         var updated = await registry.UpdateRentableAsync(
             created.RentalConfiguration!.Id, Update(harness, "E6", null), CancellationToken.None);
 
-        Assert.Equal("bivolt", updated.Attributes["voltage"]);
+        Assert.Equal("bivolt", updated.Attributes["voltage"].GetString());
     }
 
     [Fact]
@@ -155,14 +159,14 @@ public sealed class AssetRegistryAttributesTests
         await RequireVoltageAsync(harness);
         var registry = harness.CreateRegistry();
         var created = await registry.CreateRentableAsync(
-            Create(harness, "E7", new() { ["voltage"] = "220" }), CancellationToken.None);
+            Create(harness, "E7", Attrs(("voltage", "220"))), CancellationToken.None);
         var rentals = new RentalAssetService(harness.Db, harness.TenantProvider);
 
         var single = await rentals.GetByAssetIdAsync(created.Id, CancellationToken.None);
         var list = await rentals.ListRentableAsync(CancellationToken.None);
 
-        Assert.Equal("220", single!.Attributes!["voltage"]);
-        Assert.Equal("220", Assert.Single(list).Attributes!["voltage"]);
+        Assert.Equal(220m, single!.Attributes!["voltage"].GetDecimal());
+        Assert.Equal(220m, Assert.Single(list).Attributes!["voltage"].GetDecimal());
     }
 
     [Fact]
@@ -186,12 +190,12 @@ public sealed class AssetRegistryAttributesTests
         await RequireVoltageAsync(harness);
         var registry = harness.CreateRegistry();
         var created = await registry.CreateRentableAsync(
-            Create(harness, "E9", new() { ["voltage"] = "220" }), CancellationToken.None);
+            Create(harness, "E9", Attrs(("voltage", "220"))), CancellationToken.None);
         var controller = new RentalAssetsController(
             new RentalAssetService(harness.Db, harness.TenantProvider), null!, registry);
 
         var result = await controller.Update(
-            created.RentalConfiguration!.Id, Update(harness, "E9", new() { ["brand"] = "x" }), CancellationToken.None);
+            created.RentalConfiguration!.Id, Update(harness, "E9", Attrs(("brand", "x"))), CancellationToken.None);
 
         var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Contains("voltage", bad.Value!.ToString());
