@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 
@@ -57,6 +60,7 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
             .IsRequired();
 
         builder.Property(a => a.Attributes)
+            .HasConversion<AssetAttributesConverter, AssetAttributesComparer>()
             .HasColumnType("jsonb")
             .HasDefaultValueSql("'{}'::jsonb")
             .IsRequired();
@@ -98,5 +102,78 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
             .WithOne(r => r.Asset)
             .HasForeignKey<RentalAsset>(r => r.AssetId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+/// <summary>Helpers shared by the asset attributes converter and comparer (expression-tree friendly).</summary>
+internal static class AssetAttributesJson
+{
+    public static string Serialize(Dictionary<string, JsonElement>? value)
+    {
+        if (value is null || value.Count == 0)
+        {
+            return "{}";
+        }
+
+        return JsonSerializer.Serialize(new SortedDictionary<string, JsonElement>(value, StringComparer.Ordinal));
+    }
+
+    public static Dictionary<string, JsonElement> Deserialize(string? value)
+    {
+        var result = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return result;
+        }
+
+        var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(value);
+        if (parsed is null)
+        {
+            return result;
+        }
+
+        foreach (var (key, element) in parsed)
+        {
+            if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                continue;
+            }
+
+            result[key] = element;
+        }
+
+        return result;
+    }
+
+    public static bool AreEqual(Dictionary<string, JsonElement>? left, Dictionary<string, JsonElement>? right) =>
+        string.Equals(Serialize(left), Serialize(right), StringComparison.Ordinal);
+
+    public static int Hash(Dictionary<string, JsonElement>? value) =>
+        Serialize(value).GetHashCode(StringComparison.Ordinal);
+
+    public static Dictionary<string, JsonElement> Snapshot(Dictionary<string, JsonElement>? value) =>
+        value is null
+            ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            : new Dictionary<string, JsonElement>(value, StringComparer.Ordinal);
+}
+
+public sealed class AssetAttributesConverter : ValueConverter<Dictionary<string, JsonElement>, string>
+{
+    public AssetAttributesConverter()
+        : base(
+            value => AssetAttributesJson.Serialize(value),
+            value => AssetAttributesJson.Deserialize(value))
+    {
+    }
+}
+
+public sealed class AssetAttributesComparer : ValueComparer<Dictionary<string, JsonElement>>
+{
+    public AssetAttributesComparer()
+        : base(
+            (left, right) => AssetAttributesJson.AreEqual(left, right),
+            value => AssetAttributesJson.Hash(value),
+            value => AssetAttributesJson.Snapshot(value))
+    {
     }
 }
