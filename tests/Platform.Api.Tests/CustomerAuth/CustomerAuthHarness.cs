@@ -6,6 +6,7 @@ using Platform.Api.Modules.Rentals;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.CustomerAuth.Controllers;
 using Platform.Api.Notifications;
+using Platform.Api.Storage;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.CustomerAuth.Services;
@@ -94,7 +95,9 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
         OtpHmacEvaluationCounter? hmacEvaluations = null,
         IPasswordResetEmailQueue? passwordResetEmails = null,
         IOptions<BookingUiOptions>? bookingUiOptions = null,
-        ICustomerLoginThrottle? loginThrottle = null)
+        ICustomerLoginThrottle? loginThrottle = null,
+        IStorageProvider? storageProvider = null,
+        IOptions<StorageOptions>? storageOptions = null)
     {
         var codes = new CustomerVerificationCodeService(
             db,
@@ -115,7 +118,9 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
             loginThrottle ?? new AllowAllCustomerLoginThrottle(),
             NullLogger<CustomerAuthService>.Instance,
             httpContextAccessor,
-            bookingUiOptions);
+            bookingUiOptions,
+            storageProvider,
+            storageOptions);
     }
 
     public static IConfiguration CreateConfig() =>

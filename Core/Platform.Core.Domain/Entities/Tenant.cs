@@ -56,6 +56,18 @@ public class Tenant : Entity
     /// <summary>UF, 2 uppercase letters.</summary>
     public string? AddressState { get; private set; }
 
+    /// <summary>Storage key (public bucket) of the customer portal login hero image.</summary>
+    public string? LandingImageKey { get; private set; }
+
+    /// <summary>Small uppercase line above the portal login headline (max 60).</summary>
+    public string? LandingKicker { get; private set; }
+
+    /// <summary>Portal login headline (max 120).</summary>
+    public string? LandingHeadline { get; private set; }
+
+    /// <summary>Portal login subtitle (max 240).</summary>
+    public string? LandingSubtitle { get; private set; }
+
     public bool IsActive { get; private set; }
 
     /// <summary>Self-serve trial tenant (limits + lifecycle purge).</summary>
@@ -197,6 +209,25 @@ public class Tenant : Entity
         AddressDistrict = Limit(BlankToNull(district), 100, "District");
         AddressCity = Limit(BlankToNull(city), 100, "City");
         AddressState = uf;
+        MarkAsUpdated();
+    }
+
+    /// <summary>Staff-editable portal login texts. Trims, blanks to null and enforces length limits.</summary>
+    public void UpdateLandingTexts(string? kicker, string? headline, string? subtitle)
+    {
+        var newKicker = Limit(BlankToNull(kicker), 60, "Kicker");
+        var newHeadline = Limit(BlankToNull(headline), 120, "Headline");
+        var newSubtitle = Limit(BlankToNull(subtitle), 240, "Subtitle");
+        LandingKicker = newKicker;
+        LandingHeadline = newHeadline;
+        LandingSubtitle = newSubtitle;
+        MarkAsUpdated();
+    }
+
+    /// <summary>Sets (or clears with null) the portal login hero image storage key.</summary>
+    public void SetLandingImageKey(string? key)
+    {
+        LandingImageKey = Limit(BlankToNull(key), 300, "Landing image key");
         MarkAsUpdated();
     }
 

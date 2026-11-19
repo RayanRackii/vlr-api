@@ -12,6 +12,7 @@ using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.RegistrationFields.Services;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
+using Platform.Api.Storage;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -32,7 +33,9 @@ public sealed class CustomerAuthService(
     ICustomerLoginThrottle loginThrottle,
     ILogger<CustomerAuthService> logger,
     IHttpContextAccessor? httpContextAccessor = null,
-    IOptions<BookingUiOptions>? bookingUiOptions = null) : ICustomerAuthService
+    IOptions<BookingUiOptions>? bookingUiOptions = null,
+    IStorageProvider? storageProvider = null,
+    IOptions<StorageOptions>? storageOptions = null) : ICustomerAuthService
 {
     private static readonly PasswordHasher<Customer> PasswordHasher = new();
     private static readonly Customer DummyPasswordCustomer = new() { TenantId = Guid.Empty, Name = "Login timing" };
@@ -448,7 +451,13 @@ public sealed class CustomerAuthService(
             tenant.AccentColor,
             tenant.WelcomeTagline,
             bookingUiOptions?.Value.IsEnabled(tenant.Id) == true,
-            await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(dbContext, tenant.Id, cancellationToken));
+            await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(dbContext, tenant.Id, cancellationToken),
+            tenant.LandingImageKey is null || storageProvider is null || storageOptions is null
+                ? null
+                : storageProvider.GetPublicUrl(storageOptions.Value.PublicBucket, tenant.LandingImageKey),
+            tenant.LandingKicker,
+            tenant.LandingHeadline,
+            tenant.LandingSubtitle);
     }
 
     public async Task<CustomerProfileDto> GetCurrentAsync(

@@ -3976,6 +3976,26 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_trial");
 
+                    b.Property<string>("LandingHeadline")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("landing_headline");
+
+                    b.Property<string>("LandingImageKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("landing_image_key");
+
+                    b.Property<string>("LandingKicker")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("landing_kicker");
+
+                    b.Property<string>("LandingSubtitle")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("landing_subtitle");
+
                     b.Property<string>("LegalName")
                         .IsRequired()
                         .HasMaxLength(200)
