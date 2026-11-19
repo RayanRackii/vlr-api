@@ -292,9 +292,13 @@ public sealed class AdminTenantService(
             // resource-planning needs only the Asset Registry capability (ADR 0010), so
             // NormalizeEntitlements no longer ties it to catalog or rentals. The guarantees the old
             // static dependency gave are business rules enforced here, inside the same
-            // LockTenantModulesAsync advisory-lock scope, so they serialize against concurrent
-            // allocation admission:
-            //   - resource-planning cannot be disabled while allocations are unreleased;
+            // LockTenantModulesAsync advisory-lock scope. They serialize against concurrent
+            // allocation admission only because every admitting path takes the same
+            // "tenant-modules:{tenantId}" lock and re-checks the module inside its transaction:
+            // CatalogOrderAllocationService and, for planning writes (create, edit, usage),
+            // PlanningModuleGuard in resource-planning. A new writer of allocations must do the same:
+            //   - resource-planning cannot be disabled while allocations are unreleased (a manual
+            //     allocation never started whose window has ended is expired and does not count);
             //   - rentals and catalog cannot be disabled while resource-planning stays active and
             //     allocations are unreleased (they are backed by a reservation / an order item);
             //   - os may be disabled freely (the allocation keeps its label).
@@ -395,6 +399,28 @@ public sealed class AdminTenantService(
             throw new InvalidOperationException(
                 $"Cannot disable {disabledModule}: {unreleasedCount} unreleased resource " +
                 "allocation(s) exist for this tenant.");
+        }
+
+        if (planningDisabled)
+        {
+            // Planning allocations on the asset (slice API-3). A manual allocation that was never
+            // started and whose window has ended no longer blocks anything, so it does not hold
+            // the module either; started and order-linked ones do until released.
+            var now = DateTimeOffset.UtcNow;
+            var planningCount = await dbContext.Set<AssetAllocation>()
+                .IgnoreQueryFilters()
+                .Where(a => a.TenantId == tenantId
+                    && UnreleasedAllocationStatuses.Contains(a.Status)
+                    && !(a.Status == AllocationStatus.Scheduled
+                        && a.Source == AssetAllocationSource.Manual
+                        && a.OccupiedEnd <= now))
+                .CountAsync(cancellationToken);
+            if (planningCount > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot disable {disabledModule}: {planningCount} unreleased planning " +
+                    "allocation(s) exist for this tenant.");
+            }
         }
     }
 
