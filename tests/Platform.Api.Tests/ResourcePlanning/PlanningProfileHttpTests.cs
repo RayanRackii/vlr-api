@@ -119,9 +119,8 @@ public sealed class PlanningProfileHttpTests
 
         await using var verify = Verify(world.DatabaseName, world.TenantId);
         Assert.Equal(1, await verify.AssetPlanningProfiles.CountAsync());
-        Assert.Equal(
-            [1, 5],
-            (await verify.AssetWorkingHours.Select(h => (int)h.DayOfWeek).ToListAsync()).Order().ToArray());
+        var days = (await verify.AssetWorkingHours.Select(h => (int)h.DayOfWeek).ToListAsync()).Order().ToArray();
+        Assert.Equal(new[] { 1, 5 }, days);
     }
 
     [Fact]
