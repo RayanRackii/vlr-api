@@ -315,7 +315,7 @@ public sealed class PlanningAllocationConcurrencyTests : IClassFixture<PostgresC
         // The technician grant is exactly the two keys of TechnicianLegacyKeys.
         Assert.Equal(
             PermissionCatalog.TechnicianLegacyKeys.Where(k => k.StartsWith("resource-planning.", StringComparison.Ordinal)).Order().ToArray(),
-            [Permissions.ResourcePlanning.AgendaRead, Permissions.ResourcePlanning.AllocationsExecute]);
+            new[] { Permissions.ResourcePlanning.AgendaRead, Permissions.ResourcePlanning.AllocationsExecute });
     }
 
     [DockerFact]
@@ -353,7 +353,7 @@ public sealed class PlanningAllocationConcurrencyTests : IClassFixture<PostgresC
                 .ToListAsync()).Order().ToArray();
 
         Assert.Equal(
-            [Permissions.ResourcePlanning.AgendaRead, Permissions.ResourcePlanning.AllocationsExecute],
+            new[] { Permissions.ResourcePlanning.AgendaRead, Permissions.ResourcePlanning.AllocationsExecute },
             await KeysAsync(technicianId));
         Assert.Equal(
             new[]
