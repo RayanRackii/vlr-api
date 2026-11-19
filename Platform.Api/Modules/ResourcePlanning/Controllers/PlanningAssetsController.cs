@@ -68,5 +68,5 @@ public sealed class PlanningAssetsController(IPlanningProfileService profileServ
     }
 
     private ObjectResult ToResult(PlanningException ex) =>
-        StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code });
+        StatusCode(ex.StatusCode, ex.ToBody());
 }

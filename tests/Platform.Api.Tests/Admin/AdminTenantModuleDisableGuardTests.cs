@@ -153,6 +153,100 @@ public sealed class AdminTenantModuleDisableGuardTests
             () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]));
     }
 
+    [Fact]
+    public async Task Disabling_resource_planning_is_rejected_by_a_future_scheduled_planning_allocation()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id, AllocationStatus.Scheduled, DateTimeOffset.UtcNow.AddDays(2), DateTimeOffset.UtcNow.AddDays(2).AddHours(1));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]));
+
+        Assert.Contains("Cannot disable resource-planning: 1 unreleased planning allocation(s)", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(PlatformModules.ResourcePlanning, await harness.ActiveModuleNamesAsync(a.Id));
+    }
+
+    [Theory]
+    [InlineData(AllocationStatus.Running)]
+    [InlineData(AllocationStatus.Cleaning)]
+    public async Task Disabling_resource_planning_is_rejected_by_a_started_planning_allocation_past_its_end(
+        AllocationStatus status)
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id, status, DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddDays(-3).AddHours(1));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]));
+
+        Assert.Contains("unreleased planning allocation(s)", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(PlatformModules.ResourcePlanning, await harness.ActiveModuleNamesAsync(a.Id));
+    }
+
+    [Fact]
+    public async Task Disabling_resource_planning_is_allowed_with_an_expired_never_started_manual_allocation()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id, AllocationStatus.Scheduled, DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddDays(-3).AddHours(1));
+
+        await harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]);
+
+        Assert.DoesNotContain(PlatformModules.ResourcePlanning, await harness.ActiveModuleNamesAsync(a.Id));
+    }
+
+    [Fact]
+    public async Task Expired_scheduled_allocation_of_an_order_workflow_still_blocks_disabling()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id,
+            AllocationStatus.Scheduled,
+            DateTimeOffset.UtcNow.AddDays(-3),
+            DateTimeOffset.UtcNow.AddDays(-3).AddHours(1),
+            AssetAllocationSource.CatalogOrder);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]));
+    }
+
+    [Theory]
+    [InlineData(AllocationStatus.Released)]
+    [InlineData(AllocationStatus.Cancelled)]
+    public async Task Terminal_planning_allocations_do_not_block_disabling(AllocationStatus status)
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id, status, DateTimeOffset.UtcNow.AddDays(2), DateTimeOffset.UtcNow.AddDays(2).AddHours(1));
+
+        await harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]);
+
+        Assert.DoesNotContain(PlatformModules.ResourcePlanning, await harness.ActiveModuleNamesAsync(a.Id));
+    }
+
+    [Fact]
+    public async Task Another_tenants_planning_allocation_does_not_block_disabling()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, b) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            b.Id, AllocationStatus.Running, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddHours(1));
+
+        await harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]);
+        Assert.DoesNotContain(PlatformModules.ResourcePlanning, await harness.ActiveModuleNamesAsync(a.Id));
+
+        // The tenant that owns the allocation is still protected, even with the ambient tenant elsewhere.
+        harness.TenantProvider.TenantId = a.Id;
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.UpdateModulesAsync(b, [PlatformModules.Catalog, PlatformModules.Rentals]));
+    }
+
     private sealed class Harness : IAsyncDisposable
     {
         private Harness(AppDbContext db, FakeTenantProvider tenantProvider, AdminTenantService service)
@@ -233,6 +327,33 @@ public sealed class AdminTenantModuleDisableGuardTests
                 PlannedWorkEnd = DateTimeOffset.UtcNow.AddDays(1).AddHours(1),
                 TimeZoneId = "America/Sao_Paulo",
                 Status = status,
+            });
+            await Db.SaveChangesAsync();
+            TenantProvider.TenantId = previous;
+        }
+
+        public async Task SeedPlanningAllocationAsync(
+            Guid tenantId,
+            AllocationStatus status,
+            DateTimeOffset start,
+            DateTimeOffset end,
+            AssetAllocationSource source = AssetAllocationSource.Manual)
+        {
+            var previous = TenantProvider.TenantId;
+            TenantProvider.TenantId = null;
+            Db.AssetAllocations.Add(new AssetAllocation
+            {
+                TenantId = tenantId,
+                AssetId = Guid.NewGuid(),
+                UnitId = Guid.NewGuid(),
+                Title = "Planning job",
+                PlannedWorkStart = start,
+                PlannedWorkEnd = end,
+                OccupiedStart = start,
+                OccupiedEnd = end,
+                TimeZoneId = "America/Sao_Paulo",
+                Status = status,
+                Source = source,
             });
             await Db.SaveChangesAsync();
             TenantProvider.TenantId = previous;
