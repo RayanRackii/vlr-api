@@ -327,6 +327,22 @@
       "AssetFamilyFieldDto": {
         "additionalProperties": false,
         "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "decimals": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "group": {
+            "nullable": true,
+            "type": "string"
+          },
+          "help": {
+            "nullable": true,
+            "type": "string"
+          },
           "key": {
             "nullable": true,
             "type": "string"
@@ -335,10 +351,36 @@
             "nullable": true,
             "type": "string"
           },
+          "max": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "maxLength": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "min": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "required": {
             "type": "boolean"
           },
           "type": {
+            "nullable": true,
+            "type": "string"
+          },
+          "unit": {
             "nullable": true,
             "type": "string"
           }
@@ -419,10 +461,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -692,10 +731,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -2071,10 +2107,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -2424,10 +2457,7 @@
             "type": "boolean"
           },
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -5080,10 +5110,7 @@
             "type": "string"
           },
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -7418,10 +7445,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -7802,10 +7826,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
