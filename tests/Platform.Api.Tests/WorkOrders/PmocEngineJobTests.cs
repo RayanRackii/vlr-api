@@ -526,9 +526,9 @@ public sealed class PmocEngineJobTests
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
         var plan = await SeedPlanAsync(harness, firstDueDate: AsOf);
         await AddAssetAsync(harness, "AB");
-        var foreign = await AddAssetAsync(harness, "FOREIGN");
-        foreign.TenantId = Guid.NewGuid();
-        await harness.Db.SaveChangesAsync();
+        // Created directly in another tenant: (TenantId, Id) is the principal key of the planning FKs,
+        // so EF no longer allows moving a tracked asset to another tenant.
+        var foreign = await AddAssetAsync(harness, "FOREIGN", tenantId: Guid.NewGuid());
 
         var tenantB = new Tenant("Club B", "88888888000193", subdomain: "pmoc-job-b");
         var unitB = new Unit(tenantB.Id, "Filial");
@@ -719,11 +719,12 @@ public sealed class PmocEngineJobTests
     private static async Task<Asset> AddAssetAsync(
         BulkCreateAssetsHarness harness,
         string tag,
-        bool requiresMaintenance = false)
+        bool requiresMaintenance = false,
+        Guid? tenantId = null)
     {
         var asset = new Asset
         {
-            TenantId = harness.TenantProvider.TenantId!.Value,
+            TenantId = tenantId ?? harness.TenantProvider.TenantId!.Value,
             UnitId = harness.UnitId,
             CategoryId = harness.CategoryId,
             FamilyId = harness.FamilyId,
