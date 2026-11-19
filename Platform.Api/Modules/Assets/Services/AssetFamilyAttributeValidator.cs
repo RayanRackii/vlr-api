@@ -540,5 +540,6 @@ public sealed record AssetFieldDefinitionDto(
     [property: JsonPropertyName("options")] IReadOnlyList<string>? Options = null,
     [property: JsonPropertyName("maxLength")] int? MaxLength = null,
     [property: JsonPropertyName("group")] string? Group = null,
-    [property: JsonPropertyName("archived"), property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [property: JsonPropertyName("archived")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     bool Archived = false);
