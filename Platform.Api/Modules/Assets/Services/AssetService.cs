@@ -165,9 +165,14 @@ public sealed class AssetService(
             tenantId,
             request.FamilyId,
             cancellationToken);
-        var attributes = AssetFamilyAttributeValidator.ValidateAndProject(
-            family.FieldSchemaJson,
-            request.Attributes);
+        var attributes = request.PreserveLegacyAttributes
+            ? AssetFamilyAttributeValidator.ValidateAndProjectForUpdate(
+                family.FieldSchemaJson,
+                request.Attributes,
+                asset.Attributes)
+            : AssetFamilyAttributeValidator.ValidateAndProject(
+                family.FieldSchemaJson,
+                request.Attributes);
         var tag = string.IsNullOrWhiteSpace(request.Tag) ? asset.Tag : request.Tag.Trim();
         await EnsureTagAvailableAsync(tag, asset.Id, cancellationToken);
 
@@ -361,6 +366,7 @@ public sealed class AssetService(
                 CapacityPeople = request.CapacityPeople,
                 ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
                 MaxAdvanceBookingDays = request.MaxAdvanceBookingDays.Value,
+                Attributes = request.Attributes,
             },
             cancellationToken,
             new CreateRentableTemplateDefaults(
@@ -411,7 +417,8 @@ public sealed class AssetService(
                 CapacityPeople = request.CapacityPeople,
                 ConfirmVisualSuggestions = request.ConfirmVisualSuggestions,
                 MaxAdvanceBookingDays = request.MaxAdvanceBookingDays,
-                Attributes = asset.Attributes,
+                Attributes = request.Attributes,
+                PreserveLegacyAttributes = true,
             },
             cancellationToken);
 

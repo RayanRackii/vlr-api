@@ -2483,6 +2483,14 @@
           "applyTemplateDefaults": {
             "type": "boolean"
           },
+          "attributes": {
+            "additionalProperties": {
+              "nullable": true,
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
+          },
           "cancelCutoffHours": {
             "format": "int32",
             "nullable": true,
@@ -5215,6 +5223,14 @@
             "format": "uuid",
             "type": "string"
           },
+          "attributes": {
+            "additionalProperties": {
+              "nullable": true,
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
+          },
           "cancelCutoffHours": {
             "format": "int32",
             "nullable": true,
@@ -7929,6 +7945,14 @@
       "UpdateRentableRequest": {
         "additionalProperties": false,
         "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "nullable": true,
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
+          },
           "cancelCutoffHours": {
             "format": "int32",
             "nullable": true,

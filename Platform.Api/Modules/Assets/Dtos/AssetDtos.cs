@@ -161,6 +161,13 @@ public sealed record UpdateAssetRequest
     public bool ConfirmVisualSuggestions { get; init; }
 
     public Dictionary<string, string?>? Attributes { get; init; }
+
+    /// <summary>
+    /// Internal (never bound from JSON): null Attributes keep the stored values and required
+    /// fields missing from the stored values do not fail. Set by the rentable update path.
+    /// </summary>
+    [JsonIgnore]
+    internal bool PreserveLegacyAttributes { get; init; }
 }
 
 public sealed record AssetRentalConfigResponse(
