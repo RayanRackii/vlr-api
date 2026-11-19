@@ -10,10 +10,13 @@ public sealed class AssetRegistryAttributesTests
     private const string RequiredVoltageSchema =
         """{"fields":[{"key":"voltage","type":"number","required":true,"label":"Voltage"},{"key":"brand","type":"text"}]}""";
 
-    private static async Task RequireVoltageAsync(BulkCreateAssetsHarness harness)
+    private const string OptionalVoltageSchema =
+        """{"fields":[{"key":"voltage","type":"number","required":false,"label":"Voltage"},{"key":"brand","type":"text"}]}""";
+
+    private static async Task RequireVoltageAsync(BulkCreateAssetsHarness harness, string schema = RequiredVoltageSchema)
     {
         var family = await harness.Db.AssetFamilies.SingleAsync(f => f.Id == harness.FamilyId);
-        family.FieldSchemaJson = RequiredVoltageSchema;
+        family.FieldSchemaJson = schema;
         await harness.Db.SaveChangesAsync();
     }
 
@@ -76,6 +79,7 @@ public sealed class AssetRegistryAttributesTests
     public async Task UpdateRentable_legacy_asset_missing_new_required_field_keeps_values()
     {
         await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await RequireVoltageAsync(harness, OptionalVoltageSchema);
         var registry = harness.CreateRegistry();
         var created = await registry.CreateRentableAsync(Create(harness, "E3", new() { ["brand"] = "Acme" }), CancellationToken.None);
         await RequireVoltageAsync(harness);
