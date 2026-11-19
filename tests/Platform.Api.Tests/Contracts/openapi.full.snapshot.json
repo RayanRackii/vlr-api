@@ -501,6 +501,10 @@
             "nullable": true,
             "type": "string"
           },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
           "sortOrder": {
             "format": "int32",
             "type": "integer"
@@ -567,6 +571,87 @@
           "unit": {
             "nullable": true,
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssetFamilyFieldImpactDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "change": {
+            "nullable": true,
+            "type": "string"
+          },
+          "constraintViolationCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "incompatibleCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "incompatibleSamples": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "key": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tenantCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AssetFamilySchemaPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/AssetFamilyFieldDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AssetFamilySchemaPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assetCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "canSave": {
+            "type": "boolean"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/AssetFamilyFieldImpactDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tenantCount": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -7923,6 +8008,11 @@
       "UpdateAssetFamilyRequest": {
         "additionalProperties": false,
         "properties": {
+          "expectedSchemaVersion": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "fields": {
             "items": {
               "$ref": "#/components/schemas/AssetFamilyFieldDto"
@@ -9560,6 +9650,65 @@
               "text/plain": {
                 "schema": {
                   "$ref": "#/components/schemas/AssetFamilyDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminAssetFamilies"
+        ]
+      }
+    },
+    "/api/admin/asset-families/{id}/schema-preview": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFamilySchemaPreviewRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFamilySchemaPreviewRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFamilySchemaPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFamilySchemaPreviewResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFamilySchemaPreviewResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFamilySchemaPreviewResponse"
                 }
               }
             },

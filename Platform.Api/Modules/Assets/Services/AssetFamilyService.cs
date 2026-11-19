@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -33,6 +32,11 @@ public interface IAssetFamilyService
     Task<AssetFamilyDetailResponse> UpdateAsync(
         Guid id,
         UpdateAssetFamilyRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AssetFamilySchemaPreviewResponse> PreviewSchemaAsync(
+        Guid id,
+        AssetFamilySchemaPreviewRequest request,
         CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
@@ -109,7 +113,9 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
 
         var key = NormalizeKey(request.Key);
         var label = NormalizeLabel(request.Label);
-        var schemaJson = SerializeSchema(request.Fields);
+        var schemaJson = JsonSerializer.Serialize(
+            new AssetFieldSchemaDto(BuildDefinitions(request.Fields, null), 1),
+            AssetFamilySchemaEvolution.SchemaJsonOptions);
 
         var duplicate = await dbContext.AssetFamilies
             .AnyAsync(f => f.Key == key, cancellationToken);
@@ -162,10 +168,31 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         RejectKeyChange(family.Key, request.Key);
 
         var label = NormalizeLabel(request.Label);
-        var schemaJson = SerializeSchema(
-            request.Fields,
-            ParseStoredSchemaOrEmpty(family.FieldSchemaJson));
         RejectSeedDeactivation(family.Key, request.IsActive);
+
+        var stored = ParseStoredSchemaOrEmpty(family.FieldSchemaJson);
+        if (request.ExpectedSchemaVersion is { } expected && expected != stored.Version)
+        {
+            throw new InvalidOperationException(
+                $"Asset family schema changed since it was loaded (current version {stored.Version}).");
+        }
+
+        var requested = BuildDefinitions(request.Fields, stored);
+        var usage = await LoadUsageAsync(family.Id, cancellationToken);
+        var plan = AssetFamilySchemaEvolution.Plan(stored, requested, usage);
+        EnforceFieldLimits(plan.Fields);
+        if (!plan.CanSave)
+        {
+            throw new InvalidOperationException(string.Join(" ", plan.BlockingMessages));
+        }
+
+        // Archived fields compare without regard to order, so a client that lists them last
+        // does not bump the version; a no-op keeps the stored field list (and order) untouched.
+        var changed = AssetFamilySchemaEvolution.Signature(plan.Fields)
+            != AssetFamilySchemaEvolution.Signature(stored.Fields);
+        var schemaJson = JsonSerializer.Serialize(
+            new AssetFieldSchemaDto(changed ? plan.Fields : stored.Fields, changed ? stored.Version + 1 : stored.Version),
+            AssetFamilySchemaEvolution.SchemaJsonOptions);
 
         family.Label = label;
         family.FieldSchemaJson = schemaJson;
@@ -173,9 +200,69 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         family.IsActive = request.IsActive;
         family.Touch();
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // FieldSchemaJson is a concurrency token: a concurrent save changed the schema after
+            // it was loaded here, so this plan may no longer be valid.
+            throw new InvalidOperationException(
+                "Asset family schema changed since it was loaded. Reload and try again.",
+                ex);
+        }
 
         return ToDetail(family, includeArchived: true);
+    }
+
+    public async Task<AssetFamilySchemaPreviewResponse> PreviewSchemaAsync(
+        Guid id,
+        AssetFamilySchemaPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var family = await dbContext.AssetFamilies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+
+        if (family is null)
+        {
+            throw new KeyNotFoundException($"Asset family '{id}' was not found.");
+        }
+
+        var stored = ParseStoredSchemaOrEmpty(family.FieldSchemaJson);
+        var requested = BuildDefinitions(request.Fields, stored);
+        var usage = await LoadUsageAsync(family.Id, cancellationToken);
+        var plan = AssetFamilySchemaEvolution.Plan(stored, requested, usage);
+        EnforceFieldLimits(plan.Fields);
+
+        return new AssetFamilySchemaPreviewResponse(
+            stored.Version,
+            plan.AssetCount,
+            plan.TenantCount,
+            plan.CanSave,
+            plan.Impacts);
+    }
+
+    // IgnoreQueryFilters is required. A Super-Admin who has entered a tenant still has an
+    // ambient TenantId; the global filter would hide assets of other tenants and under-count
+    // the impact of a schema change. Cross-tenant counting stays in this file on purpose.
+    private async Task<IReadOnlyList<(Guid TenantId, IReadOnlyDictionary<string, JsonElement> Attributes)>> LoadUsageAsync(
+        Guid familyId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Assets
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(a => a.FamilyId == familyId)
+            .Select(a => new { a.TenantId, a.Attributes })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(r => (r.TenantId, (IReadOnlyDictionary<string, JsonElement>)r.Attributes))
+            .ToList();
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
@@ -215,6 +302,12 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new InvalidOperationException(
+                "Asset family schema changed since it was loaded. Reload and try again.",
+                ex);
+        }
         catch (DbUpdateException ex) when (IsAssetFamilyRestrictViolation(ex))
         {
             throw new InvalidOperationException(
@@ -248,11 +341,6 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         RegexOptions.CultureInvariant | RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(250));
 
-    private static readonly JsonSerializerOptions SchemaJsonOptions = new()
-    {
-        PropertyNamingPolicy = null,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
 
     private static void RejectKeyChange(string currentKey, string? requestedKey)
     {
@@ -310,19 +398,36 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
     }
 
     private const int MaxFieldsPerFamily = 60;
+    private const int MaxTotalFieldsPerFamily = 200;
 
-    private static string SerializeSchema(
+    // Only active fields count toward the 60 limit; archived ones are bounded by a generous total.
+    private static void EnforceFieldLimits(IReadOnlyList<AssetFieldDefinitionDto> fields)
+    {
+        if (fields.Count(f => !f.Archived) > MaxFieldsPerFamily)
+        {
+            throw new ArgumentException($"A family can have at most {MaxFieldsPerFamily} active fields.");
+        }
+
+        if (fields.Count > MaxTotalFieldsPerFamily)
+        {
+            throw new ArgumentException(
+                $"A family can have at most {MaxTotalFieldsPerFamily} fields, archived included.");
+        }
+    }
+
+    private static List<AssetFieldDefinitionDto> BuildDefinitions(
         IReadOnlyList<AssetFamilyFieldDto>? fields,
-        AssetFieldSchemaDto? stored = null)
+        AssetFieldSchemaDto? stored)
     {
         if (fields is null)
         {
             throw new ArgumentException("Fields are required.");
         }
 
-        if (fields.Count > MaxFieldsPerFamily)
+        if (fields.Count > MaxTotalFieldsPerFamily)
         {
-            throw new ArgumentException($"A family can have at most {MaxFieldsPerFamily} fields.");
+            throw new ArgumentException(
+                $"A family can have at most {MaxTotalFieldsPerFamily} fields, archived included.");
         }
 
         // Keys already present in the stored schema are accepted as is (grandfathered).
@@ -366,9 +471,8 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             definitions.Add(BuildDefinition(key, type, field));
         }
 
-        return JsonSerializer.Serialize(
-            new AssetFieldSchemaDto(definitions, stored?.Version ?? 1),
-            SchemaJsonOptions);
+        EnforceFieldLimits(definitions);
+        return definitions;
     }
 
     private static AssetFieldDefinitionDto BuildDefinition(string key, string type, AssetFamilyFieldDto field)
@@ -562,6 +666,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             family.Label,
             fields,
             family.SortOrder,
-            family.IsActive);
+            family.IsActive,
+            schema.Version);
     }
 }

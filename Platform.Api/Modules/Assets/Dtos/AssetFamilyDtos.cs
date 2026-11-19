@@ -29,7 +29,8 @@ public sealed record AssetFamilyDetailResponse(
     string Label,
     IReadOnlyList<AssetFamilyFieldDto> Fields,
     int SortOrder,
-    bool IsActive);
+    bool IsActive,
+    int SchemaVersion = 1);
 
 public sealed record CreateAssetFamilyRequest(
     string Key,
@@ -43,4 +44,25 @@ public sealed record UpdateAssetFamilyRequest(
     IReadOnlyList<AssetFamilyFieldDto> Fields,
     int SortOrder,
     bool IsActive,
-    string? Key = null);
+    string? Key = null,
+    int? ExpectedSchemaVersion = null);
+
+public sealed record AssetFamilySchemaPreviewRequest(
+    IReadOnlyList<AssetFamilyFieldDto> Fields);
+
+public sealed record AssetFamilySchemaPreviewResponse(
+    int SchemaVersion,
+    int AssetCount,
+    int TenantCount,
+    bool CanSave,
+    IReadOnlyList<AssetFamilyFieldImpactDto> Fields);
+
+public sealed record AssetFamilyFieldImpactDto(
+    string Key,
+    string Change,
+    int AssetCount,
+    int TenantCount,
+    int IncompatibleCount,
+    IReadOnlyList<string> IncompatibleSamples,
+    int ConstraintViolationCount,
+    bool Blocking);

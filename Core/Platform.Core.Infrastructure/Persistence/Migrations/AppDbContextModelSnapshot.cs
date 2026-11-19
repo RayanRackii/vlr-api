@@ -377,6 +377,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("FieldSchemaJson")
                         .IsRequired()
+                        .IsConcurrencyToken()
                         .HasColumnType("jsonb")
                         .HasColumnName("field_schema_json");
 

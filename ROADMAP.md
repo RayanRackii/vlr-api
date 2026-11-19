@@ -1,5 +1,12 @@
 # ROADMAP — vlr-api
 
+### Evolução segura do schema de famílias de ativo (2026-11-19, feat/asset-family-schema-evolution)
+
+- [x] `PUT /api/admin/asset-families/{id}` nunca perde valores: campo omitido é arquivado quando algum ativo tem valor (removido só se nenhum tem); troca de tipo só passa se todo valor guardado passa em `TryCoerce` + `TryConstrain` (senão 409 com contagem e até 5 exemplos), inclusive ao arquivar, ao adicionar como arquivado sobre valores órfãos e ao restaurar (restaurar sempre exige o formato; limites só avisam em `constraintViolationCount`). Campo novo obrigatório vale só na criação.
+- [x] `version` do schema sobe quando a lista muda (campos arquivados comparados sem ordem; save sem mudança não sobe e mantém a ordem guardada). `ExpectedSchemaVersion` opcional devolve 409 se velho; `SchemaVersion` na resposta. `FieldSchemaJson` virou token de concorrência do EF (sem DDL, só o snapshot do modelo): dois saves concorrentes não passam os dois, o segundo recebe 409.
+- [x] `POST /api/admin/asset-families/{id}/schema-preview` (PlatformAdmin): simulação com contagem de ativos e empresas por campo (leitura entre tenants com `IgnoreQueryFilters` só em `AssetFamilyService.cs`). Limites: 60 campos ativos, 200 no total com arquivados.
+- [ ] Limite conhecido: um ativo salvo entre a simulação/leitura e o save não é travado (a escrita de ativos tolera qualquer valor guardado, no pior caso fica um valor legado). Próximo: WEB-2 (editor admin).
+
 ### Planejamento de recursos desacoplado de Reservas e Catálogo (2026-11-19, feat/resource-planning-decouple)
 
 - [x] ADR [`0010`](docs/adr/0010-internal-resource-planning-asset-allocation.md): `AssetAllocation` em `Asset`, uma autoridade de calendário por ativo, ponte para Reservas só em ativo alugável. Spec: `docs/plans/active/2026-11-19-internal-resource-planning.md` (fatia API-1 de 6).

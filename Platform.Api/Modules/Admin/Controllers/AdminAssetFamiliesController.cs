@@ -84,6 +84,27 @@ public sealed class AdminAssetFamiliesController(IAssetFamilyService assetFamily
         }
     }
 
+    [HttpPost("{id:guid}/schema-preview")]
+    public async Task<ActionResult<AssetFamilySchemaPreviewResponse>> PreviewSchema(
+        Guid id,
+        [FromBody] AssetFamilySchemaPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preview = await assetFamilyService.PreviewSchemaAsync(id, request, cancellationToken);
+            return Ok(preview);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
