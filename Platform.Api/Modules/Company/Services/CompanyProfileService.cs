@@ -1,4 +1,3 @@
-using System.Net.Mail;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -54,7 +53,7 @@ public sealed class CompanyProfileService(
             RequireText(request.LegalName, "Legal name"),
             request.TradeName,
             NormalizeTaxId(request.TaxId),
-            NormalizeEmail(request.ContactEmail),
+            CompanyContactNormalizer.NormalizeEmail(request.ContactEmail),
             string.IsNullOrWhiteSpace(request.ContactPhone)
                 ? null
                 : BrazilianDocumentValidator.NormalizePhoneBr(request.ContactPhone),
@@ -109,30 +108,6 @@ public sealed class CompanyProfileService(
             14 => BrazilianDocumentValidator.NormalizeCnpj(digits),
             _ => throw new ArgumentException("Tax id must be a valid CPF (11 digits) or CNPJ (14 digits)."),
         };
-    }
-
-    private static string? NormalizeEmail(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        var email = raw.Trim();
-        try
-        {
-            var parsed = new MailAddress(email);
-            if (!string.Equals(parsed.Address, email, StringComparison.Ordinal) || !parsed.Host.Contains('.'))
-            {
-                throw new ArgumentException("E-mail is invalid.");
-            }
-        }
-        catch (FormatException)
-        {
-            throw new ArgumentException("E-mail is invalid.");
-        }
-
-        return email;
     }
 
     private static CompanyProfileResponse Map(Tenant tenant) => new(

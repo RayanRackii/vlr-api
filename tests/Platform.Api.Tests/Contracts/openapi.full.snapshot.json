@@ -7042,6 +7042,40 @@
         },
         "type": "object"
       },
+      "TenantAdminAddressDto": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "nullable": true,
+            "type": "string"
+          },
+          "complement": {
+            "nullable": true,
+            "type": "string"
+          },
+          "district": {
+            "nullable": true,
+            "type": "string"
+          },
+          "number": {
+            "nullable": true,
+            "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "type": "string"
+          },
+          "street": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TenantAdminResponseDto": {
         "additionalProperties": false,
         "properties": {
@@ -7056,12 +7090,23 @@
             "nullable": true,
             "type": "array"
           },
+          "address": {
+            "$ref": "#/components/schemas/TenantAdminAddressDto"
+          },
           "assetFamilyKeys": {
             "items": {
               "type": "string"
             },
             "nullable": true,
             "type": "array"
+          },
+          "contactEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "contactPhone": {
+            "nullable": true,
+            "type": "string"
           },
           "createdAt": {
             "format": "date-time",
@@ -7072,6 +7117,12 @@
             "type": "string"
           },
           "isActive": {
+            "type": "boolean"
+          },
+          "isTrial": {
+            "type": "boolean"
+          },
+          "isTrialReadOnly": {
             "type": "boolean"
           },
           "legalName": {
@@ -7091,6 +7142,10 @@
             "type": "string"
           },
           "taxId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tradeName": {
             "nullable": true,
             "type": "string"
           },
@@ -7926,12 +7981,23 @@
             "nullable": true,
             "type": "array"
           },
+          "address": {
+            "$ref": "#/components/schemas/TenantAdminAddressDto"
+          },
           "assetFamilyKeys": {
             "items": {
               "type": "string"
             },
             "nullable": true,
             "type": "array"
+          },
+          "contactEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "contactPhone": {
+            "nullable": true,
+            "type": "string"
           },
           "legalName": {
             "nullable": true,
@@ -7950,6 +8016,10 @@
             "type": "string"
           },
           "taxId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tradeName": {
             "nullable": true,
             "type": "string"
           },
