@@ -45,7 +45,8 @@ internal static class PlanningModuleGuard
             throw new PlanningException(
                 StatusCodes.Status403Forbidden,
                 RequireActiveModuleAttribute.InactiveModuleCode,
-                RequireActiveModuleAttribute.InactiveModuleError);
+                RequireActiveModuleAttribute.InactiveModuleError,
+                module: PlatformModules.ResourcePlanning);
         }
     }
 }

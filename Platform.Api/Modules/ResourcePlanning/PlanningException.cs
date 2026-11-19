@@ -13,7 +13,8 @@ public sealed class PlanningException(
     string code,
     string message,
     IReadOnlyList<AllocationConflictDto>? conflicts = null,
-    string? hoursViolation = null) : Exception(message)
+    string? hoursViolation = null,
+    string? module = null) : Exception(message)
 {
     public const string AssetNotFoundCode = "planning.asset_not_found";
     public const string InvalidProfileCode = "planning.invalid_profile";
@@ -38,6 +39,9 @@ public sealed class PlanningException(
     public IReadOnlyList<AllocationConflictDto>? Conflicts { get; } = conflicts;
 
     public string? HoursViolation { get; } = hoursViolation;
+
+    /// <summary>The module key of a <c>module_inactive</c> error, as in the module gate body.</summary>
+    public string? Module { get; } = module;
 
     public static PlanningException AssetNotFound(Guid assetId) =>
         new(StatusCodes.Status404NotFound, AssetNotFoundCode, $"Asset '{assetId}' was not found.");
@@ -93,6 +97,11 @@ public sealed class PlanningException(
         if (HoursViolation is not null)
         {
             body["hoursViolation"] = HoursViolation;
+        }
+
+        if (Module is not null)
+        {
+            body["module"] = Module;
         }
 
         return body;

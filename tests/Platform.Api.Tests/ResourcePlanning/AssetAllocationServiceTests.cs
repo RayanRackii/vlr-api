@@ -547,10 +547,54 @@ public sealed class AssetAllocationServiceTests
         {
             Assert.Equal(403, ex.StatusCode);
             Assert.Equal(RequireActiveModuleAttribute.InactiveModuleCode, ex.Code);
+            // Same body shape as the module gate: error, code and module.
+            Assert.Equal(RequireActiveModuleAttribute.InactiveModuleError, ex.ToBody()["error"]);
+            Assert.Equal(PlatformModules.ResourcePlanning, ex.ToBody()["module"]);
         }
 
         Assert.Equal(1, await rig.Db.AssetAllocations.CountAsync());
         Assert.Equal("Scheduled", (await rig.Service.GetAsync(created.Id, default)).Status);
+    }
+
+    [Fact]
+    public async Task Technician_cannot_start_or_release_an_unavailable_block_but_a_manager_can()
+    {
+        await using var rig = await Rig.CreateAsync();
+        rig.Caller.CanClose = true;
+        var block = await rig.Service.CreateAsync(
+            Request(rig, Base, Base.AddHours(4), title: "Closure", kind: "Unavailable"), default);
+        var current = block;
+
+        // A technician (no availability.write, no manage) cannot start it, even early.
+        rig.Caller.CanClose = false;
+        var start = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.ApplyUsageAsync(block.Id, Usage("start", block.Version), default));
+        Assert.Equal(403, start.StatusCode);
+        Assert.Equal(PlanningException.UnavailableForbiddenCode, start.Code);
+        Assert.Equal("Scheduled", (await rig.Service.GetAsync(block.Id, default)).Status);
+
+        // A manager runs the closure through its whole lifecycle.
+        rig.Caller.CanManage = true;
+        current = await rig.Service.ApplyUsageAsync(block.Id, Usage("start", current.Version), default);
+        Assert.Equal("Running", current.Status);
+
+        rig.Caller.CanManage = false;
+        var finish = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.ApplyUsageAsync(block.Id, Usage("work-finished", current.Version), default));
+        Assert.Equal(PlanningException.UnavailableForbiddenCode, finish.Code);
+
+        rig.Caller.CanManage = true;
+        current = await rig.Service.ApplyUsageAsync(block.Id, Usage("work-finished", current.Version), default);
+
+        rig.Caller.CanManage = false;
+        var release = await Assert.ThrowsAsync<PlanningException>(
+            () => rig.Service.ApplyUsageAsync(block.Id, Usage("release", current.Version), default));
+        Assert.Equal(PlanningException.UnavailableForbiddenCode, release.Code);
+        Assert.Equal("Cleaning", (await rig.Service.GetAsync(block.Id, default)).Status);
+
+        rig.Caller.CanClose = true;
+        var released = await rig.Service.ApplyUsageAsync(block.Id, Usage("release", current.Version), default);
+        Assert.Equal("Released", released.Status);
     }
 
     [Fact]

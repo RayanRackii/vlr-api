@@ -297,6 +297,13 @@ public sealed class AssetAllocationService(
                 "Only the user who created the allocation or an allocation manager can cancel it.");
         }
 
+        // Running a closure (start, finish, release) is part of closing the asset, like creating it.
+        // Cancel keeps its own rule (the creator or a manager) above.
+        if (action != "cancel")
+        {
+            EnsureMayClose(caller, allocation.Kind);
+        }
+
         EnsureManual(allocation);
         EnsureVersion(allocation, expectedVersion);
 
