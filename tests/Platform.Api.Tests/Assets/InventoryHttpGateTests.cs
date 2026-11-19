@@ -246,6 +246,12 @@ public sealed class InventoryHttpGateTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<AssetFamilySchemaPreviewResponse> PreviewSchemaAsync(
+            Guid id,
+            AssetFamilySchemaPreviewRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task DeleteAsync(Guid id, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }

@@ -191,6 +191,7 @@ public sealed class AdminAssetFamiliesControllerTests
 
     [Theory]
     [InlineData("post", "/api/admin/asset-families")]
+    [InlineData("post", "/api/admin/asset-families/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/schema-preview")]
     [InlineData("put", "/api/admin/asset-families/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")]
     [InlineData("delete", "/api/admin/asset-families/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")]
     public async Task Authenticated_tenant_admin_not_on_allowlist_cannot_mutate(string method, string path)
@@ -206,6 +207,7 @@ public sealed class AdminAssetFamiliesControllerTests
 
     [Theory]
     [InlineData("post", "/api/admin/asset-families")]
+    [InlineData("post", "/api/admin/asset-families/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/schema-preview")]
     [InlineData("put", "/api/admin/asset-families/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")]
     [InlineData("delete", "/api/admin/asset-families/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")]
     public async Task Missing_auth_header_cannot_mutate(string method, string path)
@@ -238,6 +240,39 @@ public sealed class AdminAssetFamiliesControllerTests
         var conflict = await client.DeleteAsync($"/api/admin/asset-families/{ConflictId}");
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
         Assert.False(string.IsNullOrWhiteSpace(await ReadErrorAsync(conflict)));
+    }
+
+    [Fact]
+    public async Task PlatformAdmin_schema_preview_returns_200_404_and_400()
+    {
+        using var host = StartHost();
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.HeaderName, AdminEmail);
+
+        var ok = await client.PostAsJsonAsync(
+            $"/api/admin/asset-families/{SpacesId}/schema-preview",
+            new { fields = new[] { new { key = "surface", type = "text", required = false, label = "Surface" } } });
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        using var doc = JsonDocument.Parse(await ok.Content.ReadAsStringAsync());
+        Assert.Equal(3, doc.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, doc.RootElement.GetProperty("assetCount").GetInt32());
+        Assert.Equal(2, doc.RootElement.GetProperty("tenantCount").GetInt32());
+        Assert.True(doc.RootElement.GetProperty("canSave").GetBoolean());
+        var impact = Assert.Single(doc.RootElement.GetProperty("fields").EnumerateArray());
+        Assert.Equal("surface", impact.GetProperty("key").GetString());
+        Assert.Equal("unchanged", impact.GetProperty("change").GetString());
+
+        var missing = await client.PostAsJsonAsync(
+            $"/api/admin/asset-families/{MissingId}/schema-preview",
+            new { fields = Array.Empty<object>() });
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace(await ReadErrorAsync(missing)));
+
+        var invalid = await client.PostAsJsonAsync(
+            $"/api/admin/asset-families/{SpacesId}/schema-preview",
+            new { fields = new[] { new { key = "bad key", type = "text", required = false, label = "Bad" } } });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace(await ReadErrorAsync(invalid)));
     }
 
     private static HttpRequestMessage Mutation(string method, string path)
@@ -406,6 +441,33 @@ public sealed class AdminAssetFamiliesControllerTests
                 request.Fields,
                 request.SortOrder,
                 request.IsActive));
+        }
+
+        public Task<AssetFamilySchemaPreviewResponse> PreviewSchemaAsync(
+            Guid id,
+            AssetFamilySchemaPreviewRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (id == MissingId)
+            {
+                throw new KeyNotFoundException("Asset family was not found.");
+            }
+
+            if (request.Fields.Any(field => field.Key.Contains(' ', StringComparison.Ordinal)))
+            {
+                throw new ArgumentException("Field key is invalid.");
+            }
+
+            return Task.FromResult(new AssetFamilySchemaPreviewResponse(
+                SchemaVersion: 3,
+                AssetCount: 2,
+                TenantCount: 2,
+                CanSave: true,
+                Fields:
+                [
+                    new AssetFamilyFieldImpactDto(
+                        "surface", "unchanged", 2, 2, 0, [], 0, false),
+                ]));
         }
 
         public Task DeleteAsync(Guid id, CancellationToken cancellationToken)

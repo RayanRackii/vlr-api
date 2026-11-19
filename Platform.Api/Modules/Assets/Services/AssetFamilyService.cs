@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -33,6 +32,11 @@ public interface IAssetFamilyService
     Task<AssetFamilyDetailResponse> UpdateAsync(
         Guid id,
         UpdateAssetFamilyRequest request,
+        CancellationToken cancellationToken);
+
+    Task<AssetFamilySchemaPreviewResponse> PreviewSchemaAsync(
+        Guid id,
+        AssetFamilySchemaPreviewRequest request,
         CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
@@ -109,7 +113,9 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
 
         var key = NormalizeKey(request.Key);
         var label = NormalizeLabel(request.Label);
-        var schemaJson = SerializeSchema(request.Fields);
+        var schemaJson = JsonSerializer.Serialize(
+            new AssetFieldSchemaDto(BuildDefinitions(request.Fields, null), 1),
+            AssetFamilySchemaEvolution.SchemaJsonOptions);
 
         var duplicate = await dbContext.AssetFamilies
             .AnyAsync(f => f.Key == key, cancellationToken);
@@ -162,10 +168,28 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         RejectKeyChange(family.Key, request.Key);
 
         var label = NormalizeLabel(request.Label);
-        var schemaJson = SerializeSchema(
-            request.Fields,
-            ParseStoredSchemaOrEmpty(family.FieldSchemaJson));
         RejectSeedDeactivation(family.Key, request.IsActive);
+
+        var stored = ParseStoredSchemaOrEmpty(family.FieldSchemaJson);
+        if (request.ExpectedSchemaVersion is { } expected && expected != stored.Version)
+        {
+            throw new InvalidOperationException(
+                $"Asset family schema changed since it was loaded (current version {stored.Version}).");
+        }
+
+        var requested = BuildDefinitions(request.Fields, stored);
+        var usage = await LoadUsageAsync(family.Id, cancellationToken);
+        var plan = AssetFamilySchemaEvolution.Plan(stored, requested, usage);
+        if (!plan.CanSave)
+        {
+            throw new InvalidOperationException(string.Join(" ", plan.BlockingMessages));
+        }
+
+        var changed = AssetFamilySchemaEvolution.SerializeFields(plan.Fields)
+            != AssetFamilySchemaEvolution.SerializeFields(stored.Fields);
+        var schemaJson = JsonSerializer.Serialize(
+            new AssetFieldSchemaDto(plan.Fields, changed ? stored.Version + 1 : stored.Version),
+            AssetFamilySchemaEvolution.SchemaJsonOptions);
 
         family.Label = label;
         family.FieldSchemaJson = schemaJson;
@@ -176,6 +200,54 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return ToDetail(family, includeArchived: true);
+    }
+
+    public async Task<AssetFamilySchemaPreviewResponse> PreviewSchemaAsync(
+        Guid id,
+        AssetFamilySchemaPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var family = await dbContext.AssetFamilies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+
+        if (family is null)
+        {
+            throw new KeyNotFoundException($"Asset family '{id}' was not found.");
+        }
+
+        var stored = ParseStoredSchemaOrEmpty(family.FieldSchemaJson);
+        var requested = BuildDefinitions(request.Fields, stored);
+        var usage = await LoadUsageAsync(family.Id, cancellationToken);
+        var plan = AssetFamilySchemaEvolution.Plan(stored, requested, usage);
+
+        return new AssetFamilySchemaPreviewResponse(
+            stored.Version,
+            plan.AssetCount,
+            plan.TenantCount,
+            plan.CanSave,
+            plan.Impacts);
+    }
+
+    // IgnoreQueryFilters is required. A Super-Admin who has entered a tenant still has an
+    // ambient TenantId; the global filter would hide assets of other tenants and under-count
+    // the impact of a schema change. Cross-tenant counting stays in this file on purpose.
+    private async Task<IReadOnlyList<(Guid TenantId, IReadOnlyDictionary<string, JsonElement> Attributes)>> LoadUsageAsync(
+        Guid familyId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Assets
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(a => a.FamilyId == familyId)
+            .Select(a => new { a.TenantId, a.Attributes })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(r => (r.TenantId, (IReadOnlyDictionary<string, JsonElement>)r.Attributes))
+            .ToList();
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
@@ -248,11 +320,6 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
         RegexOptions.CultureInvariant | RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(250));
 
-    private static readonly JsonSerializerOptions SchemaJsonOptions = new()
-    {
-        PropertyNamingPolicy = null,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
 
     private static void RejectKeyChange(string currentKey, string? requestedKey)
     {
@@ -311,9 +378,9 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
 
     private const int MaxFieldsPerFamily = 60;
 
-    private static string SerializeSchema(
+    private static List<AssetFieldDefinitionDto> BuildDefinitions(
         IReadOnlyList<AssetFamilyFieldDto>? fields,
-        AssetFieldSchemaDto? stored = null)
+        AssetFieldSchemaDto? stored)
     {
         if (fields is null)
         {
@@ -366,9 +433,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             definitions.Add(BuildDefinition(key, type, field));
         }
 
-        return JsonSerializer.Serialize(
-            new AssetFieldSchemaDto(definitions, stored?.Version ?? 1),
-            SchemaJsonOptions);
+        return definitions;
     }
 
     private static AssetFieldDefinitionDto BuildDefinition(string key, string type, AssetFamilyFieldDto field)
@@ -562,6 +627,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             family.Label,
             fields,
             family.SortOrder,
-            family.IsActive);
+            family.IsActive,
+            schema.Version);
     }
 }
