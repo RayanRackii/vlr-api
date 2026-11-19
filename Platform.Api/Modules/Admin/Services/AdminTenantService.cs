@@ -396,6 +396,28 @@ public sealed class AdminTenantService(
                 $"Cannot disable {disabledModule}: {unreleasedCount} unreleased resource " +
                 "allocation(s) exist for this tenant.");
         }
+
+        if (planningDisabled)
+        {
+            // Planning allocations on the asset (slice API-3). A manual allocation that was never
+            // started and whose window has ended no longer blocks anything, so it does not hold
+            // the module either; started and order-linked ones do until released.
+            var now = DateTimeOffset.UtcNow;
+            var planningCount = await dbContext.Set<AssetAllocation>()
+                .IgnoreQueryFilters()
+                .Where(a => a.TenantId == tenantId
+                    && UnreleasedAllocationStatuses.Contains(a.Status)
+                    && !(a.Status == AllocationStatus.Scheduled
+                        && a.Source == AssetAllocationSource.Manual
+                        && a.OccupiedEnd <= now))
+                .CountAsync(cancellationToken);
+            if (planningCount > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot disable {disabledModule}: {planningCount} unreleased planning " +
+                    "allocation(s) exist for this tenant.");
+            }
+        }
     }
 
     private static bool IsBeingDisabled(

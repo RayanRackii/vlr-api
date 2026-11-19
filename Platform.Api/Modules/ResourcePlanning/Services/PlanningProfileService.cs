@@ -23,7 +23,8 @@ public sealed class PlanningProfileService(
     public const int MaxCapacity = 1000;
     public const int MaxWorkingWindows = 100;
 
-    private static readonly string[] TimeFormats = ["HH:mm", "HH:mm:ss"];
+    // Working-hours input is HH:mm only and the response echoes HH:mm, so a round trip is exact.
+    private static readonly string[] TimeFormats = ["HH:mm"];
 
     public async Task<IReadOnlyList<PlanningAssetResponse>> ListAssetsAsync(
         string? search,
@@ -179,6 +180,10 @@ public sealed class PlanningProfileService(
         await using var transaction = dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
 
+        // The same asset-row lock the allocations take, so a profile or hours change never
+        // interleaves with an allocation create or edit that validated against the old hours.
+        await AssetRowLock.LockAsync(dbContext, tenantId, [assetId], cancellationToken);
+
         var profile = await dbContext.AssetPlanningProfiles
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.AssetId == assetId, cancellationToken);
         if (profile is null)
@@ -225,14 +230,12 @@ public sealed class PlanningProfileService(
                 await transaction.CommitAsync(cancellationToken);
             }
         }
-        catch (DbUpdateException)
+        catch (Exception ex) when (PlanningPersistenceErrors.Translate(ex, assetId) is not null)
         {
-            // A concurrent first save of the same asset hit the unique profile index (or a window
-            // collided). The caller reloads and retries.
-            throw new PlanningException(
-                StatusCodes.Status409Conflict,
-                PlanningException.VersionConflictCode,
-                "The planning profile was changed concurrently; reload and try again.");
+            // A real concurrency or unique-key conflict (a concurrent first save of the same
+            // asset, a colliding window) is retryable; an FK violation means the asset vanished.
+            // Anything else is not caught here and propagates unchanged.
+            throw PlanningPersistenceErrors.Translate(ex, assetId)!;
         }
 
         return ToResponse(assetId, profile, rentalBacked, added);
