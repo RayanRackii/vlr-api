@@ -175,8 +175,22 @@ Internal platform capability to persist and reference Asset, AssetCategory, and 
 _Avoid_: Showing “Asset Registry” in tenant UI; auto-enabling the Inventory module; a second store; Core.Asset
 
 **TenantModule**:
-Commercial entitlement in `core.tenant_modules` (what the tenant may use in product UX and `inventory.*` / module permission filtering). Distinct from required capabilities. Canonical commercial keys: `inventory`, `pmoc`, `os`, `rentals`, `catalog`. `maintenance` is legacy — do not activate on new tenants.
+Commercial entitlement in `core.tenant_modules` (what the tenant may use in product UX and `inventory.*` / module permission filtering). Distinct from required capabilities. Canonical commercial keys: `inventory`, `pmoc`, `os`, `rentals`, `catalog`, `resource-planning`. `resource-planning` requires only the Asset Registry capability (no module; ADR 0010). `maintenance` is legacy — do not activate on new tenants.
 _Avoid_: Using tenant_modules as the technical dependency graph; inserting `inventory` because Rentals needs Asset rows; a module key `asset-registry`
+
+**Plannable resource**:
+An `Asset` that a Tenant opted in to plan (an `AssetPlanningProfile` with `IsPlannable`), whether or not it is rentable. It needs only the Asset Registry capability and the `resource-planning` module; it does not need `rentals`, `catalog` or `inventory`. Plannable is opt-in per asset, never automatic. Staff-only: nothing appears in the customer portal. Introduced by ADR 0010; the profile table arrives in a later slice.
+_Avoid_: Treating "rentable" as "plannable"; giving a non-rentable asset a hidden `RentalAsset` just to own a calendar
+
+**Allocation** (resource planning):
+A window on one Plannable resource, with a kind (`Use` or `Unavailable`), a status (`Scheduled`, `Running`, `Cleaning`, `Released`, `Cancelled`) and an optional link to a catalog order item or a work order (or free text only). `AssetAllocation` is the planning record; `CatalogOrderItemResourceAllocation` stays the catalog-side link. Blocking: a manual allocation that was never started stops blocking after its end; a started one (`Running`, `Cleaning`) blocks until released; order-linked allocations keep today's behavior (an overdue, unreleased `Scheduled` one keeps blocking).
+_Avoid_: Calling it a reservation (a Reservation is a customer booking; `InternalUse` is only the mirror on rental-backed assets)
+
+**Working hours**:
+Weekly open intervals of a Plannable resource plus a policy: `Anytime`, `StartWithinHours` (default; the job may only start inside the hours and may finish after them), or `WithinHours` (the whole job inside the hours). Hours reject, they do not only warn. Date exceptions are `Unavailable` allocations, not a table.
+
+**Calendar authority**:
+Each asset has exactly one. An asset with an active `RentalAsset` and `rentals` active keeps the rental schedule as the authority (an allocation also writes the `InternalUse` reservation). Any other asset is occupied by its `AssetAllocation` alone.
 
 **ResourceCategory**:
 A Tenant-defined label for grouping Rentables (for example padel, society, tennis, meeting room, van). Used for filters, legends, and layout meaning — not a hard-coded enum in the platform. In inventory UI this is **AssetCategory** (Tipo) within an AssetFamily. Super-Admin provisioning seeds Quadra / Quadro elétrico / Caçamba when those families are selected; Rentals create requires `CategoryId`. OS does not create categories.

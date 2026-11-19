@@ -24,6 +24,7 @@ public sealed class ModuleGateConventionTests
             ["Platform.Api.Modules.Pmoc.Controllers"] = PlatformModules.Pmoc,
             ["Platform.Api.Modules.WorkOrders.Controllers"] = PlatformModules.WorkOrders,
             ["Platform.Api.Modules.Catalog.Controllers"] = PlatformModules.Catalog,
+            ["Platform.Api.Modules.ResourcePlanning.Controllers"] = PlatformModules.ResourcePlanning,
         };
 
     private static readonly HashSet<string> CommercialModuleKeys =
@@ -96,11 +97,15 @@ public sealed class ModuleGateConventionTests
             yield break;
         }
 
-        // An action-level override is allowed when it narrows the namespace/permission module to a
-        // stricter dependent module (e.g. Catalog's order-resource-planning endpoints additionally
-        // require `resource-planning`, which already lists Catalog in its own RequiredModules — so
-        // `resource-planning` active implies `catalog` active, never a weaker/unrelated substitute).
-        if (IsStricterDependentModule(declared, expected))
+        // An action-level gate may add a second module on top of the class-level one, but only
+        // while the class-level gate still declares the expected module. Both authorization
+        // filters run, so the action needs the expected module AND the extra one; it can never
+        // replace the expected gate (e.g. Catalog's order-allocation endpoints also require
+        // `resource-planning`, an optional integration that no longer lists catalog in
+        // RequiredModules, ADR 0010).
+        if (CommercialModuleKeys.Contains(declared)
+            && ResolveClassDeclaredModule(action) is { } classModule
+            && string.Equals(classModule, expected, StringComparison.Ordinal))
         {
             yield break;
         }
@@ -109,13 +114,10 @@ public sealed class ModuleGateConventionTests
             $"Commercial endpoint {endpoint} belongs to module {expected} but declares RequireActiveModule({declared}) instead of {expected}.";
     }
 
-    private static bool IsStricterDependentModule(string declared, string expected)
-    {
-        var descriptor = PlatformModuleCatalog.All.FirstOrDefault(
-            m => string.Equals(m.Key, declared, StringComparison.Ordinal));
-        return descriptor is not null
-            && descriptor.RequiredModules.Contains(expected, StringComparer.Ordinal);
-    }
+    private static string? ResolveClassDeclaredModule(ControllerActionDescriptor action) =>
+        action.ControllerTypeInfo
+            .GetCustomAttribute<RequireActiveModuleAttribute>(inherit: true)
+            ?.ModuleKey;
 
     private static string? ResolveExpectedModule(ControllerActionDescriptor action, out string? conflict)
     {
@@ -223,9 +225,7 @@ public sealed class ModuleGateConventionTests
             return onAction.ModuleKey;
         }
 
-        return action.ControllerTypeInfo
-            .GetCustomAttribute<RequireActiveModuleAttribute>(inherit: true)
-            ?.ModuleKey;
+        return ResolveClassDeclaredModule(action);
     }
 
     private static IHost StartPlatformApiHost() =>
