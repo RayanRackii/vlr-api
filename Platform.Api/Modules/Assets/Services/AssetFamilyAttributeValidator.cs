@@ -52,12 +52,22 @@ public static class AssetFamilyAttributeValidator
         IReadOnlyDictionary<string, string?>? existing)
     {
         var schema = ParseSchema(fieldSchemaJson);
+        var keepStored = incoming is null;
         var source = incoming ?? existing ?? new Dictionary<string, string?>(StringComparer.Ordinal);
         var projected = new Dictionary<string, string?>(StringComparer.Ordinal);
 
         foreach (var field in schema.Fields)
         {
             source.TryGetValue(field.Key, out var raw);
+
+            if (keepStored)
+            {
+                // Nothing was submitted: carry the stored value over untouched, even if it no longer
+                // parses under the current field type, so legacy data never blocks an edit.
+                if (!string.IsNullOrWhiteSpace(raw)) projected[field.Key] = raw.Trim();
+                continue;
+            }
+
             var normalized = NormalizeValue(field, raw);
 
             if (field.Required && string.IsNullOrWhiteSpace(normalized) && HadValue(existing, field.Key))

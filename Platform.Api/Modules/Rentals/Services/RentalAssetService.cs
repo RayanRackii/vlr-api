@@ -358,7 +358,8 @@ public sealed class RentalAssetService(
             rental.DepositPercent,
             PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).DepositPercent,
             rental.DirectRental,
-            rental.ResourceTypeId);
+            rental.ResourceTypeId,
+            new Dictionary<string, string?>(rental.Asset.Attributes, StringComparer.Ordinal));
 
     public async Task<RentalAssetResponse> SetDirectRentalAsync(
         Guid rentalAssetId,

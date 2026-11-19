@@ -5072,6 +5072,14 @@
             "format": "uuid",
             "type": "string"
           },
+          "attributes": {
+            "additionalProperties": {
+              "nullable": true,
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
+          },
           "cancelCutoffHours": {
             "format": "int32",
             "nullable": true,

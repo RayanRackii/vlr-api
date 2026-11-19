@@ -1,5 +1,8 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
+using Platform.Api.Modules.Rentals.Controllers;
+using Platform.Api.Modules.Rentals.Services;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 
@@ -128,5 +131,69 @@ public sealed class AssetRegistryAttributesTests
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             registry.CreateRentableAsync(request, CancellationToken.None));
         Assert.Contains("not enabled", ex.Message);
+    }
+
+    [Fact]
+    public async Task UpdateRentable_without_attributes_keeps_a_stored_value_that_no_longer_parses()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await RequireVoltageAsync(harness, """{"fields":[{"key":"voltage","type":"text","required":true}]}""");
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(Create(harness, "E6", new() { ["voltage"] = "bivolt" }), CancellationToken.None);
+        await RequireVoltageAsync(harness); // voltage is now a required number
+
+        var updated = await registry.UpdateRentableAsync(
+            created.RentalConfiguration!.Id, Update(harness, "E6", null), CancellationToken.None);
+
+        Assert.Equal("bivolt", updated.Attributes["voltage"]);
+    }
+
+    [Fact]
+    public async Task Rental_asset_read_and_list_return_the_stored_attributes()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await RequireVoltageAsync(harness);
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            Create(harness, "E7", new() { ["voltage"] = "220" }), CancellationToken.None);
+        var rentals = new RentalAssetService(harness.Db, harness.TenantProvider);
+
+        var single = await rentals.GetByAssetIdAsync(created.Id, CancellationToken.None);
+        var list = await rentals.ListRentableAsync(CancellationToken.None);
+
+        Assert.Equal("220", single!.Attributes!["voltage"]);
+        Assert.Equal("220", Assert.Single(list).Attributes!["voltage"]);
+    }
+
+    [Fact]
+    public async Task Rental_assets_controller_create_returns_400_naming_the_missing_required_attribute()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await RequireVoltageAsync(harness);
+        var controller = new RentalAssetsController(
+            new RentalAssetService(harness.Db, harness.TenantProvider), null!, harness.CreateRegistry());
+
+        var result = await controller.Create(Create(harness, "E8", null), CancellationToken.None);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Contains("voltage", bad.Value!.ToString());
+    }
+
+    [Fact]
+    public async Task Rental_assets_controller_update_returns_400_when_a_required_attribute_is_blanked()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        await RequireVoltageAsync(harness);
+        var registry = harness.CreateRegistry();
+        var created = await registry.CreateRentableAsync(
+            Create(harness, "E9", new() { ["voltage"] = "220" }), CancellationToken.None);
+        var controller = new RentalAssetsController(
+            new RentalAssetService(harness.Db, harness.TenantProvider), null!, registry);
+
+        var result = await controller.Update(
+            created.RentalConfiguration!.Id, Update(harness, "E9", new() { ["brand"] = "x" }), CancellationToken.None);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Contains("voltage", bad.Value!.ToString());
     }
 }
