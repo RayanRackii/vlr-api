@@ -13,6 +13,9 @@ public sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
 
         builder.HasKey(a => a.Id);
 
+        // Target of the tenant-qualified composite FKs of planning.* (profile, hours, allocations).
+        builder.HasAlternateKey(a => new { a.TenantId, a.Id });
+
         builder.Property(a => a.Id)
             .ValueGeneratedNever();
 

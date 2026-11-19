@@ -13,6 +13,9 @@ public sealed class WorkOrderConfiguration : IEntityTypeConfiguration<WorkOrder>
 
         builder.HasKey(w => w.Id);
 
+        // Target of the tenant-qualified composite FK of planning.asset_allocations.
+        builder.HasAlternateKey(w => new { w.TenantId, w.Id });
+
         builder.Property(w => w.Id)
             .ValueGeneratedNever();
 

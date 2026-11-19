@@ -40,3 +40,4 @@ ADR 0004 decision 6 says "Today the only commercial containment is Orders ⊂ Ca
 - New lock order for planning writes: tenant-modules advisory lock, order or work-order row, asset rows ascending by id, then rental-asset rows ascending (inside the bridge). Customer booking only takes the rental-asset lock, so there is no cycle.
 - New permission prefix `resource-planning.` (hyphen): parsers must accept it (checked in slice API-2).
 - Existing Phase 0 tenants see no behavior change in slice API-1: the order flow still requires rentals at runtime.
+- Slice API-2 creates the three `planning` tables in one additive migration (`AddAssetPlanning`). The tenant-qualified composite FKs need a `(tenant_id, id)` unique key on `assets.assets` and `os.work_orders`; the migration adds both (`id` is already the primary key, so they cannot fail on existing data). Profile and working hours cascade with the asset (pure configuration); allocations restrict (history).
