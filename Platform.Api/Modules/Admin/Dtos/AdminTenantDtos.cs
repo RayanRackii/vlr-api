@@ -56,7 +56,29 @@ public sealed record UpdateTenantRequestDto
     /// Optional for rolling deploys; defaults to <c>generic</c> when omitted/empty.
     /// </summary>
     public IReadOnlyList<string>? AssetFamilyKeys { get; init; }
+
+    /// <summary>Optional. Null leaves the trade name unchanged; blank clears it.</summary>
+    public string? TradeName { get; init; }
+
+    /// <summary>Optional. Null leaves the contact e-mail unchanged; blank clears it.</summary>
+    public string? ContactEmail { get; init; }
+
+    /// <summary>Optional. Null leaves the contact phone unchanged; blank clears it.</summary>
+    public string? ContactPhone { get; init; }
+
+    /// <summary>Optional. Null leaves the address unchanged; when present it replaces the whole address.</summary>
+    public TenantAdminAddressDto? Address { get; init; }
 }
+
+/// <summary>Company address as edited by a platform admin (same shape as the tenant-scoped company address).</summary>
+public sealed record TenantAdminAddressDto(
+    string? PostalCode,
+    string? Street,
+    string? Number,
+    string? Complement,
+    string? District,
+    string? City,
+    string? State);
 
 public sealed record TenantModuleResponseDto(
     string ModuleName,
@@ -74,7 +96,13 @@ public sealed record TenantAdminResponseDto(
     bool IsActive,
     DateTimeOffset CreatedAt,
     IReadOnlyList<TenantModuleResponseDto> ActiveModules,
-    IReadOnlyList<string> AssetFamilyKeys);
+    IReadOnlyList<string> AssetFamilyKeys,
+    string? TradeName,
+    string? ContactEmail,
+    string? ContactPhone,
+    TenantAdminAddressDto Address,
+    bool IsTrial,
+    bool IsTrialReadOnly);
 
 public sealed record EnterTenantEnvironmentResponseDto(
     Guid TenantId,
