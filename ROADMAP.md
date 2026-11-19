@@ -1,5 +1,13 @@
 # ROADMAP — vlr-api
 
+### Planejamento de recursos desacoplado de Reservas e Catálogo (2026-11-19, feat/resource-planning-decouple)
+
+- [x] ADR [`0010`](docs/adr/0010-internal-resource-planning-asset-allocation.md): `AssetAllocation` em `Asset`, uma autoridade de calendário por ativo, ponte para Reservas só em ativo alugável. Spec: `docs/plans/active/2026-11-19-internal-resource-planning.md` (fatia API-1 de 6).
+- [x] `resource-planning` exige só a capability Asset Registry (sem `RequiredModules`; alias `planejamento`). Ativa sozinho, com `inventory` ou com qualquer mistura de `catalog`/`rentals`/`os`. Sem migration.
+- [x] Guardas ao desativar (`AdminTenantService.UpdateAsync`, dentro do lock de módulos): `resource-planning`, e `rentals`/`catalog` enquanto `resource-planning` continua ativo, são recusados com alocações não liberadas (a contagem vai no texto); `os` é livre. Hoje conta `CatalogOrderItemResourceAllocation`; `AssetAllocation` entra na fatia API-3.
+- [x] `GET /api/admin/modules` ganha `requiredModules`. `ModuleGateConventionTests`: gate de ação pode somar um segundo módulo se o gate da classe ainda declara o esperado.
+- [ ] O fluxo de pedido segue exigindo `rentals` em runtime (muda na API-5). Próximas fatias: API-2 (perfil e horários), API-3 (alocações manuais e agenda). Espelho do glossário em `vlr-web/CONTEXT.md` e `openapi.json` do web (`requiredModules`) ficam para o PR do web.
+
 ### Aparência do portal do cliente: imagem e textos da tela de login (2026-11-19, feat/portal-landing-appearance)
 
 - [x] Migration aditiva `AddTenantPortalLanding` (colunas nulas, sem backfill): `core.tenants` ganha `landing_image_key` (300), `landing_kicker` (60), `landing_headline` (120), `landing_subtitle` (240).

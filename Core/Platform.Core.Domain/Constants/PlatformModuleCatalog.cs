@@ -16,7 +16,9 @@ public sealed record PlatformModuleDescriptor(
     /// <summary>
     /// Other commercial tenant_modules keys that must already be active for this module to
     /// activate (distinct from <see cref="RequiredCapabilities"/>, which is capability-based).
-    /// Enforced by <see cref="PlatformModuleCatalog.NormalizeEntitlements"/>.
+    /// Enforced by <see cref="PlatformModuleCatalog.NormalizeEntitlements"/>. No module declares one
+    /// today (ADR 0010: resource-planning needs only the Asset Registry capability); optional
+    /// integrations are detected at runtime and protected by business guards on disable.
     /// </summary>
     public IReadOnlyList<string> RequiredModules { get; init; } = RequiredModules ?? [];
 }
@@ -78,9 +80,8 @@ public static class PlatformModuleCatalog
             IsCommercial: true,
             IsLegacy: false,
             Provides: [],
-            RequiredCapabilities: [],
-            Aliases: [],
-            RequiredModules: [PlatformModules.Catalog, PlatformModules.Rentals]),
+            RequiredCapabilities: [AssetRegistryCapability],
+            Aliases: ["planejamento"]),
     ];
 
     private static readonly Dictionary<string, string> AliasToKey = BuildAliasIndex();
@@ -171,9 +172,10 @@ public static class PlatformModuleCatalog
     /// distinct from capability-based <see cref="PlatformModuleDescriptor.RequiredCapabilities"/>:
     /// a module cannot activate unless its required modules are in the resulting desired set, and a
     /// required module already active cannot be dropped from the desired set while the dependent remains.
-    /// The business rule "deny disabling while unreleased allocations exist" is enforced by the
-    /// allocation service at the call site (module lock serializes it with allocation admission);
-    /// this method only validates static module-to-module composition.
+    /// The business rule "deny disabling while unreleased allocations exist" is enforced by
+    /// <c>AdminTenantService</c> inside the tenant-modules lock (resource-planning, rentals and
+    /// catalog, ADR 0010); this method only validates static module-to-module composition and is a
+    /// no-op for every descriptor that declares no <c>RequiredModules</c>.
     /// </summary>
     private static void ValidateModuleDependencies(
         HashSet<string> desiredCommercial,

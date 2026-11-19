@@ -63,6 +63,11 @@ public sealed class AdminModulesControllerTests
         AssertRequires(byKey[PlatformModules.WorkOrders], AssetRegistry);
         Assert.Equal(0, byKey[PlatformModules.Catalog].GetProperty("requiredCapabilities").GetArrayLength());
         Assert.Equal(0, byKey[PlatformModules.Catalog].GetProperty("provides").GetArrayLength());
+        Assert.Equal(0, byKey[PlatformModules.Catalog].GetProperty("requiredModules").GetArrayLength());
+
+        Assert.True(byKey.ContainsKey(PlatformModules.ResourcePlanning));
+        AssertRequires(byKey[PlatformModules.ResourcePlanning], AssetRegistry);
+        Assert.Equal(0, byKey[PlatformModules.ResourcePlanning].GetProperty("requiredModules").GetArrayLength());
 
         foreach (var item in doc.RootElement.EnumerateArray())
         {

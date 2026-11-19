@@ -72,6 +72,13 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "requiredModules": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
           }
         },
         "type": "object"

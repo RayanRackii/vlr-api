@@ -43,6 +43,49 @@ public sealed class PlatformModuleCatalogTests
     }
 
     [Fact]
+    public void Resource_planning_requires_the_asset_registry_capability_and_no_module()
+    {
+        var module = Descriptor(PlatformModules.ResourcePlanning);
+
+        Assert.Equal([AssetRegistry], module.RequiredCapabilities);
+        Assert.Empty(module.RequiredModules);
+        Assert.Empty(module.Provides);
+        Assert.True(module.IsCommercial);
+        Assert.False(module.IsLegacy);
+        Assert.True(PlatformModuleCatalog.TryNormalize("planejamento", out var canonical));
+        Assert.Equal(PlatformModules.ResourcePlanning, canonical);
+    }
+
+    [Theory]
+    [InlineData("resource-planning")]
+    [InlineData("resource-planning", "inventory")]
+    [InlineData("resource-planning", "catalog")]
+    [InlineData("resource-planning", "rentals")]
+    [InlineData("resource-planning", "os")]
+    public void Resource_planning_is_valid_without_catalog_or_rentals(params string[] modules)
+    {
+        var normalized = PlatformModuleCatalog.NormalizeEntitlements(modules);
+
+        Assert.Contains(PlatformModules.ResourcePlanning, normalized);
+        Assert.Equal(modules.Length, normalized.Count);
+    }
+
+    [Fact]
+    public void Dropping_catalog_or_rentals_while_resource_planning_remains_is_a_valid_composition()
+    {
+        var normalized = PlatformModuleCatalog.NormalizeEntitlements(
+            ["resource-planning"],
+            existingActiveKeys:
+            [
+                PlatformModules.Catalog,
+                PlatformModules.Rentals,
+                PlatformModules.ResourcePlanning,
+            ]);
+
+        Assert.Equal([PlatformModules.ResourcePlanning], normalized);
+    }
+
+    [Fact]
     public void Orders_and_pedidos_normalize_to_catalog()
     {
         Assert.True(PlatformModules.TryNormalize("orders", out var orders));

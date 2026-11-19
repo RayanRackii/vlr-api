@@ -6,4 +6,5 @@ public sealed record AdminModuleCatalogItemDto(
     bool IsLegacy,
     IReadOnlyList<string> Provides,
     IReadOnlyList<string> RequiredCapabilities,
-    IReadOnlyList<string> Aliases);
+    IReadOnlyList<string> Aliases,
+    IReadOnlyList<string> RequiredModules);
