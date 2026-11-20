@@ -11,12 +11,13 @@ public sealed class CatalogOrderItemResourceRequirementConfiguration
     {
         builder.ToTable("order_item_resource_requirements", "catalog", table =>
         {
-            // Exactly one of RentalAssetId / AssetCategoryId must be set, mirroring the source
+            // An asset target (AssetId, or a legacy RentalAssetId on a row written before slice
+            // API-5) or a category target, never both, mirroring the source
             // product_resource_requirements shape the snapshot was captured from.
             table.HasCheckConstraint(
                 "ck_order_item_resource_requirements_exactly_one_selector",
-                "(rental_asset_id IS NOT NULL AND asset_category_id IS NULL) " +
-                "OR (rental_asset_id IS NULL AND asset_category_id IS NOT NULL)");
+                "(asset_category_id IS NULL AND (asset_id IS NOT NULL OR rental_asset_id IS NOT NULL)) " +
+                "OR (asset_category_id IS NOT NULL AND asset_id IS NULL AND rental_asset_id IS NULL)");
         });
 
         builder.HasKey(r => r.Id);
@@ -49,6 +50,9 @@ public sealed class CatalogOrderItemResourceRequirementConfiguration
         // Non-unique: Phase 0 snapshots one requirement per item; Phase 1 may add more lines.
         builder.HasIndex(r => new { r.TenantId, r.OrderItemId });
 
+        builder.HasIndex(r => new { r.TenantId, r.AssetId })
+            .HasDatabaseName("ix_order_item_resource_requirements_tenant_id_asset_id");
+
         builder.HasOne(r => r.OrderItem)
             .WithMany()
             .HasForeignKey(r => new { r.TenantId, r.OrderItemId })
@@ -62,6 +66,14 @@ public sealed class CatalogOrderItemResourceRequirementConfiguration
             .HasForeignKey(r => new { r.TenantId, r.SourceRequirementId })
             .HasPrincipalKey(p => new { p.TenantId, p.Id })
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Tenant-qualified composite FK to the planned asset (nullable).
+        builder.HasOne<Asset>()
+            .WithMany()
+            .HasForeignKey(r => new { r.TenantId, r.AssetId })
+            .HasPrincipalKey(a => new { a.TenantId, a.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_order_item_resource_requirements_assets_tenant_id_asset_id");
 
         // Tenant-qualified composite FK: application checks alone must not permit a cross-tenant
         // RentalAsset association (nullable — AssetCategoryId may be set instead).

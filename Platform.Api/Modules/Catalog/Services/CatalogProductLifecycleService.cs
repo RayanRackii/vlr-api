@@ -118,6 +118,7 @@ public sealed class CatalogProductLifecycleService(
                 {
                     TenantId = tenantId,
                     ProductId = copy.Id,
+                    AssetId = requirement.AssetId,
                     RentalAssetId = requirement.RentalAssetId,
                     AssetCategoryId = requirement.AssetCategoryId,
                     ResourceQuantity = requirement.ResourceQuantity,

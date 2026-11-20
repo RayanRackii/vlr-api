@@ -58,7 +58,8 @@ public static class CatalogProductReadiness
             && (!rentalsActive
                 || !p.UsesSchedule
                 || dbContext.CatalogProductResourceRequirements.Any(r =>
-                    r.TenantId == tenantId && r.ProductId == p.Id && r.IsActive && r.RentalAssetId != null))
+                    r.TenantId == tenantId && r.ProductId == p.Id && r.IsActive
+                    && (r.RentalAssetId != null || r.AssetId != null)))
             && (p.Visibility != CatalogProductVisibility.Restricted
                 || dbContext.CatalogProductAccess.Any(a =>
                     a.TenantId == tenantId
@@ -96,7 +97,8 @@ public static class CatalogProductReadiness
         if (rentalsActive)
         {
             withResource = (await dbContext.CatalogProductResourceRequirements.AsNoTracking()
-                .Where(r => r.TenantId == tenantId && ids.Contains(r.ProductId) && r.IsActive && r.RentalAssetId != null)
+                .Where(r => r.TenantId == tenantId && ids.Contains(r.ProductId) && r.IsActive
+                    && (r.RentalAssetId != null || r.AssetId != null))
                 .Select(r => r.ProductId)
                 .Distinct()
                 .ToListAsync(cancellationToken)).ToHashSet();

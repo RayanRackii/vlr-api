@@ -12,6 +12,13 @@ public sealed record CatalogProductResourceRequirementDto
 {
     public Guid? Id { get; init; }
 
+    /// <summary>
+    /// The planned asset. A write may send <c>assetId</c> (any plannable asset) or the legacy
+    /// <c>rentalAssetId</c> (a rental configuration); a response carries both when the asset is
+    /// rental-backed and only <c>assetId</c> otherwise.
+    /// </summary>
+    public Guid? AssetId { get; init; }
+
     public Guid? RentalAssetId { get; init; }
 
     public Guid? AssetCategoryId { get; init; }
@@ -72,7 +79,8 @@ public sealed record CatalogOrderAllocationPreviewResponse(
     DateTimeOffset? OccupiedEnd,
     DateTimeOffset? EstimatedReadyAt,
     string? ConflictCode,
-    string? Reason);
+    string? Reason,
+    Guid? AssetId = null);
 
 public sealed record CatalogOrderApprovePlanningRequest
 {
@@ -90,10 +98,14 @@ public sealed record CatalogOrderAllocationUsageRequest
     public required int ExpectedVersion { get; init; }
 }
 
+/// <summary>
+/// A current allocation of an order item. <c>RentalAssetId</c> is null when the asset is not
+/// rental-backed; <c>AssetId</c> always names the planned asset.
+/// </summary>
 public sealed record CatalogOrderItemAllocationResponse(
     Guid Id,
     Guid RequirementId,
-    Guid RentalAssetId,
+    Guid? RentalAssetId,
     AllocationStatus Status,
     DateTimeOffset PlannedWorkStart,
     DateTimeOffset PlannedWorkEnd,
@@ -101,7 +113,8 @@ public sealed record CatalogOrderItemAllocationResponse(
     DateTimeOffset? ActualStartAt,
     DateTimeOffset? ActualWorkFinishedAt,
     DateTimeOffset? ActualReleaseAt,
-    int PlanningRevision);
+    int PlanningRevision,
+    Guid? AssetId = null);
 
 public sealed record CatalogProductListQuery(
     string? Name,
@@ -276,7 +289,8 @@ public sealed record CatalogAgendaItemResponse(
     DateTimeOffset OccupiedStart,
     DateTimeOffset OccupiedEnd,
     AllocationStatus? AllocationStatus,
-    string TimeZoneId);
+    string TimeZoneId,
+    Guid? AssetId = null);
 
 public sealed record CatalogAgendaResourceResponse(
     Guid Id,

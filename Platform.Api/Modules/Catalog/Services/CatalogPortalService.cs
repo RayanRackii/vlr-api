@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Platform.Api.Common;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
 using Platform.Api.Notifications;
 using Platform.Api.Storage;
 using Platform.Core.Domain.Events;
@@ -83,8 +84,12 @@ public sealed class CatalogPortalService(
     IOptions<StorageOptions> storageOptions,
     IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
-    IResourceOccupancyService occupancy) : ICatalogPortalService
+    IResourceOccupancyService occupancy,
+    IAssetOccupancyService? assetOccupancyService = null) : ICatalogPortalService
 {
+    private readonly IAssetOccupancyService assetOccupancy =
+        AssetOccupancyFactory.Create(assetOccupancyService, dbContext, tenantProvider, occupancy);
+
     public async Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
         Guid? customerId,
         string? search,
@@ -300,6 +305,7 @@ public sealed class CatalogPortalService(
                             TenantId = tenantId,
                             OrderItemId = orderItem.Id,
                             SourceRequirementId = requirement.Id,
+                            AssetId = requirement.AssetId,
                             RentalAssetId = requirement.RentalAssetId,
                             AssetCategoryId = requirement.AssetCategoryId,
                             ResourceQuantity = requirement.ResourceQuantity,
@@ -418,7 +424,7 @@ public sealed class CatalogPortalService(
         {
             // Unstarted allocations are released transactionally on cancel regardless of actor
             // (order-equipment-link-codex §3/§7); an already-started allocation stays occupied.
-            await CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(occupancy, dbContext, order, cancellationToken);
+            await CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(assetOccupancy, occupancy, dbContext, order, cancellationToken);
 
             // Customer cancelled their own order, so there is no customer-facing notice; staff get an
             // in-app heads-up via the dedicated event.

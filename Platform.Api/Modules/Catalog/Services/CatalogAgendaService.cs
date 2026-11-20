@@ -44,7 +44,9 @@ public sealed class CatalogAgendaService(
 
         var resourceNames = await ResolveResourceNamesAsync(
             allocated.Select(a => a.RentalAssetId)
-                .Concat(unscheduled.Where(u => u.RentalAssetId is not null).Select(u => u.RentalAssetId!.Value)),
+                .Concat(unscheduled.Select(u => u.RentalAssetId)),
+            allocated.Select(a => a.AssetId)
+                .Concat(unscheduled.Select(u => u.AssetId)),
             cancellationToken);
 
         var fallbackZone = unscheduled.Count == 0
@@ -67,9 +69,13 @@ public sealed class CatalogAgendaService(
     {
         EnsureTenant();
 
-        var allocated = await LoadAllocatedAsync(query, cancellationToken);
+        // The resource agenda is the rentals one: rows are keyed by rental asset, so an allocation on
+        // an asset with no rental configuration is not on it (the planning agenda draws it).
+        var allocated = (await LoadAllocatedAsync(query, cancellationToken))
+            .Where(a => a.RentalAssetId != null)
+            .ToList();
         var resourceNames = await ResolveResourceNamesAsync(
-            allocated.Select(a => a.RentalAssetId), cancellationToken);
+            allocated.Select(a => a.RentalAssetId), [], cancellationToken);
 
         var items = allocated
             .Select(a => MapAllocated(a, resourceNames, includeOrderDetails))
@@ -85,9 +91,12 @@ public sealed class CatalogAgendaService(
         CatalogAgendaQuery query,
         CancellationToken cancellationToken)
     {
-        // Prep/cleanup buffers extend the occupied window outward by at most one day
-        // (CatalogPlanningWindow.MaxMinutes), so pad the SQL filter by a day on each side and
-        // refine to the exact buffered overlap in memory below.
+        // An allocation linked to its planning record reads the stored occupied window (work plus
+        // prep and cleanup, written once at allocation time), so the range filter is exact in SQL.
+        // A row not linked yet (before the Phase 0 backfill ran) still derives the window from the
+        // requirement: prep/cleanup buffers extend it outward by at most one day
+        // (CatalogPlanningWindow.MaxMinutes), so that filter is padded by a day on each side and
+        // refined to the exact buffered overlap in memory below.
         var fromPad = query.From.AddDays(-1);
         var toPad = query.To.AddDays(1);
 
@@ -95,8 +104,12 @@ public sealed class CatalogAgendaService(
             from a in dbContext.CatalogOrderItemResourceAllocations.AsNoTracking()
             where a.IsCurrent
                 && a.Status != AllocationStatus.Cancelled
-                && a.PlannedWorkStart < toPad
-                && a.PlannedWorkEnd > fromPad
+            join planning in dbContext.AssetAllocations.AsNoTracking()
+                on a.AssetAllocationId equals (Guid?)planning.Id into planningLinks
+            from planning in planningLinks.DefaultIfEmpty()
+            where planning != null
+                ? planning.OccupiedStart < query.To && planning.OccupiedEnd > query.From
+                : a.PlannedWorkStart < toPad && a.PlannedWorkEnd > fromPad
             join r in dbContext.CatalogOrderItemResourceRequirements.AsNoTracking()
                 on a.RequirementId equals r.Id
             join i in dbContext.CatalogOrderItems.AsNoTracking()
@@ -113,19 +126,22 @@ public sealed class CatalogAgendaService(
                 i.ProductId,
                 i.ProductNameSnapshot,
                 a.RentalAssetId,
+                planning == null ? r.AssetId : (Guid?)planning.AssetId,
                 a.Status,
                 a.PlannedWorkStart,
                 a.PlannedWorkEnd,
                 a.TimeZoneId,
                 r.PrepMinutes,
-                r.CleanupMinutes))
+                r.CleanupMinutes,
+                planning == null ? null : (DateTimeOffset?)planning.OccupiedStart,
+                planning == null ? null : (DateTimeOffset?)planning.OccupiedEnd))
             .ToListAsync(cancellationToken);
 
         return rows
             .Where(r =>
             {
-                var occupiedStart = r.PlannedWorkStart.AddMinutes(-r.PrepMinutes);
-                var occupiedEnd = r.PlannedWorkEnd.AddMinutes(r.CleanupMinutes);
+                var occupiedStart = r.StoredOccupiedStart ?? r.PlannedWorkStart.AddMinutes(-r.PrepMinutes);
+                var occupiedEnd = r.StoredOccupiedEnd ?? r.PlannedWorkEnd.AddMinutes(r.CleanupMinutes);
                 return occupiedStart < query.To && occupiedEnd > query.From;
             })
             .ToList();
@@ -154,25 +170,35 @@ public sealed class CatalogAgendaService(
                 i.ProductId,
                 i.ProductNameSnapshot,
                 r.RentalAssetId,
+                r.AssetId,
                 o.CreatedAt))
             .ToListAsync(cancellationToken);
 
-    private async Task<IReadOnlyDictionary<Guid, string>> ResolveResourceNamesAsync(
-        IEnumerable<Guid> rentalAssetIds,
+    /// <summary>Display names by rental asset id and by asset id, in two batched queries at most.</summary>
+    private async Task<ResourceNames> ResolveResourceNamesAsync(
+        IEnumerable<Guid?> rentalAssetIds,
+        IEnumerable<Guid?> assetIds,
         CancellationToken cancellationToken)
     {
-        var ids = rentalAssetIds.Distinct().ToList();
-        if (ids.Count == 0)
-        {
-            return new Dictionary<Guid, string>();
-        }
+        var rentalIds = rentalAssetIds.OfType<Guid>().Distinct().ToList();
+        var plainIds = assetIds.OfType<Guid>().Distinct().ToList();
 
-        return await (
-            from ra in dbContext.RentalAssets.AsNoTracking()
-            where ids.Contains(ra.Id)
-            join asset in dbContext.Assets.AsNoTracking() on ra.AssetId equals asset.Id
-            select new { ra.Id, asset.Name })
-            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var byRental = rentalIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await (
+                from ra in dbContext.RentalAssets.AsNoTracking()
+                where rentalIds.Contains(ra.Id)
+                join asset in dbContext.Assets.AsNoTracking() on ra.AssetId equals asset.Id
+                select new { ra.Id, asset.Name })
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+        var byAsset = plainIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await dbContext.Assets.AsNoTracking()
+                .Where(a => plainIds.Contains(a.Id))
+                .ToDictionaryAsync(a => a.Id, a => a.Name, cancellationToken);
+
+        return new ResourceNames(byRental, byAsset);
     }
 
     private async Task<IReadOnlyList<CatalogAgendaResourceResponse>> LoadResourcesAsync(
@@ -194,7 +220,7 @@ public sealed class CatalogAgendaService(
 
     private static CatalogAgendaItemResponse MapAllocated(
         AllocatedRow r,
-        IReadOnlyDictionary<Guid, string> resourceNames,
+        ResourceNames resourceNames,
         bool includeOrderDetails) =>
         new(
             r.OrderId,
@@ -203,18 +229,19 @@ public sealed class CatalogAgendaService(
             r.ProductId,
             r.ProductName,
             r.RentalAssetId,
-            resourceNames.GetValueOrDefault(r.RentalAssetId),
+            resourceNames.NameOf(r.RentalAssetId, r.AssetId),
             includeOrderDetails ? r.CustomerName : null,
             r.PlannedWorkStart,
             r.PlannedWorkEnd,
-            r.PlannedWorkStart.AddMinutes(-r.PrepMinutes),
-            r.PlannedWorkEnd.AddMinutes(r.CleanupMinutes),
+            r.StoredOccupiedStart ?? r.PlannedWorkStart.AddMinutes(-r.PrepMinutes),
+            r.StoredOccupiedEnd ?? r.PlannedWorkEnd.AddMinutes(r.CleanupMinutes),
             r.AllocationStatus,
-            r.TimeZoneId);
+            r.TimeZoneId,
+            r.AssetId);
 
     private static CatalogAgendaItemResponse MapUnscheduled(
         UnscheduledRow r,
-        IReadOnlyDictionary<Guid, string> resourceNames,
+        ResourceNames resourceNames,
         string timeZoneId) =>
         new(
             r.OrderId,
@@ -223,7 +250,7 @@ public sealed class CatalogAgendaService(
             r.ProductId,
             r.ProductName,
             r.RentalAssetId,
-            r.RentalAssetId is { } assetId ? resourceNames.GetValueOrDefault(assetId) : null,
+            resourceNames.NameOf(r.RentalAssetId, r.AssetId),
             r.CustomerName,
             WorkStart: null,
             WorkEnd: null,
@@ -232,7 +259,8 @@ public sealed class CatalogAgendaService(
             r.RequestedAt,
             r.RequestedAt,
             AllocationStatus: null,
-            timeZoneId);
+            timeZoneId,
+            r.AssetId);
 
     private Guid EnsureTenant() =>
         tenantProvider.TenantId
@@ -245,13 +273,16 @@ public sealed class CatalogAgendaService(
         string CustomerName,
         Guid ProductId,
         string ProductName,
-        Guid RentalAssetId,
+        Guid? RentalAssetId,
+        Guid? AssetId,
         AllocationStatus AllocationStatus,
         DateTimeOffset PlannedWorkStart,
         DateTimeOffset PlannedWorkEnd,
         string TimeZoneId,
         int PrepMinutes,
-        int CleanupMinutes);
+        int CleanupMinutes,
+        DateTimeOffset? StoredOccupiedStart,
+        DateTimeOffset? StoredOccupiedEnd);
 
     private sealed record UnscheduledRow(
         Guid OrderId,
@@ -261,5 +292,17 @@ public sealed class CatalogAgendaService(
         Guid ProductId,
         string ProductName,
         Guid? RentalAssetId,
+        Guid? AssetId,
         DateTimeOffset RequestedAt);
+
+    /// <summary>Display names of the resources on an agenda, by rental asset id and by asset id.</summary>
+    private sealed record ResourceNames(
+        IReadOnlyDictionary<Guid, string> ByRental,
+        IReadOnlyDictionary<Guid, string> ByAsset)
+    {
+        public string? NameOf(Guid? rentalAssetId, Guid? assetId) =>
+            rentalAssetId is { } rental && ByRental.TryGetValue(rental, out var rentalName) ? rentalName
+            : assetId is { } asset && ByAsset.TryGetValue(asset, out var assetName) ? assetName
+            : null;
+    }
 }

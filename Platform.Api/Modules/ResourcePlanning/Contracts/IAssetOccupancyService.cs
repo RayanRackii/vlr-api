@@ -47,13 +47,32 @@ public sealed record AvailabilityResult(IReadOnlyList<AllocationConflictDto> Con
     public bool IsFree => Conflicts.Count == 0;
 }
 
-/// <summary>What a new allocation record holds (the caller supplies who and what).</summary>
+/// <summary>
+/// What a new allocation record holds (the caller supplies who and what). A manual allocation sets
+/// only the first five members. A catalog order allocation (slice API-5) also sets
+/// <see cref="Source"/> and the link: <see cref="CatalogOrderItemId"/> and the display snapshot
+/// <see cref="ReferenceLabel"/>. <see cref="UnitId"/> overrides the unit stamped on the record and on
+/// the mirror reservation (the order flow stamps the unit the staff chose); <see cref="Quantity"/> is
+/// the quantity of the record and of the mirror reservation item.
+/// </summary>
 public sealed record NewAllocation(
     AssetAllocationKind Kind,
     string Title,
     string? Notes,
     AllocationWindow Window,
-    Guid? CreatedByUserId);
+    Guid? CreatedByUserId,
+    AssetAllocationSource Source = AssetAllocationSource.Manual,
+    Guid? CatalogOrderItemId = null,
+    string? ReferenceLabel = null,
+    Guid? UnitId = null,
+    int Quantity = 1);
+
+/// <summary>Limits of the planning port that integrations (the catalog order flow) need to know.</summary>
+public static class AssetPlanningLimits
+{
+    /// <summary>Longest work window of one allocation on a planning-only asset (30 days).</summary>
+    public const int MaxPlanningOnlyDurationMinutes = 43_200;
+}
 
 /// <summary>
 /// The planning port: who holds an asset's calendar, and the only writer of the occupancy stores.
@@ -85,6 +104,21 @@ public interface IAssetOccupancyService
     /// capacity one.
     /// </summary>
     Task<PlannableAsset> ResolvePlannableAssetAsync(
+        Guid tenantId,
+        Guid assetId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolution for the catalog order flow. A planning-only asset resolves exactly as
+    /// <see cref="ResolvePlannableAssetAsync"/> (it must be active, not scheduled for deletion and
+    /// plannable). A rental-backed asset (active rental configuration and rentals active) resolves with
+    /// <see cref="PlannableAsset.RentalAssetId"/> set and without a planning profile or status check:
+    /// order allocation on rentable resources predates planning profiles, and the caller applies the
+    /// rentals eligibility rules (<c>IResourceOccupancyService.ResolveEligibleResourceAsync</c>) to it,
+    /// as the Phase 0 flow always did. 404 <c>planning.asset_not_found</c> when the asset does not exist
+    /// in the tenant.
+    /// </summary>
+    Task<PlannableAsset> ResolveOrderAssetAsync(
         Guid tenantId,
         Guid assetId,
         CancellationToken cancellationToken);

@@ -21,7 +21,7 @@ namespace Platform.Api.Modules.ResourcePlanning.Services;
 public static class AssetAllocationRules
 {
     /// <summary>Longest work window of one allocation on a planning-only asset (30 days).</summary>
-    public const int MaxDurationMinutes = 43_200;
+    public const int MaxDurationMinutes = Contracts.AssetPlanningLimits.MaxPlanningOnlyDurationMinutes;
 
     public static bool IsExpired(AssetAllocation allocation, DateTimeOffset now) =>
         allocation.Status == AllocationStatus.Scheduled

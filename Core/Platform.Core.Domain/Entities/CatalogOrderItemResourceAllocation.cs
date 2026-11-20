@@ -4,9 +4,11 @@ using Platform.Core.Domain.Enums;
 namespace Platform.Core.Domain.Entities;
 
 /// <summary>
-/// One concrete occurrence of a resource allocation backing an order item's requirement,
-/// realized through exactly one <see cref="ReservationItem"/>. Plain data holder — mutation
-/// and transition rules live in the allocation service (later work).
+/// One concrete occurrence of a resource allocation backing an order item's requirement. The
+/// occupancy itself is the linked <see cref="AssetAllocation"/> (<see cref="AssetAllocationId"/>);
+/// on a rental-backed asset it is also realized through exactly one <see cref="ReservationItem"/>
+/// (the mirror reservation). Plain data holder — mutation and transition rules live in the
+/// allocation service.
 /// </summary>
 public class CatalogOrderItemResourceAllocation : Entity, ITenantScoped
 {
@@ -14,8 +16,17 @@ public class CatalogOrderItemResourceAllocation : Entity, ITenantScoped
 
     public required Guid RequirementId { get; set; }
 
-    /// <summary>Unique: one allocation per reservation item.</summary>
-    public required Guid ReservationItemId { get; set; }
+    /// <summary>
+    /// The planning record that holds the occupancy (slice API-5). Unique when set. Null only on a
+    /// row that has not been linked yet; the Phase 0 backfill links every existing row.
+    /// </summary>
+    public Guid? AssetAllocationId { get; set; }
+
+    /// <summary>
+    /// Unique when set: one allocation per reservation item. Null when the asset is planning-only
+    /// (not rental-backed): no reservation exists for it.
+    /// </summary>
+    public Guid? ReservationItemId { get; set; }
 
     public required int Sequence { get; set; }
 
@@ -36,8 +47,11 @@ public class CatalogOrderItemResourceAllocation : Entity, ITenantScoped
 
     public required int AllocatedQuantity { get; set; }
 
-    /// <summary>The actually assigned resource. Phase 0: always equals the requirement's RentalAssetId.</summary>
-    public required Guid RentalAssetId { get; set; }
+    /// <summary>
+    /// The rental configuration of the assigned asset. Set only when the asset is rental-backed;
+    /// null for a planning-only asset (see <see cref="AssetAllocation"/> for the asset itself).
+    /// </summary>
+    public Guid? RentalAssetId { get; set; }
 
     public required DateTimeOffset PlannedWorkStart { get; set; }
 
@@ -60,5 +74,7 @@ public class CatalogOrderItemResourceAllocation : Entity, ITenantScoped
 
     public CatalogOrderItemResourceRequirement Requirement { get; set; } = null!;
 
-    public ReservationItem ReservationItem { get; set; } = null!;
+    public ReservationItem? ReservationItem { get; set; }
+
+    public AssetAllocation? AssetAllocation { get; set; }
 }

@@ -284,6 +284,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_asset_allocations");
 
+                    b.HasAlternateKey("TenantId", "Id")
+                        .HasName("ak_asset_allocations_tenant_id_id");
+
                     b.HasIndex("TenantId", "AssetId")
                         .HasDatabaseName("ix_asset_allocations_tenant_asset_blocking")
                         .HasFilter("status IN ('Scheduled', 'Running', 'Cleaning')");
@@ -960,6 +963,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("allocated_quantity");
 
+                    b.Property<Guid?>("AssetAllocationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_allocation_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -987,7 +994,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("reason");
 
-                    b.Property<Guid>("RentalAssetId")
+                    b.Property<Guid?>("RentalAssetId")
                         .HasColumnType("uuid")
                         .HasColumnName("rental_asset_id");
 
@@ -995,7 +1002,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("requirement_id");
 
-                    b.Property<Guid>("ReservationItemId")
+                    b.Property<Guid?>("ReservationItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("reservation_item_id");
 
@@ -1034,6 +1041,11 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_order_item_resource_allocations");
 
+                    b.HasIndex("TenantId", "AssetAllocationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_order_item_resource_allocations_tenant_asset_allocation")
+                        .HasFilter("asset_allocation_id IS NOT NULL");
+
                     b.HasIndex("TenantId", "RentalAssetId")
                         .HasDatabaseName("ix_order_item_resource_allocations_tenant_id_rental_asset_id");
 
@@ -1058,6 +1070,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("AssetCategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("asset_category_id");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
 
                     b.Property<int>("CleanupMinutes")
                         .HasColumnType("integer")
@@ -1105,6 +1121,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("TenantId", "Id")
                         .HasName("ak_catalog_order_item_resource_requirements_tenant_id_id");
 
+                    b.HasIndex("TenantId", "AssetId")
+                        .HasDatabaseName("ix_order_item_resource_requirements_tenant_id_asset_id");
+
                     b.HasIndex("TenantId", "OrderItemId")
                         .HasDatabaseName("ix_order_item_resource_requirements_tenant_id_order_item_id");
 
@@ -1116,7 +1135,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.ToTable("order_item_resource_requirements", "catalog", t =>
                         {
-                            t.HasCheckConstraint("ck_order_item_resource_requirements_exactly_one_selector", "(rental_asset_id IS NOT NULL AND asset_category_id IS NULL) OR (rental_asset_id IS NULL AND asset_category_id IS NOT NULL)");
+                            t.HasCheckConstraint("ck_order_item_resource_requirements_exactly_one_selector", "(asset_category_id IS NULL AND (asset_id IS NOT NULL OR rental_asset_id IS NOT NULL)) OR (asset_category_id IS NOT NULL AND asset_id IS NULL AND rental_asset_id IS NULL)");
                         });
                 });
 
@@ -1511,6 +1530,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("asset_category_id");
 
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
+
                     b.Property<int>("CleanupMinutes")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -1567,6 +1590,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("TenantId", "Id")
                         .HasName("ak_catalog_product_resource_requirements_tenant_id_id");
 
+                    b.HasIndex("TenantId", "AssetId")
+                        .HasDatabaseName("ix_product_resource_requirements_tenant_id_asset_id");
+
                     b.HasIndex("TenantId", "RentalAssetId")
                         .HasDatabaseName("ix_product_resource_requirements_tenant_id_rental_asset_id");
 
@@ -1575,7 +1601,7 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
                     b.ToTable("product_resource_requirements", "catalog", t =>
                         {
-                            t.HasCheckConstraint("ck_product_resource_requirements_exactly_one_selector", "(rental_asset_id IS NOT NULL AND asset_category_id IS NULL) OR (rental_asset_id IS NULL AND asset_category_id IS NOT NULL)");
+                            t.HasCheckConstraint("ck_product_resource_requirements_exactly_one_selector", "(asset_category_id IS NULL AND (asset_id IS NOT NULL OR rental_asset_id IS NOT NULL)) OR (asset_category_id IS NOT NULL AND asset_id IS NULL AND rental_asset_id IS NULL)");
                         });
                 });
 
@@ -5342,6 +5368,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItemResourceAllocation", b =>
                 {
+                    b.HasOne("Platform.Core.Domain.Entities.AssetAllocation", "AssetAllocation")
+                        .WithMany()
+                        .HasForeignKey("TenantId", "AssetAllocationId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_order_item_resource_allocations_asset_allocations_tenant_id");
+
                     b.HasOne("Platform.Core.Domain.Entities.RentalAsset", null)
                         .WithMany()
                         .HasForeignKey("TenantId", "RentalAssetId")
@@ -5363,8 +5396,9 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TenantId", "ReservationItemId")
                         .HasPrincipalKey("TenantId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_order_item_resource_allocations_reservation_items_tenant_id");
+
+                    b.Navigation("AssetAllocation");
 
                     b.Navigation("Requirement");
 
@@ -5373,6 +5407,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogOrderItemResourceRequirement", b =>
                 {
+                    b.HasOne("Platform.Core.Domain.Entities.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "AssetId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_order_item_resource_requirements_assets_tenant_id_asset_id");
+
                     b.HasOne("Platform.Core.Domain.Entities.CatalogOrderItem", "OrderItem")
                         .WithMany()
                         .HasForeignKey("TenantId", "OrderItemId")
@@ -5487,6 +5528,13 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.CatalogProductResourceRequirement", b =>
                 {
+                    b.HasOne("Platform.Core.Domain.Entities.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "AssetId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_product_resource_requirements_assets_tenant_id_asset_id");
+
                     b.HasOne("Platform.Core.Domain.Entities.CatalogProduct", "Product")
                         .WithMany()
                         .HasForeignKey("TenantId", "ProductId")

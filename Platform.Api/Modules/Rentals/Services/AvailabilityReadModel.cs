@@ -210,10 +210,11 @@ internal sealed class AvailabilityReadModel(
                 join orderItem in dbContext.CatalogOrderItems.AsNoTracking()
                     on requirement.OrderItemId equals orderItem.Id
                 where allocation.TenantId == tenantId
-                      && internalUseReservationItemIds.Contains(allocation.ReservationItemId)
+                      && allocation.ReservationItemId != null
+                      && internalUseReservationItemIds.Contains(allocation.ReservationItemId.Value)
                 select new
                 {
-                    allocation.ReservationItemId,
+                    ReservationItemId = allocation.ReservationItemId!.Value,
                     orderItem.OrderId,
                     allocation.PlannedWorkStart,
                     allocation.PlannedWorkEnd,

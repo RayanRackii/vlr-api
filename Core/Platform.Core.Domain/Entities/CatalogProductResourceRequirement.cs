@@ -4,10 +4,11 @@ namespace Platform.Core.Domain.Entities;
 
 /// <summary>
 /// Declares the resource(s) a catalog product's unit of sale consumes during production.
-/// Exactly one of <see cref="RentalAssetId"/> or <see cref="AssetCategoryId"/> is set.
-/// Phase 0 only supports <see cref="RentalAssetId"/>; category selection is accepted in
-/// schema but rejected by endpoints with 400 "not supported yet". No rows for a product
-/// means ordinary (non-scheduled) product behavior.
+/// The target is either an asset (<see cref="AssetId"/>, plus <see cref="RentalAssetId"/> when that
+/// asset is rental-backed, kept for old readers) or a category (<see cref="AssetCategoryId"/>). Only
+/// asset targets are supported; category selection is accepted in schema but rejected by endpoints
+/// with 400 "not supported yet". No rows for a product means ordinary (non-scheduled) product
+/// behavior.
 /// </summary>
 public class CatalogProductResourceRequirement : Entity, ITenantScoped
 {
@@ -15,6 +16,10 @@ public class CatalogProductResourceRequirement : Entity, ITenantScoped
 
     public required Guid ProductId { get; set; }
 
+    /// <summary>The planned asset (slice API-5). Backfilled from the rental asset on existing rows.</summary>
+    public Guid? AssetId { get; set; }
+
+    /// <summary>Set when the asset is rental-backed; kept so rentals readers keep working.</summary>
     public Guid? RentalAssetId { get; set; }
 
     public Guid? AssetCategoryId { get; set; }
