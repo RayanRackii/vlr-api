@@ -57,6 +57,7 @@ try
 
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddRateLimitClientIp(builder.Configuration);
+    builder.Services.AddCustomerAuthSendRateLimiting();
     builder.Services.AddScoped<PlatformAdminTenantSession>();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
@@ -155,6 +156,7 @@ try
     }
 
     app.UseCors();
+    app.UseRateLimiter();
 
     app.UseSerilogRequestLogging();
 

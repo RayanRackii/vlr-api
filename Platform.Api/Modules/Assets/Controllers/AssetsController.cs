@@ -48,6 +48,10 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
             var asset = await assetService.CreateAsync(request, cancellationToken);
             return CreatedAtAction(nameof(GetById), new { id = asset.Id }, asset);
         }
+        catch (AssetCategoryPendingDeletionException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssetCategoryPendingDeletionException.Code });
+        }
         catch (AssetTagDuplicateException ex)
         {
             return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
@@ -68,6 +72,10 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
         {
             var result = await assetService.BulkCreateAsync(request, cancellationToken);
             return Ok(result);
+        }
+        catch (AssetCategoryPendingDeletionException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssetCategoryPendingDeletionException.Code });
         }
         catch (AssetTagDuplicateException ex)
         {
@@ -104,6 +112,10 @@ public sealed class AssetsController(IAssetService assetService) : ControllerBas
             }
 
             return Ok(asset);
+        }
+        catch (AssetCategoryPendingDeletionException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssetCategoryPendingDeletionException.Code });
         }
         catch (AssetTagDuplicateException ex)
         {

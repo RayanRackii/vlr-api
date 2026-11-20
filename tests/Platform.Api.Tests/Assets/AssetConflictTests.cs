@@ -97,7 +97,6 @@ public sealed class AssetConflictTests
             new CreateAssetCategoryRequest { Name = "With orders" },
             CancellationToken.None);
         await categories.DeleteAsync(planned.Id, CancellationToken.None);
-        await categories.DeleteAsync(used.Id, CancellationToken.None);
 
         harness.Db.MaintenancePlans.Add(new MaintenancePlan
         {
@@ -112,6 +111,7 @@ public sealed class AssetConflictTests
         var asset = await harness.CreateService().CreateAsync(
             AssetRequest(harness, "OS-1") with { CategoryId = used.Id },
             CancellationToken.None);
+        await categories.DeleteAsync(used.Id, CancellationToken.None);
         harness.Db.WorkOrders.Add(new WorkOrder
         {
             TenantId = harness.TenantProvider.TenantId!.Value,
@@ -207,6 +207,72 @@ public sealed class AssetConflictTests
         Assert.False(await harness.Db.AssetCategories.AnyAsync(category => category.Id == cleanCategory.Id));
         Assert.True(await harness.Db.Assets.AnyAsync(asset => asset.Id == blockedAsset.Id));
         Assert.False(await harness.Db.Assets.AnyAsync(asset => asset.Id == cleanAsset.Id));
+    }
+
+    [Fact]
+    public async Task Create_and_move_into_category_pending_deletion_is_refused_with_400_code()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var service = harness.CreateService();
+        var controller = new AssetsController(service);
+        var categories = new AssetCategoryService(harness.Db, harness.TenantProvider);
+        var pending = await categories.CreateAsync(
+            new CreateAssetCategoryRequest { Name = "Pending" },
+            CancellationToken.None);
+        await categories.DeleteAsync(pending.Id, CancellationToken.None);
+        var existing = await service.CreateAsync(AssetRequest(harness, "P-0"), CancellationToken.None);
+
+        var create = await controller.Create(
+            AssetRequest(harness, "P-1") with { CategoryId = pending.Id },
+            CancellationToken.None);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(create.Result);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(bad.Value));
+        Assert.Equal("asset.category_pending_deletion", doc.RootElement.GetProperty("code").GetString());
+        await Assert.ThrowsAsync<AssetCategoryPendingDeletionException>(() =>
+            service.UpdateAsync(
+                existing.Id,
+                new UpdateAssetRequest
+                {
+                    UnitId = harness.UnitId,
+                    CategoryId = pending.Id,
+                    FamilyId = harness.FamilyId,
+                    Name = existing.Name,
+                    Tag = existing.Tag,
+                    Status = AssetStatus.Active,
+                },
+                CancellationToken.None));
+        Assert.Equal(1, await harness.Db.Assets.CountAsync());
+        Assert.Equal(harness.CategoryId, (await harness.Db.Assets.SingleAsync()).CategoryId);
+    }
+
+    [Fact]
+    public async Task Data_retention_skips_expired_category_that_still_has_a_live_asset()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var tenantId = harness.TenantProvider.TenantId!.Value;
+        var expired = DateTimeOffset.UtcNow.AddDays(-1);
+        var category = new AssetCategory { TenantId = tenantId, Name = "Late", ScheduledDeletionAt = expired };
+        harness.Db.AssetCategories.Add(category);
+        await harness.Db.SaveChangesAsync();
+        var live = new Asset
+        {
+            TenantId = tenantId,
+            UnitId = harness.UnitId,
+            CategoryId = category.Id,
+            FamilyId = harness.FamilyId,
+            Name = "Added late",
+            Tag = "LATE-1",
+            Status = AssetStatus.Active,
+        };
+        harness.Db.Assets.Add(live);
+        await harness.Db.SaveChangesAsync();
+
+        var job = new DataRetentionJob(harness.Db, NullLogger<DataRetentionJob>.Instance);
+        await job.ExecuteAsync(CancellationToken.None);
+
+        Assert.True(await harness.Db.AssetCategories.AnyAsync(c => c.Id == category.Id));
+        Assert.True(await harness.Db.Assets.AnyAsync(a => a.Id == live.Id));
     }
 
     [Fact]

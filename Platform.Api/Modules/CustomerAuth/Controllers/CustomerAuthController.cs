@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
+using Platform.Api.Http;
 using Platform.Api.Modules.CustomerAuth.Dtos;
 using Platform.Api.Modules.CustomerAuth.PhoneVerification;
 using Platform.Api.Modules.CustomerAuth.Services;
@@ -54,6 +55,7 @@ public sealed class CustomerAuthController(
     }
 
     [HttpPost("register")]
+    [CustomerAuthSendThrottle]
     public async Task<ActionResult<RegisterCustomerResponseDto>> Register(
         [FromBody] RegisterCustomerRequestDto request,
         [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
@@ -150,6 +152,7 @@ public sealed class CustomerAuthController(
     }
 
     [HttpPost("request-otp")]
+    [CustomerAuthSendThrottle]
     public async Task<IActionResult> RequestOtp(
         [FromBody] RequestOtpDto request,
         [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
@@ -214,6 +217,7 @@ public sealed class CustomerAuthController(
     }
 
     [HttpPost("resend-verification")]
+    [CustomerAuthSendThrottle]
     public async Task<IActionResult> ResendVerification(
         [FromBody] ResendVerificationRequestDto request,
         [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,
@@ -240,6 +244,7 @@ public sealed class CustomerAuthController(
     }
 
     [HttpPost("password-reset/request")]
+    [CustomerAuthSendThrottle]
     public async Task<ActionResult<PasswordResetRequestResponseDto>> RequestPasswordReset(
         [FromBody] PasswordResetRequestDto request,
         [FromHeader(Name = TenantHeaders.Subdomain)] string? tenantSubdomain,

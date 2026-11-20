@@ -163,7 +163,10 @@ public sealed class AssetService(
         }
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
-        await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
+        await EnsureCategoryExistsAsync(
+            request.CategoryId,
+            cancellationToken,
+            allowPendingDeletion: asset.CategoryId == request.CategoryId);
         var family = await EnsureFamilyEnabledForTenantAsync(
             tenantId,
             request.FamilyId,
@@ -590,7 +593,8 @@ public sealed class AssetService(
 
     private async Task<AssetCategory> EnsureCategoryExistsAsync(
         Guid categoryId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowPendingDeletion = false)
     {
         var category = await dbContext.AssetCategories
             .AsNoTracking()
@@ -599,6 +603,12 @@ public sealed class AssetService(
         if (category is null)
         {
             throw new KeyNotFoundException($"Asset category '{categoryId}' was not found.");
+        }
+
+        // A category scheduled for deletion is hard-deleted by the retention job and the FK cascades to its assets.
+        if (!allowPendingDeletion && category.ScheduledDeletionAt is not null)
+        {
+            throw new AssetCategoryPendingDeletionException(categoryId);
         }
 
         return category;

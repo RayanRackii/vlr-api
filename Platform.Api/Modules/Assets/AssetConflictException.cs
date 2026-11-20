@@ -29,3 +29,13 @@ public sealed class CategoryInUseException : InvalidOperationException
     {
     }
 }
+
+public sealed class AssetCategoryPendingDeletionException : InvalidOperationException
+{
+    public const string Code = "asset.category_pending_deletion";
+
+    public AssetCategoryPendingDeletionException(Guid categoryId)
+        : base($"Asset category '{categoryId}' is scheduled for deletion and cannot receive assets.")
+    {
+    }
+}
