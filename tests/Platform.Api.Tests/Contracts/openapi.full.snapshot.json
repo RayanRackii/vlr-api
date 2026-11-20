@@ -1313,6 +1313,11 @@
           "allocationStatus": {
             "$ref": "#/components/schemas/AllocationStatus"
           },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "customerName": {
             "nullable": true,
             "type": "string"
@@ -1577,6 +1582,11 @@
       "CatalogOrderAllocationPreviewResponse": {
         "additionalProperties": false,
         "properties": {
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "conflictCode": {
             "nullable": true,
             "type": "string"
@@ -1716,6 +1726,11 @@
             "nullable": true,
             "type": "string"
           },
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -1734,6 +1749,7 @@
           },
           "rentalAssetId": {
             "format": "uuid",
+            "nullable": true,
             "type": "string"
           },
           "requirementId": {
@@ -2046,6 +2062,11 @@
         "additionalProperties": false,
         "properties": {
           "assetCategoryId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "assetId": {
             "format": "uuid",
             "nullable": true,
             "type": "string"

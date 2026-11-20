@@ -401,11 +401,15 @@ public sealed class CatalogOrderPlanningOnlyAllocationTests : IClassFixture<Post
 
     [Fact]
     public Task A_rental_backed_asset_still_gets_its_mirror_reservation_in_memory() =>
-        RentalBackedKeepsTheMirror(Rig.CreateInMemoryAsync(new RigOptions { RentalBacked = true }));
+        RentalBackedKeepsTheMirror(Rig.CreateInMemoryAsync(MirrorOptions));
 
     [DockerFact]
     public Task A_rental_backed_asset_still_gets_its_mirror_reservation_on_postgres() =>
-        RentalBackedKeepsTheMirror(Rig.CreatePostgresAsync(RequireFactory(), new RigOptions { RentalBacked = true }));
+        RentalBackedKeepsTheMirror(Rig.CreatePostgresAsync(RequireFactory(), MirrorOptions));
+
+    // The rental schedule only offers whole booking windows (a 60 minute slot here), so a rental-backed
+    // order has no prep or cleanup buffer, like the Phase 0 seeds.
+    private static RigOptions MirrorOptions => new() { RentalBacked = true, PrepMinutes = 0, CleanupMinutes = 0 };
 
     private static async Task RentalBackedKeepsTheMirror(Task<Rig> create)
     {
