@@ -99,6 +99,14 @@ public sealed class CatalogOrdersController(
         {
             return Ok(await previewService.PreviewAsync(id, request, cancellationToken));
         }
+        catch (RequiredModuleInactiveException ex)
+        {
+            return ModuleInactive(ex);
+        }
+        catch (CatalogPlanningRuleException ex)
+        {
+            return PlanningRule(ex);
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
@@ -203,6 +211,23 @@ public sealed class CatalogOrdersController(
         return !canAllocate.Succeeded;
     }
 
+    /// <summary>
+    /// A module the allocation needs went inactive (the action gate only checks the modules the
+    /// route declares): 403 <c>module_inactive</c>, the body the module gate returns.
+    /// </summary>
+    private ObjectResult ModuleInactive(RequiredModuleInactiveException ex) =>
+        StatusCode(StatusCodes.Status403Forbidden, new
+        {
+            error = RequireActiveModuleAttribute.InactiveModuleError,
+            code = RequireActiveModuleAttribute.InactiveModuleCode,
+            module = ex.Modules[0],
+            modules = ex.Modules,
+        });
+
+    /// <summary>A planning rule (working hours, ...) the order flow reports with its own status.</summary>
+    private ObjectResult PlanningRule(CatalogPlanningRuleException ex) =>
+        StatusCode(ex.StatusCode, new { error = ex.Message, code = ex.Code, hoursViolation = ex.HoursViolation });
+
     private async Task<ActionResult<CatalogOrderResponse>> ExecuteTransition(
         Func<Task<CatalogOrderResponse>> action)
     {
@@ -217,6 +242,14 @@ public sealed class CatalogOrdersController(
         catch (UnsupportedRequirementScopeException ex)
         {
             return Conflict(new { error = ex.Message, code = UnsupportedRequirementScopeException.Code });
+        }
+        catch (RequiredModuleInactiveException ex)
+        {
+            return ModuleInactive(ex);
+        }
+        catch (CatalogPlanningRuleException ex)
+        {
+            return PlanningRule(ex);
         }
         catch (ResourceUnavailableException ex)
         {

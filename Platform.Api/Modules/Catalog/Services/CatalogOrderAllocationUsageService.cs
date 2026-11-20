@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
 using Platform.Api.Notifications;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -46,8 +47,12 @@ public sealed class CatalogOrderAllocationUsageService(
     IResourceOccupancyService occupancy,
     IHttpContextAccessor? httpContextAccessor = null,
     IDomainEventDispatcher<CatalogOrderEvent>? domainEvents = null,
-    INotificationOutboxScheduler? outboxScheduler = null) : ICatalogOrderAllocationUsageService
+    INotificationOutboxScheduler? outboxScheduler = null,
+    IAssetOccupancyService? assetOccupancyService = null) : ICatalogOrderAllocationUsageService
 {
+    private readonly IAssetOccupancyService assetOccupancy =
+        AssetOccupancyFactory.Create(assetOccupancyService, dbContext, tenantProvider, occupancy);
+
     public async Task<CatalogOrderResponse> ApplyUsageActionAsync(
         Guid orderId,
         Guid allocationId,
@@ -79,14 +84,16 @@ public sealed class CatalogOrderAllocationUsageService(
             await domainEvents.EnsureReadyAsync(cancellationToken);
         }
 
-        // Pre-lock lookup only to find which resource to lock; never trusted for the actual
+        // Pre-lock lookup only to find which asset to lock; never trusted for the actual
         // transition — the allocation is reloaded fresh once the lock is held, below.
-        var rentalAssetId = await dbContext.CatalogOrderItemResourceAllocations
+        var link = await dbContext.CatalogOrderItemResourceAllocations
             .AsNoTracking()
             .Where(a => a.Id == allocationId && a.TenantId == tenantId && requirementIds.Contains(a.RequirementId))
-            .Select(a => (Guid?)a.RentalAssetId)
+            .Select(a => new { a.AssetAllocationId, a.RentalAssetId })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new KeyNotFoundException("Allocation not found for this order.");
+        var assetIds = await CatalogOrderPlanner.ResolveAllocationAssetIdsAsync(
+            dbContext, tenantId, [(link.AssetAllocationId, link.RentalAssetId)], cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
@@ -95,10 +102,11 @@ public sealed class CatalogOrderAllocationUsageService(
         try
         {
             // H3: serialize concurrent usage actions on the same allocation (e.g. cancel vs start)
-            // through the same resource-row lock the approval flow already uses, rather than
+            // through the same asset-row lock the approval flow already uses (through the planning
+            // port, which also takes the rental-asset row of a rental-backed asset), rather than
             // relying on the PlanningRevision check alone — then reload the allocation under that
             // lock so the check below sees the latest committed state, not a stale pre-lock read.
-            await occupancy.LockResourcesAsync(dbContext, tenantId, [rentalAssetId], cancellationToken);
+            await assetOccupancy.LockAssetsAsync(tenantId, assetIds, cancellationToken);
 
             var allocation = await dbContext.CatalogOrderItemResourceAllocations
                 .FirstOrDefaultAsync(
@@ -107,6 +115,12 @@ public sealed class CatalogOrderAllocationUsageService(
                 ?? throw new KeyNotFoundException("Allocation not found for this order.");
 
             await dbContext.Entry(allocation).ReloadAsync(cancellationToken);
+
+            // The planning record of the allocation (null on a row that was never linked), also
+            // reloaded under the lock.
+            var planning = (await CatalogAllocationMirror.LoadPlanningAsync(
+                dbContext, tenantId, [allocation], cancellationToken))
+                .GetValueOrDefault(allocation.AssetAllocationId ?? Guid.Empty);
 
             if (allocation.PlanningRevision != request.ExpectedVersion)
             {
@@ -119,16 +133,18 @@ public sealed class CatalogOrderAllocationUsageService(
             {
                 case "start":
                     Start(order, allocation);
+                    CatalogAllocationMirror.Apply(allocation, planning);
                     break;
                 case "work-finished":
                     WorkFinished(allocation);
+                    CatalogAllocationMirror.Apply(allocation, planning);
                     // Record the usage action against the current (still Preparing) status before
                     // any auto-Ready advances it, so the history reads work-finished → ready.
                     order.RecordHistory(order.Status, actorType, actorId, CatalogOrderUsageHistoryReasons.WorkFinished);
                     queued = await TryMarkReadyAsync(order, requirementIds, actorType, actorId, cancellationToken);
                     break;
                 case "release":
-                    await ReleaseAsync(order, allocation, cancellationToken);
+                    await ReleaseAsync(order, allocation, planning, cancellationToken);
                     order.RecordHistory(order.Status, actorType, actorId, CatalogOrderUsageHistoryReasons.Released);
                     break;
                 default:
@@ -259,6 +275,7 @@ public sealed class CatalogOrderAllocationUsageService(
     private async Task ReleaseAsync(
         CatalogOrder order,
         CatalogOrderItemResourceAllocation allocation,
+        AssetAllocation? planning,
         CancellationToken cancellationToken)
     {
         // Release from Scheduled (never started) is also valid — it is modeled as Cancelled
@@ -266,11 +283,12 @@ public sealed class CatalogOrderAllocationUsageService(
         // released), matching the two cancellation-origin cases the lifecycle enum distinguishes.
         if (allocation.Status == AllocationStatus.Scheduled)
         {
-            await occupancy.ReleaseInternalUseOccupancyAsync(
-                dbContext, order.TenantId, allocation.ReservationItemId,
-                InternalUseReleaseKind.CancelBeforeStart, allocation.PlannedWorkEnd, cancellationToken);
             allocation.Status = AllocationStatus.Cancelled;
             allocation.ActualReleaseAt = DateTimeOffset.UtcNow;
+            CatalogAllocationMirror.Apply(allocation, planning);
+            await CatalogAllocationMirror.ReleaseOccupancyAsync(
+                assetOccupancy, occupancy, dbContext, order.TenantId, allocation, planning,
+                InternalUseReleaseKind.CancelBeforeStart, cancellationToken);
             return;
         }
 
@@ -280,11 +298,12 @@ public sealed class CatalogOrderAllocationUsageService(
                 $"Cannot release: allocation is {allocation.Status}, expected Cleaning or Scheduled.");
         }
 
-        await occupancy.ReleaseInternalUseOccupancyAsync(
-            dbContext, order.TenantId, allocation.ReservationItemId,
-            InternalUseReleaseKind.ReleaseAfterStart, allocation.PlannedWorkEnd, cancellationToken);
         allocation.Status = AllocationStatus.Released;
         allocation.ActualReleaseAt = DateTimeOffset.UtcNow;
+        CatalogAllocationMirror.Apply(allocation, planning);
+        await CatalogAllocationMirror.ReleaseOccupancyAsync(
+            assetOccupancy, occupancy, dbContext, order.TenantId, allocation, planning,
+            InternalUseReleaseKind.ReleaseAfterStart, cancellationToken);
     }
 
     private Guid EnsureTenant() =>

@@ -56,6 +56,20 @@ internal static class CatalogOrderPlanningMapper
         var requirementsByItem = requirements.ToLookup(r => r.OrderItemId);
         var allocationByRequirement = allocations.ToDictionary(a => a.RequirementId);
 
+        // The planned asset of an allocation is the asset of its planning record (staff reads only:
+        // the portal never receives allocation detail). Rows not linked yet fall back to the
+        // requirement's asset. One batched, tenant-scoped query, never per allocation.
+        var linkedIds = allocations
+            .Where(a => a.AssetAllocationId != null)
+            .Select(a => a.AssetAllocationId!.Value)
+            .ToList();
+        var planningAssetIds = includeAllocationDetail && linkedIds.Count > 0
+            ? await db.AssetAllocations
+                .AsNoTracking()
+                .Where(p => linkedIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => p.AssetId, cancellationToken)
+            : EmptyAssetIds;
+
         // Actor display names are a staff-read concern only (portal reads pass
         // includeAllocationDetail: false and must never surface staff names). Resolved in two
         // batched tenant-scoped queries — never per history row — to avoid an N+1.
@@ -68,9 +82,13 @@ internal static class CatalogOrderPlanningMapper
             order,
             requirementsByItem,
             allocationByRequirement,
+            planningAssetIds,
             actorNames,
             includeAllocationDetail)).ToList();
     }
+
+    private static readonly IReadOnlyDictionary<Guid, Guid> EmptyAssetIds =
+        new Dictionary<Guid, Guid>();
 
     private static readonly IReadOnlyDictionary<Guid, string> EmptyActorNames =
         new Dictionary<Guid, string>();
@@ -135,6 +153,7 @@ internal static class CatalogOrderPlanningMapper
         CatalogOrder order,
         ILookup<Guid, CatalogOrderItemResourceRequirement> requirementsByItem,
         IReadOnlyDictionary<Guid, CatalogOrderItemResourceAllocation> allocationByRequirement,
+        IReadOnlyDictionary<Guid, Guid> planningAssetIds,
         IReadOnlyDictionary<Guid, string> actorNames,
         bool includeAllocationDetail)
     {
@@ -174,7 +193,10 @@ internal static class CatalogOrderPlanningMapper
                     allocation.ActualStartAt,
                     allocation.ActualWorkFinishedAt,
                     allocation.ActualReleaseAt,
-                    allocation.PlanningRevision)
+                    allocation.PlanningRevision,
+                    allocation.AssetAllocationId is { } planningId && planningAssetIds.TryGetValue(planningId, out var plannedAssetId)
+                        ? plannedAssetId
+                        : requirement.AssetId)
                 : null;
 
             itemResponses.Add(item with { ProductionSummary = summary, Allocation = allocationDto });

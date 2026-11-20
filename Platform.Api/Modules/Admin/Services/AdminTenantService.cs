@@ -390,9 +390,14 @@ public sealed class AdminTenantService(
         // Admin operates across tenants by explicit id, not the ambient ITenantScoped
         // filter (which may not match `id` at all, e.g. a platform-admin request) —
         // without IgnoreQueryFilters this guard silently sees zero rows and never blocks.
+        // A catalog allocation on an asset with no rental configuration has no reservation: it does
+        // not depend on rentals (the planning-record checks below cover it), so disabling rentals
+        // only counts the rental-backed ones.
         var unreleasedCount = await dbContext.Set<CatalogOrderItemResourceAllocation>()
             .IgnoreQueryFilters()
-            .Where(a => a.TenantId == tenantId && UnreleasedAllocationStatuses.Contains(a.Status))
+            .Where(a => a.TenantId == tenantId
+                && UnreleasedAllocationStatuses.Contains(a.Status)
+                && (disabledModule != PlatformModules.Rentals || a.ReservationItemId != null))
             .CountAsync(cancellationToken);
         if (unreleasedCount > 0)
         {

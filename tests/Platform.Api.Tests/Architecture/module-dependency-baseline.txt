@@ -29,3 +29,4 @@ WorkOrders -> Users : Platform.Api/Modules/WorkOrders/Services/WorkOrderExecutio
 WorkOrders -> Users : Platform.Api/Modules/WorkOrders/Services/WorkOrderService.cs
 WorkOrders -> Users : Platform.Api/Modules/WorkOrders/Services/WorkOrderTaskImageService.cs
 Rentals -> Catalog : Platform.Api/Modules/Rentals/Controllers/ResourceAgendaController.cs
+Catalog -> ResourcePlanning : Platform.Api/Modules/Catalog/Services/CatalogOrderPlanner.cs

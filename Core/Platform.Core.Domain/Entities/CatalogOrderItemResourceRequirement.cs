@@ -16,6 +16,10 @@ public class CatalogOrderItemResourceRequirement : Entity, ITenantScoped
     /// <summary>Nullable: the source product requirement row at snapshot time, if any.</summary>
     public Guid? SourceRequirementId { get; set; }
 
+    /// <summary>The planned asset (slice API-5). Backfilled from the rental asset on existing rows.</summary>
+    public Guid? AssetId { get; set; }
+
+    /// <summary>Set when the asset is rental-backed; kept so rentals readers keep working.</summary>
     public Guid? RentalAssetId { get; set; }
 
     public Guid? AssetCategoryId { get; set; }

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Catalog.Services;
@@ -17,12 +19,19 @@ public interface ICatalogOrderAllocationPreviewService
 /// Read-only allocation preview: reserves nothing, holds no lock (order-equipment-link-codex §2 —
 /// "Read-only; reserves nothing"). A preview is never a booking guarantee; by the time approval
 /// actually runs, the same resource may have been claimed by another concurrent approval.
+/// Goes through the planning port, like the approval it previews: the asset's calendar authority
+/// (rentals for a rental-backed asset, planning for any other) decides the window rules and the
+/// conflicts.
 /// </summary>
 public sealed class CatalogOrderAllocationPreviewService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    IResourceOccupancyService occupancy) : ICatalogOrderAllocationPreviewService
+    IResourceOccupancyService occupancy,
+    IAssetOccupancyService? assetOccupancyService = null) : ICatalogOrderAllocationPreviewService
 {
+    private readonly IAssetOccupancyService assetOccupancy =
+        AssetOccupancyFactory.Create(assetOccupancyService, dbContext, tenantProvider, occupancy);
+
     public async Task<CatalogOrderAllocationPreviewResponse> PreviewAsync(
         Guid orderId,
         CatalogOrderAllocationPreviewRequest request,
@@ -54,7 +63,7 @@ public sealed class CatalogOrderAllocationPreviewService(
                 Reason: "This order has no schedulable resource requirement.");
         }
 
-        if (requirement.RentalAssetId is not { } rentalAssetId)
+        if (requirement.AssetId is null && requirement.RentalAssetId is null)
         {
             return new CatalogOrderAllocationPreviewResponse(
                 IsFeasible: false, requirement.OrderItemId, null, null, null, null, null, null,
@@ -67,19 +76,52 @@ public sealed class CatalogOrderAllocationPreviewService(
         if (workStartRequest is null)
         {
             return new CatalogOrderAllocationPreviewResponse(
-                IsFeasible: false, requirement.OrderItemId, rentalAssetId, null, null, null, null, null,
+                IsFeasible: false, requirement.OrderItemId, requirement.RentalAssetId, null, null, null, null, null,
                 ConflictCode: null,
-                Reason: "A workStart is required for the schedulable order item.");
+                Reason: "A workStart is required for the schedulable order item.",
+                AssetId: requirement.AssetId);
         }
 
-        var eligibleResource = await occupancy.ResolveEligibleResourceAsync(
-            dbContext, tenantId, rentalAssetId, cancellationToken);
-        if (eligibleResource is null)
+        var assetId = await CatalogOrderPlanner.ResolveAssetIdAsync(
+            dbContext, tenantId, requirement.AssetId, requirement.RentalAssetId, cancellationToken);
+
+        PlannableAsset asset;
+        try
+        {
+            asset = await CatalogOrderPlanner.ResolveAsync(
+                assetOccupancy, occupancy, dbContext, tenantId, assetId, requirement.RentalAssetId, cancellationToken);
+        }
+        catch (KeyNotFoundException)
         {
             return new CatalogOrderAllocationPreviewResponse(
-                IsFeasible: false, requirement.OrderItemId, rentalAssetId, null, null, null, null, null,
+                IsFeasible: false, requirement.OrderItemId, requirement.RentalAssetId, null, null, null, null, null,
                 ConflictCode: null,
-                Reason: "The configured resource no longer exists.");
+                Reason: "The configured resource no longer exists.",
+                AssetId: requirement.AssetId);
+        }
+        catch (ResourceUnavailableException ex)
+        {
+            return new CatalogOrderAllocationPreviewResponse(
+                IsFeasible: false, requirement.OrderItemId, requirement.RentalAssetId, null, null, null, null, null,
+                ConflictCode: "resource_unavailable",
+                Reason: ex.Message,
+                AssetId: assetId == Guid.Empty ? requirement.AssetId : assetId);
+        }
+
+        // The rentals eligibility rules apply to a rental-backed asset, as in Phase 0.
+        EligibleResource? eligibleResource = null;
+        if (asset.RentalAssetId is { } rentalAssetId)
+        {
+            eligibleResource = await occupancy.ResolveEligibleResourceAsync(
+                dbContext, tenantId, rentalAssetId, cancellationToken);
+            if (eligibleResource is null)
+            {
+                return new CatalogOrderAllocationPreviewResponse(
+                    IsFeasible: false, requirement.OrderItemId, rentalAssetId, null, null, null, null, null,
+                    ConflictCode: null,
+                    Reason: "The configured resource no longer exists.",
+                    AssetId: asset.AssetId);
+            }
         }
 
         var orderItem = order.Items.First(i => i.Id == requirement.OrderItemId);
@@ -87,51 +129,81 @@ public sealed class CatalogOrderAllocationPreviewService(
         // a valid instant, but PostgreSQL's timestamptz parameters require offset 0 — without this
         // the downstream occupancy query would surface a raw driver error instead of a clean result.
         var workStart = workStartRequest.WorkStart.ToUniversalTime();
-        var (workEnd, occupiedStart, occupiedEnd) = CatalogPlanningWindow.Calculate(
+        var (workEnd, _, _) = CatalogPlanningWindow.Calculate(
             workStart, requirement.DurationMinutesPerUnit, orderItem.Quantity,
-            requirement.PrepMinutes, requirement.CleanupMinutes);
+            requirement.PrepMinutes, requirement.CleanupMinutes, CatalogOrderPlanner.MaxWorkMinutes(asset));
 
-        var windowValidation = await occupancy.ValidateWorkWindowAsync(
-            dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, cancellationToken);
-        if (windowValidation.Error is { } windowError)
+        var window = await CatalogOrderPlanner.RunAsync(asset, () => assetOccupancy.ValidateWindowAsync(
+            tenantId,
+            asset,
+            AssetAllocationKind.Use,
+            workStart,
+            workEnd,
+            requirement.PrepMinutes,
+            requirement.CleanupMinutes,
+            cancellationToken));
+
+        if (window.RentalWindowError is { } windowError)
         {
             return new CatalogOrderAllocationPreviewResponse(
-                IsFeasible: false, requirement.OrderItemId, rentalAssetId, workStart, workEnd, occupiedStart, occupiedEnd, null,
+                IsFeasible: false, requirement.OrderItemId, asset.RentalAssetId, workStart, workEnd, window.OccupiedStart, window.OccupiedEnd, null,
                 ConflictCode: WorkWindowValidation.UnsupportedWorkWindowCode,
-                Reason: windowError);
+                Reason: windowError,
+                AssetId: asset.AssetId);
         }
 
-        if (!eligibleResource.IsEligible)
+        if (window.HoursViolation is { } hoursViolation)
         {
             return new CatalogOrderAllocationPreviewResponse(
-                IsFeasible: false, requirement.OrderItemId, rentalAssetId, workStart, workEnd, occupiedStart, occupiedEnd, null,
+                IsFeasible: false, requirement.OrderItemId, asset.RentalAssetId, workStart, workEnd, window.OccupiedStart, window.OccupiedEnd, null,
+                ConflictCode: "outside_working_hours",
+                Reason: $"The work window is outside the working hours of '{asset.Name}' ({hoursViolation}).",
+                AssetId: asset.AssetId);
+        }
+
+        if (eligibleResource is { IsEligible: false })
+        {
+            return new CatalogOrderAllocationPreviewResponse(
+                IsFeasible: false, requirement.OrderItemId, asset.RentalAssetId, workStart, workEnd, window.OccupiedStart, window.OccupiedEnd, null,
                 ConflictCode: "resource_unavailable",
                 Reason: eligibleResource.IneligibilityReason
-                    ?? "The configured resource is not currently available for production use.");
+                    ?? "The configured resource is not currently available for production use.",
+                AssetId: asset.AssetId);
         }
 
-        var availability = await occupancy.CheckAvailabilityAsync(
-            dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, tentativeBatch: [], cancellationToken);
-
-        if (!availability.IsAvailable)
+        if (asset.RentalAssetId is null && requirement.ResourceQuantity > asset.Capacity)
         {
             return new CatalogOrderAllocationPreviewResponse(
-                IsFeasible: false, requirement.OrderItemId, rentalAssetId, workStart, workEnd, occupiedStart, occupiedEnd, null,
+                IsFeasible: false, requirement.OrderItemId, null, workStart, workEnd, window.OccupiedStart, window.OccupiedEnd, null,
                 ConflictCode: "resource_unavailable",
-                Reason: $"'{eligibleResource.Name}' is already booked for an overlapping interval.");
+                Reason: $"'{asset.Name}' cannot hold {requirement.ResourceQuantity} units at once.",
+                AssetId: asset.AssetId);
+        }
+
+        var availability = await CatalogOrderPlanner.RunAsync(asset, () => assetOccupancy.CheckAvailabilityAsync(
+            tenantId, asset, AssetAllocationKind.Use, window, excludeAllocationId: null, cancellationToken));
+
+        if (!availability.IsFree)
+        {
+            return new CatalogOrderAllocationPreviewResponse(
+                IsFeasible: false, requirement.OrderItemId, asset.RentalAssetId, workStart, workEnd, window.OccupiedStart, window.OccupiedEnd, null,
+                ConflictCode: "resource_unavailable",
+                Reason: $"'{asset.Name}' is already booked for an overlapping interval.",
+                AssetId: asset.AssetId);
         }
 
         return new CatalogOrderAllocationPreviewResponse(
             IsFeasible: true,
             requirement.OrderItemId,
-            rentalAssetId,
+            asset.RentalAssetId,
             workStart,
             workEnd,
-            occupiedStart,
-            occupiedEnd,
+            window.OccupiedStart,
+            window.OccupiedEnd,
             EstimatedReadyAt: workEnd,
             ConflictCode: null,
-            Reason: null);
+            Reason: null,
+            AssetId: asset.AssetId);
     }
 
     private Guid EnsureTenant() =>

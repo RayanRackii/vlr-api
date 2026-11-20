@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Catalog.Dtos;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -76,48 +77,122 @@ public sealed class CatalogProductResourceRequirementService(
             .Select(r => r.RentalAssetId!.Value)
             .Distinct()
             .ToList();
+        var requestedAssetIds = request.Requirements
+            .Where(r => r.AssetId is not null)
+            .Select(r => r.AssetId!.Value)
+            .Distinct()
+            .ToList();
 
-        var validRentalAssetIds = rentalAssetIds.Count == 0
-            ? []
+        // Legacy selector: the rental asset and the asset behind it.
+        var rentalTargets = rentalAssetIds.Count == 0
+            ? new List<RentalTarget>()
             : await dbContext.RentalAssets
                 .Where(r => r.TenantId == tenantId && rentalAssetIds.Contains(r.Id))
-                .Select(r => r.Id)
+                .Select(r => new RentalTarget(r.Id, r.AssetId))
                 .ToListAsync(cancellationToken);
-        var validRentalAssetIdSet = validRentalAssetIds.ToHashSet();
+        var assetIdByRentalAssetId = rentalTargets.ToDictionary(r => r.Id, r => r.AssetId);
+
+        // New selector: any asset of the tenant that is rental-backed or marked plannable. The asset
+        // lookup carries the tenant id on top of the query filter; another tenant's id is a 404.
+        var assetTargets = requestedAssetIds.Count == 0
+            ? new List<AssetTarget>()
+            : await dbContext.Assets
+                .AsNoTracking()
+                .Where(a => a.TenantId == tenantId && requestedAssetIds.Contains(a.Id))
+                .Select(a => new AssetTarget(
+                    a.Id,
+                    a.RentalConfiguration != null ? (Guid?)a.RentalConfiguration.Id : null,
+                    dbContext.AssetPlanningProfiles.Any(
+                        p => p.TenantId == tenantId && p.AssetId == a.Id && p.IsPlannable)))
+                .ToListAsync(cancellationToken);
+        var assetTargetById = assetTargets.ToDictionary(a => a.Id);
+
+        // The row as stored: the asset, plus the rental asset when the asset is rental-backed (kept
+        // for the readers that predate the asset selector).
+        var resolved = new List<(Guid AssetId, Guid? RentalAssetId, int MaxDurationMinutes)>();
 
         foreach (var row in request.Requirements)
         {
+            var hasAsset = row.AssetId is not null;
             var hasRentalAsset = row.RentalAssetId is not null;
             var hasCategory = row.AssetCategoryId is not null;
 
-            if (hasRentalAsset == hasCategory)
-            {
-                throw new ArgumentException(
-                    "Exactly one of rentalAssetId or assetCategoryId must be set per requirement row.");
-            }
-
             if (hasCategory)
             {
-                // Phase 0 only supports a specific RentalAssetId selector; category selection is
-                // accepted in schema but rejected by endpoints (order-equipment-link-codex Phase 0
-                // scope: "category selection returns 400 'not supported yet'").
+                // Category selection is accepted in schema but rejected by endpoints
+                // (order-equipment-link-codex Phase 0 scope: "category selection returns 400 'not
+                // supported yet'"), whatever else the row carries.
+                if (hasAsset || hasRentalAsset)
+                {
+                    throw new ArgumentException(
+                        "Exactly one of assetId, rentalAssetId or assetCategoryId must be set per requirement row.");
+                }
+
                 throw new NotSupportedYetException();
             }
 
-            if (row.RentalAssetId is { } rentalAssetId && !validRentalAssetIdSet.Contains(rentalAssetId))
+            if (!hasAsset && !hasRentalAsset)
             {
-                // Cross-tenant or missing: 404, never leak existence via 403/400.
-                throw new KeyNotFoundException($"Rental asset '{rentalAssetId}' was not found.");
+                throw new ArgumentException(
+                    "Exactly one of assetId, rentalAssetId or assetCategoryId must be set per requirement row.");
             }
+
+            Guid assetId;
+            Guid? rentalId = null;
+            var maxDuration = CatalogPlanningWindow.MaxMinutes;
+
+            if (row.RentalAssetId is { } rentalAssetId)
+            {
+                if (!assetIdByRentalAssetId.TryGetValue(rentalAssetId, out assetId))
+                {
+                    // Cross-tenant or missing: 404, never leak existence via 403/400.
+                    throw new KeyNotFoundException($"Rental asset '{rentalAssetId}' was not found.");
+                }
+
+                rentalId = rentalAssetId;
+
+                if (row.AssetId is { } both && both != assetId)
+                {
+                    throw new ArgumentException("assetId and rentalAssetId must name the same resource.");
+                }
+            }
+            else
+            {
+                var requestedAssetId = row.AssetId!.Value;
+                if (!assetTargetById.TryGetValue(requestedAssetId, out var target))
+                {
+                    // Cross-tenant or missing: 404, never leak existence via 403/400.
+                    throw new KeyNotFoundException($"Asset '{requestedAssetId}' was not found.");
+                }
+
+                if (target.RentalAssetId is null && !target.IsPlannable)
+                {
+                    throw new ArgumentException(
+                        $"Asset '{requestedAssetId}' is not plannable: mark it as plannable in resource planning first.");
+                }
+
+                assetId = target.Id;
+                rentalId = target.RentalAssetId;
+
+                // A planning-only asset takes jobs up to the planning limit; a rental-backed one
+                // keeps the one-day booking-window limit.
+                if (rentalId is null)
+                {
+                    maxDuration = AssetPlanningLimits.MaxPlanningOnlyDurationMinutes;
+                }
+            }
+
+            resolved.Add((assetId, rentalId, maxDuration));
 
             if (row.ResourceQuantity < 1)
             {
                 throw new ArgumentException("resourceQuantity must be at least 1.");
             }
 
-            if (row.DurationMinutesPerUnit is < 1 or > CatalogPlanningWindow.MaxMinutes)
+            if (row.DurationMinutesPerUnit < 1 || row.DurationMinutesPerUnit > maxDuration)
             {
-                throw new ArgumentException("durationMinutesPerUnit must be between 1 and 1440.");
+                throw new ArgumentException(
+                    $"durationMinutesPerUnit must be between 1 and {maxDuration}.");
             }
 
             if (row.PrepMinutes < 0 || row.CleanupMinutes < 0)
@@ -168,14 +243,17 @@ public sealed class CatalogProductResourceRequirementService(
             }
 
             var newVersion = product.ResourceRequirementsVersion + 1;
-            foreach (var row in request.Requirements)
+            for (var index = 0; index < request.Requirements.Count; index++)
             {
+                var row = request.Requirements[index];
+                var target = resolved[index];
                 dbContext.CatalogProductResourceRequirements.Add(new CatalogProductResourceRequirement
                 {
                     TenantId = tenantId,
                     ProductId = productId,
-                    RentalAssetId = row.RentalAssetId,
-                    AssetCategoryId = row.AssetCategoryId,
+                    AssetId = target.AssetId,
+                    RentalAssetId = target.RentalAssetId,
+                    AssetCategoryId = null,
                     ResourceQuantity = row.ResourceQuantity,
                     DurationMinutesPerUnit = row.DurationMinutesPerUnit,
                     PrepMinutes = row.PrepMinutes,
@@ -188,24 +266,42 @@ public sealed class CatalogProductResourceRequirementService(
             product.ResourceRequirementsVersion = newVersion;
             product.Touch();
 
-            var assetIds = existing.Select(r => r.RentalAssetId)
-                .Concat(request.Requirements.Select(r => r.RentalAssetId))
+            // Names for the history diff, by asset id; a row that predates the asset selector
+            // resolves its asset through the rental asset.
+            var legacyRentalIds = existing
+                .Where(r => r.AssetId == null)
+                .Select(r => r.RentalAssetId)
                 .OfType<Guid>()
                 .Distinct()
                 .ToList();
-            var assetNames = assetIds.Count == 0
+            var namedAssetIds = existing
+                .Select(r => r.AssetId)
+                .OfType<Guid>()
+                .Concat(resolved.Select(r => r.AssetId))
+                .Distinct()
+                .ToList();
+            var nameByAsset = namedAssetIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : await dbContext.Assets.AsNoTracking()
+                    .Where(a => a.TenantId == tenantId && namedAssetIds.Contains(a.Id))
+                    .ToDictionaryAsync(a => a.Id, a => a.Name, cancellationToken);
+            var nameByLegacyRental = legacyRentalIds.Count == 0
                 ? new Dictionary<Guid, string>()
                 : await (from rental in dbContext.RentalAssets.AsNoTracking()
                          join asset in dbContext.Assets.AsNoTracking() on rental.AssetId equals asset.Id
-                         where rental.TenantId == tenantId && assetIds.Contains(rental.Id)
+                         where rental.TenantId == tenantId && legacyRentalIds.Contains(rental.Id)
                          select new { rental.Id, asset.Name })
                     .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
-            string? NameOf(Guid? id) => id is { } key && assetNames.TryGetValue(key, out var n) ? n : null;
+            string? NameOf(CatalogProductResourceRequirement r) =>
+                r.AssetId is { } assetKey && nameByAsset.TryGetValue(assetKey, out var assetName) ? assetName
+                : r.RentalAssetId is { } rentalKey && nameByLegacyRental.TryGetValue(rentalKey, out var rentalName) ? rentalName
+                : null;
+            string? NameOfAsset(Guid assetKey) => nameByAsset.TryGetValue(assetKey, out var name) ? name : null;
             var requirementChanges = CatalogProductHistoryDiff.ForRequirements(
                 existing.Select(r => CatalogProductHistoryDiff.RequirementLine(
-                    NameOf(r.RentalAssetId), r.ResourceQuantity, r.DurationMinutesPerUnit, r.PrepMinutes, r.CleanupMinutes)),
-                request.Requirements.Select(r => CatalogProductHistoryDiff.RequirementLine(
-                    NameOf(r.RentalAssetId), r.ResourceQuantity, r.DurationMinutesPerUnit, r.PrepMinutes, r.CleanupMinutes)));
+                    NameOf(r), r.ResourceQuantity, r.DurationMinutesPerUnit, r.PrepMinutes, r.CleanupMinutes)),
+                request.Requirements.Select((r, i) => CatalogProductHistoryDiff.RequirementLine(
+                    NameOfAsset(resolved[i].AssetId), r.ResourceQuantity, r.DurationMinutesPerUnit, r.PrepMinutes, r.CleanupMinutes)));
             if (requirementChanges.Count > 0)
                 await _history.RecordAsync(productId, CatalogProductHistoryActions.RequirementsChanged, requirementChanges, cancellationToken);
 
@@ -233,6 +329,7 @@ public sealed class CatalogProductResourceRequirementService(
         new()
         {
             Id = r.Id,
+            AssetId = r.AssetId,
             RentalAssetId = r.RentalAssetId,
             AssetCategoryId = r.AssetCategoryId,
             ResourceQuantity = r.ResourceQuantity,
@@ -240,6 +337,10 @@ public sealed class CatalogProductResourceRequirementService(
             PrepMinutes = r.PrepMinutes,
             CleanupMinutes = r.CleanupMinutes,
         };
+
+    private sealed record RentalTarget(Guid Id, Guid AssetId);
+
+    private sealed record AssetTarget(Guid Id, Guid? RentalAssetId, bool IsPlannable);
 
     private Guid EnsureTenant() =>
         tenantProvider.TenantId

@@ -25,6 +25,11 @@ public sealed class AssetAllocationConfiguration : IEntityTypeConfiguration<Asse
 
         builder.HasKey(a => a.Id);
 
+        // Principal key of the tenant-qualified FK from catalog.order_item_resource_allocations
+        // (slice API-5), the same pattern the other tenant-scoped principals use.
+        builder.HasAlternateKey(a => new { a.TenantId, a.Id })
+            .HasName("ak_asset_allocations_tenant_id_id");
+
         builder.Property(a => a.Id)
             .ValueGeneratedNever();
 

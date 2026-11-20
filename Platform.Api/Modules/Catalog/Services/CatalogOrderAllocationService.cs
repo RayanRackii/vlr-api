@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
 using Platform.Api.Notifications;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -64,14 +65,19 @@ public sealed class CatalogOrderAllocationService(
     IResourceOccupancyService occupancy,
     IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
-    IHttpContextAccessor httpContextAccessor) : ICatalogOrderAllocationService
+    IHttpContextAccessor httpContextAccessor,
+    IAssetOccupancyService? assetOccupancyService = null) : ICatalogOrderAllocationService
 {
+    // Rentals is not listed: it is required only when the target asset is rental-backed, and the
+    // planning port (which knows whether a rental configuration is in force) decides that.
     private static readonly string[] RequiredModules =
     [
         PlatformModules.Catalog,
-        PlatformModules.Rentals,
         PlatformModules.ResourcePlanning,
     ];
+
+    private readonly IAssetOccupancyService assetOccupancy =
+        AssetOccupancyFactory.Create(assetOccupancyService, dbContext, tenantProvider, occupancy);
 
     public async Task<bool> HasSchedulableRequirementAsync(Guid orderId, CancellationToken cancellationToken)
     {
@@ -157,12 +163,16 @@ public sealed class CatalogOrderAllocationService(
             // because no other writer can commit a conflicting RowVersion change without blocking
             // on this same transaction once we SaveChanges). Resource locks come next, never the
             // reverse.
-            if (requirement.RentalAssetId is not { } rentalAssetId)
+            if (requirement.AssetId is null && requirement.RentalAssetId is null)
             {
                 throw new ArgumentException("Category-based resource selection is not supported yet.");
             }
 
-            await occupancy.LockResourcesAsync(dbContext, tenantId, [rentalAssetId], cancellationToken);
+            // The planning port locks the asset row, then the rental-asset rows of a rental-backed
+            // asset, in that order (lock order of the planning spec).
+            var assetId = await CatalogOrderPlanner.ResolveAssetIdAsync(
+                dbContext, tenantId, requirement.AssetId, requirement.RentalAssetId, cancellationToken);
+            await assetOccupancy.LockAssetsAsync(tenantId, [assetId], cancellationToken);
 
             // Idempotent retry: if the order is already Approved and an allocation already exists
             // for this requirement, return the existing result rather than erroring or duplicating.
@@ -207,16 +217,35 @@ public sealed class CatalogOrderAllocationService(
                     "The order's planning state changed since this approval was prepared; reload and retry.");
             }
 
-            var eligibleResource = await occupancy.ResolveEligibleResourceAsync(
-                dbContext, tenantId, rentalAssetId, cancellationToken)
-                ?? throw new KeyNotFoundException("The configured resource was not found for this tenant.");
+            var asset = await CatalogOrderPlanner.ResolveAsync(
+                assetOccupancy, occupancy, dbContext, tenantId, assetId, requirement.RentalAssetId, cancellationToken);
 
-            if (!eligibleResource.IsEligible)
+            if (asset.RentalAssetId is { } rentalAssetId)
             {
-                throw new ResourceUnavailableException(
-                    rentalAssetId,
-                    eligibleResource.IneligibilityReason
-                        ?? "The configured resource is not currently available for production use.");
+                // Rental-backed: the rentals eligibility rules, as in Phase 0.
+                var eligibleResource = await occupancy.ResolveEligibleResourceAsync(
+                    dbContext, tenantId, rentalAssetId, cancellationToken)
+                    ?? throw new KeyNotFoundException(CatalogOrderPlanner.ResourceNotFound);
+
+                if (!eligibleResource.IsEligible)
+                {
+                    throw new ResourceUnavailableException(
+                        rentalAssetId,
+                        eligibleResource.IneligibilityReason
+                            ?? "The configured resource is not currently available for production use.");
+                }
+            }
+            else
+            {
+                await CatalogOrderPlanner.EnsureUnitAsync(
+                    dbContext, tenantId, planningRequest.UnitId.Value, asset, cancellationToken);
+
+                if (requirement.ResourceQuantity > asset.Capacity)
+                {
+                    throw new ResourceUnavailableException(
+                        asset.AssetId,
+                        $"'{asset.Name}' cannot hold {requirement.ResourceQuantity} units at once.");
+                }
             }
 
             // Step 4: validate the work window and compute the buffered interval.
@@ -226,41 +255,54 @@ public sealed class CatalogOrderAllocationService(
             // this the InternalUse reservation write would throw a raw driver error (surfaced as a
             // 500), rather than the request succeeding against the same instant.
             var workStart = planningRequest.WorkStart.Value.ToUniversalTime();
-            var (workEnd, occupiedStart, occupiedEnd) = CatalogPlanningWindow.Calculate(
+            var (workEnd, _, _) = CatalogPlanningWindow.Calculate(
                 workStart, requirement.DurationMinutesPerUnit, orderItem.Quantity,
-                requirement.PrepMinutes, requirement.CleanupMinutes);
+                requirement.PrepMinutes, requirement.CleanupMinutes, CatalogOrderPlanner.MaxWorkMinutes(asset));
 
-            var windowValidation = await occupancy.ValidateWorkWindowAsync(
-                dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, cancellationToken);
-            if (windowValidation.Error is { } windowError)
-            {
-                throw new UnsupportedWorkWindowException(windowError);
-            }
+            // The port applies the window rules of the asset's calendar authority: the offerable
+            // booking window (single day) of a rental-backed asset, the working-hours policy of a
+            // planning-only one.
+            var window = await CatalogOrderPlanner.RunAsync(asset, () => assetOccupancy.ValidateWindowAsync(
+                tenantId,
+                asset,
+                AssetAllocationKind.Use,
+                workStart,
+                workEnd,
+                requirement.PrepMinutes,
+                requirement.CleanupMinutes,
+                cancellationToken));
+            CatalogOrderPlanner.ThrowIfRejected(window);
 
-            var zoneId = windowValidation.ZoneId;
+            var zoneId = asset.TimeZoneId;
 
-            // Step 5: check availability, then create the InternalUse occupancy. On
-            // ResourceUnavailableException the whole transaction rolls back below and the order
-            // stays Requested.
-            var availability = await occupancy.CheckAvailabilityAsync(
-                dbContext, tenantId, rentalAssetId, occupiedStart, occupiedEnd, tentativeBatch: [], cancellationToken);
-            if (!availability.IsAvailable)
+            // Step 5: check availability, then occupy the asset (the planning record and, on a
+            // rental-backed asset, its InternalUse reservation). On ResourceUnavailableException the
+            // whole transaction rolls back below and the order stays Requested.
+            var availability = await CatalogOrderPlanner.RunAsync(asset, () => assetOccupancy.CheckAvailabilityAsync(
+                tenantId, asset, AssetAllocationKind.Use, window, excludeAllocationId: null, cancellationToken));
+            if (!availability.IsFree)
             {
                 // Surface the resource's display name, never the raw id (bug 4).
                 throw new ResourceUnavailableException(
-                    rentalAssetId,
-                    $"'{eligibleResource.Name}' is already booked for an overlapping interval.");
+                    asset.RentalAssetId ?? asset.AssetId,
+                    $"'{asset.Name}' is already booked for an overlapping interval.");
             }
 
-            var reservationItemId = await occupancy.CreateInternalUseOccupancyAsync(
-                dbContext,
+            var planning = await CatalogOrderPlanner.RunAsync(asset, () => assetOccupancy.OccupyAsync(
                 tenantId,
-                planningRequest.UnitId.Value,
-                rentalAssetId,
-                requirement.ResourceQuantity,
-                occupiedStart,
-                occupiedEnd,
-                cancellationToken);
+                asset,
+                new NewAllocation(
+                    AssetAllocationKind.Use,
+                    CatalogOrderPlanner.Title(order, orderItem),
+                    Notes: null,
+                    window,
+                    actorId,
+                    AssetAllocationSource.CatalogOrder,
+                    requirement.OrderItemId,
+                    CatalogOrderPlanner.ReferenceLabel(order),
+                    planningRequest.UnitId,
+                    requirement.ResourceQuantity),
+                cancellationToken));
 
             // Step 6: create the allocation row, approve the order, bump PlanningRevision.
             order.PlanningRevision += 1;
@@ -268,12 +310,13 @@ public sealed class CatalogOrderAllocationService(
             {
                 TenantId = tenantId,
                 RequirementId = requirement.Id,
-                ReservationItemId = reservationItemId,
+                AssetAllocationId = planning.Id,
+                ReservationItemId = planning.ReservationItemId,
                 Sequence = 1,
                 PlanningRevision = order.PlanningRevision,
                 IsCurrent = true,
                 AllocatedQuantity = requirement.ResourceQuantity,
-                RentalAssetId = rentalAssetId,
+                RentalAssetId = asset.RentalAssetId,
                 PlannedWorkStart = workStart,
                 PlannedWorkEnd = workEnd,
                 TimeZoneId = zoneId,
@@ -395,8 +438,7 @@ public sealed class CatalogOrderAllocationService(
         var missing = RequiredModules.Except(active).ToList();
         if (missing.Count > 0)
         {
-            throw new InvalidOperationException(
-                $"Cannot allocate a resource: module(s) {string.Join(", ", missing)} are not active for this tenant.");
+            throw new RequiredModuleInactiveException(missing);
         }
     }
 

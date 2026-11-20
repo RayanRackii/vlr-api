@@ -49,9 +49,22 @@ public sealed class AssetOccupancyService(
         await rentalOccupancy.LockResourcesAsync(dbContext, tenantId, rentalAssetIds, cancellationToken);
     }
 
-    public async Task<PlannableAsset> ResolvePlannableAssetAsync(
+    public Task<PlannableAsset> ResolvePlannableAssetAsync(
         Guid tenantId,
         Guid assetId,
+        CancellationToken cancellationToken) =>
+        ResolveAsync(tenantId, assetId, orderFlow: false, cancellationToken);
+
+    public Task<PlannableAsset> ResolveOrderAssetAsync(
+        Guid tenantId,
+        Guid assetId,
+        CancellationToken cancellationToken) =>
+        ResolveAsync(tenantId, assetId, orderFlow: true, cancellationToken);
+
+    private async Task<PlannableAsset> ResolveAsync(
+        Guid tenantId,
+        Guid assetId,
+        bool orderFlow,
         CancellationToken cancellationToken)
     {
         if (tenantId == Guid.Empty)
@@ -61,13 +74,14 @@ public sealed class AssetOccupancyService(
 
         var asset = await dbContext.Assets
             .AsNoTracking()
-            .Where(a => a.Id == assetId && a.TenantId == tenantId && a.ScheduledDeletionAt == null)
+            .Where(a => a.Id == assetId && a.TenantId == tenantId && (orderFlow || a.ScheduledDeletionAt == null))
             .Select(a => new
             {
                 a.Id,
                 a.UnitId,
                 a.Name,
                 a.Status,
+                a.ScheduledDeletionAt,
                 RentalAssetId = a.RentalConfiguration != null && a.RentalConfiguration.IsActive
                     ? (Guid?)a.RentalConfiguration.Id
                     : null,
@@ -79,6 +93,35 @@ public sealed class AssetOccupancyService(
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.AssetId == assetId, cancellationToken);
 
+        var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
+        var zoneId = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var iana) ? iana : zone.Id;
+        var rentalBacked = asset.RentalAssetId is not null && await IsRentalsActiveAsync(cancellationToken);
+
+        if (orderFlow && rentalBacked)
+        {
+            // The catalog order flow predates planning profiles: a rental-backed resource needs
+            // neither a profile nor the planning status checks here, the caller applies the rentals
+            // eligibility rules to it. Same shape as the rental-backed branch below.
+            return new PlannableAsset(
+                asset.Id,
+                asset.UnitId,
+                asset.Name,
+                1,
+                AssetHoursPolicy.Anytime,
+                [],
+                profile?.DefaultPrepMinutes ?? 0,
+                profile?.DefaultCleanupMinutes ?? 0,
+                zone,
+                zoneId,
+                asset.RentalAssetId);
+        }
+
+        if (asset.ScheduledDeletionAt is not null)
+        {
+            // Only the order flow reaches this (the plain flow filters the row out above).
+            throw PlanningException.NotPlannable("The asset is scheduled for deletion, so it cannot be planned.");
+        }
+
         if (asset.Status != AssetStatus.Active)
         {
             throw PlanningException.NotPlannable("The asset is not active, so it cannot be planned.");
@@ -89,10 +132,7 @@ public sealed class AssetOccupancyService(
             throw PlanningException.NotPlannable("The asset is not marked as plannable.");
         }
 
-        var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, tenantId, cancellationToken);
-        var zoneId = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var iana) ? iana : zone.Id;
-
-        if (asset.RentalAssetId is { } rentalAssetId && await IsRentalsActiveAsync(cancellationToken))
+        if (rentalBacked)
         {
             // The rental schedule is the calendar authority: its hours and window rules apply (see
             // ValidateWindowAsync), the planning hours are not consulted, and a rental resource is
@@ -108,7 +148,7 @@ public sealed class AssetOccupancyService(
                 profile.DefaultCleanupMinutes,
                 zone,
                 zoneId,
-                rentalAssetId);
+                asset.RentalAssetId);
         }
 
         var hours = await dbContext.AssetWorkingHours
@@ -448,18 +488,20 @@ public sealed class AssetOccupancyService(
         {
             TenantId = tenantId,
             AssetId = asset.AssetId,
-            UnitId = asset.UnitId,
+            UnitId = request.UnitId ?? asset.UnitId,
             Kind = request.Kind,
             Title = request.Title,
             Notes = request.Notes,
-            Quantity = 1,
+            Quantity = request.Quantity < 1 ? 1 : request.Quantity,
             PlannedWorkStart = request.Window.WorkStart,
             PlannedWorkEnd = request.Window.WorkEnd,
             OccupiedStart = request.Window.OccupiedStart,
             OccupiedEnd = request.Window.OccupiedEnd,
             TimeZoneId = asset.TimeZoneId,
             Status = AllocationStatus.Scheduled,
-            Source = AssetAllocationSource.Manual,
+            Source = request.Source,
+            CatalogOrderItemId = request.CatalogOrderItemId,
+            ReferenceLabel = request.ReferenceLabel,
             CreatedByUserId = request.CreatedByUserId,
             ActorId = request.CreatedByUserId,
         };
@@ -474,9 +516,9 @@ public sealed class AssetOccupancyService(
                 allocation.ReservationItemId = await rentalOccupancy.CreateInternalUseOccupancyAsync(
                     dbContext,
                     tenantId,
-                    asset.UnitId,
+                    allocation.UnitId,
                     rentalAssetId,
-                    1,
+                    allocation.Quantity,
                     request.Window.OccupiedStart,
                     request.Window.OccupiedEnd,
                     cancellationToken);

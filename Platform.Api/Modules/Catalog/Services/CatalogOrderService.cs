@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
 using Platform.Api.Notifications;
 using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
@@ -50,8 +51,12 @@ public sealed class CatalogOrderService(
     IDomainEventDispatcher<CatalogOrderEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
     ICatalogOrderAllocationService allocationService,
-    IResourceOccupancyService occupancy) : ICatalogOrderService
+    IResourceOccupancyService occupancy,
+    IAssetOccupancyService? assetOccupancyService = null) : ICatalogOrderService
 {
+    private readonly IAssetOccupancyService assetOccupancy =
+        AssetOccupancyFactory.Create(assetOccupancyService, dbContext, tenantProvider, occupancy);
+
     public async Task<IReadOnlyList<CatalogOrderResponse>> ListAsync(
         CatalogOrderListQuery query,
         CancellationToken cancellationToken)
@@ -126,7 +131,7 @@ public sealed class CatalogOrderService(
             id,
             CatalogEventTypes.OrderRejected,
             (order, actorType, actorId) => order.Reject(reason ?? string.Empty, actorType, actorId),
-            planningHook: (db, order, ct) => CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(occupancy, db, order, ct),
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(assetOccupancy, occupancy, db, order, ct),
             cancellationToken);
 
     public Task<CatalogOrderResponse> StartPreparingAsync(Guid id, CancellationToken cancellationToken) =>
@@ -139,7 +144,7 @@ public sealed class CatalogOrderService(
             // (order-equipment-link-codex §5: "Existing preparing and ready actions invoke the
             // internal execution operations"). Staff can still call the standalone usage endpoint
             // out-of-band (e.g. production actually starts later than the commercial status).
-            planningHook: (db, order, ct) => CatalogAllocationExecutionService.StartPendingAllocationHook(occupancy, db, order, ct),
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.StartPendingAllocationHook(assetOccupancy, db, order, ct),
             cancellationToken);
 
     public Task<CatalogOrderResponse> MarkReadyAsync(Guid id, CancellationToken cancellationToken) =>
@@ -150,7 +155,7 @@ public sealed class CatalogOrderService(
             // Ready requires work already finished (allocation at least Cleaning) across every
             // required item; the hook throws InvalidCatalogOrderTransitionException otherwise so the
             // whole transition rolls back before the commercial status is touched.
-            planningHook: (db, order, ct) => CatalogAllocationExecutionService.RequireWorkFinishedHook(occupancy, db, order, ct),
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.RequireWorkFinishedHook(assetOccupancy, db, order, ct),
             cancellationToken);
 
     public Task<CatalogOrderResponse> CompleteAsync(Guid id, CancellationToken cancellationToken) =>
@@ -172,7 +177,7 @@ public sealed class CatalogOrderService(
             // Unstarted (Scheduled) allocations are released transactionally on cancel/reject; an
             // already-started (Running/Cleaning) allocation keeps the resource occupied until
             // explicit release via the usage endpoint, even though the order is now terminal.
-            planningHook: (db, order, ct) => CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(occupancy, db, order, ct),
+            planningHook: (db, order, ct) => CatalogAllocationExecutionService.ReleaseUnstartedAllocationsHook(assetOccupancy, occupancy, db, order, ct),
             cancellationToken);
 
     public async Task<IReadOnlyList<ProductRequestResponse>> ListProductRequestsAsync(
