@@ -13,21 +13,30 @@ namespace Platform.Api.Tests.Rentals;
 public sealed class ResourceTypeTests
 {
     [Fact]
-    public async Task List_seeds_quadra_and_cacamba_for_the_tenant()
+    public async Task A_new_tenant_gets_no_domain_specific_resource_types()
     {
         await using var h = await ReservationQueueHarness.CreateAsync(queueEnabled: false);
         var service = new ResourceTypeService(h.Db, h.TenantProvider);
 
+        Assert.Empty(await service.ListAsync(CancellationToken.None));
+        Assert.Empty(await h.Db.ResourceTypes.ToListAsync());
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.GetAsync(Guid.NewGuid(), CancellationToken.None));
+        Assert.Empty(await h.Db.ResourceTypes.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Existing_seeded_rows_are_kept_and_listed()
+    {
+        await using var h = await ReservationQueueHarness.CreateAsync(queueEnabled: false);
+        var service = new ResourceTypeService(h.Db, h.TenantProvider);
+        var legacy = await AddLegacySeededTypeAsync(h);
+
         var list = await service.ListAsync(CancellationToken.None);
 
-        Assert.Equal(["cacamba", "quadra"], list.Select(type => type.Key).Order().ToArray());
-        var quadra = list.Single(type => type.Key == "quadra");
-        Assert.Equal("Quadra", quadra.Name);
-        Assert.Equal("uma", quadra.Article);
+        var quadra = Assert.Single(list);
+        Assert.Equal(legacy.Id, quadra.Id);
         Assert.True(quadra.Seeded);
         Assert.True(quadra.Capabilities.Bookable);
-        Assert.False(quadra.Capabilities.Deliverable);
-        Assert.True(quadra.Capabilities.Maintenance);
         Assert.Empty(quadra.Fields);
     }
 
@@ -50,7 +59,7 @@ public sealed class ResourceTypeTests
         Assert.Equal("Pessoa", renamed.Name);
         Assert.Equal(created.Id, (await service.GetAsync(created.Id, CancellationToken.None)).Id);
 
-        var quadra = (await service.ListAsync(CancellationToken.None)).Single(type => type.Key == "quadra");
+        var quadra = await AddLegacySeededTypeAsync(h);
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.UpdateAsync(quadra.Id, Write("outro", "Quadra", "uma", internalField: false), CancellationToken.None));
         Assert.Contains("key", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -59,7 +68,7 @@ public sealed class ResourceTypeTests
         h.TenantProvider.TenantId = Guid.NewGuid();
         var other = await service.ListAsync(CancellationToken.None);
         Assert.DoesNotContain(other, type => type.Id == created.Id);
-        Assert.Contains(other, type => type.Key == "quadra");
+        Assert.Empty(other);
         h.TenantProvider.TenantId = ownerId;
 
         h.Db.ChangeTracker.Clear();
@@ -79,7 +88,7 @@ public sealed class ResourceTypeTests
         await h.Db.SaveChangesAsync();
         var categoryId = await h.Db.Assets.Select(asset => asset.CategoryId).SingleAsync();
         var service = new ResourceTypeService(h.Db, h.TenantProvider);
-        var quadra = (await service.ListAsync(CancellationToken.None)).Single(type => type.Key == "quadra");
+        var quadra = await AddLegacySeededTypeAsync(h);
         var assets = new AssetService(h.Db, h.TenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(h.Db));
         var before = await h.Db.Assets.CountAsync();
 
@@ -116,6 +125,28 @@ public sealed class ResourceTypeTests
         await service.CreateAsync(Write("sala", "Sala", "uma", internalField: false), CancellationToken.None);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CreateAsync(Write("sala", "Sala 2", "uma", internalField: false), CancellationToken.None));
+    }
+
+    /// <summary>A row as older releases seeded it: new tenants no longer get these, existing ones keep them.</summary>
+    private static async Task<ResourceType> AddLegacySeededTypeAsync(ReservationQueueHarness h)
+    {
+        var type = new ResourceType
+        {
+            TenantId = h.TenantId,
+            Key = "quadra",
+            Name = "Quadra",
+            Singular = "quadra",
+            Plural = "quadras",
+            Article = "uma",
+            Seeded = true,
+            Bookable = true,
+            Deliverable = false,
+            Maintenance = true,
+            FieldsJson = "[]",
+        };
+        h.Db.ResourceTypes.Add(type);
+        await h.Db.SaveChangesAsync();
+        return type;
     }
 
     private static CreateRentableRequest Rentable(ReservationQueueHarness h, Guid categoryId, Guid familyId, Guid? resourceTypeId) =>

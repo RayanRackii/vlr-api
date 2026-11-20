@@ -29,7 +29,6 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
     public async Task<IReadOnlyList<ResourceTypeResponse>> ListAsync(CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await EnsureSeedsAsync(tenantId, cancellationToken);
         var types = await dbContext.ResourceTypes.AsNoTracking()
             .Where(type => type.TenantId == tenantId)
             .OrderByDescending(type => type.Seeded)
@@ -42,7 +41,6 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
     public async Task<ResourceTypeResponse> GetAsync(Guid id, CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await EnsureSeedsAsync(tenantId, cancellationToken);
         var type = await FindAsync(tenantId, id, tracking: false, cancellationToken)
             ?? throw new KeyNotFoundException("Resource type was not found.");
         var counts = await CountsAsync(tenantId, cancellationToken);
@@ -52,7 +50,6 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
     public async Task<ResourceTypeResponse> CreateAsync(ResourceTypeWriteRequest request, CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await EnsureSeedsAsync(tenantId, cancellationToken);
         var draft = Normalize(request, currentKey: null, seeded: false);
         if (await dbContext.ResourceTypes.AnyAsync(type => type.TenantId == tenantId && type.Key == draft.Key, cancellationToken))
         {
@@ -89,7 +86,6 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
     public async Task<ResourceTypeResponse> UpdateAsync(Guid id, ResourceTypeWriteRequest request, CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await EnsureSeedsAsync(tenantId, cancellationToken);
         var type = await FindAsync(tenantId, id, tracking: true, cancellationToken)
             ?? throw new KeyNotFoundException("Resource type was not found.");
         var draft = Normalize(request, type.Key, type.Seeded);
@@ -133,53 +129,9 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
         }
     }
 
-    internal static async Task EnsureSeedsAsync(AppDbContext db, Guid tenantId, CancellationToken cancellationToken)
-    {
-        var keys = await db.ResourceTypes.AsNoTracking()
-            .Where(type => type.TenantId == tenantId && (type.Key == "quadra" || type.Key == "cacamba"))
-            .Select(type => type.Key)
-            .ToListAsync(cancellationToken);
-        var present = keys.ToHashSet(StringComparer.Ordinal);
-        foreach (var seed in Seeds.Where(seed => !present.Contains(seed.Key)))
-        {
-            db.ResourceTypes.Add(new ResourceType
-            {
-                TenantId = tenantId,
-                Key = seed.Key,
-                Name = seed.Name,
-                Singular = seed.Singular,
-                Plural = seed.Plural,
-                Article = seed.Article,
-                Seeded = true,
-                Bookable = seed.Bookable,
-                Deliverable = seed.Deliverable,
-                Maintenance = seed.Maintenance,
-                FieldsJson = "[]",
-            });
-        }
-
-        if (db.ChangeTracker.HasChanges())
-        {
-            try
-            {
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            catch (DbUpdateException ex) when (IsUniqueKey(ex))
-            {
-                foreach (var entry in db.ChangeTracker.Entries<ResourceType>().Where(item => item.State == EntityState.Added).ToList())
-                {
-                    entry.State = EntityState.Detached;
-                }
-            }
-        }
-    }
-
     private static bool IsUniqueKey(DbUpdateException exception) =>
         exception.InnerException is PostgresException postgres
         && postgres.SqlState == PostgresErrorCodes.UniqueViolation;
-
-    private async Task EnsureSeedsAsync(Guid tenantId, CancellationToken cancellationToken) =>
-        await EnsureSeedsAsync(dbContext, tenantId, cancellationToken);
 
     private async Task<Dictionary<Guid, int>> CountsAsync(Guid tenantId, CancellationToken cancellationToken)
     {
@@ -382,12 +334,4 @@ public sealed class ResourceTypeService(AppDbContext dbContext, ITenantProvider 
         bool Deliverable,
         bool Maintenance,
         string FieldsJson);
-
-    private sealed record Seed(string Key, string Name, string Singular, string Plural, string Article, bool Bookable, bool Deliverable, bool Maintenance);
-
-    private static readonly Seed[] Seeds =
-    [
-        new("quadra", "Quadra", "quadra", "quadras", "uma", true, false, true),
-        new("cacamba", "Caçamba", "caçamba", "caçambas", "uma", false, true, true),
-    ];
 }
