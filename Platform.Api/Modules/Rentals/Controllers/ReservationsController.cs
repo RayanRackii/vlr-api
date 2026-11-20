@@ -60,8 +60,8 @@ public sealed class ReservationsController(
         {
             await publicTenantBinder.BindFromSubdomainAsync(subdomain, cancellationToken);
             var assets = await rentalAssetService.ListRentableAsync(cancellationToken);
-            // The registry tag is a staff identifier; keep it off the public listing.
-            return Ok(assets.Select(asset => asset with { Tag = null }).ToList());
+            // The registry tag and family attributes are staff data; keep them off the public listing.
+            return Ok(assets.Select(asset => asset with { Tag = null, Attributes = null }).ToList());
         }
         catch (KeyNotFoundException ex)
         {

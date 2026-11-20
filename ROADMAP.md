@@ -1,5 +1,46 @@
 # ROADMAP — vlr-api
 
+### Evolução segura do schema de famílias de ativo (2026-11-19, feat/asset-family-schema-evolution)
+
+- [x] `PUT /api/admin/asset-families/{id}` nunca perde valores: campo omitido é arquivado quando algum ativo tem valor (removido só se nenhum tem); troca de tipo só passa se todo valor guardado passa em `TryCoerce` + `TryConstrain` (senão 409 com contagem e até 5 exemplos), inclusive ao arquivar, ao adicionar como arquivado sobre valores órfãos e ao restaurar (restaurar sempre exige o formato; limites só avisam em `constraintViolationCount`). Campo novo obrigatório vale só na criação.
+- [x] `version` do schema sobe quando a lista muda (campos arquivados comparados sem ordem; save sem mudança não sobe e mantém a ordem guardada). `ExpectedSchemaVersion` opcional devolve 409 se velho; `SchemaVersion` na resposta. `FieldSchemaJson` virou token de concorrência do EF (sem DDL, só o snapshot do modelo): dois saves concorrentes não passam os dois, o segundo recebe 409.
+- [x] `POST /api/admin/asset-families/{id}/schema-preview` (PlatformAdmin): simulação com contagem de ativos e empresas por campo (leitura entre tenants com `IgnoreQueryFilters` só em `AssetFamilyService.cs`). Limites: 60 campos ativos, 200 no total com arquivados.
+- [ ] Limite conhecido: um ativo salvo entre a simulação/leitura e o save não é travado (a escrita de ativos tolera qualquer valor guardado, no pior caso fica um valor legado). Próximo: WEB-2 (editor admin).
+
+### Planejamento de recursos desacoplado de Reservas e Catálogo (2026-11-19, feat/resource-planning-decouple)
+
+- [x] ADR [`0010`](docs/adr/0010-internal-resource-planning-asset-allocation.md): `AssetAllocation` em `Asset`, uma autoridade de calendário por ativo, ponte para Reservas só em ativo alugável. Spec: `docs/plans/active/2026-11-19-internal-resource-planning.md` (fatia API-1 de 6).
+- [x] `resource-planning` exige só a capability Asset Registry (sem `RequiredModules`; alias `planejamento`). Ativa sozinho, com `inventory` ou com qualquer mistura de `catalog`/`rentals`/`os`. Sem migration.
+- [x] Guardas ao desativar (`AdminTenantService.UpdateAsync`, dentro do lock de módulos): `resource-planning`, e `rentals`/`catalog` enquanto `resource-planning` continua ativo, são recusados com alocações não liberadas (a contagem vai no texto); `os` é livre. Hoje conta `CatalogOrderItemResourceAllocation`; `AssetAllocation` entra na fatia API-3.
+- [x] `GET /api/admin/modules` ganha `requiredModules`. `ModuleGateConventionTests`: gate de ação pode somar um segundo módulo se o gate da classe ainda declara o esperado.
+- [ ] O fluxo de pedido segue exigindo `rentals` em runtime (muda na API-5). Próximas fatias: API-2 (perfil e horários), API-3 (alocações manuais e agenda). Espelho do glossário em `vlr-web/CONTEXT.md` e `openapi.json` do web (`requiredModules`) ficam para o PR do web.
+
+### Planejamento de recursos: perfil do ativo e horário de funcionamento (2026-11-20, feat/resource-planning-profile-hours)
+
+- [x] Migration `20261120100000_AddAssetPlanning` (só adição, `Down` com guarda): schema `planning` com `asset_planning_profiles`, `asset_working_hours` e `asset_allocations` (a tabela das alocações só nasce aqui; quem escreve nela chega na API-3). Toda tabela tem `tenant_id` com filtro global e FK composta `(tenant_id, ...)`. Única mudança em tabelas existentes: unique `(tenant_id, id)` em `assets.assets` e `os.work_orders`, alvo das FKs compostas (`id` já é PK, não falha com dados). Antes de aplicar em PROD seguir `docs/runbooks/database-migrations.md` (backup, listar pendentes, só esta migration).
+- [x] Permissões `resource-planning.agenda.read`, `.allocations.manage`, `.allocations.execute`, `.availability.write` (catálogo passa a 65). Admin recebe pelo curinga; Technician recebe `agenda.read` e `allocations.execute` (criar, iniciar, concluir, liberar; cancelar alocação de outro e editar perfil seguem do admin).
+- [x] `GET /api/planning/assets`, `GET`/`PUT /api/planning/assets/{id}/profile` (gate só do módulo `resource-planning`, sem exigir `inventory`, `rentals` ou `catalog`). Plannable é opt-in por ativo; política padrão `StartWithinHours`; horário rejeita, não avisa; ativo alugável com `rentals` ativo recusa horário com 409 (o calendário é o do aluguel).
+- [x] `AssetWorkingHoursRules` (puro): `Anytime`, `StartWithinHours`, `WithinHours`, multi-dia, dia partido e dia de horário de verão, tudo em instantes reais do fuso do tenant. Testes de regra, HTTP (permissão, módulo, isolamento com segundo tenant), SQL da migration e snapshot OpenAPI.
+- [ ] Próximas fatias: API-3 (alocações manuais, conflitos e agenda; passa a contar `AssetAllocation` nas guardas de desativação), WEB-3 usa estes endpoints.
+
+### Planejamento de recursos: alocações manuais, conflitos e agenda (2026-11-21, feat/resource-planning-allocations)
+
+- [x] `GET /api/planning/agenda`, `POST /api/planning/allocations` (+ `/preview`), `GET`/`PATCH /api/planning/allocations/{id}`, `POST .../usage` (`start`, `work-finished`, `release`, `cancel`). Gate só do módulo `resource-planning`. Criar: `allocations.manage` **ou** `allocations.execute` (técnico cria); editar: `allocations.manage`; uso: qualquer um dos dois, e **cancelar** só o criador ou quem tem `allocations.manage` (403 `planning.cancel_forbidden`, regra no serviço). Ativo alugável com `rentals` ativo é recusado com 409 `planning.asset_not_plannable` até a ponte (API-4).
+- [x] Conflito sob `SELECT ... FOR UPDATE` na linha do ativo (mesmo lock do `PUT` do perfil/horários), janelas semiabertas, buffers de preparo e limpeza guardados em `occupied_*`, capacidade por concorrência máxima. Horário **rejeita** (422 `planning.outside_working_hours`); bloqueio `Unavailable` não segue horário (fecha um dia aberto). Limite de 30 dias por alocação.
+- [x] Vencimento: alocação **manual** que nunca iniciou deixa de bloquear depois do fim (calculado na leitura, sem job; não pode mais ser iniciada); **iniciada** bloqueia até liberar e a agenda marca `isOverdue`. As guardas de desativação do `resource-planning` passam a contar `AssetAllocation` não liberada.
+- [x] Migration `20261121100000_GrantResourcePlanningPermissions` (só INSERT idempotente, sem mudança de modelo; `Down` sem operação): concede `agenda.read` e `allocations.execute` ao Technician e as quatro chaves a Admin/SuperAdmin dos tenants que já existiam. PROD: backup e lista de pendentes como no runbook.
+- [x] Follow-ups da revisão da API-2: `PUT` do perfil trava a linha do ativo (L2); só concorrência/unique viram 409 `planning.version_conflict`, FK vira 404 e o resto propaga (L3); horário só em `HH:mm` (L6); `planning.asset_not_plannable` para ativo fechado a semana toda (L7).
+- [x] Correções da revisão profunda: escritas de planejamento (criar, editar, qualquer ação de uso) pegam o lock advisory `tenant-modules:{tenantId}` e revalidam o módulo na transação, antes do lock da linha do ativo (sem corrida com a desativação do módulo); iniciar uma alocação refaz a checagem de ocupação e uma alocação iniciada bloqueia desde o início real (`min(occupied_start, actual_start_at)`); `Cleaning` fica atrasada após `occupied_end`; bloco `Unavailable` exige `availability.write` ou `allocations.manage` (técnico usa máquina, não a fecha); a agenda mantém o ativo que ainda tem alocação bloqueante mesmo se deixou de ser planejável; migration só concede ao Technician de **sistema**.
+- [ ] **L4 (API-4):** um ativo pode virar alugável (configuração de aluguel ativa com `rentals` ativo) já com alocações de planejamento; elas continuam bloqueando no planejamento mas o calendário passa a ser o do aluguel, e os dois podem divergir. A ponte da API-4 decide: espelhar como `InternalUse` ou recusar a troca enquanto existirem.
+- [ ] Próximas: API-4 (ponte de Reservas e `externalBusy`), WEB-1/WEB-2 consomem estes endpoints.
+
+### Aparência do portal do cliente: imagem e textos da tela de login (2026-11-19, feat/portal-landing-appearance)
+
+- [x] Migration aditiva `AddTenantPortalLanding` (colunas nulas, sem backfill): `core.tenants` ganha `landing_image_key` (300), `landing_kicker` (60), `landing_headline` (120), `landing_subtitle` (240).
+- [x] `GET/PUT /api/portal-appearance`, `POST/DELETE /api/portal-appearance/landing-image` (tenant atual). GET: qualquer staff; escritas: `core.company.write` e bloqueadas em trial somente leitura. Imagem jpg/png/webp (magic bytes), até 3 MB, no bucket público em `tenants/{tenantId:N}/landing/{guid:N}.{ext}`; o objeto anterior é apagado best-effort após o commit.
+- [x] `GET /api/public/tenants/{subdomain}/branding` ganha `landingImageUrl`, `landingKicker`, `landingHeadline`, `landingSubtitle` (anuláveis, ao final).
+- [ ] Web: `PortalAuthLayout` (W1) e Configurações › Aparência do portal (W2).
+
 ### Dados da empresa, unidade de cobrança e observações da reserva (2026-11-18, feat/company-profile-price-unit-notes)
 
 - [x] Migration aditiva `AddCompanyContactPriceUnitAndReservationNotes` (todas as colunas nulas, sem backfill): `core.tenants` ganha `contact_email`, `contact_phone`, `address_postal_code/street/number/complement/district/city/state`; `catalog.catalog_products.price_unit`; `rentals.reservations.notes`. Insere (idempotente) a permissão `core.company.write` e a concede aos papéis de sistema Admin/SuperAdmin, como a migration de `core.units.write`.

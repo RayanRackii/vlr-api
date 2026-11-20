@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Rentals.Contracts;
 using Platform.Api.Modules.Rentals.Dtos;
@@ -358,7 +359,8 @@ public sealed class RentalAssetService(
             rental.DepositPercent,
             PolicyResolver.Resolve(rental, categoryPolicy, tenantPolicy).DepositPercent,
             rental.DirectRental,
-            rental.ResourceTypeId);
+            rental.ResourceTypeId,
+            new Dictionary<string, JsonElement>(rental.Asset.Attributes, StringComparer.Ordinal));
 
     public async Task<RentalAssetResponse> SetDirectRentalAsync(
         Guid rentalAssetId,

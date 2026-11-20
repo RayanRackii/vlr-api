@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Contracts.ResourceVisuals;
@@ -41,7 +42,8 @@ public sealed record RentalAssetResponse(
     int? DepositPercent = null,
     int? EffectiveDepositPercent = null,
     bool DirectRental = true,
-    Guid? ResourceTypeId = null);
+    Guid? ResourceTypeId = null,
+    Dictionary<string, JsonElement>? Attributes = null);
 
 public sealed record SetDirectRentalRequest
 {

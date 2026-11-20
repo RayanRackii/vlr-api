@@ -71,6 +71,18 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.AddressState)
             .HasMaxLength(2);
 
+        builder.Property(t => t.LandingImageKey)
+            .HasMaxLength(300);
+
+        builder.Property(t => t.LandingKicker)
+            .HasMaxLength(60);
+
+        builder.Property(t => t.LandingHeadline)
+            .HasMaxLength(120);
+
+        builder.Property(t => t.LandingSubtitle)
+            .HasMaxLength(240);
+
         builder.Property(t => t.IsActive)
             .HasDefaultValue(true)
             .IsRequired();

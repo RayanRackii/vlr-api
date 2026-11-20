@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Assets.Services;
@@ -96,11 +97,11 @@ public sealed class AssetFamilyServiceTests
                 new CreateAssetFamilyRequest(
                     "courts",
                     "Courts",
-                    [new AssetFamilyFieldDto("surface", "date", false, null)],
+                    [new AssetFamilyFieldDto("surface", "json", false, null)],
                     1,
                     true),
                 CancellationToken.None));
-        Assert.Contains("text, number, or boolean", type.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("text, longtext, number", type.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -154,7 +155,7 @@ public sealed class AssetFamilyServiceTests
             Name = "Quadra 1",
             Tag = "Q1",
             Status = AssetStatus.Active,
-            Attributes = new Dictionary<string, string?> { ["capacity"] = "12" },
+            Attributes = new Dictionary<string, JsonElement> { ["capacity"] = JsonSerializer.SerializeToElement("12") },
         };
 
         db.Tenants.Add(tenant);
@@ -189,16 +190,20 @@ public sealed class AssetFamilyServiceTests
         Assert.Equal("Quadras", updated.Label);
         Assert.Equal(12, updated.SortOrder);
         Assert.True(updated.IsActive);
-        var field = Assert.Single(updated.Fields);
-        Assert.Equal("surface", field.Key);
-        Assert.Equal("text", field.Type);
+        Assert.Equal(2, updated.SchemaVersion);
+        Assert.Equal(2, updated.Fields.Count);
+        Assert.Equal("surface", updated.Fields[0].Key);
+        Assert.Equal("text", updated.Fields[0].Type);
+        Assert.Equal("capacity", updated.Fields[1].Key);
+        Assert.True(updated.Fields[1].Archived);
 
         var stored = await db.AssetFamilies.AsNoTracking().SingleAsync(f => f.Id == spaces.Id);
         Assert.Equal(
-            """{"fields":[{"key":"surface","type":"text","required":true,"label":"Piso"}]}""",
+            """{"fields":[{"key":"surface","type":"text","required":true,"label":"Piso"},{"key":"capacity","type":"number","required":false,"label":"Capacidade","archived":true}],"version":2}""",
             stored.FieldSchemaJson);
-        Assert.Equal("12", asset.Attributes["capacity"]);
+        Assert.Equal("12", asset.Attributes["capacity"].GetString());
         Assert.Single(asset.Attributes);
+        Assert.Empty((await service.ListCatalogAsync(CancellationToken.None)).Single(item => item.Id == spaces.Id).Fields.Where(field => field.Key == "capacity"));
         Assert.Equal(EntityState.Unchanged, db.Entry(asset).State);
     }
 

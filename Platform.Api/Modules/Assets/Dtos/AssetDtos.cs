@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
@@ -95,7 +96,7 @@ public sealed record CreateAssetRequest
     /// <summary>Applies suggested capacity only when no capacity has been configured.</summary>
     public bool ConfirmVisualSuggestions { get; init; }
 
-    public Dictionary<string, string?>? Attributes { get; init; }
+    public Dictionary<string, JsonElement>? Attributes { get; init; }
 }
 
 public sealed record UpdateAssetRequest
@@ -160,7 +161,7 @@ public sealed record UpdateAssetRequest
 
     public bool ConfirmVisualSuggestions { get; init; }
 
-    public Dictionary<string, string?>? Attributes { get; init; }
+    public Dictionary<string, JsonElement>? Attributes { get; init; }
 }
 
 public sealed record AssetRentalConfigResponse(
@@ -188,7 +189,7 @@ public sealed record AssetResponse(
     AssetStatus Status,
     bool IsRentable,
     bool RequiresMaintenance,
-    IReadOnlyDictionary<string, string?> Attributes,
+    IReadOnlyDictionary<string, JsonElement> Attributes,
     AssetRentalConfigResponse? RentalConfig,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
@@ -237,7 +238,7 @@ public sealed record BulkCreateAssetsRequest
     /// <summary>Required when <see cref="QueueEnabled"/> is true on a Location.</summary>
     public TimeOnly? QueueOpeningTime { get; init; }
 
-    public Dictionary<string, string?>? Attributes { get; init; }
+    public Dictionary<string, JsonElement>? Attributes { get; init; }
 }
 
 public sealed record BulkCreateAssetsResponse(

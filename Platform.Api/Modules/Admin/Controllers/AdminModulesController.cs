@@ -21,7 +21,8 @@ public sealed class AdminModulesController : ControllerBase
                 module.IsLegacy,
                 module.Provides,
                 module.RequiredCapabilities,
-                module.Aliases))
+                module.Aliases,
+                module.RequiredModules))
             .ToList();
 
         return Ok(items);

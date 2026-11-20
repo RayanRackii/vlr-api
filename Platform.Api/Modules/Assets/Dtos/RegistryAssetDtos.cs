@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Enums;
@@ -98,10 +99,23 @@ public sealed record CreateRentableRequest
     /// Omitted remains false for backwards compatibility.
     /// </summary>
     public bool ApplyTemplateDefaults { get; init; }
+
+    /// <summary>
+    /// Family attribute values (same shape as POST /api/assets). Validated against the family
+    /// field schema; required fields are enforced strictly on create.
+    /// </summary>
+    public Dictionary<string, JsonElement>? Attributes { get; init; }
 }
 
 public sealed record UpdateRentableRequest
 {
+    /// <summary>
+    /// Family attribute values. Omitted (null) keeps the stored values. A provided dictionary
+    /// replaces them after validation; a required field that is also missing from the stored
+    /// values (legacy asset) does not block the update.
+    /// </summary>
+    public Dictionary<string, JsonElement>? Attributes { get; init; }
+
     public required string Name { get; init; }
 
     /// <summary>

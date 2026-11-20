@@ -25,6 +25,8 @@ public sealed class AssetFamilyConfiguration : IEntityTypeConfiguration<AssetFam
 
         builder.Property(f => f.FieldSchemaJson)
             .HasColumnType("jsonb")
+            // Optimistic guard for schema evolution (no DDL): a stale plan cannot overwrite a newer schema.
+            .IsConcurrencyToken()
             .IsRequired();
 
         builder.Property(f => f.SortOrder)

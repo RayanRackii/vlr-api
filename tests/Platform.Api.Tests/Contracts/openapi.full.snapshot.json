@@ -72,6 +72,68 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "requiredModules": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationConflictDto": {
+        "additionalProperties": false,
+        "properties": {
+          "allocationId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "label": {
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "nullable": true,
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AllocationPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationConflictDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "feasible": {
+            "type": "boolean"
+          },
+          "hoursViolation": {
+            "nullable": true,
+            "type": "string"
+          },
+          "occupiedEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "occupiedStart": {
+            "format": "date-time",
+            "type": "string"
           }
         },
         "type": "object"
@@ -223,6 +285,135 @@
         },
         "type": "object"
       },
+      "AssetAllocationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "actualReleaseAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "actualStartAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "actualWorkFinishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "assetName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cancelReason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdByUserId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isBlocking": {
+            "type": "boolean"
+          },
+          "isExpired": {
+            "type": "boolean"
+          },
+          "isOverdue": {
+            "type": "boolean"
+          },
+          "kind": {
+            "nullable": true,
+            "type": "string"
+          },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "occupiedEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "occupiedStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "plannedWorkEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "plannedWorkStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "referenceLabel": {
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timeZoneId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "unitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "version": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssetAllocationUsageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "nullable": true,
+            "type": "string"
+          },
+          "expectedVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssetCategoryResponse": {
         "additionalProperties": false,
         "properties": {
@@ -310,6 +501,10 @@
             "nullable": true,
             "type": "string"
           },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
           "sortOrder": {
             "format": "int32",
             "type": "integer"
@@ -320,6 +515,22 @@
       "AssetFamilyFieldDto": {
         "additionalProperties": false,
         "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "decimals": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "group": {
+            "nullable": true,
+            "type": "string"
+          },
+          "help": {
+            "nullable": true,
+            "type": "string"
+          },
           "key": {
             "nullable": true,
             "type": "string"
@@ -328,12 +539,119 @@
             "nullable": true,
             "type": "string"
           },
+          "max": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "maxLength": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "min": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "required": {
             "type": "boolean"
           },
           "type": {
             "nullable": true,
             "type": "string"
+          },
+          "unit": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssetFamilyFieldImpactDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "change": {
+            "nullable": true,
+            "type": "string"
+          },
+          "constraintViolationCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "incompatibleCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "incompatibleSamples": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "key": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tenantCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AssetFamilySchemaPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/AssetFamilyFieldDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AssetFamilySchemaPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assetCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "canSave": {
+            "type": "boolean"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/AssetFamilyFieldImpactDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "schemaVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tenantCount": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -363,6 +681,48 @@
           "total": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AssetPlanningProfileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaultCleanupMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaultPrepMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hoursPolicy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "isConfigured": {
+            "type": "boolean"
+          },
+          "isPlannable": {
+            "type": "boolean"
+          },
+          "isRentalBacked": {
+            "type": "boolean"
+          },
+          "workingHours": {
+            "items": {
+              "$ref": "#/components/schemas/AssetWorkingHoursWindowDto"
+            },
+            "nullable": true,
+            "type": "array"
           }
         },
         "type": "object"
@@ -412,10 +772,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -497,6 +854,24 @@
         ],
         "format": "int32",
         "type": "integer"
+      },
+      "AssetWorkingHoursWindowDto": {
+        "additionalProperties": false,
+        "properties": {
+          "closeTime": {
+            "nullable": true,
+            "type": "string"
+          },
+          "dayOfWeek": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "openTime": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "AssignUserRolesRequest": {
         "additionalProperties": false,
@@ -685,10 +1060,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -2011,6 +2383,46 @@
         },
         "type": "object"
       },
+      "CreateAssetAllocationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cleanupMinutes": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "kind": {
+            "nullable": true,
+            "type": "string"
+          },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "prepMinutes": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "workEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workStart": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateAssetCategoryRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2064,10 +2476,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -2415,6 +2824,11 @@
         "properties": {
           "applyTemplateDefaults": {
             "type": "boolean"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "nullable": true,
+            "type": "object"
           },
           "cancelCutoffHours": {
             "format": "int32",
@@ -4435,6 +4849,159 @@
         },
         "type": "object"
       },
+      "PlanningAgendaResourceDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hoursPolicy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "isRentalBacked": {
+            "type": "boolean"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tag": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timeZoneId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "unitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unitName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "workingHours": {
+            "items": {
+              "$ref": "#/components/schemas/AssetWorkingHoursWindowDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PlanningAgendaResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "externalBusy": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningExternalBusyDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssetAllocationResponse"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningAgendaResourceDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlanningAssetResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "categoryId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "categoryName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "hoursPolicy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isPlannable": {
+            "type": "boolean"
+          },
+          "isRentalBacked": {
+            "type": "boolean"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tag": {
+            "nullable": true,
+            "type": "string"
+          },
+          "unitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unitName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "workingWindowCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PlanningExternalBusyDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PlatformUserResponseDto": {
         "additionalProperties": false,
         "properties": {
@@ -4511,6 +5078,32 @@
           "workOrdersFromPlansThisMonth": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PortalAppearanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "landingHeadline": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingImageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingKicker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingSubtitle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "welcomeTagline": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "type": "object"
@@ -4818,6 +5411,38 @@
         ],
         "type": "object"
       },
+      "PutAssetPlanningProfileRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaultCleanupMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "defaultPrepMinutes": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hoursPolicy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "isPlannable": {
+            "type": "boolean"
+          },
+          "workingHours": {
+            "items": {
+              "$ref": "#/components/schemas/AssetWorkingHoursWindowDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "QueuePhase": {
         "enum": [
           0,
@@ -5037,6 +5662,11 @@
           "assetId": {
             "format": "uuid",
             "type": "string"
+          },
+          "attributes": {
+            "additionalProperties": {},
+            "nullable": true,
+            "type": "object"
           },
           "cancelCutoffHours": {
             "format": "int32",
@@ -7016,6 +7646,40 @@
         },
         "type": "object"
       },
+      "TenantAdminAddressDto": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "nullable": true,
+            "type": "string"
+          },
+          "complement": {
+            "nullable": true,
+            "type": "string"
+          },
+          "district": {
+            "nullable": true,
+            "type": "string"
+          },
+          "number": {
+            "nullable": true,
+            "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "type": "string"
+          },
+          "street": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TenantAdminResponseDto": {
         "additionalProperties": false,
         "properties": {
@@ -7030,12 +7694,23 @@
             "nullable": true,
             "type": "array"
           },
+          "address": {
+            "$ref": "#/components/schemas/TenantAdminAddressDto"
+          },
           "assetFamilyKeys": {
             "items": {
               "type": "string"
             },
             "nullable": true,
             "type": "array"
+          },
+          "contactEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "contactPhone": {
+            "nullable": true,
+            "type": "string"
           },
           "createdAt": {
             "format": "date-time",
@@ -7046,6 +7721,12 @@
             "type": "string"
           },
           "isActive": {
+            "type": "boolean"
+          },
+          "isTrial": {
+            "type": "boolean"
+          },
+          "isTrialReadOnly": {
             "type": "boolean"
           },
           "legalName": {
@@ -7068,6 +7749,10 @@
             "nullable": true,
             "type": "string"
           },
+          "tradeName": {
+            "nullable": true,
+            "type": "string"
+          },
           "welcomeTagline": {
             "nullable": true,
             "type": "string"
@@ -7083,6 +7768,22 @@
             "type": "string"
           },
           "displayName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingHeadline": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingImageUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingKicker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingSubtitle": {
             "nullable": true,
             "type": "string"
           },
@@ -7245,6 +7946,44 @@
         },
         "type": "object"
       },
+      "UpdateAssetAllocationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cleanupMinutes": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "expectedVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "prepMinutes": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "workEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateAssetCategoryRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7269,6 +8008,11 @@
       "UpdateAssetFamilyRequest": {
         "additionalProperties": false,
         "properties": {
+          "expectedSchemaVersion": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "fields": {
             "items": {
               "$ref": "#/components/schemas/AssetFamilyFieldDto"
@@ -7298,10 +8042,7 @@
         "additionalProperties": false,
         "properties": {
           "attributes": {
-            "additionalProperties": {
-              "nullable": true,
-              "type": "string"
-            },
+            "additionalProperties": {},
             "nullable": true,
             "type": "object"
           },
@@ -7628,6 +8369,24 @@
         ],
         "type": "object"
       },
+      "UpdatePortalAppearanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "landingHeadline": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingKicker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "landingSubtitle": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateRegistrationFieldRequestDto": {
         "additionalProperties": false,
         "properties": {
@@ -7663,6 +8422,11 @@
       "UpdateRentableRequest": {
         "additionalProperties": false,
         "properties": {
+          "attributes": {
+            "additionalProperties": {},
+            "nullable": true,
+            "type": "object"
+          },
           "cancelCutoffHours": {
             "format": "int32",
             "nullable": true,
@@ -7866,12 +8630,23 @@
             "nullable": true,
             "type": "array"
           },
+          "address": {
+            "$ref": "#/components/schemas/TenantAdminAddressDto"
+          },
           "assetFamilyKeys": {
             "items": {
               "type": "string"
             },
             "nullable": true,
             "type": "array"
+          },
+          "contactEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "contactPhone": {
+            "nullable": true,
+            "type": "string"
           },
           "legalName": {
             "nullable": true,
@@ -7890,6 +8665,10 @@
             "type": "string"
           },
           "taxId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tradeName": {
             "nullable": true,
             "type": "string"
           },
@@ -8871,6 +9650,65 @@
               "text/plain": {
                 "schema": {
                   "$ref": "#/components/schemas/AssetFamilyDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminAssetFamilies"
+        ]
+      }
+    },
+    "/api/admin/asset-families/{id}/schema-preview": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFamilySchemaPreviewRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFamilySchemaPreviewRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetFamilySchemaPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFamilySchemaPreviewResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFamilySchemaPreviewResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetFamilySchemaPreviewResponse"
                 }
               }
             },
@@ -16169,6 +17007,687 @@
         ]
       }
     },
+    "/api/planning/agenda": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assetIds",
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unitId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningAgendaResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningAgendaResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningAgendaResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      }
+    },
+    "/api/planning/allocations": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assetId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssetAllocationResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssetAllocationResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssetAllocationResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetAllocationRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetAllocationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetAllocationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      }
+    },
+    "/api/planning/allocations/preview": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetAllocationRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetAllocationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssetAllocationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationPreviewResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationPreviewResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationPreviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      }
+    },
+    "/api/planning/allocations/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAssetAllocationRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAssetAllocationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAssetAllocationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      }
+    },
+    "/api/planning/allocations/{id}/usage": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAllocationUsageRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAllocationUsageRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetAllocationUsageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllocationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAllocations"
+        ]
+      }
+    },
+    "/api/planning/assets": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unitId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plannable",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanningAssetResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanningAssetResponse"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanningAssetResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAssets"
+        ]
+      }
+    },
+    "/api/planning/assets/{assetId}/profile": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPlanningProfileResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPlanningProfileResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPlanningProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAssets"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assetId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAssetPlanningProfileRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAssetPlanningProfileRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAssetPlanningProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPlanningProfileResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPlanningProfileResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPlanningProfileResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PlanningAssets"
+        ]
+      }
+    },
+    "/api/portal-appearance": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortalAppearanceRequest"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortalAppearanceRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePortalAppearanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      }
+    },
+    "/api/portal-appearance/landing-image": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "style": "form"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalAppearanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PortalAppearance"
+        ]
+      }
+    },
     "/api/public/resource-visual-revisions/{id}/art.svg": {
       "get": {
         "parameters": [
@@ -21275,6 +22794,15 @@
     },
     {
       "name": "Permissions"
+    },
+    {
+      "name": "PlanningAllocations"
+    },
+    {
+      "name": "PlanningAssets"
+    },
+    {
+      "name": "PortalAppearance"
     },
     {
       "name": "PublicBookingMaps"

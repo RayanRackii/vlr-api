@@ -8,7 +8,7 @@ public sealed record PermissionDefinition(
     string Resource);
 
 /// <summary>
-/// System-defined permission catalog (61 keys). Tenants cannot create keys.
+/// System-defined permission catalog (65 keys). Tenants cannot create keys.
 /// </summary>
 public static class PermissionCatalog
 {
@@ -75,6 +75,10 @@ public static class PermissionCatalog
         Define(Permissions.Catalog.OrdersAllocate, "Allocate catalog order resources", "Allocate, start, finish, and release resources for catalog order items."),
         Define(Permissions.Catalog.NotificationsRead, "Read catalog notifications", "List catalog notification deliveries and channel config."),
         Define(Permissions.Catalog.NotificationsResend, "Resend catalog notifications", "Resend failed deliveries and update catalog channel config."),
+        Define(Permissions.ResourcePlanning.AgendaRead, "Read resource planning", "List plannable assets, read their planning profile, agenda and allocations."),
+        Define(Permissions.ResourcePlanning.AllocationsManage, "Manage allocations", "Create, edit, and cancel any resource allocation."),
+        Define(Permissions.ResourcePlanning.AllocationsExecute, "Execute allocations", "Create allocations and start, finish, and release them."),
+        Define(Permissions.ResourcePlanning.AvailabilityWrite, "Write asset availability", "Edit an asset's planning profile and working hours."),
     ];
 
     public static readonly IReadOnlySet<string> AllKeys =
@@ -104,6 +108,11 @@ public static class PermissionCatalog
         Permissions.Os.WorkOrdersRead,
         Permissions.Os.WorkOrdersExecute,
         Permissions.Inventory.AssetsRead,
+        // Resource planning: the technician reads the agenda, creates allocations and runs them
+        // (start, finish, release). Cancelling someone else's allocation stays admin-only
+        // (allocations.manage), and the planning profile stays admin-only (availability.write).
+        Permissions.ResourcePlanning.AgendaRead,
+        Permissions.ResourcePlanning.AllocationsExecute,
     };
 
     /// <summary>
