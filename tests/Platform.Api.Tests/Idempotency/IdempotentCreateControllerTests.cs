@@ -32,8 +32,8 @@ public sealed class IdempotentCreateControllerTests
         await using var h = await OrderHarness.CreateAsync();
         var request = h.Request(quantity: 2);
 
-        var first = await h.Controller().CreateOrder(request, Key, CancellationToken.None);
-        var second = await h.Controller().CreateOrder(request, Key, CancellationToken.None);
+        var first = await h.Controller().CreateOrder(request, CancellationToken.None, Key);
+        var second = await h.Controller().CreateOrder(request, CancellationToken.None, Key);
 
         var firstOk = Assert.IsType<OkObjectResult>(first.Result);
         var secondOk = Assert.IsType<OkObjectResult>(second.Result);
@@ -51,9 +51,9 @@ public sealed class IdempotentCreateControllerTests
     public async Task Order_with_the_same_key_and_a_different_body_answers_409_key_reused()
     {
         await using var h = await OrderHarness.CreateAsync();
-        await h.Controller().CreateOrder(h.Request(quantity: 1), Key, CancellationToken.None);
+        await h.Controller().CreateOrder(h.Request(quantity: 1), CancellationToken.None, Key);
 
-        var reused = await h.Controller().CreateOrder(h.Request(quantity: 5), Key, CancellationToken.None);
+        var reused = await h.Controller().CreateOrder(h.Request(quantity: 5), CancellationToken.None, Key);
 
         var conflict = Assert.IsType<ConflictObjectResult>(reused.Result);
         Assert.Equal(IdempotencyErrorCodes.KeyReused, CodeOf(conflict.Value));
@@ -67,8 +67,8 @@ public sealed class IdempotentCreateControllerTests
         await using var h = await OrderHarness.CreateAsync();
         var request = h.Request(quantity: 1);
 
-        var first = await h.Controller().CreateOrder(request, null, CancellationToken.None);
-        var second = await h.Controller().CreateOrder(request, null, CancellationToken.None);
+        var first = await h.Controller().CreateOrder(request, CancellationToken.None, null);
+        var second = await h.Controller().CreateOrder(request, CancellationToken.None, null);
 
         Assert.IsType<OkObjectResult>(first.Result);
         Assert.IsType<OkObjectResult>(second.Result);
@@ -82,8 +82,8 @@ public sealed class IdempotentCreateControllerTests
         await using var h = await OrderHarness.CreateAsync();
         var request = h.Request(quantity: 1);
 
-        var first = await h.Controller().CreateOrder(request, Key, CancellationToken.None);
-        var other = await h.Controller(h.OtherCustomerId).CreateOrder(request, Key, CancellationToken.None);
+        var first = await h.Controller().CreateOrder(request, CancellationToken.None, Key);
+        var other = await h.Controller(h.OtherCustomerId).CreateOrder(request, CancellationToken.None, Key);
 
         var firstId = ((CatalogOrderResponse)Assert.IsType<OkObjectResult>(first.Result).Value!).Id;
         var otherId = ((CatalogOrderResponse)Assert.IsType<OkObjectResult>(other.Result).Value!).Id;
@@ -101,12 +101,12 @@ public sealed class IdempotentCreateControllerTests
             Items = [new CreatePortalOrderItemRequest { ProductId = Guid.NewGuid(), Quantity = 1 }],
         };
 
-        var failed = await h.Controller().CreateOrder(unavailable, Key, CancellationToken.None);
+        var failed = await h.Controller().CreateOrder(unavailable, CancellationToken.None, Key);
         Assert.IsType<BadRequestObjectResult>(failed.Result);
         Assert.Equal(0, await h.Db.IdempotencyKeys.CountAsync());
 
         // The same key with a valid body now creates the order: the failed attempt held nothing.
-        var retry = await h.Controller().CreateOrder(h.Request(quantity: 1), Key, CancellationToken.None);
+        var retry = await h.Controller().CreateOrder(h.Request(quantity: 1), CancellationToken.None, Key);
         Assert.IsType<OkObjectResult>(retry.Result);
         Assert.Equal(1, await h.Db.CatalogOrders.CountAsync());
     }
@@ -118,7 +118,7 @@ public sealed class IdempotentCreateControllerTests
     {
         await using var h = await OrderHarness.CreateAsync();
 
-        var result = await h.Controller().CreateOrder(h.Request(quantity: 1), key, CancellationToken.None);
+        var result = await h.Controller().CreateOrder(h.Request(quantity: 1), CancellationToken.None, key);
 
         var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Equal(IdempotencyErrorCodes.KeyInvalid, CodeOf(bad.Value));
@@ -131,7 +131,7 @@ public sealed class IdempotentCreateControllerTests
         await using var h = await OrderHarness.CreateAsync();
 
         var result = await h.Controller().CreateOrder(
-            h.Request(quantity: 1), new string('k', 101), CancellationToken.None);
+            h.Request(quantity: 1), CancellationToken.None, new string('k', 101));
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Equal(0, await h.Db.CatalogOrders.CountAsync());
@@ -144,8 +144,8 @@ public sealed class IdempotentCreateControllerTests
         var h = ReservationHarness.Create(reservations);
         var request = ReservationRequest(startHour: 10);
 
-        var first = await h.Controller(h.CustomerId).Create(request, Key, CancellationToken.None);
-        var second = await h.Controller(h.CustomerId).Create(request, Key, CancellationToken.None);
+        var first = await h.Controller(h.CustomerId).Create(request, CancellationToken.None, Key);
+        var second = await h.Controller(h.CustomerId).Create(request, CancellationToken.None, Key);
 
         var firstCreated = Assert.IsType<CreatedResult>(first.Result);
         var secondCreated = Assert.IsType<CreatedResult>(second.Result);
@@ -163,9 +163,9 @@ public sealed class IdempotentCreateControllerTests
     {
         var reservations = new CountingReservationService();
         var h = ReservationHarness.Create(reservations);
-        await h.Controller(h.CustomerId).Create(ReservationRequest(startHour: 10), Key, CancellationToken.None);
+        await h.Controller(h.CustomerId).Create(ReservationRequest(startHour: 10), CancellationToken.None, Key);
 
-        var reused = await h.Controller(h.CustomerId).Create(ReservationRequest(startHour: 11), Key, CancellationToken.None);
+        var reused = await h.Controller(h.CustomerId).Create(ReservationRequest(startHour: 11), CancellationToken.None, Key);
 
         var conflict = Assert.IsType<ConflictObjectResult>(reused.Result);
         Assert.Equal(IdempotencyErrorCodes.KeyReused, CodeOf(conflict.Value));
@@ -179,8 +179,8 @@ public sealed class IdempotentCreateControllerTests
         var h = ReservationHarness.Create(reservations);
         var request = ReservationRequest(startHour: 10);
 
-        await h.Controller(h.CustomerId).Create(request, null, CancellationToken.None);
-        await h.Controller(h.CustomerId).Create(request, null, CancellationToken.None);
+        await h.Controller(h.CustomerId).Create(request, CancellationToken.None, null);
+        await h.Controller(h.CustomerId).Create(request, CancellationToken.None, null);
 
         Assert.Equal(2, reservations.CreateCalls);
         Assert.Equal(0, await h.Db().IdempotencyKeys.CountAsync());
@@ -193,8 +193,8 @@ public sealed class IdempotentCreateControllerTests
         var h = ReservationHarness.Create(reservations);
         var request = ReservationRequest(startHour: 10);
 
-        await h.Controller(h.CustomerId).Create(request, Key, CancellationToken.None);
-        await h.Controller(Guid.NewGuid()).Create(request, Key, CancellationToken.None);
+        await h.Controller(h.CustomerId).Create(request, CancellationToken.None, Key);
+        await h.Controller(Guid.NewGuid()).Create(request, CancellationToken.None, Key);
 
         Assert.Equal(2, reservations.CreateCalls);
         Assert.Equal(2, await h.Db().IdempotencyKeys.CountAsync());
@@ -207,11 +207,11 @@ public sealed class IdempotentCreateControllerTests
         var h = ReservationHarness.Create(reservations);
         var request = ReservationRequest(startHour: 10);
 
-        var failed = await h.Controller(h.CustomerId).Create(request, Key, CancellationToken.None);
+        var failed = await h.Controller(h.CustomerId).Create(request, CancellationToken.None, Key);
         Assert.IsType<ConflictObjectResult>(failed.Result);
         Assert.Equal(0, await h.Db().IdempotencyKeys.CountAsync());
 
-        var retry = await h.Controller(h.CustomerId).Create(request, Key, CancellationToken.None);
+        var retry = await h.Controller(h.CustomerId).Create(request, CancellationToken.None, Key);
         Assert.IsType<CreatedResult>(retry.Result);
         Assert.Equal(2, reservations.CreateCalls);
     }

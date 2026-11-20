@@ -330,8 +330,8 @@ public sealed class ReservationsController(
     [HttpPost]
     public async Task<ActionResult<ReservationResponseDto>> Create(
         [FromBody] CreateReservationRequestDto request,
-        [FromHeader(Name = IdempotencyHeader.Name)] string? idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromHeader(Name = IdempotencyHeader.Name)] string? idempotencyKey = null)
     {
         try
         {

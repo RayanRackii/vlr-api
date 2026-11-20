@@ -53,8 +53,8 @@ public sealed class CatalogPortalController(
     [HttpPost("orders")]
     public async Task<ActionResult<CatalogOrderResponse>> CreateOrder(
         [FromBody] CreatePortalOrderRequest request,
-        [FromHeader(Name = IdempotencyHeader.Name)] string? idempotencyKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromHeader(Name = IdempotencyHeader.Name)] string? idempotencyKey = null)
     {
         try
         {

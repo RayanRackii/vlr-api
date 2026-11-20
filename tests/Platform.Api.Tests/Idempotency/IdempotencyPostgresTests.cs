@@ -51,7 +51,7 @@ public sealed class IdempotencyPostgresTests : IClassFixture<PostgresContainerFi
                     CreatePortal(db, tenants),
                     new IdempotencyService(db, tenants, TimeProvider.System, FastOptions)),
                 seed.CustomerId);
-            return await controller.CreateOrder(request, "parallel-key", CancellationToken.None);
+            return await controller.CreateOrder(request, CancellationToken.None, "parallel-key");
         }));
 
         var bodies = results
@@ -95,7 +95,7 @@ public sealed class IdempotencyPostgresTests : IClassFixture<PostgresContainerFi
                     publicTenantBinder: null!,
                     new IdempotencyService(db, tenants, TimeProvider.System, FastOptions)),
                 seed.CustomerId);
-            return await controller.Create(request, "parallel-key", CancellationToken.None);
+            return await controller.Create(request, CancellationToken.None, "parallel-key");
         }));
 
         Assert.Equal(1, reservations.CreateCalls);
