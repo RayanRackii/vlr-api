@@ -34,6 +34,15 @@
 - [ ] **L4 (API-4):** um ativo pode virar alugável (configuração de aluguel ativa com `rentals` ativo) já com alocações de planejamento; elas continuam bloqueando no planejamento mas o calendário passa a ser o do aluguel, e os dois podem divergir. A ponte da API-4 decide: espelhar como `InternalUse` ou recusar a troca enquanto existirem.
 - [ ] Próximas: API-4 (ponte de Reservas e `externalBusy`), WEB-1/WEB-2 consomem estes endpoints.
 
+
+### Planejamento de recursos: ponte com Reservas para ativo alugável (2026-11-22, feat/planning-rentals-bridge)
+
+- [x] Alocação manual em ativo com configuração de aluguel ativa e `rentals` ativo (ativo "alugável") grava o `AssetAllocation` **e** a mesma reserva `InternalUse` do fluxo do Catálogo (Fase 0), pela porta única `IAssetOccupancyService`, na mesma transação; o vínculo fica em `AssetAllocation.ReservationItemId`. Iniciar, concluir, liberar, cancelar e editar mantêm as duas pontas coerentes (cancelar antes de iniciar libera a janela inteira; liberar depois de iniciar fecha a janela em liberação + limpeza, como o fix #315).
+- [x] Regras de janela do aluguel (janela ofertável, um dia só, 24 h) valem nesses ativos (422 `planning.unsupported_work_window`); reserva de cliente bloqueia a alocação e a alocação bloqueia o cliente (409 `planning.conflict` com `source` `reservation`/`allocation`). `PUT .../profile` continua recusando horário (409 `planning.rental_schedule_authority`).
+- [x] `externalBusy` da agenda devolve reservas de cliente (e reservas internas sem alocação, como pedido do Catálogo) de ativos alugáveis, anônimas. Selo do cronograma do aluguel cai para `reference_label`/`title` da alocação quando não há linha do Catálogo.
+- [x] Guarda ao desativar `rentals`: recusa com `AssetAllocation` não liberada que tem `ReservationItemId`; `catalog` conta as ligadas a item de pedido. Alocação com reserva espelho **não expira** (a reserva `InternalUse` vencida e não liberada segue bloqueando no aluguel, sem job para fechá-la).
+- [x] Ordem de lock: lock de módulos, linha do pedido/OS, linhas de `assets.assets` crescentes, depois `rentals.rental_assets` crescentes (dentro da porta). Nenhum caminho existente toma lock de rental asset e depois de ativo. Sem migration.
+- [ ] **L4 resolvido sem migrar:** alocação de planejamento anterior à ponte (sem reserva) continua bloqueando no planejamento e é conflito para novas alocações do ativo, mas cliente ainda consegue reservar por cima dela até ela ser liberada.
 ### Aparência do portal do cliente: imagem e textos da tela de login (2026-11-19, feat/portal-landing-appearance)
 
 - [x] Migration aditiva `AddTenantPortalLanding` (colunas nulas, sem backfill): `core.tenants` ganha `landing_image_key` (300), `landing_kicker` (60), `landing_headline` (120), `landing_subtitle` (240).

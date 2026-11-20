@@ -8,6 +8,7 @@ internal sealed class ReservationOccupancy
 {
     public Guid Id { get; init; }
     public Guid TenantId { get; init; }
+    public ReservationPurpose Purpose { get; init; }
     public DateTimeOffset StartDateTime { get; init; }
     public DateTimeOffset EndDateTime { get; init; }
 
@@ -18,6 +19,7 @@ internal sealed class ReservationOccupancy
             {
                 Id = r.Id,
                 TenantId = r.TenantId,
+                Purpose = r.Purpose,
                 StartDateTime = r.StartDateTime,
                 // Future plans keep their bounded end. Only overdue, unreleased InternalUse
                 // extends indefinitely; release persists the actual end before marking Completed.

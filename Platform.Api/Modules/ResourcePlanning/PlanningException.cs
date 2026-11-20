@@ -31,6 +31,13 @@ public sealed class PlanningException(
     public const string UnavailableForbiddenCode = "planning.unavailable_forbidden";
     public const string CancelForbiddenCode = "planning.cancel_forbidden";
     public const string InvalidRangeCode = "planning.invalid_range";
+    public const string UnsupportedWorkWindowCode = "planning.unsupported_work_window";
+
+    /// <summary>
+    /// The <c>hoursViolation</c> reason a preview reports when the rental schedule of a rental-backed
+    /// asset rejects the window (same value as the rentals work-window validation code).
+    /// </summary>
+    public const string UnsupportedWorkWindowReason = "unsupported_work_window";
 
     public int StatusCode { get; } = statusCode;
 
@@ -70,6 +77,17 @@ public sealed class PlanningException(
             ConflictCode,
             "The asset is already occupied in this window.",
             conflicts);
+
+    /// <summary>
+    /// A rental-backed asset keeps the rental schedule rules: the occupied window must be an
+    /// offerable booking window within one day. 422, like an hours violation.
+    /// </summary>
+    public static PlanningException UnsupportedWorkWindow(string message) =>
+        new(
+            StatusCodes.Status422UnprocessableEntity,
+            UnsupportedWorkWindowCode,
+            message,
+            hoursViolation: UnsupportedWorkWindowReason);
 
     public static PlanningException OutsideWorkingHours(string reason) =>
         new(

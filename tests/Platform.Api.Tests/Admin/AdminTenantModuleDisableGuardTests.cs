@@ -247,6 +247,81 @@ public sealed class AdminTenantModuleDisableGuardTests
             () => harness.UpdateModulesAsync(b, [PlatformModules.Catalog, PlatformModules.Rentals]));
     }
 
+    [Fact]
+    public async Task Disabling_rentals_is_rejected_while_a_bridged_planning_allocation_is_unreleased()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, b) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id,
+            AllocationStatus.Scheduled,
+            DateTimeOffset.UtcNow.AddDays(2),
+            DateTimeOffset.UtcNow.AddDays(2).AddHours(1),
+            reservationItemId: Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.ResourcePlanning]));
+
+        Assert.Contains(
+            "Cannot disable rentals: 1 unreleased planning allocation(s) are backed by a rental reservation",
+            ex.Message,
+            StringComparison.Ordinal);
+        Assert.Contains(PlatformModules.Rentals, await harness.ActiveModuleNamesAsync(a.Id));
+
+        // Tenant B has no bridged allocation: A's row must not block B.
+        await harness.UpdateModulesAsync(b, [PlatformModules.Catalog, PlatformModules.ResourcePlanning]);
+        Assert.DoesNotContain(PlatformModules.Rentals, await harness.ActiveModuleNamesAsync(b.Id));
+    }
+
+    [Fact]
+    public async Task Disabling_rentals_is_allowed_with_a_planning_only_allocation()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id, AllocationStatus.Running, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddHours(1));
+
+        await harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.ResourcePlanning]);
+
+        Assert.DoesNotContain(PlatformModules.Rentals, await harness.ActiveModuleNamesAsync(a.Id));
+    }
+
+    [Theory]
+    [InlineData(AllocationStatus.Released)]
+    [InlineData(AllocationStatus.Cancelled)]
+    public async Task Released_or_cancelled_bridged_allocations_do_not_block_disabling_rentals(AllocationStatus status)
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id,
+            status,
+            DateTimeOffset.UtcNow.AddDays(2),
+            DateTimeOffset.UtcNow.AddDays(2).AddHours(1),
+            reservationItemId: Guid.NewGuid());
+
+        await harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.ResourcePlanning]);
+
+        Assert.DoesNotContain(PlatformModules.Rentals, await harness.ActiveModuleNamesAsync(a.Id));
+    }
+
+    [Fact]
+    public async Task An_expired_looking_bridged_allocation_still_blocks_disabling_resource_planning()
+    {
+        // A bridged allocation never expires: its reservation keeps blocking in rentals.
+        await using var harness = await Harness.CreateAsync();
+        var (a, _) = await harness.CreatePairAsync();
+        await harness.SeedPlanningAllocationAsync(
+            a.Id,
+            AllocationStatus.Scheduled,
+            DateTimeOffset.UtcNow.AddDays(-3),
+            DateTimeOffset.UtcNow.AddDays(-3).AddHours(1),
+            reservationItemId: Guid.NewGuid());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]));
+    }
+
     private sealed class Harness : IAsyncDisposable
     {
         private Harness(AppDbContext db, FakeTenantProvider tenantProvider, AdminTenantService service)
@@ -337,7 +412,8 @@ public sealed class AdminTenantModuleDisableGuardTests
             AllocationStatus status,
             DateTimeOffset start,
             DateTimeOffset end,
-            AssetAllocationSource source = AssetAllocationSource.Manual)
+            AssetAllocationSource source = AssetAllocationSource.Manual,
+            Guid? reservationItemId = null)
         {
             var previous = TenantProvider.TenantId;
             TenantProvider.TenantId = null;
@@ -354,6 +430,7 @@ public sealed class AdminTenantModuleDisableGuardTests
                 TimeZoneId = "America/Sao_Paulo",
                 Status = status,
                 Source = source,
+                ReservationItemId = reservationItemId,
             });
             await Db.SaveChangesAsync();
             TenantProvider.TenantId = previous;

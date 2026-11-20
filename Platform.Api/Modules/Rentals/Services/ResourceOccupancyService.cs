@@ -240,6 +240,101 @@ public sealed class ResourceOccupancyService(TimeProvider? timeProvider = null) 
         reservation.Touch();
     }
 
+    public async Task<IReadOnlyList<ResourceOccupancyWindow>> ListBlockingWindowsAsync(
+        AppDbContext db,
+        Guid tenantId,
+        IReadOnlyCollection<Guid> rentalAssetIds,
+        DateTimeOffset start,
+        DateTimeOffset end,
+        CancellationToken cancellationToken)
+    {
+        var ids = rentalAssetIds.Where(id => id != Guid.Empty).Distinct().ToList();
+        if (ids.Count == 0 || end <= start)
+        {
+            return [];
+        }
+
+        var rows = await (
+            from item in db.ReservationItems.AsNoTracking()
+            join reservation in ReservationOccupancy.BlockingWindows(
+                db.Reservations.AsNoTracking(), clock.GetUtcNow())
+                on item.ReservationId equals reservation.Id
+            where item.TenantId == tenantId
+                  && reservation.TenantId == tenantId
+                  && ids.Contains(item.RentalAssetId)
+                  && reservation.StartDateTime < end
+                  && reservation.EndDateTime > start
+            select new
+            {
+                item.RentalAssetId,
+                ReservationId = reservation.Id,
+                ReservationItemId = item.Id,
+                reservation.Purpose,
+                reservation.StartDateTime,
+                reservation.EndDateTime,
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .OrderBy(r => r.StartDateTime)
+            .ThenBy(r => r.ReservationItemId)
+            .Select(r => new ResourceOccupancyWindow(
+                r.RentalAssetId,
+                r.ReservationId,
+                r.ReservationItemId,
+                r.Purpose,
+                r.StartDateTime,
+                r.EndDateTime))
+            .ToList();
+    }
+
+    public async Task RescheduleInternalUseOccupancyAsync(
+        AppDbContext db,
+        Guid tenantId,
+        Guid reservationItemId,
+        DateTimeOffset occupiedStart,
+        DateTimeOffset occupiedEnd,
+        CancellationToken cancellationToken)
+    {
+        if (occupiedEnd <= occupiedStart)
+        {
+            throw new ArgumentException("occupiedEnd must be greater than occupiedStart.");
+        }
+
+        var item = await db.ReservationItems
+            .Include(i => i.Reservation)
+            .FirstOrDefaultAsync(
+                i => i.Id == reservationItemId && i.TenantId == tenantId,
+                cancellationToken)
+            ?? throw new KeyNotFoundException($"Reservation item '{reservationItemId}' was not found.");
+
+        var reservation = item.Reservation;
+        if (reservation.Purpose != ReservationPurpose.InternalUse)
+        {
+            throw new InvalidOperationException(
+                $"Reservation '{reservation.Id}' is not an InternalUse reservation.");
+        }
+
+        if (reservation.Status != ReservationStatus.Confirmed)
+        {
+            throw new InvalidOperationException(
+                $"Reservation '{reservation.Id}' is {reservation.Status}; only a Confirmed InternalUse reservation can move.");
+        }
+
+        var conflict = await FindPersistedConflictAsync(
+            db, tenantId, item.RentalAssetId, occupiedStart, occupiedEnd, excludeReservationId: reservation.Id, cancellationToken);
+        if (conflict is { } conflictingReservationId)
+        {
+            throw new ResourceUnavailableException(
+                item.RentalAssetId,
+                $"Resource '{item.RentalAssetId}' conflicts with reservation '{conflictingReservationId}'.");
+        }
+
+        reservation.StartDateTime = occupiedStart;
+        reservation.EndDateTime = occupiedEnd;
+        reservation.Touch();
+    }
+
     public async Task<EligibleResource?> ResolveEligibleResourceAsync(
         AppDbContext db,
         Guid tenantId,

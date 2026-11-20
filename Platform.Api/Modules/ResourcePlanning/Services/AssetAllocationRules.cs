@@ -12,7 +12,11 @@ namespace Platform.Api.Modules.ResourcePlanning.Services;
 /// <c>Scheduled</c> blocks its occupied window. <c>Running</c> and <c>Cleaning</c> block from the
 /// occupied start until released, with no implicit end. <c>Released</c> and <c>Cancelled</c> never
 /// block. A manual allocation that was never started stops blocking once its occupied window has
-/// ended (owner decision, ADR 0010); allocations of other sources keep blocking.
+/// ended (owner decision, ADR 0010); allocations of other sources keep blocking. An allocation
+/// bridged to a rental-backed asset (it has a <c>ReservationItemId</c>) never expires: its mirror
+/// <c>InternalUse</c> reservation keeps blocking in rentals until it is released or cancelled (an
+/// overdue unreleased internal-use reservation blocks, with no job to close it), so expiring only
+/// the planning side would let the two calendars disagree.
 /// </remarks>
 public static class AssetAllocationRules
 {
@@ -22,6 +26,7 @@ public static class AssetAllocationRules
     public static bool IsExpired(AssetAllocation allocation, DateTimeOffset now) =>
         allocation.Status == AllocationStatus.Scheduled
         && allocation.Source == AssetAllocationSource.Manual
+        && allocation.ReservationItemId is null
         && allocation.OccupiedEnd <= now;
 
     public static bool IsBlocking(AssetAllocation allocation, DateTimeOffset now) =>

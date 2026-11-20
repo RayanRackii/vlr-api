@@ -595,6 +595,7 @@ public sealed class PlanningAllocationsHttpTests
                     services.AddScoped<IPermissionResolver, PermissionResolver>();
                     services.AddScoped<IRbacActorAccessor, RbacActorAccessor>();
                     services.AddScoped<IPlanningCallerAccessor, PlanningCallerAccessor>();
+                    services.AddScoped<Platform.Api.Modules.Rentals.Contracts.IResourceOccupancyService, Platform.Api.Modules.Rentals.Services.ResourceOccupancyService>();
                     services.AddScoped<IAssetOccupancyService, AssetOccupancyService>();
                     services.AddScoped<IAssetAllocationService, AssetAllocationService>();
                     services.AddScoped<IPlanningAgendaService, PlanningAgendaService>();

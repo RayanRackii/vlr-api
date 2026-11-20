@@ -235,6 +235,30 @@ internal sealed class AvailabilityReadModel(
                         WorkEnd: ordered.Max(x => x.PlannedWorkEnd));
                 });
 
+        // Manual planning allocations on a rental-backed asset write an InternalUse reservation with
+        // no catalog row. The cell falls back to the allocation itself: its reference label (or
+        // title) as the name and its planned work window for the buffer shading. A catalog row,
+        // when there is one, wins.
+        var manualRows = internalUseReservationItemIds.Count == 0
+            ? []
+            : await dbContext.AssetAllocations.AsNoTracking()
+                .Where(a => a.TenantId == tenantId
+                    && a.ReservationItemId != null
+                    && internalUseReservationItemIds.Contains(a.ReservationItemId!.Value))
+                .Select(a => new
+                {
+                    a.ReservationItemId,
+                    Label = a.ReferenceLabel ?? a.Title,
+                    a.PlannedWorkStart,
+                    a.PlannedWorkEnd,
+                })
+                .ToListAsync(cancellationToken);
+        var manualByReservationItemId = manualRows
+            .Where(x => x.ReservationItemId != null)
+            .ToDictionary(
+                x => x.ReservationItemId!.Value,
+                x => (x.Label, x.PlannedWorkStart, x.PlannedWorkEnd));
+
         return slots
             .Select(s =>
             {
@@ -262,19 +286,36 @@ internal sealed class AvailabilityReadModel(
                     }
                 }
 
+                (string Label, DateTimeOffset WorkStart, DateTimeOffset WorkEnd)? manual = null;
+                if (allocation is null && itemIdsByKey.TryGetValue((rid, s.RentalAssetId), out var manualItemIds))
+                {
+                    foreach (var itemId in manualItemIds)
+                    {
+                        if (manualByReservationItemId.TryGetValue(itemId, out var found))
+                        {
+                            manual = (found.Label, found.PlannedWorkStart, found.PlannedWorkEnd);
+                            break;
+                        }
+                    }
+                }
+
                 return s with
                 {
                     Quantity = quantities.TryGetValue((rid, s.RentalAssetId), out var q) ? q : null,
-                    CustomerName = names.GetValueOrDefault(rid),
+                    CustomerName = names.GetValueOrDefault(rid) ?? manual?.Label,
                     IsInternalUseOrigin = purposeByKey.TryGetValue((rid, s.RentalAssetId), out var purpose)
                         && purpose == ReservationPurpose.InternalUse,
                     OwningCatalogOrderId = allocation?.OrderId,
                     WorkStartTime = allocation is { } a1
                         ? TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(a1.WorkStart, zone).DateTime)
-                        : null,
+                        : manual is { } m1
+                            ? TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(m1.WorkStart, zone).DateTime)
+                            : null,
                     WorkEndTime = allocation is { } a2
                         ? TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(a2.WorkEnd, zone).DateTime)
-                        : null,
+                        : manual is { } m2
+                            ? TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(m2.WorkEnd, zone).DateTime)
+                            : null,
                 };
             })
             .ToList();

@@ -1,3 +1,4 @@
+using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Rentals.Contracts;
@@ -99,6 +100,38 @@ public interface IResourceOccupancyService
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Read-only: every blocking reservation window (<c>CustomerBooking</c> and <c>InternalUse</c>
+    /// alike, the same blocking rule as <see cref="CheckAvailabilityAsync"/>) of the given rental
+    /// assets that overlaps the half-open interval <c>[start, end)</c>. An overdue, unreleased
+    /// <c>InternalUse</c> reservation reports <see cref="DateTimeOffset.MaxValue"/> as its end.
+    /// Used by resource planning to name the blockers of a window and to draw customer
+    /// reservations as busy time. Does not lock or mutate anything.
+    /// </summary>
+    Task<IReadOnlyList<ResourceOccupancyWindow>> ListBlockingWindowsAsync(
+        AppDbContext db,
+        Guid tenantId,
+        IReadOnlyCollection<Guid> rentalAssetIds,
+        DateTimeOffset start,
+        DateTimeOffset end,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Moves the window of a still-open <c>InternalUse</c> reservation (the mirror of an edited
+    /// allocation). Revalidates availability for the new window under the resource lock, leaving the
+    /// reservation itself out of the check, and throws <see cref="ResourceUnavailableException"/>
+    /// when another blocking reservation overlaps. Does not open a transaction or save; the caller
+    /// must hold the resource lock (<see cref="LockResourcesAsync"/>) and commits alongside its own
+    /// allocation update.
+    /// </summary>
+    Task RescheduleInternalUseOccupancyAsync(
+        AppDbContext db,
+        Guid tenantId,
+        Guid reservationItemId,
+        DateTimeOffset occupiedStart,
+        DateTimeOffset occupiedEnd,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Loads the given RentalAsset (scoped to <paramref name="tenantId"/>) and reports whether it
     /// is currently eligible for production use (active, asset not under maintenance/scheduled for
     /// deletion), together with its display name. Returns <c>null</c> if the resource does not
@@ -174,3 +207,16 @@ public enum ResourceOccupancyConflictSource
     PersistedReservation,
     TentativeBatch,
 }
+
+/// <summary>
+/// One blocking reservation window on a rental asset, as <see cref="IResourceOccupancyService.ListBlockingWindowsAsync"/>
+/// reports it. <see cref="ReservationItemId"/> is the link an allocation stores when it mirrors the
+/// reservation.
+/// </summary>
+public sealed record ResourceOccupancyWindow(
+    Guid RentalAssetId,
+    Guid ReservationId,
+    Guid ReservationItemId,
+    ReservationPurpose Purpose,
+    DateTimeOffset Start,
+    DateTimeOffset End);

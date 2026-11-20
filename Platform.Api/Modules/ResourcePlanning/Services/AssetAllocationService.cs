@@ -62,17 +62,20 @@ public sealed class AssetAllocationService(
         var kind = ParseKind(request.Kind);
 
         var asset = await occupancy.ResolvePlannableAssetAsync(tenantId, request.AssetId, cancellationToken);
-        var window = occupancy.ValidateWindow(
-            asset, kind, request.WorkStart, request.WorkEnd, request.PrepMinutes, request.CleanupMinutes);
+        var window = await occupancy.ValidateWindowAsync(
+            tenantId, asset, kind, request.WorkStart, request.WorkEnd, request.PrepMinutes, request.CleanupMinutes, cancellationToken);
         var availability = await occupancy.CheckAvailabilityAsync(
             tenantId, asset, kind, window, excludeAllocationId: null, cancellationToken);
 
+        // A window the rental schedule rejects is reported like an hours violation, by a stable code.
+        var violation = window.HoursViolation
+            ?? (window.RentalWindowError is null ? null : PlanningException.UnsupportedWorkWindowReason);
         return new AllocationPreviewResponse(
-            window.HoursViolation is null && availability.IsFree,
+            violation is null && availability.IsFree,
             window.OccupiedStart,
             window.OccupiedEnd,
             availability.Conflicts,
-            window.HoursViolation);
+            violation);
     }
 
     public async Task<AssetAllocationResponse> CreateAsync(
@@ -95,11 +98,16 @@ public sealed class AssetAllocationService(
         // Everything below is read after the lock: a concurrent create on this asset has either
         // committed (and is visible to the overlap query) or is waiting behind us.
         var asset = await occupancy.ResolvePlannableAssetAsync(tenantId, request.AssetId, cancellationToken);
-        var window = occupancy.ValidateWindow(
-            asset, kind, request.WorkStart, request.WorkEnd, request.PrepMinutes, request.CleanupMinutes);
+        var window = await occupancy.ValidateWindowAsync(
+            tenantId, asset, kind, request.WorkStart, request.WorkEnd, request.PrepMinutes, request.CleanupMinutes, cancellationToken);
         if (window.HoursViolation is { } violation)
         {
             throw PlanningException.OutsideWorkingHours(violation);
+        }
+
+        if (window.RentalWindowError is { } rentalWindowError)
+        {
+            throw PlanningException.UnsupportedWorkWindow(rentalWindowError);
         }
 
         var availability = await occupancy.CheckAvailabilityAsync(
@@ -109,8 +117,10 @@ public sealed class AssetAllocationService(
             throw PlanningException.Conflict(availability.Conflicts);
         }
 
-        var allocation = occupancy.Occupy(
-            tenantId, asset, new NewAllocation(kind, title, notes, window, caller.UserId));
+        // On a rental-backed asset this also writes the mirror InternalUse reservation, in this
+        // transaction; the one SaveChanges below commits both stores or neither.
+        var allocation = await occupancy.OccupyAsync(
+            tenantId, asset, new NewAllocation(kind, title, notes, window, caller.UserId), cancellationToken);
 
         await SaveAsync(request.AssetId, cancellationToken);
         await CommitAsync(transaction, cancellationToken);
@@ -209,16 +219,23 @@ public sealed class AssetAllocationService(
             // stays possible on an asset that has been closed since.
             var asset = await occupancy.ResolvePlannableAssetAsync(tenantId, assetId, cancellationToken);
             // The buffers the allocation holds today carry over unless the caller changes them.
-            var window = occupancy.ValidateWindow(
+            var window = await occupancy.ValidateWindowAsync(
+                tenantId,
                 asset,
                 allocation.Kind,
                 request.WorkStart ?? allocation.PlannedWorkStart,
                 request.WorkEnd ?? allocation.PlannedWorkEnd,
                 request.PrepMinutes ?? (int)(allocation.PlannedWorkStart - allocation.OccupiedStart).TotalMinutes,
-                request.CleanupMinutes ?? (int)(allocation.OccupiedEnd - allocation.PlannedWorkEnd).TotalMinutes);
+                request.CleanupMinutes ?? (int)(allocation.OccupiedEnd - allocation.PlannedWorkEnd).TotalMinutes,
+                cancellationToken);
             if (window.HoursViolation is { } violation)
             {
                 throw PlanningException.OutsideWorkingHours(violation);
+            }
+
+            if (window.RentalWindowError is { } rentalWindowError)
+            {
+                throw PlanningException.UnsupportedWorkWindow(rentalWindowError);
             }
 
             var availability = await occupancy.CheckAvailabilityAsync(
@@ -227,6 +244,9 @@ public sealed class AssetAllocationService(
             {
                 throw PlanningException.Conflict(availability.Conflicts);
             }
+
+            // A bridged allocation moves its mirror reservation with it, in this transaction.
+            await occupancy.RescheduleAsync(tenantId, allocation, window, cancellationToken);
 
             allocation.PlannedWorkStart = window.WorkStart;
             allocation.PlannedWorkEnd = window.WorkEnd;
