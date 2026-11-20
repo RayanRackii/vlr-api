@@ -122,6 +122,113 @@ public sealed class StaffScheduleProjectionTests
         Assert.Null(slot2.WorkEndTime);
     }
 
+    [Theory]
+    [InlineData(null, "Calibrate printer")]
+    [InlineData("Pedido 12", "Pedido 12")]
+    public async Task Staff_day_falls_back_to_the_planning_allocation_label_when_there_is_no_catalog_row(
+        string? referenceLabel, string expectedBadge)
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        await SeedManualAllocationMirrorAsync(
+            h, new TimeOnly(10, 0), new TimeOnly(11, 0), prepMinutes: 15, cleanupMinutes: 15, referenceLabel);
+
+        var day = await Schedule(h).GetDayAsync(Day, null, customerFacing: false, default);
+
+        var slot = Assert.Single(day.Slots, s => s.RentalAssetId == h.Primary.Id && s.Status == SlotStatus.Booked);
+        Assert.True(slot.IsInternalUseOrigin);
+        Assert.Equal(expectedBadge, slot.CustomerName);
+        Assert.Null(slot.OwningCatalogOrderId);
+        Assert.Equal(new TimeOnly(10, 0), slot.WorkStartTime);
+        Assert.Equal(new TimeOnly(11, 0), slot.WorkEndTime);
+        Assert.Equal(new TimeOnly(9, 45), slot.StartTime);
+        Assert.Equal(new TimeOnly(11, 15), slot.EndTime);
+    }
+
+    [Fact]
+    public async Task Public_day_never_carries_the_planning_allocation_label()
+    {
+        await using var h = await AvailabilityHarness.CreateAsync();
+        await SeedManualAllocationMirrorAsync(
+            h, new TimeOnly(10, 0), new TimeOnly(11, 0), prepMinutes: 15, cleanupMinutes: 15, referenceLabel: null);
+
+        var day = await Schedule(h).GetDayAsync(Day, null, customerFacing: true, default);
+
+        Assert.DoesNotContain(day.Slots, s => s.CustomerName == "Calibrate printer"
+            || s.IsInternalUseOrigin || s.WorkStartTime is not null);
+    }
+
+    /// <summary>
+    /// What a manual allocation on a rental-backed asset leaves in rentals: an InternalUse
+    /// reservation with no customer name and no catalog row, plus the planning allocation that
+    /// mirrors it (linked by the reservation item id).
+    /// </summary>
+    private static async Task SeedManualAllocationMirrorAsync(
+        AvailabilityHarness h,
+        TimeOnly workStart,
+        TimeOnly workEnd,
+        int prepMinutes,
+        int cleanupMinutes,
+        string? referenceLabel)
+    {
+        h.Primary.TotalQuantity = 1;
+        await h.Db.SaveChangesAsync();
+
+        var occupiedStart = workStart.AddMinutes(-prepMinutes);
+        var occupiedEnd = workEnd.AddMinutes(cleanupMinutes);
+
+        var reservation = new Reservation
+        {
+            Purpose = ReservationPurpose.InternalUse,
+            TenantId = h.Tenant.Id,
+            UnitId = h.Unit.Id,
+            Status = ReservationStatus.Confirmed,
+            StartDateTime = BrazilTimeZone.AtLocal(Day, occupiedStart),
+            EndDateTime = BrazilTimeZone.AtLocal(Day, occupiedEnd),
+            TotalAmount = 0,
+            DepositPaid = 0,
+        };
+        var item = new ReservationItem
+        {
+            TenantId = h.Tenant.Id,
+            ReservationId = reservation.Id,
+            RentalAssetId = h.Primary.Id,
+            Quantity = 1,
+            UnitPrice = 0,
+            SubTotal = 0,
+        };
+        reservation.AddItem(item);
+
+        var slot = new Slot
+        {
+            TenantId = h.Tenant.Id,
+            RentalAssetId = h.Primary.Id,
+            Date = Day,
+            StartTime = occupiedStart,
+            EndTime = occupiedEnd,
+            OccupancyKindId = h.Open.Id,
+            Status = SlotStatus.Booked,
+            ReservationId = reservation.Id,
+        };
+
+        var allocation = new AssetAllocation
+        {
+            TenantId = h.Tenant.Id,
+            AssetId = h.Primary.AssetId,
+            UnitId = h.Unit.Id,
+            Title = "Calibrate printer",
+            ReferenceLabel = referenceLabel,
+            PlannedWorkStart = BrazilTimeZone.AtLocal(Day, workStart),
+            PlannedWorkEnd = BrazilTimeZone.AtLocal(Day, workEnd),
+            OccupiedStart = BrazilTimeZone.AtLocal(Day, occupiedStart),
+            OccupiedEnd = BrazilTimeZone.AtLocal(Day, occupiedEnd),
+            TimeZoneId = "America/Sao_Paulo",
+            ReservationItemId = item.Id,
+        };
+
+        h.Db.AddRange(reservation, slot, allocation);
+        await h.Db.SaveChangesAsync();
+    }
+
     private static async Task<(Guid ReservationId, Guid OrderId)> SeedInternalUseAllocationAsync(
         AvailabilityHarness h, TimeOnly workStart, TimeOnly workEnd, int prepMinutes, int cleanupMinutes)
     {
