@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets;
+using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Jobs;
@@ -36,6 +37,8 @@ public sealed class DataRetentionJob(
                     """,
                     cancellationToken);
             }
+
+            await DeleteExpiredIdempotencyKeysAsync(now, cancellationToken);
 
             var expiredCategoryIds = await dbContext.AssetCategories
                 .Where(category =>
@@ -160,6 +163,26 @@ public sealed class DataRetentionJob(
             logger.LogError(ex, "DataRetentionJob failed.");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Idempotency keys live 24 hours (<see cref="IdempotencyKey.Retention"/>). The rows are
+    /// transient replay bookkeeping, deleted across all tenants. Like the other sweeps here, this runs inside the
+    /// job's <see cref="PlatformScope"/>, which lifts the tenant filter, so the plain query sees every tenant.
+    /// </summary>
+    private async Task DeleteExpiredIdempotencyKeysAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var expired = await dbContext.IdempotencyKeys
+            .Where(key => key.ExpiresAt <= now)
+            .ToListAsync(cancellationToken);
+        if (expired.Count == 0)
+        {
+            return;
+        }
+
+        dbContext.IdempotencyKeys.RemoveRange(expired);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted {Count} expired idempotency key(s).", expired.Count);
     }
 
     private async Task<bool> TryHardDeleteAsync(

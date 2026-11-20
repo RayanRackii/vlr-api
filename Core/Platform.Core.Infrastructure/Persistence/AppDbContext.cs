@@ -35,6 +35,8 @@ public class AppDbContext : DbContext
 
     public DbSet<TenantSetting> TenantSettings => Set<TenantSetting>();
 
+    public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
+
     public DbSet<User> Users => Set<User>();
 
     public DbSet<Unit> Units => Set<Unit>();

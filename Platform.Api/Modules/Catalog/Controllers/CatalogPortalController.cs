@@ -20,8 +20,12 @@ namespace Platform.Api.Modules.Catalog.Controllers;
 [RequireActiveModule(PlatformModules.Catalog)]
 [Route("api/catalog/portal")]
 public sealed class CatalogPortalController(
-    ICatalogPortalService portalService) : ControllerBase
+    ICatalogPortalService portalService,
+    IIdempotencyService? idempotency = null) : ControllerBase
 {
+    /// <summary>Idempotency scope of <c>POST orders</c>.</summary>
+    public const string CreateOrderIdempotencyScope = "catalog.portal.order.create";
+
     [HttpGet("products")]
     public async Task<ActionResult<IReadOnlyList<PortalProductResponse>>> ListProducts(
         [FromQuery] string? search,
@@ -41,18 +45,42 @@ public sealed class CatalogPortalController(
         return product is null ? NotFound() : Ok(product);
     }
 
+    /// <summary>
+    /// Creates an order for the authenticated customer. The optional <c>Idempotency-Key</c> header
+    /// (1 to 100 characters) makes a retry return the original order instead of creating another one;
+    /// reusing a key with a different body answers 409 <c>idempotency.key_reused</c>.
+    /// </summary>
     [HttpPost("orders")]
     public async Task<ActionResult<CatalogOrderResponse>> CreateOrder(
         [FromBody] CreatePortalOrderRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromHeader(Name = IdempotencyHeader.Name)] string? idempotencyKey = null)
     {
         try
         {
-            var order = await portalService.CreateOrderAsync(
-                ResolveCustomerId(),
+            var customerId = ResolveCustomerId();
+            if (idempotencyKey is null)
+            {
+                return Ok(await portalService.CreateOrderAsync(customerId, request, cancellationToken));
+            }
+
+            if (this.ValidateIdempotencyKey(idempotencyKey) is { } invalidKey)
+            {
+                return invalidKey;
+            }
+
+            return await this.CreateIdempotentAsync(
+                idempotency,
+                CreateOrderIdempotencyScope,
+                customerId,
+                idempotencyKey,
                 request,
+                StatusCodes.Status200OK,
+                () => portalService.CreateOrderAsync(customerId, request, cancellationToken),
+                order => order.Id,
+                async existingId => await portalService.GetOrderAsync(customerId, existingId, cancellationToken),
+                location: null,
                 cancellationToken);
-            return Ok(order);
         }
         catch (ArgumentException ex)
         {

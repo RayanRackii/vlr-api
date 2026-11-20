@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Features.CreateTenant;
 using Platform.Api.Http;
 using Platform.Api.Jobs;
@@ -62,6 +63,8 @@ try
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
     builder.Services.AddScoped<ITrialGuard, TrialGuard>();
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton(new IdempotencyOptions());
+    builder.Services.AddScoped<IIdempotencyService, IdempotencyService>();
     builder.Services.AddCorePersistence(
         connectionString,
         builder.Configuration.GetValue<int?>("Database:MaxPoolSize"));

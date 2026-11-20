@@ -22,6 +22,16 @@ public interface IReservationService
         Guid customerId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// One of the customer's own bookings, or null when it does not exist or belongs to someone else.
+    /// The default reads <see cref="ListMineAsync"/>; the service overrides it with a single-row query.
+    /// </summary>
+    async Task<ReservationResponseDto?> GetMineAsync(
+        Guid customerId,
+        Guid reservationId,
+        CancellationToken cancellationToken) =>
+        (await ListMineAsync(customerId, cancellationToken)).FirstOrDefault(r => r.Id == reservationId);
+
     Task<IReadOnlyList<ReservationResponseDto>> ListAdminAsync(
         DateOnly? from,
         DateOnly? to,

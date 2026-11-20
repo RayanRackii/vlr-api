@@ -715,8 +715,20 @@ public sealed class ReservationService(
         }
     }
 
-    public async Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
+    public Task<IReadOnlyList<ReservationResponseDto>> ListMineAsync(
         Guid customerId,
+        CancellationToken cancellationToken) =>
+        ReadMineAsync(customerId, reservationId: null, cancellationToken);
+
+    public async Task<ReservationResponseDto?> GetMineAsync(
+        Guid customerId,
+        Guid reservationId,
+        CancellationToken cancellationToken) =>
+        (await ReadMineAsync(customerId, reservationId, cancellationToken)).FirstOrDefault();
+
+    private async Task<IReadOnlyList<ReservationResponseDto>> ReadMineAsync(
+        Guid customerId,
+        Guid? reservationId,
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
@@ -726,7 +738,9 @@ public sealed class ReservationService(
             .Include(r => r.Items)
                 .ThenInclude(i => i.RentalAsset)
                     .ThenInclude(a => a.Asset)
-            .Where(r => r.Purpose == ReservationPurpose.CustomerBooking && r.CustomerId == customerId)
+            .Where(r => r.Purpose == ReservationPurpose.CustomerBooking
+                && r.CustomerId == customerId
+                && (reservationId == null || r.Id == reservationId))
             .OrderByDescending(r => r.StartDateTime)
             .ToListAsync(cancellationToken);
 
