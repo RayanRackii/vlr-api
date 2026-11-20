@@ -115,23 +115,26 @@ public sealed class TenantPurger(
             }
         }
 
-        var tenantStoragePrefix = $"{id:N}/";
+        var tenantStoragePrefixes = StoragePrefixes(id);
         foreach (var bucket in new[]
                  {
                      storageOptions.Value.PublicBucket,
                      storageOptions.Value.PrivateBucket,
                  }.Distinct(StringComparer.Ordinal))
         {
-            try
+            foreach (var tenantStoragePrefix in tenantStoragePrefixes)
             {
-                await storageProvider.DeletePrefixAsync(bucket, tenantStoragePrefix, cancellationToken);
-            }
-            catch (Exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                logger.LogWarning(
-                    "Tenant storage purge failed after database deletion. Bucket: {Bucket}; Prefix: {Prefix}",
-                    bucket,
-                    tenantStoragePrefix);
+                try
+                {
+                    await storageProvider.DeletePrefixAsync(bucket, tenantStoragePrefix, cancellationToken);
+                }
+                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "Tenant storage purge failed after database deletion. Bucket: {Bucket}; Prefix: {Prefix}",
+                        bucket,
+                        tenantStoragePrefix);
+                }
             }
         }
 
@@ -152,6 +155,12 @@ public sealed class TenantPurger(
         }
     }
 
+    /// <summary>
+    /// Storage prefixes owned by a tenant: the tenant root and the portal landing images
+    /// (<c>tenants/{id}/landing/...</c>).
+    /// </summary>
+    internal static IReadOnlyList<string> StoragePrefixes(Guid tenantId) =>
+        [$"{tenantId:N}/", $"tenants/{tenantId:N}/"];
 
     /// <summary>
     /// Include every TenantId row (including nullable claims), then its FK dependents.

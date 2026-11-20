@@ -46,7 +46,12 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
         AssertSharedRowsUntouched(before, after);
         Assert.Equal([scope.TargetOnlyAuthId], scope.Auth.DeletedIds);
         Assert.Equal(
-            [("catalog-public", $"{scope.TargetId:N}/"), ("catalog-private", $"{scope.TargetId:N}/")],
+            [
+                ("catalog-public", $"{scope.TargetId:N}/"),
+                ("catalog-public", $"tenants/{scope.TargetId:N}/"),
+                ("catalog-private", $"{scope.TargetId:N}/"),
+                ("catalog-private", $"tenants/{scope.TargetId:N}/"),
+            ],
             scope.Storage.DeletedPrefixes);
     }
 
@@ -94,7 +99,7 @@ public sealed class AdminTenantDeleteAmbientFilterTests : IClassFixture<Postgres
 
         var after = await scope.SnapshotAsync();
         Assert.False(after.ByTenant[scope.TargetId].TenantExists);
-        Assert.Equal(2, scope.Storage.DeletedPrefixes.Count);
+        Assert.Equal(4, scope.Storage.DeletedPrefixes.Count);
     }
 
     [DockerFact]
