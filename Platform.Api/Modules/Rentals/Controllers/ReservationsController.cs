@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
+using Platform.Api.Common;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
@@ -16,8 +17,12 @@ namespace Platform.Api.Modules.Rentals.Controllers;
 public sealed class ReservationsController(
     IReservationService reservationService,
     IRentalAssetService rentalAssetService,
-    IPublicTenantBinder publicTenantBinder) : ControllerBase
+    IPublicTenantBinder publicTenantBinder,
+    IIdempotencyService? idempotency = null) : ControllerBase
 {
+    /// <summary>Idempotency scope of the customer reservation create.</summary>
+    public const string CreateIdempotencyScope = "rentals.reservation.create";
+
     /// <summary>
     /// Public B2C availability check. Resolve tenant via X-Tenant-Subdomain header
     /// (or authenticated JWT tenant when the header is omitted).
@@ -317,22 +322,47 @@ public sealed class ReservationsController(
     /// <summary>
     /// Create reservation for the authenticated B2C customer.
     /// Tenant comes from the Customer JWT (tenant_id claim).
+    /// The optional <c>Idempotency-Key</c> header (1 to 100 characters) makes a retry return the
+    /// original reservation (same status and body) instead of creating another one; reusing a key
+    /// with a different body answers 409 <c>idempotency.key_reused</c>.
     /// </summary>
     [Authorize(Policy = "Customer")]
     [HttpPost]
     public async Task<ActionResult<ReservationResponseDto>> Create(
         [FromBody] CreateReservationRequestDto request,
+        [FromHeader(Name = IdempotencyHeader.Name)] string? idempotencyKey,
         CancellationToken cancellationToken)
     {
         try
         {
             var customerId = ResolveCustomerId();
-            var reservation = await reservationService.CreateReservationAsync(
-                customerId,
-                request,
-                cancellationToken);
+            if (idempotencyKey is null)
+            {
+                var reservation = await reservationService.CreateReservationAsync(
+                    customerId,
+                    request,
+                    cancellationToken);
 
-            return Created($"/api/reservations/{reservation.Id}", reservation);
+                return Created($"/api/reservations/{reservation.Id}", reservation);
+            }
+
+            if (this.ValidateIdempotencyKey(idempotencyKey) is { } invalidKey)
+            {
+                return invalidKey;
+            }
+
+            return await this.CreateIdempotentAsync(
+                idempotency,
+                CreateIdempotencyScope,
+                customerId,
+                idempotencyKey,
+                request,
+                StatusCodes.Status201Created,
+                () => reservationService.CreateReservationAsync(customerId, request, cancellationToken),
+                reservation => reservation.Id,
+                async existingId => await reservationService.GetMineAsync(customerId, existingId, cancellationToken),
+                location: reservation => $"/api/reservations/{reservation.Id}",
+                cancellationToken);
         }
         catch (PriceChangedException ex)
         {

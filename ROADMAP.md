@@ -114,6 +114,11 @@ Prioridade geral: beachhead **Rentals** (clube). Ver também `CONTEXT.md` e o `R
 
 **Notificações:** e-mail Resend OK. WhatsApp Catalog/Rentals + lembrete 24h em código; **PROD externo continua desligado**. SMS branding = Twilio Console.
 
+## Criação idempotente de pedido e reserva — P1-B (2026-11-20, feat/p1-order-idempotency)
+- [x] Header opcional `Idempotency-Key` (1 a 100 caracteres) em `POST /api/catalog/portal/orders` e `POST /api/reservations` (cliente). Tabela `core.idempotency_keys` (migration aditiva `20261128100000_AddIdempotencyKeys`), única por (tenant, scope, cliente, chave), retenção de 24 h, limpeza no `DataRetentionJob`.
+- [x] Repetição com o mesmo corpo devolve o recurso original (mesmo status e corpo); corpo diferente devolve 409 `idempotency.key_reused`; repetição concorrente cria uma vez (índice único), as demais aguardam e leem o resultado (409 `idempotency.in_progress` + `Retry-After` se passar de 10 s).
+- [ ] Web (P1-E): enviar a chave no checkout e na reserva. Aplicar a migration em DEV (`list` primeiro) antes do deploy da API.
+
 ## Cache de tenant do super-admin com 2 máquinas (2026-11-13)
 
 - [x] `fix/admin-tenant-cache-token-hint`: o cache de 10 s do `app_metadata.tenant_id` ao vivo é por processo, então após enter/exit tratado na outra máquina a máquina velha respondia 403 por até 10 s (PROD v18, log 19:24). O cache só vale quando o valor guardado é igual ao `tenant_id` do access token (hint, nunca fonte do tenant); em divergência lê o Supabase de novo. Overload `GetUserTenantAppMetadataAsync(id, TenantMetadataCacheHint)` com implementação padrão na interface; `PlatformAdminTenantSessionMiddleware` usa o hint. Sem migration, sem mudança de contrato. Spec: `docs/plans/active/2026-11-13-admin-tenant-cache-token-hint.md`. Sem SDK .NET 10 local: CI do PR é o gate
