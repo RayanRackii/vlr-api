@@ -57,15 +57,24 @@ public sealed class DataRetentionJob(
                 .Distinct()
                 .ToListAsync(cancellationToken);
 
+            // The assets FK cascades: an asset that is not itself expired would be hard-deleted with its category.
+            var blockedByLiveAssets = await dbContext.Assets
+                .Where(asset => expiredCategoryIds.Contains(asset.CategoryId))
+                .Where(asset => asset.ScheduledDeletionAt == null || asset.ScheduledDeletionAt > now)
+                .Select(asset => asset.CategoryId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
             var blockedCategoryIds = blockedByPlans
                 .Concat(blockedByWorkOrders)
+                .Concat(blockedByLiveAssets)
                 .Distinct()
                 .ToList();
 
             if (blockedCategoryIds.Count > 0)
             {
                 logger.LogWarning(
-                    "Skipping hard delete for {Count} expired asset categor(ies) still referenced by maintenance plans or work orders.",
+                    "Skipping hard delete for {Count} expired asset categor(ies) still referenced by maintenance plans, work orders or live assets.",
                     blockedCategoryIds.Count);
             }
 

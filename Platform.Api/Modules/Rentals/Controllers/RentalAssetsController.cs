@@ -83,6 +83,10 @@ public sealed class RentalAssetsController(
 
             return CreatedAtAction(nameof(GetByAssetId), new { assetId = asset.Id }, rental);
         }
+        catch (AssetCategoryPendingDeletionException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssetCategoryPendingDeletionException.Code });
+        }
         catch (AssetTagDuplicateException ex)
         {
             return Conflict(new { error = ex.Message, code = AssetTagDuplicateException.Code });
@@ -200,6 +204,10 @@ public sealed class RentalAssetsController(
                 ?? throw new InvalidOperationException("Rentable configuration was not found.");
 
             return Ok(rental);
+        }
+        catch (AssetCategoryPendingDeletionException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = AssetCategoryPendingDeletionException.Code });
         }
         catch (AssetTagDuplicateException ex)
         {
