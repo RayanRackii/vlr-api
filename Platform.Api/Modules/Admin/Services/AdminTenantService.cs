@@ -401,25 +401,55 @@ public sealed class AdminTenantService(
                 "allocation(s) exist for this tenant.");
         }
 
+        var now = DateTimeOffset.UtcNow;
+        var planningQuery = dbContext.Set<AssetAllocation>()
+            .IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenantId && UnreleasedAllocationStatuses.Contains(a.Status));
+
         if (planningDisabled)
         {
             // Planning allocations on the asset (slice API-3). A manual allocation that was never
             // started and whose window has ended no longer blocks anything, so it does not hold
-            // the module either; started and order-linked ones do until released.
-            var now = DateTimeOffset.UtcNow;
-            var planningCount = await dbContext.Set<AssetAllocation>()
-                .IgnoreQueryFilters()
-                .Where(a => a.TenantId == tenantId
-                    && UnreleasedAllocationStatuses.Contains(a.Status)
-                    && !(a.Status == AllocationStatus.Scheduled
-                        && a.Source == AssetAllocationSource.Manual
-                        && a.OccupiedEnd <= now))
+            // the module either; started and order-linked ones do until released. An allocation
+            // bridged to a rental-backed asset never expires (its reservation keeps blocking), so
+            // it always counts.
+            var planningCount = await planningQuery
+                .Where(a => !(a.Status == AllocationStatus.Scheduled
+                    && a.Source == AssetAllocationSource.Manual
+                    && a.ReservationItemId == null
+                    && a.OccupiedEnd <= now))
                 .CountAsync(cancellationToken);
             if (planningCount > 0)
             {
                 throw new InvalidOperationException(
                     $"Cannot disable {disabledModule}: {planningCount} unreleased planning " +
                     "allocation(s) exist for this tenant.");
+            }
+        }
+        else if (disabledModule == PlatformModules.Rentals)
+        {
+            // Rentals bridge (slice API-4): an unreleased allocation on a rental-backed asset is
+            // backed by an InternalUse reservation that only rentals can free.
+            var bridgedCount = await planningQuery
+                .Where(a => a.ReservationItemId != null)
+                .CountAsync(cancellationToken);
+            if (bridgedCount > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot disable {disabledModule}: {bridgedCount} unreleased planning " +
+                    "allocation(s) are backed by a rental reservation for this tenant.");
+            }
+        }
+        else if (disabledModule == PlatformModules.Catalog)
+        {
+            var orderLinkedCount = await planningQuery
+                .Where(a => a.CatalogOrderItemId != null)
+                .CountAsync(cancellationToken);
+            if (orderLinkedCount > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot disable {disabledModule}: {orderLinkedCount} unreleased planning " +
+                    "allocation(s) are linked to a catalog order for this tenant.");
             }
         }
     }

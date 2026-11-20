@@ -732,9 +732,9 @@ public sealed class AssetAllocationServiceTests
             Caller = caller;
             var accessor = new FixedModuleAccessor(PlatformModules.ResourcePlanning);
             var tenantProvider = new FakeTenantProvider { TenantId = seed.TenantId };
-            var occupancy = new AssetOccupancyService(db, accessor, clock);
+            var occupancy = new AssetOccupancyService(db, accessor, new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService(clock), clock);
             Service = new AssetAllocationService(db, tenantProvider, occupancy, caller, clock);
-            Agenda = new PlanningAgendaService(db, tenantProvider, accessor, clock);
+            Agenda = new PlanningAgendaService(db, tenantProvider, accessor, occupancy, clock);
         }
 
         public AppDbContext Db { get; }

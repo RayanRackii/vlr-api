@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Authorization;
+using Platform.Api.Modules.ResourcePlanning.Contracts;
 using Platform.Api.Modules.ResourcePlanning.Dtos;
 using Platform.Api.Services.Tenancy;
 using Platform.Core.Domain.Constants;
@@ -30,6 +31,7 @@ public sealed class PlanningAgendaService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     ITenantModuleAccessor tenantModuleAccessor,
+    IAssetOccupancyService occupancy,
     TimeProvider timeProvider) : IPlanningAgendaService
 {
     public const int MaxRangeDays = 42;
@@ -94,7 +96,9 @@ public sealed class PlanningAgendaService(
                         && (x.Status == AllocationStatus.Running
                             || x.Status == AllocationStatus.Cleaning
                             || (x.Status == AllocationStatus.Scheduled
-                                && (x.Source != AssetAllocationSource.Manual || x.OccupiedEnd > now))))
+                                && (x.Source != AssetAllocationSource.Manual
+                                    || x.ReservationItemId != null
+                                    || x.OccupiedEnd > now))))
                 orderby a.Tag, a.Id
                 select new
                 {
@@ -105,7 +109,9 @@ public sealed class PlanningAgendaService(
                     UnitName = a.Unit.Name,
                     Capacity = (int?)p.Capacity,
                     HoursPolicy = (AssetHoursPolicy?)p.HoursPolicy,
-                    HasActiveRental = a.RentalConfiguration != null && a.RentalConfiguration.IsActive,
+                    RentalAssetId = a.RentalConfiguration != null && a.RentalConfiguration.IsActive
+                        ? (Guid?)a.RentalConfiguration.Id
+                        : null,
                 })
             .ToListAsync(cancellationToken);
 
@@ -146,7 +152,7 @@ public sealed class PlanningAgendaService(
                 r.UnitName,
                 r.Capacity ?? 1,
                 (r.HoursPolicy ?? AssetHoursPolicy.Anytime).ToString(),
-                r.HasActiveRental && rentalsActive,
+                r.RentalAssetId != null && rentalsActive,
                 zoneId,
                 hoursByAsset[r.Id]
                     .OrderBy(h => h.DayOfWeek)
@@ -164,8 +170,17 @@ public sealed class PlanningAgendaService(
             .Select(a => AllocationMapper.ToResponse(a, names.GetValueOrDefault(a.AssetId, string.Empty), now))
             .ToList();
 
-        // Customer reservations of rental-backed assets arrive with the rentals bridge.
-        return new PlanningAgendaResponse(rangeStart, rangeEnd, resources, items, []);
+        // Rental-backed assets: the customer reservations (and any internal-use reservation no
+        // allocation mirrors) are busy time the planner cannot book over, anonymous by design.
+        var rentalToAsset = rentalsActive
+            ? rows
+                .Where(r => r.RentalAssetId != null)
+                .ToDictionary(r => r.RentalAssetId!.Value, r => r.Id)
+            : new Dictionary<Guid, Guid>();
+        var externalBusy = await occupancy.ListExternalBusyAsync(
+            tenantId, rentalToAsset, rangeStart, rangeEnd, cancellationToken);
+
+        return new PlanningAgendaResponse(rangeStart, rangeEnd, resources, items, externalBusy);
     }
 
     private static void ValidateRange(DateTimeOffset from, DateTimeOffset to)

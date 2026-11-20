@@ -409,8 +409,10 @@ public sealed class PlanningAllocationConcurrencyTests : IClassFixture<PostgresC
         var provider = new FakeTenantProvider { TenantId = tenantId };
         var counter = new ReadCounter();
         await using var db = factory.Create(provider, counter);
-        var service = new PlanningAgendaService(
-            db, provider, new FixedModuleAccessor(PlatformModules.ResourcePlanning), TimeProvider.System);
+        var accessor = new FixedModuleAccessor(PlatformModules.ResourcePlanning);
+        var occupancy = new AssetOccupancyService(
+            db, accessor, new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService(), TimeProvider.System);
+        var service = new PlanningAgendaService(db, provider, accessor, occupancy, TimeProvider.System);
 
         var agenda = await service.GetAgendaAsync(Slot.AddDays(-1), Slot.AddDays(6), null, null, default);
 
@@ -442,7 +444,10 @@ public sealed class PlanningAllocationConcurrencyTests : IClassFixture<PostgresC
         var provider = new FakeTenantProvider { TenantId = tenantId };
         var db = factory.Create(provider);
         var occupancy = new AssetOccupancyService(
-            db, new FixedModuleAccessor(PlatformModules.ResourcePlanning), TimeProvider.System);
+            db,
+            new FixedModuleAccessor(PlatformModules.ResourcePlanning),
+            new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService(),
+            TimeProvider.System);
         var service = new AssetAllocationService(
             db, provider, occupancy, new FakePlanningCaller(userId, canManage: false), TimeProvider.System);
         return (service, db);

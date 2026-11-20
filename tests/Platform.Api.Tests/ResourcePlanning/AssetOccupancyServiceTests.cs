@@ -405,9 +405,9 @@ public sealed class AssetOccupancyServiceTests
     }
 
     [Fact]
-    public async Task Rental_backed_asset_is_rejected_with_asset_not_plannable_while_rentals_is_active()
+    public async Task Rental_backed_asset_resolves_through_the_bridge_while_rentals_is_active()
     {
-        await using var rig = await Rig.CreateAsync(withRentalsModule: true);
+        await using var rig = await Rig.CreateAsync(AssetHoursPolicy.WithinHours, capacity: 3, withRentalsModule: true);
         var rental = new RentalAsset
         {
             TenantId = rig.Seed.TenantId,
@@ -421,15 +421,27 @@ public sealed class AssetOccupancyServiceTests
         rig.Db.RentalAssets.Add(rental);
         await rig.SaveAsync();
 
-        var ex = await Assert.ThrowsAsync<PlanningException>(() => rig.ResolveAsync());
-        Assert.Equal(409, ex.StatusCode);
-        Assert.Equal(PlanningException.AssetNotPlannableCode, ex.Code);
-        Assert.Contains("rental-backed", ex.Message, StringComparison.Ordinal);
+        var asset = await rig.ResolveAsync();
+
+        // The rental schedule is the authority: its id is carried, the planning hours are not
+        // consulted (WithinHours with no rows would otherwise close the asset) and the resource is
+        // exclusive.
+        Assert.True(asset.IsRentalBacked);
+        Assert.Equal(rental.Id, asset.RentalAssetId);
+        Assert.Equal(1, asset.Capacity);
+        Assert.Equal(AssetHoursPolicy.Anytime, asset.HoursPolicy);
+        Assert.Empty(asset.WorkingHours);
 
         // With rentals off the rental configuration is inert and the asset is planned normally.
-        var rentalsOff = new AssetOccupancyService(rig.Db, new FixedModuleAccessor(), rig.Clock);
-        var asset = await rentalsOff.ResolvePlannableAssetAsync(rig.Seed.TenantId, rig.Seed.AssetId, default);
-        Assert.Equal(rig.Seed.AssetId, asset.AssetId);
+        var rentalsOff = new AssetOccupancyService(
+            rig.Db,
+            new FixedModuleAccessor(),
+            new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService(rig.Clock),
+            rig.Clock);
+        var ex = await Assert.ThrowsAsync<PlanningException>(
+            () => rentalsOff.ResolvePlannableAssetAsync(rig.Seed.TenantId, rig.Seed.AssetId, default));
+        Assert.Equal(PlanningException.AssetNotPlannableCode, ex.Code);
+        Assert.Contains("closed all week", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -453,7 +465,8 @@ public sealed class AssetOccupancyServiceTests
             Db = db;
             Seed = seed;
             Clock = clock;
-            Occupancy = new AssetOccupancyService(db, new FixedModuleAccessor(modules), clock);
+            Occupancy = new AssetOccupancyService(
+                db, new FixedModuleAccessor(modules), new Platform.Api.Modules.Rentals.Services.ResourceOccupancyService(clock), clock);
         }
 
         public AppDbContext Db { get; }
