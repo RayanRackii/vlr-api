@@ -159,7 +159,7 @@ public sealed class DataRetentionJob(
     /// <summary>
     /// Idempotency keys live 24 hours (<see cref="IdempotencyKey.Retention"/>). The rows are
     /// transient replay bookkeeping, deleted across all tenants. Like the other sweeps here, this runs inside the
-    /// job's <see cref="PlatformScope"/>, which lifts the tenant filter, so no IgnoreQueryFilters is needed.
+    /// job's <see cref="PlatformScope"/>, which lifts the tenant filter, so the plain query sees every tenant.
     /// </summary>
     private async Task DeleteExpiredIdempotencyKeysAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
