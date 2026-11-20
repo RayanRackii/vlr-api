@@ -101,8 +101,8 @@ Unique partial index: one pending purge (`CancelledAt IS NULL AND ExecutedAt IS 
 - Counts use `IgnoreQueryFilters()` plus an explicit `TenantId == id`, the same as the
   disable guard comment explains.
 - Storage count for v1:
-  - catalog: `CatalogProductFile` keys of rows in scope;
-  - os: the `{id:N}/work-orders/` prefix, counted by keys stored in task images.
+  - catalog: `CatalogProductFile` and `ProductRequestFile` `StorageKey`s of rows in scope;
+  - os: `WorkOrderTaskFile` `StorageKey`s (under `{id:N}/work-orders/`).
   No listing API is needed here.
 - Tests:
   - unknown module → 400;
@@ -163,8 +163,8 @@ Unique partial index: one pending purge (`CancelledAt IS NULL AND ExecutedAt IS 
 - `StorageOrphanReportJob`, weekly (Sunday 03:30 BRT). For each bucket it lists the objects and marks
   as orphan:
   - objects under `{tenantN}/` or `tenants/{tenantN}/` whose tenant no longer exists;
-  - catalog file keys with no `CatalogProductFile` row;
-  - work-order image keys with no task-image row;
+  - catalog keys with no `CatalogProductFile` or `ProductRequestFile` row;
+  - work-order keys with no `WorkOrderTaskFile` row;
   - landing keys that are not the tenant's current landing image key.
 
   Objects newer than 24 h are ignored, to avoid racing uploads.
