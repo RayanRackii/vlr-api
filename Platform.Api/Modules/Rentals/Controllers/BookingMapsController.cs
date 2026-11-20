@@ -9,6 +9,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.ResourceVisuals;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Services.Tenancy;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -61,7 +62,7 @@ public sealed class BookingMapsController(IRentalLayoutService maps) : Controlle
 [RequireActiveModule(PlatformModules.Rentals)]
 [Route("api/public/tenants/{subdomain}/booking-maps")]
 public sealed class PublicBookingMapsController(IRentalLayoutService maps, IPublicTenantBinder binder,
-    ITenantProvider tenants, IOptions<BookingUiOptions> options) : ControllerBase
+    ITenantProvider tenants, AppDbContext db) : ControllerBase
 {
     [AllowAnonymous]
     [HttpGet]
@@ -79,7 +80,7 @@ public sealed class PublicBookingMapsController(IRentalLayoutService maps, IPubl
             if (rawUnit is not null && (!Guid.TryParse(rawUnit, out var unit) || unit == Guid.Empty))
                 throw BookingMapValidation.Invalid("Invalid unit id.");
             await binder.BindFromSubdomainAsync(subdomain, ct);
-            if (tenants.TenantId is not { } tenant || !options.Value.IsEnabled(tenant))
+            if (tenants.TenantId is not { } tenant || !await TenantSettingStore.IsBookingUiEnabledAsync(db, tenant, ct))
                 return NotFound(new { code = "BOOKING_MAPS_DISABLED", error = "Booking maps are not enabled." });
             var dto = await action(rawUnit is null ? null : Guid.Parse(rawUnit));
             if (dto is null) return NotFound(new { code = "MAP_NOT_FOUND", error = "Map was not found." });

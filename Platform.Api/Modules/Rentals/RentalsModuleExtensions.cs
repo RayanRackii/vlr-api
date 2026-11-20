@@ -10,7 +10,6 @@ public static class RentalsModuleExtensions
 {
     public static IServiceCollection AddRentalsModule(this IServiceCollection services)
     {
-        services.AddOptions<BookingUiOptions>().BindConfiguration(BookingUiOptions.SectionName);
         services.AddOptions<BookingMapDemoSeedOptions>().BindConfiguration(BookingMapDemoSeedOptions.SectionName);
         services.AddScoped<IDailyAvailabilityService, DailyAvailabilityService>();
         services.AddScoped<IRentalAssetService, RentalAssetService>();
@@ -22,7 +21,7 @@ public static class RentalsModuleExtensions
         services.AddScoped<IOccupancyKindService, OccupancyKindService>();
         services.AddScoped<IScheduleService, ScheduleService>();
         services.AddScoped<ITeacherLessonService, TeacherLessonService>();
-        services.AddSingleton<ITeacherLessonScope, FiccTeacherLessonScope>();
+        services.AddScoped<ITeacherLessonScope, TenantSettingTeacherLessonScope>();
         services.AddScoped<IRentalLayoutService, RentalLayoutService>();
         services.AddScoped<IReservationQueueService, ReservationQueueService>();
         services.AddScoped<IBookingPolicyService, BookingPolicyService>();

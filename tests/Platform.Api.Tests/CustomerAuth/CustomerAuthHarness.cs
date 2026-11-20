@@ -94,7 +94,6 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
         IHttpContextAccessor? httpContextAccessor = null,
         OtpHmacEvaluationCounter? hmacEvaluations = null,
         IPasswordResetEmailQueue? passwordResetEmails = null,
-        IOptions<BookingUiOptions>? bookingUiOptions = null,
         ICustomerLoginThrottle? loginThrottle = null,
         IStorageProvider? storageProvider = null,
         IOptions<StorageOptions>? storageOptions = null)
@@ -118,7 +117,6 @@ internal sealed class CustomerAuthHarness : IAsyncDisposable
             loginThrottle ?? new AllowAllCustomerLoginThrottle(),
             NullLogger<CustomerAuthService>.Instance,
             httpContextAccessor,
-            bookingUiOptions,
             storageProvider,
             storageOptions);
     }

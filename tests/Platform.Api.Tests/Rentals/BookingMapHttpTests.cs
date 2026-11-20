@@ -183,7 +183,20 @@ public sealed class BookingMapHttpTests
         client.DefaultRequestHeaders.Remove("X-Map-Permissions");
         client.DefaultRequestHeaders.Add("X-Map-Permissions", string.Join(',', permissions));
     }
-    private static IHost StartHost(AvailabilityHarness h, bool enabled = true, string environment = "Development", Guid? additionalEnabledTenant = null, Guid[]? demoAllowedTenantIds = null) =>
+    /// <summary>The booking UI gate is the tenant setting; the host shares the harness in-memory database.</summary>
+    private static void EnableBookingUi(AvailabilityHarness h, Guid tenantId)
+    {
+        if (h.Db.TenantSettings.Any(setting => setting.TenantId == tenantId && setting.Key == TenantSettingKeys.BookingUiEnabled)) return;
+        h.Db.TenantSettings.Add(new TenantSetting { TenantId = tenantId, Key = TenantSettingKeys.BookingUiEnabled, Value = "true" });
+        h.Db.SaveChanges();
+    }
+    private static IHost StartHost(AvailabilityHarness h, bool enabled = true, string environment = "Development", Guid? additionalEnabledTenant = null, Guid[]? demoAllowedTenantIds = null)
+    {
+        if (enabled) EnableBookingUi(h, h.Tenant.Id);
+        if (additionalEnabledTenant is { } extra) EnableBookingUi(h, extra);
+        return StartHostCore(h, environment, demoAllowedTenantIds);
+    }
+    private static IHost StartHostCore(AvailabilityHarness h, string environment, Guid[]? demoAllowedTenantIds) =>
         new HostBuilder().ConfigureWebHost(web =>
         {
             web.UseEnvironment(environment).UseTestServer();
@@ -201,8 +214,6 @@ public sealed class BookingMapHttpTests
                 services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
                 services.AddScoped<ITrialGuard, FakeTrialGuard>();
                 services.AddScoped<IRentalLayoutService, RentalLayoutService>();
-                services.Configure<BookingUiOptions>(o => o.EnabledTenantIds = enabled
-                    ? additionalEnabledTenant is { } extra ? [h.Tenant.Id, extra] : [h.Tenant.Id] : []);
                 services.AddAuthentication("MapTest").AddScheme<AuthenticationSchemeOptions, MapAuthHandler>("MapTest", _ => { });
                 services.AddAuthorization(o =>
                 {

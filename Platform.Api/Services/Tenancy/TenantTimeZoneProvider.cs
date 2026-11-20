@@ -51,14 +51,7 @@ internal static class TenantTimeZoneProvider
         AppDbContext db,
         Guid tenantId,
         CancellationToken cancellationToken) =>
-        // The caller names the tenant; the ambient filter could be a different tenant (jobs, admin).
-        db.TenantSettings
-            .AsNoTracking()
-            .IgnoreQueryFilters()
-            .Where(setting => setting.TenantId == tenantId
-                && setting.Key == TenantSettingKeys.BookingTimeZoneId)
-            .Select(setting => (string?)setting.Value)
-            .FirstOrDefaultAsync(cancellationToken);
+        TenantSettingStore.ReadValueAsync(db, tenantId, TenantSettingKeys.BookingTimeZoneId, cancellationToken);
 
     public static TimeZoneInfo Resolve(string? configuredTimeZoneId) =>
         Find(configuredTimeZoneId) ?? BrazilTimeZone.Resolve();

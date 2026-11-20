@@ -7,9 +7,11 @@ using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Tests.CustomerAuth;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -395,25 +397,30 @@ public sealed class DailyAvailabilityTests
     }
 
     [Fact]
-    public async Task Branding_flag_defaults_off_and_configuration_selects_only_the_exact_tenant()
+    public async Task Branding_flag_defaults_off_and_the_tenant_setting_selects_only_that_tenant()
     {
         await using var h = await CustomerAuthHarness.CreateAsync();
         Assert.False((await h.Auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).NewBookingUiEnabled);
-        var options = Options.Create(new BookingUiOptions { EnabledTenantIds = [h.Tenant.Id] });
-        var auth = CustomerAuthHarness.CreateService(h.Db, h.TenantProvider, h.Phone, h.Email,
-            new AllowAllPhoneVerificationSendGate(), h.Time, bookingUiOptions: options);
-        Assert.True((await auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).NewBookingUiEnabled);
+
         var other = new Tenant("Other", "22222222000191", subdomain: "other");
         h.Db.Tenants.Add(other);
+        h.Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = h.Tenant.Id, Key = TenantSettingKeys.BookingUiEnabled, Value = "true",
+        });
         await h.Db.SaveChangesAsync();
-        Assert.False((await auth.GetBrandingAsync("other", default)).NewBookingUiEnabled);
-        Assert.False(options.Value.IsEnabled(Guid.Empty));
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        { ["Rentals:BookingUi:EnabledTenantIds:0"] = h.Tenant.Id.ToString() }).Build());
-        services.AddRentalsModule();
-        using var provider = services.BuildServiceProvider();
-        Assert.True(provider.GetRequiredService<IOptions<BookingUiOptions>>().Value.IsEnabled(h.Tenant.Id));
+
+        Assert.True((await h.Auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).NewBookingUiEnabled);
+        Assert.False((await h.Auth.GetBrandingAsync("other", default)).NewBookingUiEnabled);
+        Assert.False(await TenantSettingStore.IsBookingUiEnabledAsync(h.Db, Guid.Empty, default));
+
+        var row = await h.Db.TenantSettings.SingleAsync(setting => setting.TenantId == h.Tenant.Id);
+        foreach (var value in new[] { "false", "", "yes", "1" })
+        {
+            row.Value = value;
+            await h.Db.SaveChangesAsync();
+            Assert.False((await h.Auth.GetBrandingAsync(h.Tenant.Subdomain!, default)).NewBookingUiEnabled);
+        }
     }
 
     [Fact]

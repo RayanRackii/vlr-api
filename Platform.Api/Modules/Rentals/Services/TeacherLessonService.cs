@@ -21,7 +21,7 @@ public sealed class TeacherLessonService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
-        EnsurePilotScope(tenantId, request.RentalAssetId);
+        await EnsureLessonScopeAsync(tenantId, request.RentalAssetId, cancellationToken);
         await EnsureActiveTenantAsync(tenantId, cancellationToken);
         await trialGuard.EnsureWritableAsync(cancellationToken);
         ValidateTimeRange(request.StartTime, request.EndTime);
@@ -166,7 +166,7 @@ public sealed class TeacherLessonService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
-        EnsurePilotScope(tenantId, request.RentalAssetId);
+        await EnsureLessonScopeAsync(tenantId, request.RentalAssetId, cancellationToken);
         await EnsureActiveTenantAsync(tenantId, cancellationToken);
         await trialGuard.EnsureWritableAsync(cancellationToken);
         var (openKind, lessonKind) = await LoadCanonicalKindsAsync(tenantId, cancellationToken);
@@ -599,9 +599,10 @@ public sealed class TeacherLessonService(
         tenantProvider.TenantId
         ?? throw new UnauthorizedAccessException(TeacherLessonMessages.TenantRequired);
 
-    private void EnsurePilotScope(Guid tenantId, Guid rentalAssetId)
+    private async Task EnsureLessonScopeAsync(
+        Guid tenantId, Guid rentalAssetId, CancellationToken cancellationToken)
     {
-        if (!teacherLessonScope.Allows(tenantId, rentalAssetId))
+        if (!await teacherLessonScope.AllowsAsync(tenantId, rentalAssetId, cancellationToken))
         {
             throw new KeyNotFoundException(TeacherLessonMessages.RentableNotFound);
         }
