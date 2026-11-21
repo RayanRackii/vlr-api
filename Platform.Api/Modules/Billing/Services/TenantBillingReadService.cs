@@ -58,6 +58,7 @@ public sealed class TenantBillingReadService(
         var events = (await dbContext.SubscriptionEvents
                 .AsNoTracking()
                 .Where(e => e.SubscriptionId == subscription.Id && e.TenantId == tenantId)
+                .Where(e => !e.Type.StartsWith(SubscriptionEventTypes.DunningPrefix))
                 .OrderByDescending(e => e.CreatedAt)
                 .Take(EventListSize)
                 .ToListAsync(cancellationToken))

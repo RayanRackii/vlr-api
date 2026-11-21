@@ -48,7 +48,8 @@ internal sealed record PlanState(
     string Status,
     string BillingMode,
     bool LimitsUnlimited,
-    PlanLimitValues PlanLimits)
+    PlanLimitValues PlanLimits,
+    DateTimeOffset? CurrentPeriodEnd)
 {
     /// <summary>Limits to enforce: none when the row is flagged unlimited.</summary>
     public PlanLimitValues EnforcedLimits => LimitsUnlimited ? PlanLimitValues.Unlimited : PlanLimits;
@@ -78,6 +79,7 @@ internal static class PlanStateReader
                     subscription.Status,
                     subscription.BillingMode,
                     subscription.LimitsUnlimited,
+                    subscription.CurrentPeriodEnd,
                     plan.LimitsJson,
                 })
             .FirstOrDefaultAsync(cancellationToken);
@@ -91,6 +93,7 @@ internal static class PlanStateReader
                 row.Status,
                 row.BillingMode,
                 row.LimitsUnlimited,
-                PlanLimitValues.Parse(row.LimitsJson));
+                PlanLimitValues.Parse(row.LimitsJson),
+                row.CurrentPeriodEnd);
     }
 }

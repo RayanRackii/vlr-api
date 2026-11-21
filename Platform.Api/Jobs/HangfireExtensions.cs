@@ -20,6 +20,8 @@ public static class HangfireExtensions
 
     public const string BillingPeriodEndJobId = "billing-period-end";
 
+    public const string BillingDunningJobId = "billing-dunning";
+
     public const string NotificationOutboxJobId = "notification-outbox";
 
     public const string NotificationRetentionJobId = "notification-inapp-retention";
@@ -121,6 +123,13 @@ public static class HangfireExtensions
             BillingPeriodEndJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "50 0 * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<BillingDunningJob>(
+            BillingDunningJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            // 09:00 Brazil time: reminder e-mails reach people in the morning; the read-only step is day based.
+            "0 9 * * *",
             recurringJobOptions);
 
         RecurringJob.AddOrUpdate<PmocEngineJob>(

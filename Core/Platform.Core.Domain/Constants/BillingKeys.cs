@@ -98,4 +98,10 @@ public static class SubscriptionEventTypes
     public const string Reactivated = "reactivated";
 
     public const string Canceled = "canceled";
+
+    /// <summary>
+    /// Prefix of the bookkeeping events of dunning / trial-end e-mails (<c>dunning_&lt;kind&gt;</c>). They only record
+    /// that a notice was sent and are not part of the history shown to tenants or the platform admin.
+    /// </summary>
+    public const string DunningPrefix = "dunning_";
 }
