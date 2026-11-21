@@ -10,6 +10,8 @@ public static class HangfireExtensions
 {
     public const string DataRetentionJobId = "data-retention-gc";
 
+    public const string ModuleDataPurgeJobId = "module-data-purge";
+
     public const string PmocEngineJobId = "pmoc-engine";
 
     public const string TrialLifecycleJobId = "trial-lifecycle-purge";
@@ -89,6 +91,13 @@ public static class HangfireExtensions
             DataRetentionJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "0 0 * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<ModuleDataPurgeJob>(
+            ModuleDataPurgeJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            // Daily, just after the asset/data retention sweep.
+            "15 0 * * *",
             recurringJobOptions);
 
         RecurringJob.AddOrUpdate<TrialLifecycleJob>(
