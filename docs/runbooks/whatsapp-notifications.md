@@ -1,4 +1,4 @@
-Hosting: API on Fly.io (`rolvix-api-prod`), web on Vercel, database/auth on Supabase. Legacy Railway-specific steps are obsolete; apply current settings to the Fly.io app for the target environment.
+Hosting: API on Fly.io (`rolvix-api-prod`), web on Vercel, database/auth on Supabase. Apply current settings to the Fly.io app for the target environment.
 
 # WhatsApp notifications (Catalog + Rentals)
 
