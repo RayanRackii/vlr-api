@@ -27,7 +27,7 @@ Decision:
    This follows the existing `ScheduledDeletionAt` pattern (asset categories, `AssetCategoryService`,
    30 days, `DataRetentionJob`) and the trial purge (`TrialLimits.PurgeDays = 30`, `TrialLifecycleJob`).
 3. A weekly **read-only orphan report** for storage. No automatic storage deletion in v1.
-4. Fix the tenant-purge storage gap found while writing this spec (see 3.1).
+4. Fix the tenant-purge storage gap found while writing this spec (see 3.1) — **done in vlr-api#378**.
 
 Out of scope (v1):
 - export before purge;
@@ -81,7 +81,7 @@ Unique partial index: one pending purge (`CancelledAt IS NULL AND ExecutedAt IS 
 
 ## 3. Slices (one PR each, in order)
 
-### 3.1 API-1: tenant purge also deletes `tenants/{id:N}/` (bug fix, independent)
+### 3.1 API-1: tenant purge also deletes `tenants/{id:N}/` — DONE (vlr-api#378, kept for reference)
 - `TenantPurger.PurgeAsync` deletes only the storage prefix `{id:N}/`.
 - Portal landing images use `tenants/{id:N}/landing/...` (`PortalLandingImageRules`, line 77), so a
   purged tenant leaves its landing images in the public bucket.
@@ -186,7 +186,7 @@ A read-only card: date, orphan count, size, sample keys.
 - The first PROD use of the purge is a dry run: open the preview only, and do not schedule.
 
 ## 5. Done when
-- API-1 is merged and deployed. A purged DEV test tenant leaves no `tenants/{id}/` objects.
+- API-1: done (vlr-api#378, on DEV).
 - On DEV:
   - the preview shows correct counts and blockers for gammera with rentals off;
   - scheduling, cancelling and re-enabling behave as in 3.3;
@@ -201,3 +201,22 @@ A read-only card: date, orphan count, size, sample keys.
 3. Export before purge: **not in v1**.
 4. Should disabling the last module of a tenant also offer tenant offboarding (whole-tenant purge
    after N days)? **Not in v1.** `TenantPurger` already exists for a manual delete.
+
+## 7. Amendments after the spec review (2026-11-21) — binding
+1. **FK reality check before API-2:** add a Postgres test with a gammera-like tenant (assets + rentals + catalog +
+   planning rows) that runs the preview for each purgeable module and records the blockers. If `assets.*` holds
+   Restrict FKs into `rentals` (e.g. resource types, rental assets), the rentals purge must first null/delete only the
+   rental-owned link rows on assets (explicitly listed), never the assets themselves; document the result in this
+   spec before API-3. `planning` allocations are shared by rentals, catalog and os sources: purge planning rows only
+   for the purged module's sources (`source = CatalogOrder` for catalog, rental bridge rows for rentals,
+   `WorkOrder` for os) unless `resource-planning` itself is purged.
+2. **Concurrency:** the purge job and `AdminTenantService` module re-enable both take the tenant row lock
+   (`FOR UPDATE`) and re-read the pending purge under it; the re-check and the deletes run in the same transaction.
+   If the tenant was deleted (`TenantPurger`) the job marks the purge cancelled (`tenant.deleted`). Large tenants:
+   delete per entity in batches of 5.000 rows inside the transaction with a 5-minute command timeout; if exceeded,
+   the purge is cancelled with reason `timeout` and nothing is committed.
+3. **Endpoints:** preview returns 404 for an unknown tenant and runs under `PlatformScope`; a tenant admin gets 403
+   (test). Cancel writes an audit entry (who/when/reason) on the purge row. `ResultJson` holds counts only.
+4. **Orphan report:** unknown `{tenantN}/` prefixes are counted as "unclassified", never as orphan; the job lists at
+   most 10.000 objects per bucket per run (paging budget) and records whether it was truncated.
+5. **Web:** the per-module preview on the admin page is loaded lazily (on expanding the module row), not on page load.
