@@ -154,7 +154,7 @@ public sealed class TenantTimeZoneSettingTests
     }
 
     private static ScheduleService Schedule(AvailabilityHarness h) =>
-        new(h.Db, h.TenantProvider, new OccupancyKindService(h.Db, h.TenantProvider), new FakeTrialGuard(),
+        new(h.Db, h.TenantProvider, new OccupancyKindService(h.Db, h.TenantProvider), new FakePlanGuard(),
             TestReservationQueue.Create(h.Db, h.TenantProvider, h.Clock),
             SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, h.Clock);
 }

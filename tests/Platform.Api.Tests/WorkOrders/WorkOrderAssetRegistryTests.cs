@@ -81,7 +81,7 @@ public sealed class WorkOrderAssetRegistryTests
             new FakePlatformAdminChecker(),
             resolver,
             grantGuard,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),

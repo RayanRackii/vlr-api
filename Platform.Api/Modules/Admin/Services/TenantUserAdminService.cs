@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -61,7 +61,7 @@ public sealed class TenantUserAdminService(
     NotificationQueue notificationQueue,
     IConfiguration configuration,
     IHostEnvironment environment,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     IPlatformAdminChecker platformAdminChecker,
     ILogger<TenantUserAdminService> logger) : ITenantUserAdminService
 {
@@ -125,7 +125,7 @@ public sealed class TenantUserAdminService(
     {
         using var _ = PlatformScope.Begin(logger, "admin-tenant-users-invite");
         await EnsureTenantExistsAsync(tenantId, cancellationToken);
-        await trialGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
+        await planGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
 
         var fullName = request.FullName.Trim();
         var email = NormalizeEmail(request.Email);

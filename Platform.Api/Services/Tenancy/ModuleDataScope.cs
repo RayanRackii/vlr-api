@@ -29,8 +29,8 @@ internal sealed record ModuleScopeEntry(IEntityType Entity, PlanningRowFilter Ro
 
 /// <summary>
 /// Which tenant data belongs to which module, derived from the table schema in the EF model
-/// (spec 2.1, docs/plans/active/2026-11-20-module-data-purge.md). <c>assets</c> (shared asset registry) and
-/// <c>core</c> (platform) are never purgeable. A new schema must be classified here explicitly.
+/// (spec 2.1, docs/plans/active/2026-11-20-module-data-purge.md). <c>assets</c> (shared asset registry),
+/// <c>core</c> and <c>billing</c> (platform) are never purgeable. A new schema must be classified here explicitly.
 /// </summary>
 internal static class ModuleDataScope
 {
@@ -48,6 +48,8 @@ internal static class ModuleDataScope
             ["planning"] = PlatformModules.ResourcePlanning,
             ["assets"] = null,
             ["core"] = null,
+            // Platform-owned billing data (plans, subscriptions, history): never removed by a module purge.
+            ["billing"] = null,
         };
 
     internal static IReadOnlyCollection<string> PurgeableModules { get; } = SchemaOwners.Values

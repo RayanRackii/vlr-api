@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Company.Dtos;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Storage;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -33,7 +33,7 @@ public interface IPortalAppearanceService
 public sealed class PortalAppearanceService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     IStorageProvider storageProvider,
     IOptions<StorageOptions> storageOptions,
     ILogger<PortalAppearanceService> logger) : IPortalAppearanceService
@@ -52,7 +52,7 @@ public sealed class PortalAppearanceService(
         CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
 
         var tenant = await dbContext.Tenants
             .FirstOrDefaultAsync(item => item.Id == tenantId, cancellationToken)
@@ -70,7 +70,7 @@ public sealed class PortalAppearanceService(
         CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
 
         using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken);
@@ -110,7 +110,7 @@ public sealed class PortalAppearanceService(
     public async Task<PortalAppearanceResponse> DeleteLandingImageAsync(CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
 
         var tenant = await dbContext.Tenants
             .FirstOrDefaultAsync(item => item.Id == tenantId, cancellationToken)

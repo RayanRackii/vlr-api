@@ -25,7 +25,7 @@ public sealed partial class RentalLayoutService
     public async Task<BookingMapCompositionDto> SaveCompositionAsync(Guid id, SaveBookingMapCompositionRequest request, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(ct);
+        await planGuard.EnsureWritableAsync(ct);
         await using var tx = await BeginWriteAsync(tenantId, ct);
         var map = await Layouts(tenantId).FirstOrDefaultAsync(l => l.Id == id, ct) ?? throw BookingMapValidation.Missing();
         if (map.Version != request.ExpectedVersion) throw BookingMapValidation.Conflict();
@@ -96,7 +96,7 @@ public sealed partial class RentalLayoutService
     public async Task<BookingMapSettingsDto> SaveSettingsAsync(SaveBookingMapSettingsRequest request, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(ct);
+        await planGuard.EnsureWritableAsync(ct);
         await using var tx = await BeginWriteAsync(tenantId, ct);
         if (!BookingMapValidation.IsColor(request.AvailableColor) || !BookingMapValidation.IsColor(request.TakenColor)
             || !BookingMapValidation.IsColor(request.UnavailableColor) || !BookingMapValidation.IsColor(request.SelectedColor)
@@ -152,7 +152,7 @@ public sealed partial class RentalLayoutService
     public async Task<BookingMapCompositionDto> SeedDemoAsync(SeedDemoBookingMapRequest request, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(ct);
+        await planGuard.EnsureWritableAsync(ct);
         await using var tx = await BeginWriteAsync(tenantId, ct);
         if (!await dbContext.Tenants.AnyAsync(t => t.Id == tenantId && t.IsActive, ct)) throw BookingMapValidation.Missing();
         BookingMapValidation.Canvas(request.Name, request.AspectRatio, 100);

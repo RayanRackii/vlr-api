@@ -25,7 +25,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Users.Controllers;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -365,7 +365,7 @@ public sealed class CurrentUserPhoneTests
                     services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
                     services.AddScoped<IPermissionResolver, PermissionResolver>();
                     services.AddScoped<IRbacGrantGuard, RbacGrantGuard>();
-                    services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                    services.AddSingleton<IPlanGuard, FakePlanGuard>();
                     services.AddScoped<IRbacActorAccessor, RbacActorAccessor>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();

@@ -21,7 +21,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Company.Controllers;
 using Platform.Api.Modules.Company.Dtos;
 using Platform.Api.Modules.Company.Services;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Storage;
 using Platform.Api.Tests.CustomerAuth;
 using Platform.Api.Tests.Fakes;
@@ -182,9 +182,9 @@ public sealed class PortalAppearanceHttpTests
     {
         await using var harness = new Harness();
         var first = await harness.Db.Tenants.SingleAsync(t => t.Id == harness.FirstTenant);
-        first.ConfigureAsTrial(DateTimeOffset.UtcNow.AddDays(-20));
+        first.ConfigureAsTrial(DateTimeOffset.UtcNow.AddDays(-(TrialLimits.TrialDays + 1)));
         await harness.Db.SaveChangesAsync();
-        using var host = StartHost(harness, realTrialGuard: true);
+        using var host = StartHost(harness, realPlanGuard: true);
         var client = WithPermission(host, Permissions.Core.CompanyWrite);
 
         Assert.Equal(HttpStatusCode.Conflict, (await client.PutAsJsonAsync(Route, new { landingKicker = "x" })).StatusCode);
@@ -436,7 +436,7 @@ public sealed class PortalAppearanceHttpTests
         return client;
     }
 
-    private static IHost StartHost(Harness harness, bool realTrialGuard = false) => new HostBuilder().ConfigureWebHost(web =>
+    private static IHost StartHost(Harness harness, bool realPlanGuard = false) => new HostBuilder().ConfigureWebHost(web =>
     {
         web.UseTestServer();
         web.ConfigureServices(services =>
@@ -446,14 +446,14 @@ public sealed class PortalAppearanceHttpTests
             services.AddSingleton<ITenantProvider>(harness.Provider);
             services.AddSingleton<IStorageProvider>(harness.Storage);
             services.AddSingleton(Options.Create(new StorageOptions()));
-            if (realTrialGuard)
+            if (realPlanGuard)
             {
                 services.AddSingleton<IPlatformAdminChecker>(new FakePlatformAdminChecker());
-                services.AddSingleton<ITrialGuard, TrialGuard>();
+                services.AddSingleton<IPlanGuard, PlanGuard>();
             }
             else
             {
-                services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                services.AddSingleton<IPlanGuard, FakePlanGuard>();
             }
 
             services.AddSingleton<IPortalAppearanceService, PortalAppearanceService>();

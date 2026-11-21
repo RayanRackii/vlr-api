@@ -95,6 +95,12 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
 
         builder.Property(t => t.TrialPurgeAt);
 
+        builder.Property(t => t.LeadSource)
+            .HasMaxLength(Tenant.LeadFieldMaxLength);
+
+        builder.Property(t => t.LeadCampaign)
+            .HasMaxLength(Tenant.LeadFieldMaxLength);
+
         builder.Property(t => t.NotificationsEmailOnly)
             .HasDefaultValue(false)
             .IsRequired();

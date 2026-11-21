@@ -4,6 +4,7 @@ using Npgsql;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
+using Platform.Api.Services.Billing;
 using Platform.Api.Services.Tenancy;
 using Platform.Api.Services.Brazil;
 using Platform.Core.Domain.Constants;
@@ -80,6 +81,38 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             return Results.BadRequest(new { error = validationError });
         }
 
+        // Package of the trial: the chosen one, else the one that matches the default trial modules.
+        // The Profissional plan of that package carries the trial limits and the modules applied below.
+        var requestedPackage = string.IsNullOrWhiteSpace(request.PackageKey)
+            ? null
+            : request.PackageKey.Trim().ToLowerInvariant();
+        var trialPackage = requestedPackage ?? PackageResolver.FromModules(TrialModules);
+        var trialPlan = await _dbContext.PlanCatalogs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                plan => plan.PackageKey == trialPackage
+                    && plan.PlanKey == PlanKeys.Profissional
+                    && plan.IsActive,
+                cancellationToken);
+        if (requestedPackage is not null && trialPlan is null)
+        {
+            return Results.BadRequest(new { error = "PackageKey is not an active package." });
+        }
+
+        if (trialPlan is null)
+        {
+            // Rollout window: without a seeded catalog the tenant keeps no subscription and no limits.
+            _logger.LogWarning(
+                "Plan catalog has no active {PlanKey} plan for package {PackageKey}; trial created without a subscription.",
+                PlanKeys.Profissional,
+                trialPackage);
+        }
+
+        // The package modules replace the default trial set only when the signup chose a package.
+        IReadOnlyList<string> trialModules = requestedPackage is not null && trialPlan is not null
+            ? trialPlan.GetModules()
+            : TrialModules;
+
         if (!_trialCreateGate.TryConsume(clientIp))
         {
             return Results.Json(
@@ -151,6 +184,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             if (request.IsTrial)
             {
                 tenant.ConfigureAsTrial(DateTimeOffset.UtcNow);
+                tenant.SetLead(request.LeadSource, request.LeadCampaign);
             }
 
             var familyIds = await ResolveTrialFamilyIdsAsync(cancellationToken);
@@ -158,7 +192,7 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
                 tenant,
                 request.HeadquartersUnitName,
                 request.HeadquartersUnitCode,
-                TrialModules,
+                trialModules,
                 familyIds,
                 cancellationToken);
             var headquartersUnit = provisioned.Headquarters;
@@ -168,6 +202,16 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
             if (trialClaim is not null)
             {
                 trialClaim.LinkTenant(tenant.Id);
+            }
+
+            if (trialPlan is not null)
+            {
+                var (subscription, created) = TrialSubscriptions.Create(
+                    tenant,
+                    trialPlan,
+                    DateTimeOffset.UtcNow);
+                _dbContext.TenantSubscriptions.Add(subscription);
+                _dbContext.SubscriptionEvents.Add(created);
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -317,6 +361,12 @@ public sealed class CreateTenantHandler : ICreateTenantHandler
         if (string.IsNullOrWhiteSpace(request.AdminPhone))
         {
             return "AdminPhone is required for trial signup.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PackageKey)
+            && !PackageKeys.IsKnown(request.PackageKey.Trim().ToLowerInvariant()))
+        {
+            return "PackageKey is not a known package.";
         }
 
         return null;

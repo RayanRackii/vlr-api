@@ -61,14 +61,14 @@ public sealed class ModuleDataScopeTests
     public void A_schema_outside_the_spec_table_is_not_classified()
     {
         var builder = new ModelBuilder();
-        builder.Entity<Billing>().ToTable("billing_rows", "billing").HasKey(row => row.Id);
-        builder.Entity<Billing>().Property(row => row.TenantId);
+        builder.Entity<Future>().ToTable("future_rows", "future").HasKey(row => row.Id);
+        builder.Entity<Future>().Property(row => row.TenantId);
         var model = builder.FinalizeModel();
         var entity = Assert.Single(model.GetEntityTypes());
 
-        Assert.Equal("billing", ModuleDataScope.SchemaOf(entity, model));
-        Assert.False(ModuleDataScope.IsClassified("billing"));
-        foreach (var schema in new[] { "rentals", "catalog", "os", "pmoc", "planning", "assets", "core" })
+        Assert.Equal("future", ModuleDataScope.SchemaOf(entity, model));
+        Assert.False(ModuleDataScope.IsClassified("future"));
+        foreach (var schema in new[] { "rentals", "catalog", "os", "pmoc", "planning", "assets", "core", "billing" })
             Assert.True(ModuleDataScope.IsClassified(schema), schema);
     }
 
@@ -78,11 +78,12 @@ public sealed class ModuleDataScopeTests
         Assert.Equal(Purgeable, ModuleDataScope.PurgeableModules);
         Assert.Null(ModuleDataScope.ModuleOfSchema("assets"));
         Assert.Null(ModuleDataScope.ModuleOfSchema("core"));
+        Assert.Null(ModuleDataScope.ModuleOfSchema("billing"));
         Assert.Equal(PlatformModules.ResourcePlanning, ModuleDataScope.ModuleOfSchema("planning"));
         Assert.Equal(PlatformModules.WorkOrders, ModuleDataScope.ModuleOfSchema("os"));
 
         using var db = ModelOnlyDb();
-        foreach (var notPurgeable in new[] { PlatformModules.Inventory, PlatformModules.Maintenance, "assets", "core" })
+        foreach (var notPurgeable in new[] { PlatformModules.Inventory, PlatformModules.Maintenance, "assets", "core", "billing" })
         {
             Assert.False(ModuleDataScope.IsPurgeable(notPurgeable));
             Assert.Throws<ArgumentException>(() => ModuleDataScope.EntitiesFor(db.Model, notPurgeable));
@@ -206,6 +207,7 @@ public sealed class ModuleDataScopeTests
     [InlineData("maintenance", "maintenance", ModuleDataScope.NotPurgeableCode)]
     [InlineData("core", "core", ModuleDataScope.NotPurgeableCode)]
     [InlineData("assets", "assets", ModuleDataScope.NotPurgeableCode)]
+    [InlineData("billing", "billing", ModuleDataScope.NotPurgeableCode)]
     [InlineData("CORE", "core", ModuleDataScope.NotPurgeableCode)]
     [InlineData("bogus", null, ModuleDataScope.UnknownModuleCode)]
     [InlineData("", null, ModuleDataScope.UnknownModuleCode)]
@@ -258,7 +260,7 @@ public sealed class ModuleDataScopeTests
         }
     }
 
-    private sealed class Billing
+    private sealed class Future
     {
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }

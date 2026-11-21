@@ -25,7 +25,7 @@ using Platform.Api.Common;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Assets.Controllers;
 using Platform.Api.Modules.Assets.Services;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -192,7 +192,7 @@ public sealed class AssetDeleteHttpTests
                     services.AddLogging();
                     services.AddHttpContextAccessor();
                     services.AddSingleton<IPlatformAdminChecker>(_ => new FakePlatformAdminChecker());
-                    services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                    services.AddSingleton<IPlanGuard, FakePlanGuard>();
                     services.AddScoped<AmbientTenantContext>();
                     services.AddScoped<PlatformAdminTenantSession>();
                     services.AddScoped<ITenantProvider, HttpContextTenantProvider>();

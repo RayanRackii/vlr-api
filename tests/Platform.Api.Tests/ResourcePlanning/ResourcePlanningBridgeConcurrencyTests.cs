@@ -33,7 +33,7 @@ public sealed partial class ResourcePlanningConcurrencyTests
         var reservationService = new ReservationService(
             dbBooking,
             tenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(dbBooking, tenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

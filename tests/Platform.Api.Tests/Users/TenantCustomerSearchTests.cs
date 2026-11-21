@@ -94,7 +94,7 @@ public sealed class TenantCustomerSearchTests : IClassFixture<PostgresContainerF
                 read,
                 TestPermissionResolvers.Create(read, scoped),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<Platform.Api.Authorization.RbacGrantGuard>.Instance),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),

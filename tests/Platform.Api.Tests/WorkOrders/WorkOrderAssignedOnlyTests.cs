@@ -167,7 +167,7 @@ internal sealed class WorkOrderRbacHarness : IAsyncDisposable
             new FakePlatformAdminChecker(),
             resolver,
             grantGuard,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),
@@ -181,7 +181,7 @@ internal sealed class WorkOrderRbacHarness : IAsyncDisposable
             new AssetRegistry(
                 db,
                 tenantProvider,
-                new AssetService(db, tenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(db)),
+                new AssetService(db, tenantProvider, new FakePlanGuard(), new RentalConfigurationSync(db)),
                 new AssetFamilyService(db),
                 new AssetCategoryService(db, tenantProvider)));
 

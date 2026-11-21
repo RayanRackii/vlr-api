@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Modules.ResourceVisuals;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Infrastructure.Persistence;
@@ -57,7 +57,7 @@ public sealed class ResourceVisualHttpTests
         {
             web.UseTestServer(); web.ConfigureServices(services =>
             {
-                services.AddLogging(); services.AddSingleton<ITenantProvider, FakeTenantProvider>(); services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                services.AddLogging(); services.AddSingleton<ITenantProvider, FakeTenantProvider>(); services.AddSingleton<IPlanGuard, FakePlanGuard>();
                 services.AddScoped<AppDbContext>(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), database));
                 services.Configure<PlatformAdminOptions>(options => options.Emails = ["platform@test.local"]);
                 services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>(); services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();

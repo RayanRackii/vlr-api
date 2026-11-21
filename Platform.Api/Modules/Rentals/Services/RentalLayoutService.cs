@@ -1,14 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Rentals.Dtos;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Rentals.Services;
 
 public sealed partial class RentalLayoutService(AppDbContext dbContext, ITenantProvider tenantProvider,
-    ITrialGuard trialGuard, ILogger<RentalLayoutService>? logger = null) : IRentalLayoutService
+    IPlanGuard planGuard, ILogger<RentalLayoutService>? logger = null) : IRentalLayoutService
 {
     private IQueryable<RentalLayout> Layouts(Guid tenantId) => dbContext.RentalLayouts.IgnoreQueryFilters()
         .Where(l => l.TenantId == tenantId);
@@ -41,7 +41,7 @@ public sealed partial class RentalLayoutService(AppDbContext dbContext, ITenantP
     public async Task<RentalLayoutResponseDto> CreateAsync(UpsertRentalLayoutRequestDto request, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(ct);
+        await planGuard.EnsureWritableAsync(ct);
         await using var tx = await BeginWriteAsync(tenantId, ct);
         BookingMapValidation.Canvas(request.Name, request.AspectRatio, request.WidthPercent);
         await ValidateResourcesAsync(tenantId, request.UnitId, request.Items.Select(i => i.RentalAssetId).ToArray(), ct);
@@ -62,7 +62,7 @@ public sealed partial class RentalLayoutService(AppDbContext dbContext, ITenantP
     public async Task<RentalLayoutResponseDto> UpdateAsync(Guid id, UpsertRentalLayoutRequestDto request, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(ct);
+        await planGuard.EnsureWritableAsync(ct);
         await using var tx = await BeginWriteAsync(tenantId, ct);
         var layout = await Layouts(tenantId).FirstOrDefaultAsync(l => l.Id == id, ct) ?? throw BookingMapValidation.Missing();
         BookingMapValidation.Canvas(request.Name, request.AspectRatio, request.WidthPercent);
@@ -100,7 +100,7 @@ public sealed partial class RentalLayoutService(AppDbContext dbContext, ITenantP
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(ct);
+        await planGuard.EnsureWritableAsync(ct);
         await using var tx = await BeginWriteAsync(tenantId, ct);
         var layout = await Layouts(tenantId).FirstOrDefaultAsync(l => l.Id == id, ct) ?? throw BookingMapValidation.Missing();
         var settings = await dbContext.Set<BookingMapSettings>().IgnoreQueryFilters()

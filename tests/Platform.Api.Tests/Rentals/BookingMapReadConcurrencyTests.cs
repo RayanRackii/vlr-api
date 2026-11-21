@@ -78,7 +78,7 @@ public sealed class BookingMapReadConcurrencyTests(PostgresContainerFixture post
         }
     }
 
-    private static RentalLayoutService Service(AppDbContext db, FakeTenantProvider provider) => new(db, provider, new FakeTrialGuard());
+    private static RentalLayoutService Service(AppDbContext db, FakeTenantProvider provider) => new(db, provider, new FakePlanGuard());
 
     private static async Task<Snapshot> ReadAsync(RentalLayoutService service, Guid id, bool publicRead, CancellationToken ct)
     {

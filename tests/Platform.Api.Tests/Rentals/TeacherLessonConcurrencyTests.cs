@@ -1028,7 +1028,7 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
     private static TeacherLessonService CreateLessonService(
         AppDbContext db,
         FakeTenantProvider tenantProvider) =>
-        new(db, tenantProvider, new FakeTrialGuard(),
+        new(db, tenantProvider, new FakePlanGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0))),
             new TestTeacherLessonScope());
 
@@ -1038,7 +1038,7 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
         new(
             db,
             tenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
@@ -1051,7 +1051,7 @@ public sealed class TeacherLessonConcurrencyTests : IClassFixture<PostgresContai
             db,
             tenantProvider,
             new OccupancyKindService(db, tenantProvider),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

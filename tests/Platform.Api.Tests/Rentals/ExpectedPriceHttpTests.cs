@@ -21,7 +21,7 @@ using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -180,7 +180,7 @@ public sealed class ExpectedPriceHttpTests
             services.AddSingleton<ITenantModuleAccessor>(new ActiveRentalsModule());
             services.AddSingleton<TimeProvider>(h.Time);
             services.AddRentalsModule();
-            services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+            services.AddSingleton<IPlanGuard, FakePlanGuard>();
             services.AddSingleton<IRentalsNotificationPublisher>(SilentRentalsNotifications.Publisher);
             services.AddSingleton<INotificationOutboxScheduler>(SilentRentalsNotifications.Scheduler);
             services.AddAuthentication(CustomerJwtBearerDefaults.AuthenticationScheme)

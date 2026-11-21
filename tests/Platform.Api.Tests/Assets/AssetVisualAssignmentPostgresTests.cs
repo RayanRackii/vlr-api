@@ -23,7 +23,7 @@ public sealed class AssetVisualAssignmentPostgresTests(PostgresContainerFixture 
         await using (var db = factory.Create(provider))
         {
             var seed = await SeedAsync(db, provider);
-            var service = new AssetService(db, provider, new FakeTrialGuard(), new RentalConfigurationSync(db));
+            var service = new AssetService(db, provider, new FakePlanGuard(), new RentalConfigurationSync(db));
             var request = new CreateRentableRequest { Name = "Resource", Tag = "R", UnitId = seed.UnitId, CategoryId = seed.CategoryId, FamilyId = seed.FamilyId, VisualTemplateRevisionId = seed.RevisionId, CapacityPeople = 6, MaxAdvanceBookingDays = 19 };
             var created = await service.CreateRentableAsync(request, CancellationToken.None);
             (assetId, revisionId) = (created.Id, seed.RevisionId);
@@ -52,7 +52,7 @@ public sealed class AssetVisualAssignmentPostgresTests(PostgresContainerFixture 
         {
             var seed = await SeedAsync(db, provider);
             owner = provider.TenantId!.Value;
-            var asset = await new AssetService(db, provider, new FakeTrialGuard(), new RentalConfigurationSync(db)).CreateRentableAsync(new()
+            var asset = await new AssetService(db, provider, new FakePlanGuard(), new RentalConfigurationSync(db)).CreateRentableAsync(new()
             { Name = "Resource", Tag = "R", UnitId = seed.UnitId, CategoryId = seed.CategoryId, FamilyId = seed.FamilyId }, CancellationToken.None);
             rentalId = asset.RentalConfig!.RentalAssetId;
             var other = new Tenant("Other", Guid.NewGuid().ToString("N")[..20], subdomain: "visual-other-" + Guid.NewGuid().ToString("N"));

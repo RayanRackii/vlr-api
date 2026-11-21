@@ -49,6 +49,7 @@ The module is derived from the table schema, which the EF model already has:
 | `planning` | `resource-planning` | yes |
 | `assets` | shared registry (`inventory` and every module) | **no** |
 | `core` | platform | **no** |
+| `billing` | platform | **no** |
 
 New class `Platform.Api/Services/Tenancy/ModuleDataScope.cs`:
 - `IReadOnlyList<IEntityType> EntitiesFor(IModel model, string module)` returns the entities with

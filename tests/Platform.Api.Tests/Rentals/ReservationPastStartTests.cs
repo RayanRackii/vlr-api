@@ -309,7 +309,7 @@ public sealed class ReservationPastStartTests
             var reservations = new ReservationService(
                 db,
                 tenantProvider,
-                new FakeTrialGuard(),
+                new FakePlanGuard(),
                 queue,
                 SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
@@ -318,7 +318,7 @@ public sealed class ReservationPastStartTests
                 db,
                 tenantProvider,
                 kinds,
-                new FakeTrialGuard(),
+                new FakePlanGuard(),
                 queue,
                 SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,

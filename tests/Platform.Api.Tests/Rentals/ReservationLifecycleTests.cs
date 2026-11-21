@@ -258,7 +258,7 @@ public sealed class ReservationLifecycleTests
         var serviceB = new ReservationService(
             dbB,
             providerB,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(dbB, providerB),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

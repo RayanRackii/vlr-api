@@ -4,7 +4,7 @@ using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Services.Tenancy;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Constants;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
@@ -155,7 +155,7 @@ public sealed class TeacherLessonServiceTests
         await using var harness = await TeacherLessonHarness.CreateAsync();
         var clock = new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday, new TimeOnly(10, 30)));
         var service = new TeacherLessonService(
-            harness.Db, harness.TenantProvider, new FakeTrialGuard(), clock, new TestTeacherLessonScope());
+            harness.Db, harness.TenantProvider, new FakePlanGuard(), clock, new TestTeacherLessonScope());
 
         var ex = await Assert.ThrowsAsync<StartInThePastException>(() => service.CreateAsync(
             harness.CreateRequest(), CancellationToken.None));
@@ -239,7 +239,7 @@ public sealed class TeacherLessonServiceTests
         var later = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday, new TimeOnly(12, 0))),
             new TestTeacherLessonScope());
         var removed = await later.RemoveAsync(
@@ -459,7 +459,7 @@ public sealed class TeacherLessonServiceTests
         var service = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0))),
             new TenantSettingTeacherLessonScope(harness.Db));
 
@@ -489,7 +489,7 @@ public sealed class TeacherLessonServiceTests
         var service = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(new DateOnly(2026, 10, 14), new TimeOnly(9, 0))),
             new TenantSettingTeacherLessonScope(harness.Db));
 
@@ -544,7 +544,7 @@ public sealed class TeacherLessonServiceTests
         var service = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0))),
             new TenantSettingTeacherLessonScope(harness.Db));
 
@@ -568,7 +568,7 @@ public sealed class TeacherLessonServiceTests
         var service = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0))),
             new TestTeacherLessonScope());
 
@@ -591,7 +591,7 @@ public sealed class TeacherLessonServiceTests
     public async Task Create_read_only_trial_rejects_without_write()
     {
         await using var harness = await TeacherLessonHarness.CreateAsync(
-            trialGuard: new BlockingTrialGuard());
+            planGuard: new BlockingPlanGuard());
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             harness.Lessons.CreateAsync(harness.CreateRequest(), CancellationToken.None));
@@ -1052,16 +1052,22 @@ public sealed class TeacherLessonServiceTests
         };
 }
 
-internal sealed class BlockingTrialGuard : ITrialGuard
+internal sealed class BlockingPlanGuard : IPlanGuard
 {
     public Task EnsureWritableAsync(CancellationToken cancellationToken) =>
         throw new InvalidOperationException(
             "This trial has ended. The workspace is read-only until it is purged.");
 
-    public Task EnsureCanCreateAssetsAsync(int additionalCount, CancellationToken cancellationToken) =>
+    public Task EnsureCanCreateAssetsAsync(
+        int additionalCount,
+        int additionalRentableCount,
+        CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
     public Task EnsureCanInviteUserAsync(Guid tenantId, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    public Task EnsureCanCreateUnitAsync(Guid tenantId, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 }
 
@@ -1080,7 +1086,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
         Guid rentalAssetId,
         Guid openTemplateId,
         string databaseName,
-        ITrialGuard trialGuard,
+        IPlanGuard planGuard,
         ITeacherLessonScope? scope = null,
         TimeProvider? timeProvider = null)
     {
@@ -1096,14 +1102,14 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
         Lessons = new TeacherLessonService(
             db,
             tenantProvider,
-            trialGuard,
+            planGuard,
             timeProvider ?? BookingClock,
             scope ?? new TestTeacherLessonScope());
         Schedule = new ScheduleService(
             db,
             tenantProvider,
             new OccupancyKindService(db, tenantProvider),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
@@ -1137,7 +1143,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
     public static async Task<TeacherLessonHarness> CreateAsync(
         bool seedHourlyOpen = true,
         string? databaseName = null,
-        ITrialGuard? trialGuard = null,
+        IPlanGuard? planGuard = null,
         IEnumerable<IInterceptor>? interceptors = null,
         Guid? tenantId = null,
         Guid? assetId = null,
@@ -1266,7 +1272,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
             rental.Id,
             openTemplateId,
             name,
-            trialGuard ?? new FakeTrialGuard(),
+            planGuard ?? new FakePlanGuard(),
             scope,
             timeProvider);
     }
@@ -1275,7 +1281,7 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
         new(
             Db,
             TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

@@ -185,6 +185,13 @@ public class AppDbContext : DbContext
 
     public DbSet<AssetAllocation> AssetAllocations => Set<AssetAllocation>();
 
+    // --- Schema: billing (platform data, not tenant scoped: always filter by an explicit TenantId) ---
+    public DbSet<PlanCatalog> PlanCatalogs => Set<PlanCatalog>();
+
+    public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
+
+    public DbSet<SubscriptionEvent> SubscriptionEvents => Set<SubscriptionEvent>();
+
     private Guid? CurrentTenantId => _tenantProvider.TenantId;
 
     // Context members are re-read per query execution (EF parameterizes them).

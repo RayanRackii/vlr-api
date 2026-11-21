@@ -76,7 +76,7 @@ public sealed partial class ResourcePlanningConcurrencyTests
         Assert.Equal(AvailabilityWindowState.Taken, window.State);
         Assert.Equal(0, window.AvailableQuantity);
 
-        var reservations = new ReservationService(db, tenant, new FakeTrialGuard(),
+        var reservations = new ReservationService(db, tenant, new FakePlanGuard(),
             TestReservationQueue.Create(db, tenant),
             SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, clock);
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => reservations.CreateReservationAsync(

@@ -148,7 +148,7 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
         var reservations = new ReservationService(
             db,
             tenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider, time),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
@@ -164,7 +164,7 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
             db,
             tenantProvider,
             new UnusedOccupancyKindService(),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider, time),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
@@ -226,7 +226,7 @@ public sealed class ReservationQueueConcurrencyTests : IClassFixture<PostgresCon
         var reservations = new ReservationService(
             db,
             tenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider, time),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

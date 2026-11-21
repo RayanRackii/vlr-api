@@ -322,7 +322,7 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
             new FakePlatformAdminChecker("ops@tenant.test"),
             resolver,
             new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),
@@ -336,7 +336,7 @@ public sealed class WorkOrderIntegrityConcurrencyTests : IClassFixture<PostgresC
             new AssetRegistry(
                 db,
                 tenantProvider,
-                new AssetService(db, tenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(db)),
+                new AssetService(db, tenantProvider, new FakePlanGuard(), new RentalConfigurationSync(db)),
                 new AssetFamilyService(db),
                 new AssetCategoryService(db, tenantProvider)));
     }

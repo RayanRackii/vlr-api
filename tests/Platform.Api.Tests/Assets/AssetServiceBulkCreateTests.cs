@@ -264,7 +264,7 @@ internal sealed class BulkCreateAssetsHarness : IAsyncDisposable
     }
 
     public AssetService CreateService() =>
-        new(Db, TenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(Db));
+        new(Db, TenantProvider, new FakePlanGuard(), new RentalConfigurationSync(Db));
 
     public IAssetRegistry CreateRegistry()
     {

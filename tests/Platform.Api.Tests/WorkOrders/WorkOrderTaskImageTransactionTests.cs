@@ -166,7 +166,7 @@ public sealed class WorkOrderTaskImageTransactionTests(PostgresContainerFixture 
             new FakePlatformAdminChecker("ops@tenant.test"),
             resolver,
             new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),

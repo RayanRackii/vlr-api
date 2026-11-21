@@ -127,7 +127,7 @@ public sealed class TenantUserAdminFailClosedTests
                 new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["App:FrontendBaseUrl"] = "https://app.example.test",
-                }).Build(), new FakeHostEnvironment(), new FakeTrialGuard(), new FakePlatformAdminChecker(),
+                }).Build(), new FakeHostEnvironment(), new FakePlanGuard(), new FakePlatformAdminChecker(),
                 NullLogger<TenantUserAdminService>.Instance);
             return h;
         }

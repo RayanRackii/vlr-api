@@ -8,6 +8,7 @@ using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Auth;
+using Platform.Api.Modules.Billing;
 using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.Company;
 using Platform.Api.Modules.Taxonomy;
@@ -27,7 +28,7 @@ using Platform.Api.Modules.Webhooks;
 using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Notifications;
 using Platform.Api.Serialization;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Storage;
 using Microsoft.Extensions.Options;
 using Platform.Core.Infrastructure;
@@ -61,7 +62,8 @@ try
     builder.Services.AddCustomerAuthSendRateLimiting();
     builder.Services.AddScoped<PlatformAdminTenantSession>();
     builder.Services.AddScoped<ITenantProvider, HttpContextTenantProvider>();
-    builder.Services.AddScoped<ITrialGuard, TrialGuard>();
+    builder.Services.AddScoped<IPlanGuard, PlanGuard>();
+    builder.Services.AddScoped<IPlanLimits, PlanLimitsService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton(new IdempotencyOptions());
     builder.Services.AddScoped<IIdempotencyService, IdempotencyService>();
@@ -91,6 +93,7 @@ try
     builder.Services.AddRegistrationFieldsModule();
     builder.Services.AddModuleMenuItemsModule();
     builder.Services.AddAdminModule();
+    builder.Services.AddBillingModule();
     builder.Services.AddSingleton<IAnonymousTrialCreateGate, AnonymousTrialCreateGate>();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
     builder.Services.AddMediatR(configuration =>

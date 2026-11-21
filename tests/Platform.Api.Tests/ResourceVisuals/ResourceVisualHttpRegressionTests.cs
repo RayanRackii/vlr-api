@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.ResourceVisuals;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -177,7 +177,7 @@ public sealed class ResourceVisualHttpRegressionTests
             {
                 web.UseTestServer(); web.ConfigureServices(services =>
                 {
-                    services.AddLogging(); services.AddHttpContextAccessor(); services.AddSingleton<ITenantProvider>(tenantProvider); services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                    services.AddLogging(); services.AddHttpContextAccessor(); services.AddSingleton<ITenantProvider>(tenantProvider); services.AddSingleton<IPlanGuard, FakePlanGuard>();
                     services.AddScoped<AppDbContext>(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), database));
                     services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>(); services.AddScoped<IPermissionResolver, HeaderPermissionResolver>(); services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
                     services.Configure<PlatformAdminOptions>(options => options.Emails = ["platform@test.local"]); services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>(); services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();

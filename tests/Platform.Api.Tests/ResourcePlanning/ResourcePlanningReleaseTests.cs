@@ -204,7 +204,7 @@ public sealed partial class ResourcePlanningConcurrencyTests
         });
         await db.SaveChangesAsync();
 
-        var reservations = new ReservationService(db, tenant, new FakeTrialGuard(),
+        var reservations = new ReservationService(db, tenant, new FakePlanGuard(),
             TestReservationQueue.Create(db, tenant),
             SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, clock);
         var booking = await reservations.CreateReservationAsync(seed.CustomerId, new CreateReservationRequestDto

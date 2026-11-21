@@ -191,7 +191,7 @@ public sealed class RentalsWhatsAppNotificationTests
         var otherService = new ReservationService(
             otherDb,
             otherProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(otherDb, otherProvider),
             new RentalsNotificationPublisher(
                 otherDb,
@@ -308,7 +308,7 @@ public sealed class RentalsWhatsAppNotificationTests
         var reservations = new ReservationService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
             publisher.AsDomainEvents(),
             scheduler,

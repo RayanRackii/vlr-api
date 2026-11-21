@@ -952,6 +952,73 @@
         ],
         "type": "string"
       },
+      "BillingPackageSummaryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "activeCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mrrCents": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "packageKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pastDueCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "readOnlyCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "trialingCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BillingSummaryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "activeCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "byPackage": {
+            "items": {
+              "$ref": "#/components/schemas/BillingPackageSummaryDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "currency": {
+            "nullable": true,
+            "type": "string"
+          },
+          "mrrCents": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pastDueCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "readOnlyCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "trialingCount": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "BookSlotRequestDto": {
         "additionalProperties": false,
         "properties": {
@@ -4889,6 +4956,37 @@
         },
         "type": "object"
       },
+      "PlanLimitsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "rentableResources": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "units": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "users": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "whatsappMessagesMonth": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PlanTaskResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5478,6 +5576,54 @@
         ],
         "type": "object"
       },
+      "PublicPlanDto": {
+        "additionalProperties": false,
+        "properties": {
+          "annualPriceCents": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/PlanLimitsDto"
+          },
+          "modules": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "monthlyPriceCents": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "packageKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "planKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PublishDayRequestDto": {
         "additionalProperties": false,
         "properties": {
@@ -5547,6 +5693,47 @@
         "required": [
           "value"
         ],
+        "type": "object"
+      },
+      "PutTenantSubscriptionRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "billingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "billingMode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "coupon": {
+            "nullable": true,
+            "type": "string"
+          },
+          "discountPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "discountUntil": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "limitsUnlimited": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "planCatalogId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "QueuePhase": {
@@ -7585,6 +7772,24 @@
         },
         "type": "object"
       },
+      "SubscriptionEventDto": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TagDto": {
         "additionalProperties": false,
         "properties": {
@@ -7984,6 +8189,111 @@
           },
           "value": {
             "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TenantSubscriptionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "billingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "billingMode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "canceledAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "currency": {
+            "nullable": true,
+            "type": "string"
+          },
+          "currentPeriodEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "currentPeriodStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "discountPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "discountUntil": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "effectiveDiscountPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionEventDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "hasSubscription": {
+            "type": "boolean"
+          },
+          "limitsUnlimited": {
+            "type": "boolean"
+          },
+          "monthlyEquivalentCents": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "packageKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pastDueSince": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "planCatalogId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "planKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "planLimits": {
+            "$ref": "#/components/schemas/PlanLimitsDto"
+          },
+          "planName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "provider": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
+          "subscriptionId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "tenantId": {
+            "format": "uuid",
             "type": "string"
           }
         },
@@ -9840,6 +10150,35 @@
         ]
       }
     },
+    "/api/admin/billing/summary": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSummaryDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSummaryDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSummaryDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminBilling"
+        ]
+      }
+    },
     "/api/admin/modules": {
       "get": {
         "responses": {
@@ -11336,6 +11675,103 @@
         },
         "tags": [
           "AdminTenantSettings"
+        ]
+      }
+    },
+    "/api/admin/tenants/{tenantId}/subscription": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenantId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminTenantSubscriptions"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenantId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/PutTenantSubscriptionRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutTenantSubscriptionRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutTenantSubscriptionRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminTenantSubscriptions"
         ]
       }
     },
@@ -17978,6 +18414,44 @@
         ]
       }
     },
+    "/api/public/plans": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicPlanDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicPlanDto"
+                  },
+                  "type": "array"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicPlanDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PublicPlans"
+        ]
+      }
+    },
     "/api/public/resource-visual-revisions/{id}/art.svg": {
       "get": {
         "parameters": [
@@ -22978,6 +23452,9 @@
       "name": "AdminAssetFamilies"
     },
     {
+      "name": "AdminBilling"
+    },
+    {
       "name": "AdminBookingMapDemo"
     },
     {
@@ -23009,6 +23486,9 @@
     },
     {
       "name": "AdminTenantSettings"
+    },
+    {
+      "name": "AdminTenantSubscriptions"
     },
     {
       "name": "AdminTenantUsers"
@@ -23111,6 +23591,9 @@
     },
     {
       "name": "PublicBookingMaps"
+    },
+    {
+      "name": "PublicPlans"
     },
     {
       "name": "PublicResourceVisualArt"

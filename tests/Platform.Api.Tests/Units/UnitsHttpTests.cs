@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
@@ -18,6 +19,7 @@ using Microsoft.Extensions.Options;
 using Platform.Api.Authentication;
 using Platform.Api.Authorization;
 using Platform.Api.Modules.Units;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -71,6 +73,52 @@ public sealed class UnitsHttpTests
         Assert.Equal("Clubhouse", list[0].Name);
     }
 
+    [Fact]
+    public async Task Create_is_refused_with_409_plan_limit_reached_when_the_plan_units_are_used_up()
+    {
+        await using var harness = new Harness();
+        var plan = BillingTestData.Plan(
+            "reservas", "essencial", BillingTestData.LimitsJson(null, 3, 3, 1, 0));
+        harness.Db.PlanCatalogs.Add(plan);
+        harness.Db.Tenants.Add(new Tenant("Limited", "12345678000195"));
+        await harness.Db.SaveChangesAsync();
+        var tenant = await harness.Db.Tenants.SingleAsync();
+        harness.Provider.TenantId = tenant.Id;
+        harness.Db.Units.Add(new Unit(tenant.Id, "HQ"));
+        harness.Db.TenantSubscriptions.Add(new TenantSubscription { TenantId = tenant.Id, PlanCatalogId = plan.Id });
+        await harness.Db.SaveChangesAsync();
+        using var host = StartHost(harness);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthentication.Header, Permissions.Core.UnitsWrite);
+
+        var response = await client.PostAsJsonAsync("/api/units", new { name = "Second" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = body.RootElement;
+        Assert.Equal("plan.limit_reached", root.GetProperty("code").GetString());
+        Assert.Equal("units", root.GetProperty("limit").GetString());
+        Assert.Equal(1, root.GetProperty("current").GetInt32());
+        Assert.Equal(1, root.GetProperty("max").GetInt32());
+        Assert.Equal("essencial", root.GetProperty("planKey").GetString());
+        Assert.Equal(1, await harness.Db.Units.CountAsync());
+    }
+
+    [Fact]
+    public async Task Create_is_not_limited_for_a_tenant_without_a_subscription()
+    {
+        await using var harness = new Harness();
+        harness.Db.Units.Add(new Unit(harness.FirstTenant, "HQ"));
+        await harness.Db.SaveChangesAsync();
+        using var host = StartHost(harness);
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add(TestAuthentication.Header, Permissions.Core.UnitsWrite);
+
+        var response = await client.PostAsJsonAsync("/api/units", new { name = "Second" });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
     private static IHost StartHost(Harness harness) => new HostBuilder().ConfigureWebHost(web =>
     {
         web.UseTestServer();
@@ -78,6 +126,8 @@ public sealed class UnitsHttpTests
         {
             services.AddSingleton(harness.Db);
             services.AddSingleton<ITenantProvider>(harness.Provider);
+            services.AddSingleton<IPlatformAdminChecker>(new FakePlatformAdminChecker());
+            services.AddSingleton<IPlanGuard, PlanGuard>();
             services.AddSingleton<IAuthorizationHandler, HeaderPermissionHandler>();
             services.AddAuthentication(SupabaseJwtBearerDefaults.AuthenticationScheme)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthentication>(SupabaseJwtBearerDefaults.AuthenticationScheme, _ => { });
@@ -91,7 +141,7 @@ public sealed class UnitsHttpTests
                 manager.FeatureProviders.Add(new UnitsControllerFeatureProvider());
             });
         });
-        web.Configure(app => { app.UseRouting(); app.UseAuthentication(); app.UseAuthorization(); app.UseEndpoints(endpoints => endpoints.MapControllers()); });
+        web.Configure(app => { app.UsePlatformExceptionHandler(); app.UseRouting(); app.UseAuthentication(); app.UseAuthorization(); app.UseEndpoints(endpoints => endpoints.MapControllers()); });
     }).Start();
 
     private sealed class Harness : IAsyncDisposable

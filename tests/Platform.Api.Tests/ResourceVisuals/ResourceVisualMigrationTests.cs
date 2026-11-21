@@ -1,4 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using System.Collections;
+using System.Reflection;
+using System.Text;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Platform.Api.Tests.Fakes;
@@ -52,7 +57,113 @@ public sealed class ResourceVisualMigrationTests
     {
         await using var factory = new PostgresAppDbFactory("Host=127.0.0.1;Port=1;Database=offline;Username=offline;Password=offline");
         await using var db = factory.Create(new FakeTenantProvider());
-        Assert.False(db.Database.HasPendingModelChanges());
+        if (!db.Database.HasPendingModelChanges())
+        {
+            return;
+        }
+
+        // Same computation as HasPendingModelChanges, but keep the operations so a failure says what differs.
+        var differ = db.GetService<IMigrationsModelDiffer>();
+        var snapshotModel = db.GetService<IMigrationsAssembly>().ModelSnapshot?.Model;
+        if (snapshotModel is IMutableModel mutable)
+        {
+            try
+            {
+                snapshotModel = mutable.FinalizeModel();
+            }
+            catch (InvalidOperationException)
+            {
+                // Already finalized (read-only): use it as is.
+            }
+        }
+
+        if (snapshotModel is not null)
+        {
+            snapshotModel = db.GetService<IModelRuntimeInitializer>().Initialize(snapshotModel);
+        }
+
+        var operations = differ.GetDifferences(
+            snapshotModel?.GetRelationalModel(),
+            db.GetService<IDesignTimeModel>().Model.GetRelationalModel());
+
+        var report = new StringBuilder("The model snapshot does not match the EF model. Operations that a new migration would contain:");
+        foreach (var operation in operations)
+        {
+            report.AppendLine();
+            Describe(report, operation, 1, 0);
+        }
+
+        Assert.Fail(report.ToString());
+    }
+
+    private static void Describe(StringBuilder report, object value, int indent, int depth)
+    {
+        var pad = new string(' ', indent * 2);
+        report.Append(pad).Append(value.GetType().Name).AppendLine();
+        foreach (var property in value.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (property.GetIndexParameters().Length > 0 || property.Name is "Item" or "IsDestructiveChange")
+            {
+                continue;
+            }
+
+            object? member;
+            try
+            {
+                member = property.GetValue(value);
+            }
+            catch
+            {
+                continue;
+            }
+
+            switch (member)
+            {
+                case null:
+                    continue;
+                case string or bool or int or long or Type or Enum:
+                    if (member is bool b && !b && property.Name != "IsNullable")
+                    {
+                        continue;
+                    }
+
+                    report.Append(pad).Append("  ").Append(property.Name).Append(" = ").AppendLine(member.ToString());
+                    break;
+                case IEnumerable items when depth < 3:
+                    var list = items.Cast<object?>().Where(i => i is not null).ToList();
+                    if (list.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    report.Append(pad).Append("  ").Append(property.Name).AppendLine(":");
+                    foreach (var item in list)
+                    {
+                        if (item is string text)
+                        {
+                            report.Append(pad).Append("    ").AppendLine(text);
+                        }
+                        else
+                        {
+                            Describe(report, item!, indent + 2, depth + 1);
+                        }
+                    }
+
+                    break;
+                case MigrationOperation nested when depth < 3:
+                    report.Append(pad).Append("  ").Append(property.Name).AppendLine(":");
+                    Describe(report, nested, indent + 2, depth + 1);
+                    break;
+            }
+        }
+
+        if (value is MigrationOperation operation)
+        {
+            foreach (var annotation in operation.GetAnnotations())
+            {
+                report.Append(pad).Append("  @").Append(annotation.Name).Append(" = ").AppendLine(annotation.Value?.ToString());
+            }
+        }
     }
 
     [Fact]

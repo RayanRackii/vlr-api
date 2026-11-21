@@ -540,7 +540,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
             new FakePlatformAdminChecker(),
             resolver,
             grantGuard,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             queue,
             configuration,
             new FakeHostEnvironment(),
@@ -552,7 +552,7 @@ internal sealed class RbacAccessHarness : IAsyncDisposable
             new NotificationQueue(),
             configuration,
             new FakeHostEnvironment(),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new FakePlatformAdminChecker(),
             NullLogger<Platform.Api.Modules.Admin.Services.TenantUserAdminService>.Instance);
 

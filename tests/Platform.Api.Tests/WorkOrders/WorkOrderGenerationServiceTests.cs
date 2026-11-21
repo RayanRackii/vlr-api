@@ -672,7 +672,7 @@ public sealed class WorkOrderGenerationServiceTests
             new FakePlatformAdminChecker(),
             resolver,
             grantGuard,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),

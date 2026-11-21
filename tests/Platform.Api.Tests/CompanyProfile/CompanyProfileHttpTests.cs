@@ -20,7 +20,7 @@ using Platform.Api.Authorization;
 using Platform.Api.Modules.Company.Controllers;
 using Platform.Api.Modules.Company.Dtos;
 using Platform.Api.Modules.Company.Services;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -213,9 +213,9 @@ public sealed class CompanyProfileHttpTests
     {
         await using var harness = new Harness();
         var first = await harness.Db.Tenants.SingleAsync(t => t.Id == harness.FirstTenant);
-        first.ConfigureAsTrial(DateTimeOffset.UtcNow.AddDays(-20));
+        first.ConfigureAsTrial(DateTimeOffset.UtcNow.AddDays(-(TrialLimits.TrialDays + 1)));
         await harness.Db.SaveChangesAsync();
-        using var host = StartHost(harness, realTrialGuard: true);
+        using var host = StartHost(harness, realPlanGuard: true);
         var client = host.GetTestClient();
         client.DefaultRequestHeaders.Add(TestAuthentication.Header, Permissions.Core.CompanyWrite);
 
@@ -229,21 +229,21 @@ public sealed class CompanyProfileHttpTests
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/company")).StatusCode);
     }
 
-    private static IHost StartHost(Harness harness, bool realTrialGuard = false) => new HostBuilder().ConfigureWebHost(web =>
+    private static IHost StartHost(Harness harness, bool realPlanGuard = false) => new HostBuilder().ConfigureWebHost(web =>
     {
         web.UseTestServer();
         web.ConfigureServices(services =>
         {
             services.AddSingleton(harness.Db);
             services.AddSingleton<ITenantProvider>(harness.Provider);
-            if (realTrialGuard)
+            if (realPlanGuard)
             {
                 services.AddSingleton<IPlatformAdminChecker>(new FakePlatformAdminChecker());
-                services.AddSingleton<ITrialGuard, TrialGuard>();
+                services.AddSingleton<IPlanGuard, PlanGuard>();
             }
             else
             {
-                services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                services.AddSingleton<IPlanGuard, FakePlanGuard>();
             }
 
             services.AddSingleton<ICompanyProfileService, CompanyProfileService>();

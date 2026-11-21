@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using Platform.Api.Modules.Rentals.Dtos;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Domain.Enums;
 using Platform.Core.Infrastructure.Persistence;
@@ -12,7 +12,7 @@ namespace Platform.Api.Modules.Rentals.Services;
 public sealed class TeacherLessonService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     TimeProvider timeProvider,
     ITeacherLessonScope teacherLessonScope) : ITeacherLessonService
 {
@@ -23,7 +23,7 @@ public sealed class TeacherLessonService(
         var tenantId = EnsureTenant();
         await EnsureLessonScopeAsync(tenantId, request.RentalAssetId, cancellationToken);
         await EnsureActiveTenantAsync(tenantId, cancellationToken);
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         ValidateTimeRange(request.StartTime, request.EndTime);
         await EnsureStartNotInPastAsync(
             tenantId, request.Date, request.StartTime, cancellationToken);
@@ -168,7 +168,7 @@ public sealed class TeacherLessonService(
         var tenantId = EnsureTenant();
         await EnsureLessonScopeAsync(tenantId, request.RentalAssetId, cancellationToken);
         await EnsureActiveTenantAsync(tenantId, cancellationToken);
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         var (openKind, lessonKind) = await LoadCanonicalKindsAsync(tenantId, cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()

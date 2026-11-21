@@ -25,7 +25,7 @@ using Platform.Api.Modules.Customers.Services;
 using Platform.Api.Modules.Users.Controllers;
 using Platform.Api.Modules.Users.Services;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
@@ -421,7 +421,7 @@ public sealed class PlatformAdminTenantResolutionEdgeTests
                     services.AddSingleton<IPlatformAdminChecker, PlatformAdminChecker>();
                     services.AddSingleton<IAuthorizationHandler, PlatformAdminAuthorizationHandler>();
                     services.AddSingleton<NotificationQueue>();
-                    services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                    services.AddSingleton<IPlanGuard, FakePlanGuard>();
                     services.AddSingleton<ITenantAccessBootstrapper, FakeTenantAccessBootstrapper>();
                     services.AddSingleton<ITenantUserAdminService, FakeTenantUserAdminService>();
                     services.AddScoped<AmbientTenantContext>();

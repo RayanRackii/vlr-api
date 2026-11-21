@@ -530,7 +530,7 @@ internal sealed class ScheduleOverlapHarness : IAsyncDisposable
             Db,
             TenantProvider,
             new OccupancyKindService(Db, TenantProvider),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(Db, TenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

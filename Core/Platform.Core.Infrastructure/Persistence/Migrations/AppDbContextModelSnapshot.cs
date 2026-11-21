@@ -2765,6 +2765,82 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("permissions", "core");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.PlanCatalog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AnnualPriceCents")
+                        .HasColumnType("integer")
+                        .HasColumnName("annual_price_cents");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("LimitsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("limits");
+
+                    b.Property<string>("ModulesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("modules");
+
+                    b.Property<int>("MonthlyPriceCents")
+                        .HasColumnType("integer")
+                        .HasColumnName("monthly_price_cents");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("PackageKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("package_key");
+
+                    b.Property<string>("PlanKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("plan_key");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_plan_catalog");
+
+                    b.HasIndex("PackageKey", "PlanKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_plan_catalog_package_key_plan_key");
+
+                    b.ToTable("plan_catalog", "billing");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.PlanTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4157,6 +4233,57 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.ToTable("slots", "rentals");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.SubscriptionEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<string>("ProviderEventId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("provider_event_id");
+
+                    b.Property<Guid>("SubscriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subscription_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_subscription_events");
+
+                    b.HasIndex("ProviderEventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_subscription_events_provider_event_id")
+                        .HasFilter("provider_event_id IS NOT NULL");
+
+                    b.HasIndex("SubscriptionId")
+                        .HasDatabaseName("ix_subscription_events_subscription_id");
+
+                    b.HasIndex("TenantId", "CreatedAt")
+                        .HasDatabaseName("ix_subscription_events_tenant_id_created_at");
+
+                    b.ToTable("subscription_events", "billing");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.TaxonomyCategory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4360,6 +4487,16 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasMaxLength(240)
                         .HasColumnType("character varying(240)")
                         .HasColumnName("landing_subtitle");
+
+                    b.Property<string>("LeadCampaign")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lead_campaign");
+
+                    b.Property<string>("LeadSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lead_source");
 
                     b.Property<string>("LegalName")
                         .IsRequired()
@@ -4751,6 +4888,124 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_tenant_settings_tenant_id_key");
 
                     b.ToTable("tenant_settings", "core");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BillingCycle")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("billing_cycle");
+
+                    b.Property<string>("BillingMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("provider")
+                        .HasColumnName("billing_mode");
+
+                    b.Property<DateTimeOffset?>("CanceledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("canceled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("CurrentPeriodEnd")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("current_period_end");
+
+                    b.Property<DateTimeOffset?>("CurrentPeriodStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("current_period_start");
+
+                    b.Property<int>("DiscountPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("discount_percent");
+
+                    b.Property<DateTimeOffset?>("DiscountUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("discount_until");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<bool>("LimitsUnlimited")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("limits_unlimited");
+
+                    b.Property<DateTimeOffset?>("PastDueSince")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("past_due_since");
+
+                    b.Property<Guid>("PlanCatalogId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plan_catalog_id");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ProviderCustomerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("provider_customer_id");
+
+                    b.Property<string>("ProviderSubscriptionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("provider_subscription_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tenant_subscriptions");
+
+                    b.HasIndex("PlanCatalogId")
+                        .HasDatabaseName("ix_tenant_subscriptions_plan_catalog_id");
+
+                    b.HasIndex("ProviderSubscriptionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_tenant_subscriptions_provider_subscription")
+                        .HasFilter("provider_subscription_id IS NOT NULL");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_tenant_subscriptions_tenant_current")
+                        .HasFilter("ended_at IS NULL");
+
+                    b.ToTable("tenant_subscriptions", "billing");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.TrialSignupClaim", b =>
@@ -6125,6 +6380,23 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Navigation("SourceTemplate");
                 });
 
+            modelBuilder.Entity("Platform.Core.Domain.Entities.SubscriptionEvent", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.TenantSubscription", null)
+                        .WithMany()
+                        .HasForeignKey("SubscriptionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_subscription_events_tenant_subscriptions_subscription_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_subscription_events_tenants_tenant_id");
+                });
+
             modelBuilder.Entity("Platform.Core.Domain.Entities.TaxonomyCategory", b =>
                 {
                     b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
@@ -6243,6 +6515,25 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_tenant_settings_tenants_tenant_id");
+                });
+
+            modelBuilder.Entity("Platform.Core.Domain.Entities.TenantSubscription", b =>
+                {
+                    b.HasOne("Platform.Core.Domain.Entities.PlanCatalog", "PlanCatalog")
+                        .WithMany()
+                        .HasForeignKey("PlanCatalogId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tenant_subscriptions_plan_catalog_plan_catalog_id");
+
+                    b.HasOne("Platform.Core.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tenant_subscriptions_tenants_tenant_id");
+
+                    b.Navigation("PlanCatalog");
                 });
 
             modelBuilder.Entity("Platform.Core.Domain.Entities.Unit", b =>

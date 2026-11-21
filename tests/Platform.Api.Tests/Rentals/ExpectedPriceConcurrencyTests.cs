@@ -148,13 +148,13 @@ public sealed class ExpectedPriceConcurrencyTests(PostgresContainerFixture postg
     private PostgresAppDbFactory RequireFactory() => Assert.IsType<PostgresAppDbFactory>(postgres.Factory);
 
     private static ReservationService Reservations(AppDbContext db, ReservationQueueHarness seed) => new(
-        db, seed.TenantProvider, new FakeTrialGuard(), TestReservationQueue.Create(db, seed.TenantProvider, seed.Time),
+        db, seed.TenantProvider, new FakePlanGuard(), TestReservationQueue.Create(db, seed.TenantProvider, seed.Time),
         SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, seed.Time);
 
     private static Task<ReservationResponseDto> BookAsync(AppDbContext db, ReservationQueueHarness seed,
         bool persisted, decimal expected, CancellationToken ct) => persisted
         ? new ScheduleService(db, seed.TenantProvider, new OccupancyKindService(db, seed.TenantProvider),
-            new FakeTrialGuard(), TestReservationQueue.Create(db, seed.TenantProvider, seed.Time),
+            new FakePlanGuard(), TestReservationQueue.Create(db, seed.TenantProvider, seed.Time),
             SilentRentalsNotifications.Publisher.AsDomainEvents(), SilentRentalsNotifications.Scheduler, seed.Time)
             .BookSlotAsync(seed.CustomerA, new BookSlotRequestDto
             {

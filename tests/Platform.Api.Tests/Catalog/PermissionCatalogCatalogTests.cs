@@ -7,8 +7,8 @@ public sealed class PermissionCatalogCatalogTests
     [Fact]
     public void Catalog_includes_complete_permission_and_keeps_default_user_bundle_unchanged()
     {
-        Assert.Equal(65, PermissionCatalog.All.Length);
-        Assert.Equal(65, PermissionCatalog.AllKeys.Count);
+        Assert.Equal(66, PermissionCatalog.All.Length);
+        Assert.Equal(66, PermissionCatalog.AllKeys.Count);
         Assert.Contains(Permissions.Rentals.ReservationsCreate, PermissionCatalog.AllKeys);
         Assert.Equal(
             PlatformModules.Rentals,

@@ -17,6 +17,7 @@ using Platform.Api.Common;
 using Platform.Api.Modules.Admin.Controllers;
 using Platform.Api.Modules.Assets.Controllers;
 using Platform.Api.Modules.Auth.Controllers;
+using Platform.Api.Modules.Billing.Controllers;
 using Platform.Api.Modules.CustomerAuth.Controllers;
 using Platform.Api.Modules.Customers.Controllers;
 using Platform.Api.Modules.ModuleMenuItems.Controllers;
@@ -74,6 +75,7 @@ public sealed class PermissionTenantConventionTests
         Endpoint<ModuleMenuItemsController>(nameof(ModuleMenuItemsController.GetPublicMenu)),
         Endpoint<InvitesController>(nameof(InvitesController.Preview)),
         Endpoint<InvitesController>(nameof(InvitesController.Accept)),
+        Endpoint<PublicPlansController>(nameof(PublicPlansController.List)),
     };
 
     /// <summary>

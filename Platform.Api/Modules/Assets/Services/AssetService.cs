@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Assets.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Modules.ResourceVisuals;
 using Platform.Api.Serialization;
 using Platform.Core.Domain.Entities;
@@ -14,7 +14,7 @@ namespace Platform.Api.Modules.Assets.Services;
 public sealed class AssetService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     IRentalConfigurationSync rentalConfigurationSync,
     ILogger<AssetService>? logger = null) : IAssetService
 {
@@ -60,7 +60,7 @@ public sealed class AssetService(
         CreateRentableTemplateDefaults? templateDefaults)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureCanCreateAssetsAsync(1, cancellationToken);
+        await planGuard.EnsureCanCreateAssetsAsync(1, request.IsRentable ? 1 : 0, cancellationToken);
         await using var transaction = dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
         var visual = await ValidateVisualAssignmentAsync(request.IsRentable,
@@ -132,7 +132,7 @@ public sealed class AssetService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await using var transaction = dbContext.Database.IsRelational() && dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
         await rentalConfigurationSync.AcquireBookingMapLockAsync(tenantId, cancellationToken);
@@ -211,7 +211,7 @@ public sealed class AssetService(
     public async Task<DeleteAssetResult?> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
 
         var asset = await dbContext.Assets
             .Include(a => a.RentalConfiguration)
@@ -274,7 +274,8 @@ public sealed class AssetService(
             request.QueueEnabled,
             request.QueueOpeningTime);
 
-        await trialGuard.EnsureCanCreateAssetsAsync(plan.Tags.Count, cancellationToken);
+        await planGuard.EnsureCanCreateAssetsAsync(
+            plan.Tags.Count, request.IsRentable ? plan.Tags.Count : 0, cancellationToken);
 
         await EnsureUnitExistsAsync(request.UnitId, cancellationToken);
         var category = await EnsureCategoryExistsAsync(request.CategoryId, cancellationToken);
