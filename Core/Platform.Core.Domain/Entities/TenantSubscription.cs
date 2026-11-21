@@ -55,6 +55,23 @@ public class TenantSubscription : Entity
 
     public DateTimeOffset? EndedAt { get; set; }
 
+    /// <summary>
+    /// Due instant of the latest provider payment already applied (<c>PAYMENT_RECEIVED</c>/<c>CONFIRMED</c>). Webhook
+    /// transitions are monotonic against it: an older or repeated payment never moves the subscription back.
+    /// </summary>
+    public DateTimeOffset? LastPaymentAt { get; set; }
+
+    /// <summary>
+    /// Plan the tenant chose that is not in force yet: the first payment of a checkout, or a downgrade that
+    /// starts with the next period. Applied by the payment webhook. Null when nothing is scheduled.
+    /// </summary>
+    public Guid? PendingPlanCatalogId { get; set; }
+
+    public string? PendingBillingCycle { get; set; }
+
+    /// <summary>The tenant asked to cancel: the provider subscription is gone, the plan stays until the period ends.</summary>
+    public bool CancelAtPeriodEnd { get; set; }
+
     public byte[] RowVersion { get; set; } = Guid.NewGuid().ToByteArray();
 
     public PlanCatalog? PlanCatalog { get; set; }

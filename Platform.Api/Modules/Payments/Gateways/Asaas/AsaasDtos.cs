@@ -101,3 +101,52 @@ internal sealed record AsaasErrorResponse(
     [property: JsonPropertyName("errors")] IReadOnlyList<AsaasErrorItem>? Errors);
 
 internal sealed record AsaasErrorItem([property: JsonPropertyName("code")] string? Code);
+
+// Platform billing (root account) wire shapes.
+
+internal sealed record AsaasListResponse<T>([property: JsonPropertyName("data")] IReadOnlyList<T>? Data);
+
+internal sealed record AsaasBillingCustomerBody(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("cpfCnpj")] string CpfCnpj,
+    [property: JsonPropertyName("mobilePhone")] string? MobilePhone,
+    [property: JsonPropertyName("externalReference")] string ExternalReference,
+    [property: JsonPropertyName("notificationDisabled")] bool NotificationDisabled);
+
+internal sealed record AsaasSubscriptionBody(
+    [property: JsonPropertyName("customer")] string Customer,
+    [property: JsonPropertyName("billingType")] string BillingType,
+    [property: JsonPropertyName("value")] decimal Value,
+    [property: JsonPropertyName("nextDueDate")] string NextDueDate,
+    [property: JsonPropertyName("cycle")] string Cycle,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("externalReference")] string ExternalReference);
+
+internal sealed record AsaasSubscriptionUpdateBody(
+    [property: JsonPropertyName("value")] decimal? Value,
+    [property: JsonPropertyName("cycle")] string? Cycle,
+    [property: JsonPropertyName("billingType")] string? BillingType,
+    [property: JsonPropertyName("updatePendingPayments")] bool UpdatePendingPayments);
+
+internal sealed record AsaasSubscriptionResponse(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("customer")] string? Customer,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("deleted")] bool? Deleted,
+    [property: JsonPropertyName("value")] decimal Value,
+    [property: JsonPropertyName("cycle")] string? Cycle,
+    [property: JsonPropertyName("billingType")] string? BillingType,
+    [property: JsonPropertyName("nextDueDate")] string? NextDueDate,
+    [property: JsonPropertyName("externalReference")] string? ExternalReference);
+
+internal sealed record AsaasBillingPaymentResponse(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("value")] decimal Value,
+    [property: JsonPropertyName("dueDate")] string? DueDate,
+    [property: JsonPropertyName("paymentDate")] string? PaymentDate,
+    [property: JsonPropertyName("invoiceUrl")] string? InvoiceUrl,
+    [property: JsonPropertyName("subscription")] string? Subscription,
+    [property: JsonPropertyName("customer")] string? Customer,
+    [property: JsonPropertyName("billingType")] string? BillingType);

@@ -63,6 +63,8 @@ public sealed class PermissionTenantConventionTests
         Endpoint<PasswordRecoveryController>(nameof(PasswordRecoveryController.ForgotPassword)),
         Endpoint<WhatsAppWebhookController>(nameof(WhatsAppWebhookController.Verify)),
         Endpoint<WhatsAppWebhookController>(nameof(WhatsAppWebhookController.Receive)),
+        // Token-authenticated provider webhook (Asaas billing); fails closed without a configured token.
+        Endpoint<AsaasBillingWebhookController>(nameof(AsaasBillingWebhookController.Receive)),
         Endpoint<ReservationsController>(nameof(ReservationsController.CheckAvailability)),
         Endpoint<ReservationsController>(nameof(ReservationsController.ListPublicAssets)),
         Endpoint<ScheduleController>(nameof(ScheduleController.GetDayPublic)),

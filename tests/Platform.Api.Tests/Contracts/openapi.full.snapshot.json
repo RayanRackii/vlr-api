@@ -952,6 +952,34 @@
         ],
         "type": "string"
       },
+      "BillingHistoryEventDto": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dueDate": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": {
+            "nullable": true,
+            "type": "string"
+          },
+          "valueCents": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "BillingPackageSummaryDto": {
         "additionalProperties": false,
         "properties": {
@@ -2365,6 +2393,20 @@
         },
         "type": "object"
       },
+      "ChangePlanRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "billingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "planCatalogId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CheckAvailabilityResponseDto": {
         "additionalProperties": false,
         "properties": {
@@ -2400,6 +2442,42 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "CheckoutRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "billingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "method": {
+            "nullable": true,
+            "type": "string"
+          },
+          "planCatalogId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CheckoutResponseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "invoiceUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pixCopyPaste": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pixQrCode": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "type": "object"
@@ -5067,6 +5145,28 @@
             "format": "date-time",
             "nullable": true,
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlanUsageDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rentableResources": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "units": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "users": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -8116,6 +8216,153 @@
           "welcomeTagline": {
             "nullable": true,
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TenantBillingPlansDto": {
+        "additionalProperties": false,
+        "properties": {
+          "currentBillingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "currentPackageKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "currentPlanCatalogId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/PublicPlanDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "TenantBillingSubscriptionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "billingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "billingMode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cancelAtPeriodEnd": {
+            "type": "boolean"
+          },
+          "chargeCents": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "nullable": true,
+            "type": "string"
+          },
+          "currentPeriodEnd": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "currentPeriodStart": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "discountPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "discountUntil": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "effectiveDiscountPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/BillingHistoryEventDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "hasSubscription": {
+            "type": "boolean"
+          },
+          "limitsUnlimited": {
+            "type": "boolean"
+          },
+          "monthlyEquivalentCents": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "nextChargeAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "packageKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pastDueSince": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "pendingBillingCycle": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pendingPlanCatalogId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "planCatalogId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "planKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "planLimits": {
+            "$ref": "#/components/schemas/PlanLimitsDto"
+          },
+          "planName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
+          "subscriptionId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "trialEndsAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/PlanUsageDto"
           }
         },
         "type": "object"
@@ -13443,6 +13690,198 @@
         },
         "tags": [
           "PasswordRecovery"
+        ]
+      }
+    },
+    "/api/billing/plans": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingPlansDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingPlansDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingPlansDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/api/billing/subscription": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/api/billing/subscription/cancel": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/api/billing/subscription/change-plan": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantBillingSubscriptionDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/api/billing/subscription/checkout": {
+      "post": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponseDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponseDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponseDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Billing"
         ]
       }
     },
@@ -22972,6 +23411,18 @@
         ]
       }
     },
+    "/api/webhooks/payments/asaas/billing": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AsaasBillingWebhook"
+        ]
+      }
+    },
     "/api/webhooks/whatsapp": {
       "get": {
         "parameters": [
@@ -23646,6 +24097,9 @@
       "name": "AdminTenantUsers"
     },
     {
+      "name": "AsaasBillingWebhook"
+    },
+    {
       "name": "AssetCategories"
     },
     {
@@ -23653,6 +24107,9 @@
     },
     {
       "name": "Assets"
+    },
+    {
+      "name": "Billing"
     },
     {
       "name": "BookingMaps"

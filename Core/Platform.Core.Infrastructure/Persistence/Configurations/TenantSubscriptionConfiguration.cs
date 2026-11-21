@@ -52,6 +52,21 @@ public sealed class TenantSubscriptionConfiguration : IEntityTypeConfiguration<T
         builder.Property(s => s.ProviderSubscriptionId)
             .HasMaxLength(TenantSubscription.ProviderIdMaxLength);
 
+        builder.Property(s => s.LastPaymentAt)
+            .HasColumnName("last_payment_at");
+
+        builder.Property(s => s.PendingPlanCatalogId)
+            .HasColumnName("pending_plan_catalog_id");
+
+        builder.Property(s => s.PendingBillingCycle)
+            .HasColumnName("pending_billing_cycle")
+            .HasMaxLength(TenantSubscription.CodeMaxLength);
+
+        builder.Property(s => s.CancelAtPeriodEnd)
+            .HasColumnName("cancel_at_period_end")
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.Property(s => s.RowVersion)
             .IsConcurrencyToken()
             .HasColumnType("bytea")

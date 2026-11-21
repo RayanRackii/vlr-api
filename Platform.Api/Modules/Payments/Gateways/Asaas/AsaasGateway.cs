@@ -11,7 +11,7 @@ namespace Platform.Api.Modules.Payments.Gateways.Asaas;
 /// request. Failures surface as <see cref="PaymentGatewayException"/> carrying the Asaas error code and HTTP status, never
 /// the request or response body.
 /// </summary>
-public sealed class AsaasGateway : IPaymentGateway
+public sealed partial class AsaasGateway : IPaymentGateway, IPlatformBillingGateway
 {
     public const string AccessTokenHeader = "access_token";
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
@@ -198,7 +198,15 @@ public sealed class AsaasGateway : IPaymentGateway
             throw new PaymentGatewayException("invalid_response", 200);
         }
 
-        var status = (payment.Status ?? string.Empty).ToUpperInvariant() switch
+        var status = ToChargeStatus(payment.Status);
+        var paymentDate = ParseDate(payment.PaymentDate);
+
+        return new GatewayCharge(
+            payment.Id, status, payment.Value, payment.ExternalReference, payment.InvoiceUrl, paymentDate);
+    }
+
+    private static GatewayChargeStatus ToChargeStatus(string? status) =>
+        (status ?? string.Empty).ToUpperInvariant() switch
         {
             "PENDING" or "AWAITING_RISK_ANALYSIS" => GatewayChargeStatus.Pending,
             "RECEIVED" or "CONFIRMED" or "RECEIVED_IN_CASH" => GatewayChargeStatus.Paid,
@@ -208,14 +216,10 @@ public sealed class AsaasGateway : IPaymentGateway
             _ => GatewayChargeStatus.Unknown,
         };
 
-        DateOnly? paymentDate = DateOnly.TryParseExact(
-            payment.PaymentDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+    private static DateOnly? ParseDate(string? value) =>
+        DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : null;
-
-        return new GatewayCharge(
-            payment.Id, status, payment.Value, payment.ExternalReference, payment.InvoiceUrl, paymentDate);
-    }
 
     private async Task<T> SendAsync<T>(
         HttpMethod method,
