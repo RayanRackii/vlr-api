@@ -35,8 +35,11 @@ public interface IPlanGuard
 public sealed class PlanGuard(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    IPlatformAdminChecker platformAdminChecker) : IPlanGuard
+    IPlatformAdminChecker platformAdminChecker,
+    TimeProvider? timeProvider = null) : IPlanGuard
 {
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+
     public async Task EnsureWritableAsync(CancellationToken cancellationToken)
     {
         if (tenantProvider.TenantId is not { } tenantId)
@@ -51,7 +54,7 @@ public sealed class PlanGuard(
         }
 
         var state = await PlanStateReader.LoadAsync(dbContext, tenantId, cancellationToken);
-        EnsureNotReadOnly(tenant, state);
+        EnsureNotReadOnly(tenant, state, clock.GetUtcNow());
     }
 
     public async Task EnsureCanCreateAssetsAsync(
@@ -76,7 +79,7 @@ public sealed class PlanGuard(
         }
 
         var state = await PlanStateReader.LoadAsync(dbContext, tenantId, cancellationToken);
-        EnsureNotReadOnly(tenant, state);
+        EnsureNotReadOnly(tenant, state, clock.GetUtcNow());
 
         if (state is null)
         {
@@ -118,7 +121,7 @@ public sealed class PlanGuard(
         }
 
         var state = await PlanStateReader.LoadAsync(dbContext, tenantId, cancellationToken);
-        EnsureNotReadOnly(tenant, state);
+        EnsureNotReadOnly(tenant, state, clock.GetUtcNow());
 
         if (state?.EnforcedLimits.Users is not { } maxUsers)
         {
@@ -173,12 +176,12 @@ public sealed class PlanGuard(
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
 
-    private static void EnsureNotReadOnly(Tenant tenant, PlanState? state)
+    private static void EnsureNotReadOnly(Tenant tenant, PlanState? state, DateTimeOffset now)
     {
         // A tenant that pays (active, or overdue but still inside the grace window) is never held back by
         // a leftover trial clock: the subscription is the source of truth when there is one.
         var paying = state is { Status: SubscriptionStatuses.Active or SubscriptionStatuses.PastDue };
-        if (!paying && tenant.IsTrialReadOnly(DateTimeOffset.UtcNow))
+        if (!paying && tenant.IsTrialReadOnly(now))
         {
             throw new InvalidOperationException(
                 "This trial has ended. The workspace is read-only until it is purged.");
@@ -190,6 +193,15 @@ public sealed class PlanGuard(
         {
             throw new InvalidOperationException(
                 "The subscription is overdue. The workspace is read-only until the payment is received.");
+        }
+
+        // A provider subscription that was deleted at the provider (or cancelled after it was read-only) keeps
+        // working until the paid period ends, then the workspace is read-only (data kept). Manual rows never are.
+        if (state is { Status: SubscriptionStatuses.Canceled, BillingMode: BillingModes.Provider }
+            && (state.CurrentPeriodEnd is not { } periodEnd || periodEnd <= now))
+        {
+            throw new InvalidOperationException(
+                "The subscription was cancelled and its period has ended. The workspace is read-only until a plan is subscribed.");
         }
     }
 }

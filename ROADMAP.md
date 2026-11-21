@@ -18,6 +18,13 @@
 - [x] `BillingDiscountExpiryJob` (desconto vencido volta ao preço cheio no Asaas e no banco) e `BillingPeriodEndJob` (cancelamento agendado vira `read_only` no fim do período).
 - [ ] Passos humanos (B6): secrets no Fly, webhook no Asaas, sandbox no DEV. Próximo: B4 (dunning), B5 (web).
 
+### Planos, preços e cobrança — B4: dunning, fim do trial e read_only (2026-11-21, feat/billing-b4-dunning)
+
+- [x] `BillingDunningJob` (diário 09:00 BRT, dias civis em America/Sao_Paulo): `past_due` com 7 dias vira `read_only` (evento `read_only`), só linhas `provider` com `provider_subscription_id`; linhas `manual` nunca são tocadas. A transição sempre roda.
+- [x] E-mails atrás de `Billing:Dunning:EmailsEnabled` (padrão `false`, porque o Asaas já envia os seus): próxima cobrança D-3 e D0, atraso D+1 e D+5, aviso de somente leitura D+7, fim do trial D-5, D-1 e D0 (link `/configuracoes/plano`). Destinatários: quem tem `core.settings.billing` + e-mail de contato da empresa. Idioma: `Billing:Dunning:Language` (pt-BR, en, es). Cada aviso é gravado uma vez por (assinatura, tipo, período) em `subscription_events` (`dunning_<tipo>`, chave única em `provider_event_id`); esses eventos não aparecem no histórico.
+- [x] `canceled` em linha `provider` vira somente leitura no `PlanGuard` quando o período pago acaba (ou não tem fim); linhas `manual` não mudam.
+- [ ] Limites conhecidos: o aviso usa o dia exato (um dia sem rodar pula o aviso; a transição para `read_only` recupera sozinha); e-mails saem pela fila em memória (como convites). Próximo: B5 (web), B6 (passos humanos).
+
 ### Evolução segura do schema de famílias de ativo (2026-11-19, feat/asset-family-schema-evolution)
 
 - [x] `PUT /api/admin/asset-families/{id}` nunca perde valores: campo omitido é arquivado quando algum ativo tem valor (removido só se nenhum tem); troca de tipo só passa se todo valor guardado passa em `TryCoerce` + `TryConstrain` (senão 409 com contagem e até 5 exemplos), inclusive ao arquivar, ao adicionar como arquivado sobre valores órfãos e ao restaurar (restaurar sempre exige o formato; limites só avisam em `constraintViolationCount`). Campo novo obrigatório vale só na criação.

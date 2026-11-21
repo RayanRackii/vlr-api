@@ -424,6 +424,7 @@ public sealed class AdminSubscriptionService(
         var events = (await dbContext.SubscriptionEvents
                 .AsNoTracking()
                 .Where(e => e.SubscriptionId == subscription.Id)
+                .Where(e => !e.Type.StartsWith(SubscriptionEventTypes.DunningPrefix))
                 .OrderByDescending(e => e.CreatedAt)
                 .Take(EventListSize)
                 .ToListAsync(cancellationToken))
