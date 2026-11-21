@@ -15,7 +15,6 @@ Catalog -> Taxonomy : Platform.Api/Modules/Catalog/Services/CatalogTaxonomy.cs
 Catalog -> Taxonomy : Platform.Api/Modules/Catalog/Services/CatalogTaxonomyOptionsService.cs
 CustomerAuth -> RegistrationFields : Platform.Api/Modules/CustomerAuth/Controllers/CustomerAuthController.cs
 CustomerAuth -> RegistrationFields : Platform.Api/Modules/CustomerAuth/Services/CustomerAuthService.cs
-CustomerAuth -> Rentals : Platform.Api/Modules/CustomerAuth/Services/CustomerAuthService.cs
 Notifications -> Catalog : Platform.Api/Modules/Notifications/Services/NotificationChannelConfigService.cs
 Notifications -> Rentals : Platform.Api/Modules/Notifications/Services/NotificationChannelConfigService.cs
 Pmoc -> Assets : Platform.Api/Modules/Pmoc/Controllers/MaintenancePlansController.cs

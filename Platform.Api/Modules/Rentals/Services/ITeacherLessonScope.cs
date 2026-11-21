@@ -1,6 +1,7 @@
 namespace Platform.Api.Modules.Rentals.Services;
 
+/// <summary>Which rental assets of a tenant may have teacher lessons.</summary>
 public interface ITeacherLessonScope
 {
-    bool Allows(Guid tenantId, Guid rentalAssetId);
+    Task<bool> AllowsAsync(Guid tenantId, Guid rentalAssetId, CancellationToken cancellationToken);
 }

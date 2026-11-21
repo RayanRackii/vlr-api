@@ -67,21 +67,9 @@ Queue join/leave/status keep their existing contract. Joining a per-resource que
 
 ## Tenant flag
 
-The existing `GET /api/public/tenants/{subdomain}/branding` adds `newBookingUiEnabled: boolean`. Legacy fields remain. Missing configuration, an empty allowlist or a tenant not explicitly listed returns false. Matching uses immutable tenant UUIDs, not the caller's subdomain/header/JWT choices.
+The existing `GET /api/public/tenants/{subdomain}/branding` adds `newBookingUiEnabled: boolean`. Legacy fields remain. It is true only when the tenant has the tenant setting `rentals.booking_ui.enabled` (`core.tenant_settings`) set to `true`; a missing row, `false` or any other value returns false. Matching uses the tenant resolved from the route, not the caller's header/JWT choices.
 
-Reuse the application's existing `IConfiguration`/options mechanism:
-
-```json
-{
-  "Rentals": {
-    "BookingUi": {
-      "EnabledTenantIds": ["00000000-0000-4000-8000-000000000001"]
-    }
-  }
-}
-```
-
-Equivalent environment key: `Rentals__BookingUi__EnabledTenantIds__0`. The committed default array is empty. No tenant data model or migration is required. No tenant was enabled here. Rollback removes a tenant UUID from deployment configuration and reloads/restarts the application according to its existing configuration provider. Production activation remains an explicit operational action.
+A platform admin edits it with `GET/PUT /api/admin/tenants/{tenantId}/settings/rentals.booking_ui.enabled` (body `{ "value": "true" }`). Rollback is setting it to `false`. Production activation remains an explicit operational action.
 
 ## Validation and next steps
 

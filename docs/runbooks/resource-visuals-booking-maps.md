@@ -40,7 +40,7 @@ Composition PUT receives the complete map with `expectedVersion`, `name`, option
 
 Settings PUT requires `expectedVersion` and four `#RRGGBB` colors: `availableColor`, `takenColor`, `unavailableColor`, `selectedColor`. It also accepts `showPriceOnBlock`, `timeFilterMode` (`Periods`/`FromTime`), `defaultView` (`Map`/`List`), and nullable `defaultLayoutId`. Missing settings read as version 0. Deleting the default map clears the preference in the same transaction.
 
-The new public map routes require the existing per-tenant `Rentals:BookingUi:EnabledTenantIds` flag (`newBookingUiEnabled` in branding). Seeding never enables it. Public geometry uses ETag revalidation; availability still comes from `GET /api/public/tenants/{subdomain}/availability/days/{date}`. The legacy public layout route retains its flag behavior. Archived templates remain renderable through already assigned published revisions.
+The new public map routes require the per-tenant setting `rentals.booking_ui.enabled` (admin: `PUT /api/admin/tenants/{tenantId}/settings/rentals.booking_ui.enabled`) (`newBookingUiEnabled` in branding). Seeding never enables it. Public geometry uses ETag revalidation; availability still comes from `GET /api/public/tenants/{subdomain}/availability/days/{date}`. The legacy public layout route retains its flag behavior. Archived templates remain renderable through already assigned published revisions.
 
 ## Migrations
 

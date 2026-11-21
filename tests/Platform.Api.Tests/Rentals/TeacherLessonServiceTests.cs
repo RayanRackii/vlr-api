@@ -3,7 +3,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
+using Platform.Api.Services.Tenancy;
 using Platform.Api.Services.Trial;
+using Platform.Core.Domain.Constants;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Entities;
@@ -451,7 +453,7 @@ public sealed class TeacherLessonServiceTests
     }
 
     [Fact]
-    public async Task Create_with_production_scope_rejects_other_tenant_without_write()
+    public async Task Create_without_the_tenant_setting_rejects_without_write()
     {
         await using var harness = await TeacherLessonHarness.CreateAsync();
         var service = new TeacherLessonService(
@@ -459,34 +461,42 @@ public sealed class TeacherLessonServiceTests
             harness.TenantProvider,
             new FakeTrialGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0))),
-            new FiccTeacherLessonScope());
+            new TenantSettingTeacherLessonScope(harness.Db));
 
-        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+        var ex = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             service.CreateAsync(harness.CreateRequest(), CancellationToken.None));
+
+        Assert.Equal(TeacherLessonMessages.RentableNotFound, ex.Message);
 
         Assert.Empty(await harness.Db.Slots.ToListAsync());
     }
 
     [Fact]
-    public async Task Create_on_ficc_dev_quadra_uses_rental_asset_id_and_portuguese_not_found()
+    public async Task Create_with_the_setting_allows_only_the_listed_rental_assets()
     {
         var lessonDate = new DateOnly(2026, 10, 15);
         Assert.Equal(DayOfWeek.Thursday, lessonDate.DayOfWeek);
+        var listedAssetId = Guid.NewGuid();
+        var listedRentalAssetId = Guid.NewGuid();
+        var otherRentalAssetId = Guid.NewGuid();
         await using var harness = await TeacherLessonHarness.CreateAsync(
-            tenantId: FiccTeacherLessonScope.DevTenantId,
-            assetId: FiccTeacherLessonScope.DevQuadra1AssetId,
-            rentalAssetId: FiccTeacherLessonScope.DevQuadra1RentalAssetId,
+            assetId: listedAssetId,
+            rentalAssetId: listedRentalAssetId,
             templateDay: DayOfWeek.Thursday,
             templateStart: new TimeOnly(15, 0),
-            templateEnd: new TimeOnly(16, 0),
-            scope: new FiccTeacherLessonScope(),
-            timeProvider: new TestTimeProvider(
-                BrazilTimeZone.AtLocal(new DateOnly(2026, 10, 14), new TimeOnly(9, 0))));
+            templateEnd: new TimeOnly(16, 0));
+        await harness.AllowLessonsAsync(harness.TenantId, listedRentalAssetId);
+        var service = new TeacherLessonService(
+            harness.Db,
+            harness.TenantProvider,
+            new FakeTrialGuard(),
+            new TestTimeProvider(BrazilTimeZone.AtLocal(new DateOnly(2026, 10, 14), new TimeOnly(9, 0))),
+            new TenantSettingTeacherLessonScope(harness.Db));
 
-        var created = await harness.Lessons.CreateAsync(
+        var created = await service.CreateAsync(
             new CreateTeacherLessonRequestDto
             {
-                RentalAssetId = FiccTeacherLessonScope.DevQuadra1RentalAssetId,
+                RentalAssetId = listedRentalAssetId,
                 Date = lessonDate,
                 StartTime = new TimeOnly(15, 0),
                 EndTime = new TimeOnly(16, 0),
@@ -494,48 +504,49 @@ public sealed class TeacherLessonServiceTests
             },
             CancellationToken.None);
 
-        Assert.Equal(FiccTeacherLessonScope.DevQuadra1RentalAssetId, created.RentalAssetId);
-        Assert.NotEqual(FiccTeacherLessonScope.DevQuadra1AssetId, created.RentalAssetId);
+        Assert.Equal(listedRentalAssetId, created.RentalAssetId);
+        Assert.NotEqual(listedAssetId, created.RentalAssetId);
         Assert.Equal("lesson", created.OccupancyKindKey);
         var slot = Assert.Single(await harness.Db.Slots.ToListAsync());
-        Assert.Equal(FiccTeacherLessonScope.DevQuadra1RentalAssetId, slot.RentalAssetId);
+        Assert.Equal(listedRentalAssetId, slot.RentalAssetId);
 
         var assetIdRequest = new CreateTeacherLessonRequestDto
         {
-            RentalAssetId = FiccTeacherLessonScope.DevQuadra1AssetId,
+            RentalAssetId = listedAssetId,
             Date = lessonDate,
             StartTime = new TimeOnly(15, 0),
             EndTime = new TimeOnly(16, 0),
         };
         var assetIdError = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-            harness.Lessons.CreateAsync(assetIdRequest, CancellationToken.None));
+            service.CreateAsync(assetIdRequest, CancellationToken.None));
         Assert.Equal(TeacherLessonMessages.RentableNotFound, assetIdError.Message);
 
-        var missingCourt = new CreateTeacherLessonRequestDto
+        var unlistedCourt = new CreateTeacherLessonRequestDto
         {
-            RentalAssetId = FiccTeacherLessonScope.DevQuadra2RentalAssetId,
+            RentalAssetId = otherRentalAssetId,
             Date = lessonDate,
             StartTime = new TimeOnly(15, 0),
             EndTime = new TimeOnly(16, 0),
         };
-        var missingCourtError = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
-            harness.Lessons.CreateAsync(missingCourt, CancellationToken.None));
-        Assert.Equal(TeacherLessonMessages.RentableNotFound, missingCourtError.Message);
+        var unlistedError = await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            service.CreateAsync(unlistedCourt, CancellationToken.None));
+        Assert.Equal(TeacherLessonMessages.RentableNotFound, unlistedError.Message);
         Assert.Single(await harness.Db.Slots.ToListAsync());
     }
 
     [Fact]
-    public async Task Remove_with_production_scope_rejects_unlisted_court_without_write()
+    public async Task Remove_with_the_setting_rejects_an_unlisted_court_without_write()
     {
         await using var harness = await TeacherLessonHarness.CreateAsync();
-        var unlistedRentalAssetId = await harness.SeedUnlistedFiccCourtWithLessonAsync();
-        harness.TenantProvider.TenantId = FiccTeacherLessonScope.TenantId;
+        var unlistedRentalAssetId = await harness.SeedUnlistedCourtWithLessonAsync();
+        // The helper switched the provider to the new tenant, which lists some other rental asset.
+        await harness.AllowLessonsAsync(harness.TenantProvider.TenantId!.Value, Guid.NewGuid());
         var service = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
             new FakeTrialGuard(),
             new TestTimeProvider(BrazilTimeZone.AtLocal(Tuesday.AddDays(-1), new TimeOnly(9, 0))),
-            new FiccTeacherLessonScope());
+            new TenantSettingTeacherLessonScope(harness.Db));
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() => service.RemoveAsync(
             new RemoveTeacherLessonRequestDto
@@ -550,11 +561,10 @@ public sealed class TeacherLessonServiceTests
     }
 
     [Fact]
-    public async Task Remove_with_test_scope_accepts_the_unlisted_ficc_fixture()
+    public async Task Remove_with_test_scope_accepts_the_unlisted_court_fixture()
     {
         await using var harness = await TeacherLessonHarness.CreateAsync();
-        var unlistedRentalAssetId = await harness.SeedUnlistedFiccCourtWithLessonAsync();
-        harness.TenantProvider.TenantId = FiccTeacherLessonScope.TenantId;
+        var unlistedRentalAssetId = await harness.SeedUnlistedCourtWithLessonAsync();
         var service = new TeacherLessonService(
             harness.Db,
             harness.TenantProvider,
@@ -1324,13 +1334,24 @@ internal sealed class TeacherLessonHarness : IAsyncDisposable
         Db.Reservations.Add(reservation);
     }
 
-    public async Task<Guid> SeedUnlistedFiccCourtWithLessonAsync()
+    /// <summary>Lists the rental assets of the tenant teacher lesson scope (the tenant setting).</summary>
+    public async Task AllowLessonsAsync(Guid tenantId, params Guid[] rentalAssetIds)
+    {
+        Db.TenantSettings.Add(new TenantSetting
+        {
+            TenantId = tenantId,
+            Key = TenantSettingKeys.TeacherLessonRentalAssetIds,
+            Value = TenantSettingValues.FormatRentalAssetIds(rentalAssetIds),
+        });
+        await Db.SaveChangesAsync();
+    }
+
+    public async Task<Guid> SeedUnlistedCourtWithLessonAsync()
     {
         var tenant = new Tenant(
-            "FICC allowlist test",
+            "Second club",
             UniqueTaxId(),
-            subdomain: $"ficc-test-{Guid.NewGuid():N}"[..18]);
-        Db.Entry(tenant).Property(entity => entity.Id).CurrentValue = FiccTeacherLessonScope.TenantId;
+            subdomain: $"club-test-{Guid.NewGuid():N}"[..18]);
 
         var unit = new Unit(tenant.Id, "Matriz");
         var category = new AssetCategory { TenantId = tenant.Id, Name = "Quadras" };

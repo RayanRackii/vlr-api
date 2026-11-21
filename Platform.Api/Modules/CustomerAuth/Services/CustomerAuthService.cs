@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
-using Platform.Api.Modules.Rentals;
 using Platform.Api.Services.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -33,7 +32,6 @@ public sealed class CustomerAuthService(
     ICustomerLoginThrottle loginThrottle,
     ILogger<CustomerAuthService> logger,
     IHttpContextAccessor? httpContextAccessor = null,
-    IOptions<BookingUiOptions>? bookingUiOptions = null,
     IStorageProvider? storageProvider = null,
     IOptions<StorageOptions>? storageOptions = null) : ICustomerAuthService
 {
@@ -450,7 +448,7 @@ public sealed class CustomerAuthService(
             tenant.PrimaryColor,
             tenant.AccentColor,
             tenant.WelcomeTagline,
-            bookingUiOptions?.Value.IsEnabled(tenant.Id) == true,
+            await TenantSettingStore.IsBookingUiEnabledAsync(dbContext, tenant.Id, cancellationToken),
             await TenantTimeZoneProvider.ResolveIanaIdForTenantAsync(dbContext, tenant.Id, cancellationToken),
             tenant.LandingImageKey is null || storageProvider is null || storageOptions is null
                 ? null
