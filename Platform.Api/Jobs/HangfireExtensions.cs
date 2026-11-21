@@ -16,6 +16,10 @@ public static class HangfireExtensions
 
     public const string TrialLifecycleJobId = "trial-lifecycle-purge";
 
+    public const string BillingDiscountExpiryJobId = "billing-discount-expiry";
+
+    public const string BillingPeriodEndJobId = "billing-period-end";
+
     public const string NotificationOutboxJobId = "notification-outbox";
 
     public const string NotificationRetentionJobId = "notification-inapp-retention";
@@ -104,6 +108,19 @@ public static class HangfireExtensions
             TrialLifecycleJobId,
             job => job.ExecuteAsync(CancellationToken.None),
             "0 0 * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<BillingDiscountExpiryJob>(
+            BillingDiscountExpiryJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            // Daily, after the trial lifecycle sweep.
+            "45 0 * * *",
+            recurringJobOptions);
+
+        RecurringJob.AddOrUpdate<BillingPeriodEndJob>(
+            BillingPeriodEndJobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            "50 0 * * *",
             recurringJobOptions);
 
         RecurringJob.AddOrUpdate<PmocEngineJob>(

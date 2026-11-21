@@ -9,6 +9,15 @@
 - [x] Onboarding aceita `packageKey`, `leadSource`, `leadCampaign` (lead validado: `[A-Za-z0-9._-]`, até 100, senão descartado).
 - [ ] Limite conhecido: a checagem de limite não é atômica com a criação (duas criações simultâneas no último lugar podem passar). Próximo: B2 (web), B3 (Asaas).
 
+### Planos, preços e cobrança — B3: cobrança Rolvix pelo Asaas (2026-11-21, feat/billing-b3-asaas)
+
+- [x] Migration aditiva `AddSubscriptionProviderBillingState`: `last_payment_at`, `pending_plan_catalog_id`, `pending_billing_cycle`, `cancel_at_period_end` em `billing.tenant_subscriptions`.
+- [x] Gateway da conta raiz (`IPlatformBillingGateway`, `AsaasGateway.Billing.cs`): cliente (busca por `externalReference` antes de criar), assinatura (busca a ativa antes de criar), atualizar, cancelar, buscar pagamento/assinatura, QR Pix.
+- [x] Staff (`core.settings.billing`): `GET /api/billing/subscription`, `GET /api/billing/plans`, `POST .../checkout` (Idempotency-Key, escopo `billing.checkout`), `.../change-plan` (upgrade já; downgrade no fim do período; 409 `plan.usage_above_limit`; só liga módulos que faltam), `.../cancel` (no fim do período).
+- [x] Webhook `POST /api/webhooks/payments/asaas/billing`: token em tempo constante, dedupe por `provider_event_id`, job Hangfire, tenant pelo id do provedor, reconsulta ao Asaas, transições idempotentes e monotônicas. Linhas `manual` nunca são tocadas.
+- [x] `BillingDiscountExpiryJob` (desconto vencido volta ao preço cheio no Asaas e no banco) e `BillingPeriodEndJob` (cancelamento agendado vira `read_only` no fim do período).
+- [ ] Passos humanos (B6): secrets no Fly, webhook no Asaas, sandbox no DEV. Próximo: B4 (dunning), B5 (web).
+
 ### Evolução segura do schema de famílias de ativo (2026-11-19, feat/asset-family-schema-evolution)
 
 - [x] `PUT /api/admin/asset-families/{id}` nunca perde valores: campo omitido é arquivado quando algum ativo tem valor (removido só se nenhum tem); troca de tipo só passa se todo valor guardado passa em `TryCoerce` + `TryConstrain` (senão 409 com contagem e até 5 exemplos), inclusive ao arquivar, ao adicionar como arquivado sobre valores órfãos e ao restaurar (restaurar sempre exige o formato; limites só avisam em `constraintViolationCount`). Campo novo obrigatório vale só na criação.

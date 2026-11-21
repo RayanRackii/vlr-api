@@ -4986,6 +4986,12 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasDefaultValue("provider")
                         .HasColumnName("billing_mode");
 
+                    b.Property<bool>("CancelAtPeriodEnd")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("cancel_at_period_end");
+
                     b.Property<DateTimeOffset?>("CanceledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("canceled_at");
@@ -5016,6 +5022,10 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("ended_at");
 
+                    b.Property<DateTimeOffset?>("LastPaymentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_payment_at");
+
                     b.Property<bool>("LimitsUnlimited")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -5025,6 +5035,15 @@ namespace Platform.Core.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("PastDueSince")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("past_due_since");
+
+                    b.Property<string>("PendingBillingCycle")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("pending_billing_cycle");
+
+                    b.Property<Guid?>("PendingPlanCatalogId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pending_plan_catalog_id");
 
                     b.Property<Guid>("PlanCatalogId")
                         .HasColumnType("uuid")
