@@ -22,6 +22,9 @@ public sealed class BillingMigrationPostgresTests(PostgresContainerFixture postg
     private const string Before = "20261129100000_SeedTenantSettingsForTeacherLessonsAndBookingUi";
     private const string Target = "20261130100000_AddBillingPlansAndSubscriptions";
 
+    // The EF model reads every tenant_subscriptions column, so the additive B3 columns must exist before it queries.
+    private const string ModelReady = "20261202100000_AddSubscriptionProviderBillingState";
+
     [DockerFact]
     public async Task Migration_seeds_the_catalog_backfills_each_tenant_once_and_is_idempotent()
     {
@@ -53,6 +56,7 @@ public sealed class BillingMigrationPostgresTests(PostgresContainerFixture postg
         var tenantCount = 8;
 
         await migrator.MigrateAsync(Target);
+        await migrator.MigrateAsync(ModelReady);
 
         // Seed: exactly the nine study rows.
         var plans = await db.PlanCatalogs.AsNoTracking().ToListAsync();

@@ -101,7 +101,7 @@ internal sealed class FakeBillingGateway : IPlatformBillingGateway
         }
 
         SubscriptionCreates++;
-        var id = $"sub_{++_counter}";
+        var id = $"psub_{++_counter}";
         var info = new BillingSubscriptionInfo(
             id,
             request.CustomerId,
@@ -113,7 +113,7 @@ internal sealed class FakeBillingGateway : IPlatformBillingGateway
             request.NextDueDate,
             request.ExternalReference);
         Subscriptions[id] = info;
-        AddPayment($"pay_{++_counter}", id, request.CustomerId, GatewayChargeStatus.Pending, request.NextDueDate, request.Value, request.Method);
+        AddPayment($"ppay_{++_counter}", id, request.CustomerId, GatewayChargeStatus.Pending, request.NextDueDate, request.Value, request.Method);
         return Task.FromResult(info);
     }
 
