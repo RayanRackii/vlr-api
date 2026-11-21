@@ -278,7 +278,6 @@ public sealed class ModuleDataPurgeJob(
         if (inScope.Contains(typeof(CatalogProductFile)))
         {
             var files = await dbContext.CatalogProductFiles
-                .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(file => file.TenantId == tenantId)
                 .Select(file => new { file.StorageKey, file.IsLegacyPublic })
@@ -290,7 +289,6 @@ public sealed class ModuleDataPurgeJob(
         if (inScope.Contains(typeof(ProductRequestFile)))
         {
             var files = await dbContext.ProductRequestFiles
-                .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(file => file.TenantId == tenantId)
                 .Select(file => file.StorageKey)
@@ -302,7 +300,6 @@ public sealed class ModuleDataPurgeJob(
         if (inScope.Contains(typeof(WorkOrderTaskFile)))
         {
             var files = await dbContext.WorkOrderTaskFiles
-                .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(file => file.TenantId == tenantId)
                 .Select(file => file.StorageKey)
