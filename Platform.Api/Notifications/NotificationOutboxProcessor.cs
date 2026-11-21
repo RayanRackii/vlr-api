@@ -24,7 +24,11 @@ public sealed class NotificationOutboxProcessor(
 
     private const int MaxAttempts = 5;
 
-    internal static readonly TimeSpan ProviderCallTimeout = TimeSpan.FromSeconds(100);
+    // Per provider call. The Hangfire worker is a single thread, so one hung provider must not
+    // hold a sweep for minutes; the sweep is also capped at SweepBatchSize deliveries.
+    internal static readonly TimeSpan ProviderCallTimeout = TimeSpan.FromSeconds(15);
+
+    internal const int SweepBatchSize = 50;
 
     internal static readonly TimeSpan SendLease = TimeSpan.FromMinutes(5);
 
@@ -35,12 +39,24 @@ public sealed class NotificationOutboxProcessor(
         var now = DateTimeOffset.UtcNow;
         var dueIds = await ClaimableDeliveries(now, externalOnly: true)
             .AsNoTracking()
+            .OrderBy(d => d.CreatedAt)
+            .ThenBy(d => d.Id)
             .Select(d => d.Id)
+            .Take(SweepBatchSize)
             .ToListAsync(cancellationToken);
 
         foreach (var id in dueIds)
         {
-            await ProcessDeliveryAsync(id, cancellationToken);
+            try
+            {
+                await ProcessDeliveryAsync(id, cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // One failing delivery must not starve the rest of the batch; it stays Sending
+                // and is reclaimed after SendLease.
+                logger.LogError(ex, "Outbox sweep: delivery {DeliveryId} failed unexpectedly.", id);
+            }
         }
     }
 
