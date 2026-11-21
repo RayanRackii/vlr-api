@@ -67,7 +67,14 @@ public sealed class ResourceVisualMigrationTests
         var snapshotModel = db.GetService<IMigrationsAssembly>().ModelSnapshot?.Model;
         if (snapshotModel is IMutableModel mutable)
         {
-            snapshotModel = mutable.FinalizeModel();
+            try
+            {
+                snapshotModel = mutable.FinalizeModel();
+            }
+            catch (InvalidOperationException)
+            {
+                // Already finalized (read-only): use it as is.
+            }
         }
 
         if (snapshotModel is not null)
