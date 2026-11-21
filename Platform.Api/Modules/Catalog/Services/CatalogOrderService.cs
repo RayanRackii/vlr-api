@@ -329,13 +329,7 @@ public sealed class CatalogOrderService(
                 .ToList(),
             order.History
                 .OrderBy(h => h.CreatedAt)
-                .Select(h => new CatalogOrderHistoryResponse(
-                    h.Id,
-                    h.Status,
-                    h.ActorType,
-                    h.ActorId,
-                    h.Reason,
-                    h.CreatedAt))
+                .Select(CatalogOrderHistoryMessages.ToResponse)
                 .ToList(),
             Convert.ToBase64String(order.RowVersion),
             order.PlanningRevision,

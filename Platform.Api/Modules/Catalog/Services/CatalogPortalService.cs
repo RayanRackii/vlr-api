@@ -19,6 +19,13 @@ using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Modules.Catalog.Services;
 
+/// <summary>A cart whose products are priced in more than one currency (400 <c>catalog.currency_mismatch</c>).</summary>
+public sealed class CurrencyMismatchException()
+    : ArgumentException("All order items must be priced in the same currency.")
+{
+    public const string Code = "catalog.currency_mismatch";
+}
+
 public interface ICatalogPortalService
 {
     Task<IReadOnlyList<PortalProductResponse>> ListProductsAsync(
@@ -195,6 +202,28 @@ public sealed class CatalogPortalService(
         return products.Where(CatalogProductReadiness.IsSellable(dbContext, tenantId, rentalsActive));
     }
 
+    /// <summary>
+    /// The order currency is the currency of its items. Products may be priced in any currency, so a cart
+    /// that mixes currencies cannot be summed into one total and is refused.
+    /// </summary>
+    private static string ResolveOrderCurrency(
+        IReadOnlyList<CreatePortalOrderItemRequest> lines,
+        IReadOnlyDictionary<Guid, CatalogProduct> products)
+    {
+        var currencies = lines
+            .Select(line => products.TryGetValue(line.ProductId, out var product) ? product.Currency : null)
+            .Where(currency => !string.IsNullOrWhiteSpace(currency))
+            .Select(currency => currency!.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (currencies.Count > 1)
+        {
+            throw new CurrencyMismatchException();
+        }
+
+        return currencies.Count == 1 ? currencies[0] : "BRL";
+    }
+
     public async Task<CatalogOrderResponse> CreateOrderAsync(
         Guid customerId,
         CreatePortalOrderRequest request,
@@ -232,6 +261,8 @@ public sealed class CatalogPortalService(
             .GroupBy(r => r.ProductId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var orderCurrency = ResolveOrderCurrency(request.Items, products);
+
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -252,7 +283,7 @@ public sealed class CatalogPortalService(
                 CustomerNameSnapshot = customer.Name,
                 CustomerEmailSnapshot = customer.Email,
                 CustomerPhoneSnapshot = customer.Phone,
-                Currency = "BRL",
+                Currency = orderCurrency,
             };
 
             decimal? total = 0m;
