@@ -21,7 +21,8 @@ public sealed record AssetFamilyFieldDto(
     IReadOnlyList<string>? Options = null,
     int? MaxLength = null,
     string? Group = null,
-    bool Archived = false);
+    bool Archived = false,
+    string? LabelKey = null);
 
 public sealed record AssetFamilyDetailResponse(
     Guid Id,
@@ -30,7 +31,8 @@ public sealed record AssetFamilyDetailResponse(
     IReadOnlyList<AssetFamilyFieldDto> Fields,
     int SortOrder,
     bool IsActive,
-    int SchemaVersion = 1);
+    int SchemaVersion = 1,
+    string? LabelKey = null);
 
 public sealed record CreateAssetFamilyRequest(
     string Key,
