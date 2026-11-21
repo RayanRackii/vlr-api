@@ -359,7 +359,9 @@ public sealed record ProductRequestResponse(
     string? Note,
     ProductRequestStatus Status,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<ProductRequestFileDto> Files);
+    IReadOnlyList<ProductRequestFileDto> Files,
+    string? CustomerName = null,
+    string? CustomerEmail = null);
 
 public sealed record PortalProductRequestFileDto(
     Guid Id,

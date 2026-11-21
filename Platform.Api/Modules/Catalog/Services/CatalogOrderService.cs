@@ -187,6 +187,7 @@ public sealed class CatalogOrderService(
         var requests = await dbContext.ProductRequests
             .AsNoTracking()
             .Include(r => r.Files)
+            .Include(r => r.Customer)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -201,6 +202,7 @@ public sealed class CatalogOrderService(
         var request = await dbContext.ProductRequests
             .AsNoTracking()
             .Include(r => r.Files)
+            .Include(r => r.Customer)
             .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
 
         return request is null ? null : MapProductRequest(request);
@@ -340,5 +342,7 @@ public sealed class CatalogOrderService(
             request.CreatedAt,
             request.Files
                 .Select(f => new ProductRequestFileDto(f.Id, f.FileName, f.MimeType, f.SizeBytes))
-                .ToList());
+                .ToList(),
+            request.Customer?.Name,
+            request.Customer?.Email);
 }
