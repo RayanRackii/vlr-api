@@ -20,6 +20,10 @@ public static class BillingModuleExtensions
         services.AddScoped<IBillingWebhookIntake, BillingWebhookIntake>();
         services.AddScoped<IBillingWebhookJobScheduler, HangfireBillingWebhookJobScheduler>();
         services.AddScoped<IBillingWebhookProcessor, BillingWebhookProcessor>();
+
+        // Dunning / trial-end e-mails (BillingDunningJob; sent only when Billing:Dunning:EmailsEnabled is on).
+        services.AddScoped<IBillingEmailSender, QueueBillingEmailSender>();
+        services.AddScoped<IBillingDunningMailer, BillingDunningMailer>();
         return services;
     }
 }
