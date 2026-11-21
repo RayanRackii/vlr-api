@@ -666,7 +666,7 @@ public sealed class PmocEngineJobTests
             new FakePlatformAdminChecker("ops@club.test"),
             resolver,
             new RbacGrantGuard(harness.Db, resolver, NullLogger<RbacGrantGuard>.Instance),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),

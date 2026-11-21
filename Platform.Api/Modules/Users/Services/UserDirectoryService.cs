@@ -9,7 +9,7 @@ using Platform.Api.Modules.Users.Dtos;
 using Platform.Api.Services.Tenancy;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -22,7 +22,7 @@ public sealed class UserDirectoryService(
     IPlatformAdminChecker platformAdminChecker,
     IPermissionResolver permissionResolver,
     IRbacGrantGuard grantGuard,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     NotificationQueue notificationQueue,
     IConfiguration configuration,
     IHostEnvironment environment,
@@ -326,7 +326,7 @@ public sealed class UserDirectoryService(
         CancellationToken cancellationToken)
     {
         var tenantId = actor.TenantId;
-        await trialGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
+        await planGuard.EnsureCanInviteUserAsync(tenantId, cancellationToken);
 
         var fullName = request.FullName.Trim();
         var email = request.Email.Trim().ToLowerInvariant();

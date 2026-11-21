@@ -862,7 +862,7 @@ public sealed class ReservationCustomerEmailTests
         var reservations = new ReservationService(
             harness.Db,
             harness.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(harness.Db, harness.TenantProvider),
             publisher.AsDomainEvents(),
             scheduler,

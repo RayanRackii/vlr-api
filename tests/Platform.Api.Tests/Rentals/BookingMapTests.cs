@@ -10,7 +10,7 @@ namespace Platform.Api.Tests.Rentals;
 
 public sealed class BookingMapTests
 {
-    internal static RentalLayoutService Service(AvailabilityHarness h) => new(h.Db, h.TenantProvider, new FakeTrialGuard());
+    internal static RentalLayoutService Service(AvailabilityHarness h) => new(h.Db, h.TenantProvider, new FakePlanGuard());
     internal static UpsertRentalLayoutRequestDto Legacy(AvailabilityHarness h) => new()
     { Name = "Main area", UnitId = h.Unit.Id, Items = [new() { RentalAssetId = h.Primary.Id,
         XPercent = 5, YPercent = 10, WidthPercent = 30, HeightPercent = 40 }] };
@@ -195,7 +195,7 @@ public sealed class BookingMapTests
         var initial = (await service.GetCompositionAsync(created.Id, default))!;
         await using var otherDb = InMemoryAppDb.Create(h.TenantProvider, h.DatabaseName);
         await otherDb.RentalLayouts.SingleAsync(m => m.Id == created.Id); // Track version 1 before the first save.
-        var otherService = new RentalLayoutService(otherDb, h.TenantProvider, new FakeTrialGuard());
+        var otherService = new RentalLayoutService(otherDb, h.TenantProvider, new FakePlanGuard());
         await service.SaveCompositionAsync(created.Id, Composition(initial) with { Name = "First editor" }, default);
         var conflict = await Assert.ThrowsAsync<BookingMapException>(() => otherService.SaveCompositionAsync(created.Id,
             Composition(initial) with { Name = "Stale editor" }, default));

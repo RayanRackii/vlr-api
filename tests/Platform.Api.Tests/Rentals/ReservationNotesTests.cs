@@ -5,7 +5,7 @@ using Platform.Api.Modules.Rentals;
 using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -142,7 +142,7 @@ public sealed class ReservationNotesTests
         var service = new ReservationService(
             h.Db,
             h.TenantProvider,
-            new ReadOnlyTrialGuard(),
+            new ReadOnlyPlanGuard(),
             TestReservationQueue.Create(h.Db, h.TenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
@@ -210,7 +210,7 @@ public sealed class ReservationNotesTests
         new(
             h.Db,
             h.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             h.Queue(),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,
@@ -226,15 +226,21 @@ public sealed class ReservationNotesTests
             Items = [new CreateReservationItemRequestDto { AssetId = h.AssetId, Quantity = 1 }],
         };
 
-    private sealed class ReadOnlyTrialGuard : ITrialGuard
+    private sealed class ReadOnlyPlanGuard : IPlanGuard
     {
         public Task EnsureWritableAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("This trial has ended.");
 
-        public Task EnsureCanCreateAssetsAsync(int additionalCount, CancellationToken cancellationToken) =>
+        public Task EnsureCanCreateAssetsAsync(
+            int additionalCount,
+            int additionalRentableCount,
+            CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
         public Task EnsureCanInviteUserAsync(Guid tenantId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task EnsureCanCreateUnitAsync(Guid tenantId, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 }

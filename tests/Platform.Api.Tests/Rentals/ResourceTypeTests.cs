@@ -89,7 +89,7 @@ public sealed class ResourceTypeTests
         var categoryId = await h.Db.Assets.Select(asset => asset.CategoryId).SingleAsync();
         var service = new ResourceTypeService(h.Db, h.TenantProvider);
         var quadra = await AddLegacySeededTypeAsync(h);
-        var assets = new AssetService(h.Db, h.TenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(h.Db));
+        var assets = new AssetService(h.Db, h.TenantProvider, new FakePlanGuard(), new RentalConfigurationSync(h.Db));
         var before = await h.Db.Assets.CountAsync();
 
         await Assert.ThrowsAsync<ArgumentException>(() => assets.CreateRentableAsync(Rentable(h, categoryId, family.Id, Guid.NewGuid()), CancellationToken.None));

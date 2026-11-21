@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -20,7 +20,7 @@ public sealed class ScheduleService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
     IOccupancyKindService occupancyKindService,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     IReservationQueueService reservationQueueService,
     IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
@@ -129,7 +129,7 @@ public sealed class ScheduleService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenant();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
         var quantity = request.Quantity < 1 ? 1 : request.Quantity;
 

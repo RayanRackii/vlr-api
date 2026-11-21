@@ -32,7 +32,7 @@ using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Modules.WorkOrders.Controllers;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Storage;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
@@ -953,7 +953,7 @@ public sealed class WorkOrderTaskImageTests
                         sp.GetRequiredService<AppDbContext>(),
                         sp.GetRequiredService<IPermissionResolver>(),
                         NullLogger<RbacGrantGuard>.Instance));
-                    services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                    services.AddSingleton<IPlanGuard, FakePlanGuard>();
                     services.AddSingleton<NotificationQueue>();
                     services.AddScoped<IUserDirectoryService, UserDirectoryService>();
                     services.AddScoped<IAssetService, AssetService>();

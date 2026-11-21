@@ -25,7 +25,7 @@ using Platform.Api.Modules.Rentals.Controllers;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Modules.Rentals.Services;
 using Platform.Api.Modules.ResourceVisuals;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -212,7 +212,7 @@ public sealed class BookingMapHttpTests
                 services.AddScoped(sp => InMemoryAppDb.Create(sp.GetRequiredService<ITenantProvider>(), h.DatabaseName));
                 services.AddScoped<IPublicTenantBinder, PublicTenantBinder>();
                 services.AddScoped<ITenantModuleAccessor, TenantModuleAccessor>();
-                services.AddScoped<ITrialGuard, FakeTrialGuard>();
+                services.AddScoped<IPlanGuard, FakePlanGuard>();
                 services.AddScoped<IRentalLayoutService, RentalLayoutService>();
                 services.AddAuthentication("MapTest").AddScheme<AuthenticationSchemeOptions, MapAuthHandler>("MapTest", _ => { });
                 services.AddAuthorization(o =>

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Modules.Company.Dtos;
 using Platform.Api.Services.Brazil;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -26,7 +26,7 @@ public interface ICompanyProfileService
 public sealed class CompanyProfileService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard) : ICompanyProfileService
+    IPlanGuard planGuard) : ICompanyProfileService
 {
     public async Task<CompanyProfileResponse> GetAsync(CancellationToken cancellationToken)
     {
@@ -42,7 +42,7 @@ public sealed class CompanyProfileService(
         CancellationToken cancellationToken)
     {
         var tenantId = RequireTenant();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
 
         var tenant = await dbContext.Tenants
             .FirstOrDefaultAsync(item => item.Id == tenantId, cancellationToken)

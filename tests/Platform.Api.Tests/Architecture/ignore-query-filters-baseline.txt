@@ -25,6 +25,6 @@ Platform.Api/Modules/Users/Services/StaffTenantMembershipService.cs
 Platform.Api/Modules/Users/Services/UserDirectoryService.cs
 Platform.Api/Modules/WorkOrders/Services/WorkOrderGenerationService.cs
 Platform.Api/Notifications/NotificationOutboxProcessor.cs
-Platform.Api/Services/Trial/TrialGuard.cs
+Platform.Api/Services/Billing/PlanGuard.cs
 Platform.Api/Services/Tenancy/TenantPurger.cs
 Platform.Api/Services/Tenancy/TenantSettingStore.cs

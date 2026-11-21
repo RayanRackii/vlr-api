@@ -245,7 +245,7 @@ public sealed class StaffInviteEmailTests
                 queue,
                 new ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
                 new FakeHostEnvironment(),
-                new FakeTrialGuard(),
+                new FakePlanGuard(),
                 new FakePlatformAdminChecker(),
                 NullLogger<TenantUserAdminService>.Instance);
             return new Fixture(db, service, queue, tenant.Id);

@@ -9,7 +9,7 @@ using Platform.Api.Features.CreateTenant;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Modules.Admin.Services;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Services.Tenancy;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Api.Tests.Fakes;
@@ -711,7 +711,7 @@ public sealed class TrialOnboardingInviteTests
                 queue,
                 configuration,
                 new FakeHostEnvironment(),
-                new TrialGuard(db, tenantProvider, platformAdmin),
+                new PlanGuard(db, tenantProvider, platformAdmin),
                 platformAdmin,
                 logger);
             var handlerLogger = new ListLogger<CreateTenantHandler>();

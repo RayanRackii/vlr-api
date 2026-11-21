@@ -256,7 +256,7 @@ public sealed class StaffReservationTests
         new(
             h.Db,
             h.TenantProvider,
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             h.Queue(),
             events ?? new RecordingEvents(),
             SilentRentalsNotifications.Scheduler,

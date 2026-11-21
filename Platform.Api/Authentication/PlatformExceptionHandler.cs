@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics;
+using Platform.Api.Services.Billing;
 
 namespace Platform.Api.Authentication;
 
@@ -27,6 +28,21 @@ public static class PlatformExceptionHandler
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = unauthorizedAccessException.Message });
+            return;
+        }
+
+        if (exception is PlanLimitReachedException planLimit)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = planLimit.Message,
+                code = PlanLimitReachedException.Code,
+                limit = planLimit.Limit,
+                current = planLimit.Current,
+                max = planLimit.Max,
+                planKey = planLimit.PlanKey,
+            });
             return;
         }
 

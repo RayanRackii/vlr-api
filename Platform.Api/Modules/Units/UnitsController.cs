@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Platform.Api.Authorization;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -25,7 +26,8 @@ public sealed record CreateUnitRequest
 [Route("api/units")]
 public sealed class UnitsController(
     AppDbContext dbContext,
-    ITenantProvider tenantProvider) : ControllerBase
+    ITenantProvider tenantProvider,
+    IPlanGuard planGuard) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Core.UnitsRead)]
@@ -73,6 +75,8 @@ public sealed class UnitsController(
         {
             return Conflict(new { error = "A unit with this name or code already exists." });
         }
+
+        await planGuard.EnsureCanCreateUnitAsync(tenantId, cancellationToken);
 
         var unit = new Platform.Core.Domain.Entities.Unit(tenantId, name, code);
         dbContext.Units.Add(unit);

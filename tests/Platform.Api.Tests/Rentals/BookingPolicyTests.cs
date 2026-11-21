@@ -1545,7 +1545,7 @@ public sealed class BookingPolicyTests
             var reservations = new ReservationService(
                 db,
                 tenantProvider,
-                new FakeTrialGuard(),
+                new FakePlanGuard(),
                 queue,
                 SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,
@@ -1554,7 +1554,7 @@ public sealed class BookingPolicyTests
                 db,
                 tenantProvider,
                 kinds,
-                new FakeTrialGuard(),
+                new FakePlanGuard(),
                 queue,
                 SilentRentalsNotifications.Publisher.AsDomainEvents(),
                 SilentRentalsNotifications.Scheduler,

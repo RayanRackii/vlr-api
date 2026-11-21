@@ -4,7 +4,7 @@ using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
 using Platform.Api.Services.Brazil;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Events;
 using Platform.Core.Domain.Constants;
 using Platform.Core.Domain.Entities;
@@ -16,7 +16,7 @@ namespace Platform.Api.Modules.Rentals.Services;
 public sealed class ReservationService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    ITrialGuard trialGuard,
+    IPlanGuard planGuard,
     IReservationQueueService reservationQueueService,
     IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
@@ -295,7 +295,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         var normalized = NormalizeNotes(notes);
 
         var reservation = await LoadReservationWithItemsAsync(reservationId, cancellationToken)
@@ -406,7 +406,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
         ValidateTimeRange(request.Date, request.StartTime, request.EndTime, request.EndDate);
 
@@ -826,7 +826,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -888,7 +888,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -950,7 +950,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -1005,7 +1005,7 @@ public sealed class ReservationService(
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
-        await trialGuard.EnsureWritableAsync(cancellationToken);
+        await planGuard.EnsureWritableAsync(cancellationToken);
         await domainEvents.EnsureReadyAsync(cancellationToken);
 
         await using var transaction = dbContext.Database.IsRelational()

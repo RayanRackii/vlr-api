@@ -35,7 +35,7 @@ public sealed class AssetAttributesPostgresTests(PostgresContainerFixture postgr
             await db.SaveChangesAsync();
             (unitId, categoryId, familyId) = (unit.Id, category.Id, family.Id);
 
-            var created = await new AssetService(db, provider, new FakeTrialGuard(), new RentalConfigurationSync(db)).CreateRentableAsync(
+            var created = await new AssetService(db, provider, new FakePlanGuard(), new RentalConfigurationSync(db)).CreateRentableAsync(
                 new CreateRentableRequest { Name = "Resource", Tag = "A1", UnitId = unitId, CategoryId = categoryId, FamilyId = familyId },
                 CancellationToken.None);
             assetId = created.Id;
@@ -47,7 +47,7 @@ public sealed class AssetAttributesPostgresTests(PostgresContainerFixture postgr
 
         await using (var read = factory.Create(provider))
         {
-            var service = new AssetService(read, provider, new FakeTrialGuard(), new RentalConfigurationSync(read));
+            var service = new AssetService(read, provider, new FakePlanGuard(), new RentalConfigurationSync(read));
             var asset = await service.GetByIdAsync(assetId, CancellationToken.None);
             Assert.Equal("12", asset!.Attributes["capacity"].GetString());
             Assert.Equal("true", asset.Attributes["covered"].GetString());
@@ -61,7 +61,7 @@ public sealed class AssetAttributesPostgresTests(PostgresContainerFixture postgr
 
         await using (var write = factory.Create(provider))
         {
-            var service = new AssetService(write, provider, new FakeTrialGuard(), new RentalConfigurationSync(write));
+            var service = new AssetService(write, provider, new FakePlanGuard(), new RentalConfigurationSync(write));
             var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
             {
                 ["capacity"] = JsonSerializer.SerializeToElement("12"),

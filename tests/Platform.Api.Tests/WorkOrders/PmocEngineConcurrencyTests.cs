@@ -206,7 +206,7 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
             new FakePlatformAdminChecker("ops@club.test"),
             resolver,
             new RbacGrantGuard(db, resolver, NullLogger<RbacGrantGuard>.Instance),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             new NotificationQueue(),
             new ConfigurationBuilder().Build(),
             new FakeHostEnvironment(),
@@ -214,7 +214,7 @@ public sealed class PmocEngineConcurrencyTests : IClassFixture<PostgresContainer
         var registry = new AssetRegistry(
             db,
             tenantProvider,
-            new AssetService(db, tenantProvider, new FakeTrialGuard(), new RentalConfigurationSync(db)),
+            new AssetService(db, tenantProvider, new FakePlanGuard(), new RentalConfigurationSync(db)),
             new AssetFamilyService(db),
             new AssetCategoryService(db, tenantProvider));
         return new WorkOrderService(db, tenantProvider, http, users, resolver, registry);

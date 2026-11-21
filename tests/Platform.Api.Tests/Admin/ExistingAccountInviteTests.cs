@@ -452,7 +452,7 @@ public sealed class ExistingAccountInviteTests(PostgresContainerFixture postgres
     private static TenantUserAdminService CreateService(AppDbContext db, RecordingPasswordAuthAdmin auth) =>
         new(
             db, auth, new NotificationQueue(), new ConfigurationBuilder().Build(),
-            new FakeHostEnvironment(), new FakeTrialGuard(), new FakePlatformAdminChecker(),
+            new FakeHostEnvironment(), new FakePlanGuard(), new FakePlatformAdminChecker(),
             NullLogger<TenantUserAdminService>.Instance);
 
     private static ClaimsPrincipal Staff(string email, string authId, Guid tokenTenant) =>

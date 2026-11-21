@@ -84,7 +84,7 @@ public sealed class ScheduleTemplateCourtLockTests
             db,
             tenantProvider,
             new OccupancyKindService(db, tenantProvider),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(db, tenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

@@ -142,7 +142,7 @@ public sealed class DerivedBookedScheduleRowsTests
             h.Db,
             h.TenantProvider,
             new OccupancyKindService(h.Db, h.TenantProvider),
-            new FakeTrialGuard(),
+            new FakePlanGuard(),
             TestReservationQueue.Create(h.Db, h.TenantProvider),
             SilentRentalsNotifications.Publisher.AsDomainEvents(),
             SilentRentalsNotifications.Scheduler,

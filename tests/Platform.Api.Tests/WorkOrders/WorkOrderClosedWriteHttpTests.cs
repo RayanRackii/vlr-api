@@ -31,7 +31,7 @@ using Platform.Api.Modules.WorkOrders;
 using Platform.Api.Modules.WorkOrders.Controllers;
 using Platform.Api.Modules.WorkOrders.Services;
 using Platform.Api.Notifications;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Api.Tests.Fakes;
 using Platform.Api.Tests.Infrastructure;
 using Platform.Core.Domain.Constants;
@@ -268,7 +268,7 @@ public sealed class WorkOrderClosedWriteHttpTests
                     services.AddSingleton<IConfiguration>(_ => new ConfigurationBuilder().Build());
                     services.AddSingleton<IHostEnvironment, FakeHostEnvironment>();
                     services.AddSingleton<IPlatformAdminChecker>(_ => new FakePlatformAdminChecker());
-                    services.AddSingleton<ITrialGuard, FakeTrialGuard>();
+                    services.AddSingleton<IPlanGuard, FakePlanGuard>();
                     services.AddSingleton<NotificationQueue>();
                     services.AddScoped<AmbientTenantContext>();
                     services.AddScoped<PlatformAdminTenantSession>();

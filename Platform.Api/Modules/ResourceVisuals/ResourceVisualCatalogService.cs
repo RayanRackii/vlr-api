@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
-using Platform.Api.Services.Trial;
+using Platform.Api.Services.Billing;
 using Platform.Core.Domain.Contracts.ResourceVisuals;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
@@ -8,7 +8,7 @@ using Platform.Core.Infrastructure.ResourceVisuals;
 
 namespace Platform.Api.Modules.ResourceVisuals;
 
-public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenantProvider tenantProvider, ITrialGuard trialGuard, IRentalVisualDefaults rentalVisualDefaults, ILogger<ResourceVisualCatalogService> logger)
+public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenantProvider tenantProvider, IPlanGuard planGuard, IRentalVisualDefaults rentalVisualDefaults, ILogger<ResourceVisualCatalogService> logger)
 {
     private static ResourceVisualException Invalid(string message) => new("VISUAL_TEMPLATE_INVALID", message);
     private static ResourceVisualException Missing() => new("VISUAL_TEMPLATE_INVALID", "Visual template or revision not found.", 404);
@@ -164,7 +164,7 @@ public sealed partial class ResourceVisualCatalogService(AppDbContext db, ITenan
     public async Task<IReadOnlyList<VisualTagDto>> ReplaceSegmentsAsync(Guid? explicitTenant, SegmentsRequest request, CancellationToken ct)
     {
         var tenant = explicitTenant ?? Tenant();
-        if (explicitTenant == null) await trialGuard.EnsureWritableAsync(ct);
+        if (explicitTenant == null) await planGuard.EnsureWritableAsync(ct);
         if (request.SegmentIds == null || request.SegmentIds.Length > 100) throw new ResourceVisualException("SEGMENT_INVALID", "At most 100 segments are allowed.");
         await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(ct) : null;
         if (db.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
