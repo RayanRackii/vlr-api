@@ -12,6 +12,7 @@ public static class AdminModuleExtensions
         services.AddScoped<IAdminTenantService, AdminTenantService>();
         services.AddScoped<ITenantUserAdminService, TenantUserAdminService>();
         services.AddScoped<ITenantSettingsAdminService, TenantSettingsAdminService>();
+        services.AddScoped<IModuleDataPurgeService, ModuleDataPurgeService>();
         services.AddScoped<IPlatformUserAdminService, PlatformUserAdminService>();
         services.AddScoped<IPlatformAdminMembershipService, PlatformAdminMembershipService>();
 
