@@ -39,9 +39,11 @@ public sealed class SubscriptionEventConfiguration : IEntityTypeConfiguration<Su
         // Append-only: the table has no updated_at.
         builder.Ignore(e => e.UpdatedAt);
 
-        builder.HasOne<Tenant>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_subscription_events_tenants_tenant_id");
 
-        builder.HasOne<TenantSubscription>().WithMany().HasForeignKey(e => e.SubscriptionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<TenantSubscription>().WithMany().HasForeignKey(e => e.SubscriptionId).OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_subscription_events_tenant_subscriptions_subscription_id");
 
         builder.HasIndex(e => e.ProviderEventId)
             .IsUnique()

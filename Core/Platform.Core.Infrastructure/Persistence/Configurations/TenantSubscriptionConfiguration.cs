@@ -60,12 +60,14 @@ public sealed class TenantSubscriptionConfiguration : IEntityTypeConfiguration<T
         builder.Property(s => s.CreatedAt)
             .IsRequired();
 
-        builder.HasOne<Tenant>().WithMany().HasForeignKey(s => s.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Tenant>().WithMany().HasForeignKey(s => s.TenantId).OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_tenant_subscriptions_tenants_tenant_id");
 
         builder.HasOne(s => s.PlanCatalog)
             .WithMany()
             .HasForeignKey(s => s.PlanCatalogId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_tenant_subscriptions_plan_catalog_plan_catalog_id");
 
         // One current subscription per tenant.
         builder.HasIndex(s => s.TenantId)
