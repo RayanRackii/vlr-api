@@ -174,3 +174,40 @@ Manual billing (study step 2) works from B1: the admin sets plan/discount/`activ
 - Double charging on retries: Idempotency-Key infra + one provider subscription per tenant (unique).
 - NFS-e obligation for clients that are companies: manual until a dedicated spec (D9).
 - Capacity: billing jobs run on the single Hangfire worker; keep them short and batched.
+
+## 10. Amendments after the spec review (2026-11-21) — binding, they override earlier sections
+1. **Trial → paid conversion.** New domain method `Tenant.ConvertFromTrial()` clears `IsTrial`, `TrialEndsAt`,
+   `TrialPurgeAt`. Called whenever a subscription becomes `active` on a paid plan (admin override in B1; webhook in B3).
+   `TrialLifecycleJob` never purges or marks read-only a tenant whose current subscription is `active` or `past_due`:
+   when a subscription exists it is the source of truth. Tests in B1 (admin activation) and B3 (webhook activation).
+2. **Nobody blocked by the rollout or by manual billing.** `tenant_subscriptions` gains `limits_unlimited boolean`
+   (default false) and `billing_mode` (`provider|manual`, default `provider`). The backfill sets non-trial tenants to
+   `manual`, `limits_unlimited = true`, `discount_percent = 100`. Plan limits are skipped when `limits_unlimited`.
+   Dunning (B4) and the automatic `past_due → read_only` transition apply only to `billing_mode = provider` rows that
+   have a `provider_subscription_id`; manual rows advance `current_period_end` only through the admin override.
+   Test (B1/B4): a backfilled tenant never becomes limited, `past_due` or `read_only`.
+3. **Modules source of truth = `TenantModule`** (platform admin). `plan_catalog.modules` is the default module set
+   applied when the trial tenant is created. B3 `change-plan` may enable the new plan's missing modules (never
+   disables any; disabling stays a platform-admin action subject to the existing guards and to spec
+   2026-11-20-module-data-purge).
+4. **Existing trials are not re-based**; 30/90 applies to trials created after B1 ships.
+5. **Guard naming decided:** `ITrialGuard`/`TrialGuard` are renamed to `IPlanGuard`/`PlanGuard` in B1 (all callers).
+6. **`settings.billing`** is registered in B1 and granted to the system admin/owner roles by migration (same pattern as
+   `GrantResourcePlanningPermissions`).
+7. **Public inputs:** lead fields are validated server-side (≤ 100 chars, `[A-Za-z0-9._-]`, otherwise dropped) and never
+   rendered as HTML; `GET /api/public/plans` is cacheable (short `Cache-Control`) and served from the active catalog only.
+8. **Plan catalog editing** (`GET/PUT /api/admin/billing/plans`) is removed from B1 and gets its own small spec later
+   (with an audit table of its own; `subscription_events` stays subscription-scoped).
+9. **Webhook (B3) hardening:** constant-time token comparison; tenant resolved from the stored
+   `provider_subscription_id`/`provider_customer_id` (never trust payload tenant/`externalReference` alone); re-fetch
+   the payment/subscription from Asaas before changing status; runs under `PlatformScope` with explicit `TenantId`
+   filters; transitions are idempotent and monotonic (an older `PAYMENT_OVERDUE` never overrides a newer
+   `PAYMENT_RECEIVED`; compare event/payment dates and use `row_version`). B3 tests cover each point plus a
+   cross-tenant event.
+10. **Checkout idempotency (B3):** extend `IdempotencyService` to accept a staff user as principal (scope
+    `billing.checkout`), and make the provider call retry-safe: deterministic `externalReference = tenantId`, look up an
+    existing Asaas customer/subscription before creating.
+11. **Discount expiry (B3/B4):** a daily step ends expired discounts (`discount_until <= now`): sets
+    `discount_percent = 0` and updates the Asaas subscription value; event `plan_changed`.
+12. **Time zone:** dunning and trial e-mail days are computed in `America/Sao_Paulo`.
+13. **Study reference:** the pricing study lives outside the repos (`Rolvix/strategy/`, not versioned).
