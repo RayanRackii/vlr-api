@@ -40,8 +40,9 @@ public sealed class ReservationService(
         var rental = await dbContext.RentalAssets
             .AsNoTracking()
             .Include(r => r.Asset)
+            .WhereBookable()
             .FirstOrDefaultAsync(
-                r => r.AssetId == request.AssetId && r.IsActive && r.Asset.IsRentable,
+                r => r.AssetId == request.AssetId,
                 cancellationToken);
 
         if (rental is null)
@@ -386,7 +387,8 @@ public sealed class ReservationService(
         var assetId = items[0].AssetId;
         var unitId = await dbContext.RentalAssets
             .AsNoTracking()
-            .Where(r => r.AssetId == assetId && r.IsActive && r.Asset.IsRentable)
+            .WhereBookable()
+            .Where(r => r.AssetId == assetId)
             .Select(r => (Guid?)r.Asset.UnitId)
             .FirstOrDefaultAsync(cancellationToken);
         return unitId
@@ -524,8 +526,9 @@ public sealed class ReservationService(
 
                 var rental = await dbContext.RentalAssets
                     .Include(r => r.Asset)
+                    .WhereBookable()
                     .FirstOrDefaultAsync(
-                        r => r.AssetId == itemRequest.AssetId && r.IsActive && r.Asset.IsRentable,
+                        r => r.AssetId == itemRequest.AssetId,
                         cancellationToken)
                     ?? throw new KeyNotFoundException(
                         $"Rentable asset '{itemRequest.AssetId}' was not found.");

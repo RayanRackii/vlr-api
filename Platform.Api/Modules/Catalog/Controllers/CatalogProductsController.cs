@@ -19,6 +19,8 @@ public sealed class CatalogProductsController(
     ICatalogProductService productService,
     ICatalogProductResourceRequirementService requirementService) : ControllerBase
 {
+    public const string ResourceRequirementInvalidCode = "catalog.resource_requirement_invalid";
+
     [HttpGet]
     [RequirePermission(Permissions.Catalog.ProductsRead)]
     public async Task<ActionResult<IReadOnlyList<CatalogProductResponse>>> List(
@@ -302,6 +304,7 @@ public sealed class CatalogProductsController(
     }
 
     [HttpPut("{id:guid}/resource-requirements")]
+    [ModelStateErrorCode(ResourceRequirementInvalidCode)]
     [RequirePermission(Permissions.Catalog.ProductsManage)]
     public async Task<ActionResult<CatalogProductResourceRequirementsResponse>> ReplaceResourceRequirements(
         Guid id,
@@ -330,7 +333,7 @@ public sealed class CatalogProductsController(
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = ex.Message, code = ResourceRequirementInvalidCode });
         }
     }
 }

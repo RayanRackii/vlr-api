@@ -170,52 +170,19 @@ public sealed class TenantPurger(
     internal static IReadOnlyList<IEntityType> BuildDeletionOrder(IModel model)
     {
         var entities = model.GetEntityTypes().ToArray();
-        var covered = entities.Where(entity => entity.FindProperty("TenantId") is not null).ToHashSet();
-        while (true)
-        {
-            var dependents = entities.Where(entity => !covered.Contains(entity)
-                && entity.GetForeignKeys().Any(fk => covered.Contains(fk.PrincipalEntityType))).ToArray();
-            if (dependents.Length == 0)
-                break;
-            covered.UnionWith(dependents);
-        }
-
-        foreach (var entity in covered)
-        {
-            var tenantProperty = entity.FindProperty("TenantId");
-            if (tenantProperty is null && entity.GetForeignKeys().Any(fk => fk.PrincipalEntityType == entity))
-                throw new InvalidOperationException($"Unsupported unscoped self-reference in tenant purge: {entity.Name}.");
-            if (entity.GetTableName() is null
-                || (tenantProperty is not null && tenantProperty.ClrType != typeof(Guid)
-                    && tenantProperty.ClrType != typeof(Guid?)))
-                throw new InvalidOperationException($"Unsupported tenant purge mapping: {entity.Name}.");
-        }
-
-        var remaining = covered.ToHashSet();
-        var result = new List<IEntityType>();
-        while (remaining.Count > 0)
-        {
-            var leaves = remaining.Where(entity => !remaining.Any(other => other != entity
-                    && other.GetForeignKeys().Any(fk => fk.PrincipalEntityType == entity)))
-                .OrderBy(entity => entity.Name, StringComparer.Ordinal).ToArray();
-            if (leaves.Length == 0)
-                throw new InvalidOperationException("Tenant purge FK cycle: "
-                    + string.Join(", ", remaining.Select(entity => entity.Name)));
-            result.AddRange(leaves);
-            remaining.ExceptWith(leaves);
-        }
-
-        return result;
+        var covered = TenantDeletionOrder.Cover(entities, entity => entity.FindProperty("TenantId") is not null);
+        return TenantDeletionOrder.Order(covered);
     }
 
     private async Task DeleteEntityAsync(IEntityType entity, Guid tenantId, CancellationToken cancellationToken)
     {
+        var sqlBuilder = new TenantScopedSql(dbContext.GetService<ISqlGenerationHelper>());
         var aliasCounter = 0;
-        var scope = Scope(entity, "target", ref aliasCounter);
+        var scope = sqlBuilder.Scope(entity, "target", ref aliasCounter);
         var selfReferences = entity.GetForeignKeys().Where(fk => fk.PrincipalEntityType == entity).ToArray();
         var leafPredicate = string.Concat(selfReferences.Select(fk =>
-            $" AND NOT EXISTS (SELECT 1 FROM {Table(entity)} AS child WHERE {Join(fk, "child", "target")})"));
-        var sql = $"DELETE FROM {Table(entity)} AS target WHERE {scope}{leafPredicate}";
+            $" AND NOT EXISTS (SELECT 1 FROM {sqlBuilder.Table(entity)} AS child WHERE {sqlBuilder.Join(fk, "child", "target")})"));
+        var sql = $"DELETE FROM {sqlBuilder.Table(entity)} AS target WHERE {scope}{leafPredicate}";
         int deleted;
         do
         {
@@ -230,53 +197,11 @@ public sealed class TenantPurger(
             // to resource planning).
 #pragma warning disable EF1002
             var count = await dbContext.Database.SqlQueryRaw<int>(
-                    $"SELECT CAST(COUNT(*) AS INTEGER) AS {dbContext.GetService<ISqlGenerationHelper>().DelimitIdentifier("Value")} FROM {Table(entity)} AS target WHERE {scope}", tenantId)
+                    $"SELECT CAST(COUNT(*) AS INTEGER) AS {dbContext.GetService<ISqlGenerationHelper>().DelimitIdentifier("Value")} FROM {sqlBuilder.Table(entity)} AS target WHERE {scope}", tenantId)
                 .SingleAsync(cancellationToken);
 #pragma warning restore EF1002
             if (count > 0)
                 throw new InvalidOperationException($"Cannot purge cyclic or externally referenced rows in {entity.Name}.");
         }
     }
-
-    private string Scope(IEntityType entity, string alias, ref int aliasCounter)
-    {
-        var tenantId = entity.FindProperty("TenantId");
-        if (tenantId is not null)
-            return $"{alias}.{Column(entity, tenantId)} = {{0}}";
-
-        // An unscoped dependent belongs to the tenant through its scoped principal.
-        var predicates = new List<string>();
-        foreach (var fk in entity.GetForeignKeys())
-        {
-            var principal = fk.PrincipalEntityType;
-            if (!HasTenantAncestor(principal, []))
-                continue;
-            var parentAlias = $"parent{++aliasCounter}";
-            var parentScope = Scope(principal, parentAlias, ref aliasCounter);
-            predicates.Add($"EXISTS (SELECT 1 FROM {Table(principal)} AS {parentAlias} "
-                + $"WHERE {Join(fk, alias, parentAlias)} AND ({parentScope}))");
-        }
-        if (predicates.Count == 0)
-            throw new InvalidOperationException($"No tenant scope for purge entity {entity.Name}.");
-        return "(" + string.Join(" OR ", predicates) + ")";
-    }
-
-    private static bool HasTenantAncestor(IEntityType entity, HashSet<IEntityType> visited)
-    {
-        if (entity.FindProperty("TenantId") is not null)
-            return true;
-        return visited.Add(entity) && entity.GetForeignKeys()
-            .Any(fk => HasTenantAncestor(fk.PrincipalEntityType, visited));
-    }
-
-    private string Join(IForeignKey foreignKey, string dependentAlias, string principalAlias) =>
-        string.Join(" AND ", foreignKey.Properties.Select((property, index) =>
-            $"{dependentAlias}.{Column(foreignKey.DeclaringEntityType, property)} = "
-            + $"{principalAlias}.{Column(foreignKey.PrincipalEntityType, foreignKey.PrincipalKey.Properties[index])}"));
-
-    private string Table(IEntityType entity) => dbContext.GetService<ISqlGenerationHelper>()
-        .DelimitIdentifier(entity.GetTableName()!, entity.GetSchema());
-
-    private string Column(IEntityType entity, IProperty property) => dbContext.GetService<ISqlGenerationHelper>()
-        .DelimitIdentifier(property.GetColumnName(StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema()))!);
 }

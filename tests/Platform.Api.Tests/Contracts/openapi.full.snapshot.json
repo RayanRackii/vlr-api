@@ -4486,6 +4486,70 @@
         },
         "type": "object"
       },
+      "ModuleDataPurgeBlockerDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "rows": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "table": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ModuleDataPurgePreviewDto": {
+        "additionalProperties": false,
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleDataPurgeBlockerDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "module": {
+            "nullable": true,
+            "type": "string"
+          },
+          "moduleActive": {
+            "type": "boolean"
+          },
+          "storageObjects": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleDataPurgeTableDto"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ModuleDataPurgeTableDto": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "table": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ModuleMenuItemDto": {
         "additionalProperties": false,
         "properties": {
@@ -5437,8 +5501,16 @@
             "format": "date-time",
             "type": "string"
           },
+          "customerEmail": {
+            "nullable": true,
+            "type": "string"
+          },
           "customerId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "customerName": {
+            "nullable": true,
             "type": "string"
           },
           "description": {
@@ -10806,6 +10878,54 @@
         },
         "tags": [
           "AdminTenants"
+        ]
+      }
+    },
+    "/api/admin/tenants/{id}/modules/{module}/data-purge/preview": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "module",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleDataPurgePreviewDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleDataPurgePreviewDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleDataPurgePreviewDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminModuleDataPurge"
         ]
       }
     },
@@ -23336,6 +23456,9 @@
     },
     {
       "name": "AdminBookingMapDemo"
+    },
+    {
+      "name": "AdminModuleDataPurge"
     },
     {
       "name": "AdminModuleMenuItems"

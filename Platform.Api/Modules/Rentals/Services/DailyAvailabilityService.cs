@@ -41,8 +41,8 @@ public sealed class DailyAvailabilityService(
         var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
         var tenantDays = PolicyResolver.Resolve(null, null, tenantPolicy).MaxAdvanceBookingDays;
         var resourcesQuery = db.RentalAssets.AsNoTracking().Include(r => r.Asset)
-            .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.Asset.Unit.TenantId == tenantId
-                && r.IsActive && r.Asset.IsRentable);
+            .WhereBookable()
+            .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.Asset.Unit.TenantId == tenantId);
         if (rentalAssetIds is { Count: > 0 })
             resourcesQuery = resourcesQuery.Where(r => rentalAssetIds.Contains(r.Id));
         if (unitId.HasValue)

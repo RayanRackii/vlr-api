@@ -7,14 +7,43 @@ using Platform.Core.Domain.Constants;
 
 namespace Platform.Api.Modules.Taxonomy.Controllers;
 
+/// <summary>
+/// Overrides the code <see cref="TaxonomyErrorsAttribute"/> returns for model-state failures on one action.
+/// </summary>
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class ModelStateErrorCodeAttribute(string code) : Attribute
+{
+    public string Code { get; } = code;
+}
+
 public sealed class TaxonomyErrorsAttribute : ExceptionFilterAttribute, IActionFilter
 {
     public TaxonomyErrorsAttribute() => Order = -3000; // Before ApiController's model-state filter.
 
     public void OnActionExecuting(ActionExecutingContext context)
     {
-        if (!context.ModelState.IsValid)
+        if (context.ModelState.IsValid) return;
+
+        // An action whose body is not taxonomy (e.g. product resource requirements) opts into its
+        // own error code so clients do not read a taxonomy failure for an unrelated payload.
+        var custom = context.ActionDescriptor.EndpointMetadata
+            .OfType<ModelStateErrorCodeAttribute>()
+            .LastOrDefault();
+        if (custom is null)
+        {
             context.Result = new BadRequestObjectResult(new { error = "Invalid taxonomy request.", code = "TAXONOMY_INVALID" });
+            return;
+        }
+
+        var messages = context.ModelState.Values
+            .SelectMany(v => v.Errors)
+            .Select(e => e.ErrorMessage)
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Distinct()
+            .Take(3)
+            .ToList();
+        var error = messages.Count > 0 ? string.Join("; ", messages) : "The request body is invalid.";
+        context.Result = new BadRequestObjectResult(new { error, code = custom.Code });
     }
 
     public void OnActionExecuted(ActionExecutedContext context) { }

@@ -15,7 +15,8 @@ public sealed record PmocEnginePlanReport(
     int SkippedNotDue,
     int SkippedOpenWorkOrder,
     int SkippedRevalidation,
-    int SkippedDuplicate);
+    int SkippedDuplicate,
+    int Failed = 0);
 
 public sealed record PmocEngineRunReport(
     DateOnly AsOfDate,
@@ -54,22 +55,59 @@ public sealed class PmocEngineJob(
         var now = timeProvider.GetUtcNow();
         foreach (var tenantPlans in plans.GroupBy(plan => plan.TenantId))
         {
-            var zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, tenantPlans.Key, cancellationToken);
-            var tenantDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+            // One tenant or plan that throws must not stop the sweep for the others: Hangfire would retry
+            // the whole job, fail at the same row, and starve every tenant sorted after it.
+            TimeZoneInfo zone;
+            DateOnly tenantDate;
+            try
+            {
+                zone = await TenantTimeZoneProvider.ResolveForTenantAsync(dbContext, tenantPlans.Key, cancellationToken);
+                tenantDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, zone).DateTime);
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogError(
+                    exception,
+                    "PmocEngineJob failed to resolve the time zone for tenant {TenantId}; its plans were skipped.",
+                    tenantPlans.Key);
+                foreach (var plan in tenantPlans)
+                {
+                    reports.Add(FailedReport(plan.Id));
+                }
+                continue;
+            }
+
             foreach (var plan in tenantPlans)
             {
-                reports.Add(await ProcessPlanAsync(plan, tenantDate, zone, cancellationToken));
+                try
+                {
+                    reports.Add(await ProcessPlanAsync(plan, tenantDate, zone, cancellationToken));
+                }
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    dbContext.ChangeTracker.Clear();
+                    logger.LogError(
+                        exception,
+                        "PmocEngineJob failed for tenant {TenantId} plan {PlanId}; continuing with the next plan.",
+                        plan.TenantId,
+                        plan.Id);
+                    reports.Add(FailedReport(plan.Id));
+                }
             }
         }
 
         logger.LogInformation(
-            "PmocEngineJob finished for {AsOfDate}. PlansProcessed={PlansProcessed} Created={Created}.",
+            "PmocEngineJob finished for {AsOfDate}. PlansProcessed={PlansProcessed} Created={Created} Failed={Failed}.",
             asOfDate,
             reports.Count,
-            reports.Sum(report => report.Created));
+            reports.Sum(report => report.Created),
+            reports.Sum(report => report.Failed));
 
         return new PmocEngineRunReport(asOfDate, reports);
     }
+
+    private static PmocEnginePlanReport FailedReport(Guid planId) =>
+        new(planId, 0, 0, 0, 0, 0, 0, 0, 1);
 
     private async Task<PmocEnginePlanReport> ProcessPlanAsync(
         CandidatePlan plan,
@@ -119,22 +157,39 @@ public sealed class PmocEngineJob(
         var skippedNotDue = 0;
         var skippedOpen = 0;
         var dueAssets = 0;
+        var failed = 0;
         var candidates = new List<Guid>();
 
         foreach (var assetId in assets)
         {
             var relevant = workOrdersByAsset[assetId].ToList();
-            var due = PmocDueCalculator.Compute(
-                new PmocDueInput(
-                    plan.IntervalDays,
-                    plan.FirstDueDate,
-                    asOfDate,
-                    PmocDueCalculator.PickLastCompleted(
-                        relevant.Select(workOrder => (
-                            workOrder.Id,
-                            workOrder.Status,
-                            workOrder.ScheduledDate,
-                            workOrder.CompletedDate)))), zone);
+            PmocDueResult due;
+            try
+            {
+                due = PmocDueCalculator.Compute(
+                    new PmocDueInput(
+                        plan.IntervalDays,
+                        plan.FirstDueDate,
+                        asOfDate,
+                        PmocDueCalculator.PickLastCompleted(
+                            relevant.Select(workOrder => (
+                                workOrder.Id,
+                                workOrder.Status,
+                                workOrder.ScheduledDate,
+                                workOrder.CompletedDate)))), zone);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            {
+                // Bad plan or asset data (e.g. invalid interval, Completed work order without a date).
+                failed++;
+                logger.LogError(
+                    exception,
+                    "PmocEngineJob could not compute the due date for tenant {TenantId} plan {PlanId} asset {AssetId}; skipping the asset.",
+                    plan.TenantId,
+                    plan.Id,
+                    assetId);
+                continue;
+            }
 
             if (due.DueStatus == PmocDueStatus.NotDue)
             {
@@ -169,14 +224,17 @@ public sealed class PmocEngineJob(
                     asOfDate,
                     cancellationToken);
             }
-            catch (Exception exception)
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
+                dbContext.ChangeTracker.Clear();
+                failed++;
                 logger.LogError(
                     exception,
-                    "PmocEngineJob failed while generating plan {PlanId} asset {AssetId}.",
+                    "PmocEngineJob failed while generating tenant {TenantId} plan {PlanId} asset {AssetId}; continuing.",
+                    plan.TenantId,
                     plan.Id,
                     assetId);
-                throw;
+                continue;
             }
 
             switch (result.Outcome)
@@ -207,10 +265,11 @@ public sealed class PmocEngineJob(
             skippedNotDue,
             skippedOpen,
             skippedRevalidation,
-            skippedDuplicate);
+            skippedDuplicate,
+            failed);
 
         logger.LogInformation(
-            "PmocEngineJob plan {PlanId} schedule=interval eligible={EligibleAssets} due={DueAssets} created={Created} skippedNotDue={SkippedNotDue} skippedOpen={SkippedOpenWorkOrder} skippedRevalidation={SkippedRevalidation} skippedDuplicate={SkippedDuplicate}.",
+            "PmocEngineJob plan {PlanId} schedule=interval eligible={EligibleAssets} due={DueAssets} created={Created} skippedNotDue={SkippedNotDue} skippedOpen={SkippedOpenWorkOrder} skippedRevalidation={SkippedRevalidation} skippedDuplicate={SkippedDuplicate} failed={Failed}.",
             report.PlanId,
             report.EligibleAssets,
             report.DueAssets,
@@ -218,7 +277,8 @@ public sealed class PmocEngineJob(
             report.SkippedNotDue,
             report.SkippedOpenWorkOrder,
             report.SkippedRevalidation,
-            report.SkippedDuplicate);
+            report.SkippedDuplicate,
+            report.Failed);
 
         return report;
     }
