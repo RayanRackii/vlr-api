@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Services.Tenancy;
 using Platform.Core.Domain.Constants;
