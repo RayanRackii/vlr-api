@@ -10,4 +10,7 @@ public sealed record CreateTenantRequest(
     string AdminEmail,
     string? AdminPassword = null,
     string? AdminPhone = null,
-    bool IsTrial = false);
+    bool IsTrial = false,
+    string? PackageKey = null,
+    string? LeadSource = null,
+    string? LeadCampaign = null);

@@ -8,6 +8,7 @@ using Platform.Api.Jobs;
 using Platform.Api.Modules.Admin;
 using Platform.Api.Modules.Assets;
 using Platform.Api.Modules.Auth;
+using Platform.Api.Modules.Billing;
 using Platform.Api.Modules.Catalog;
 using Platform.Api.Modules.Company;
 using Platform.Api.Modules.Taxonomy;
@@ -92,6 +93,7 @@ try
     builder.Services.AddRegistrationFieldsModule();
     builder.Services.AddModuleMenuItemsModule();
     builder.Services.AddAdminModule();
+    builder.Services.AddBillingModule();
     builder.Services.AddSingleton<IAnonymousTrialCreateGate, AnonymousTrialCreateGate>();
     builder.Services.AddScoped<ICreateTenantHandler, CreateTenantHandler>();
     builder.Services.AddMediatR(configuration =>

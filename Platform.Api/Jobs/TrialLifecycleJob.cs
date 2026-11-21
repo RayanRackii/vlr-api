@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Modules.Admin.Services;
+using Platform.Core.Domain.Constants;
 using Platform.Core.Infrastructure.Persistence;
 
 namespace Platform.Api.Jobs;
@@ -26,7 +27,13 @@ public sealed class TrialLifecycleJob(
                     t.IsTrial
                     && t.IsActive
                     && t.TrialPurgeAt != null
-                    && t.TrialPurgeAt <= now)
+                    && t.TrialPurgeAt <= now
+                    // The subscription is the source of truth when present: a paying tenant is never purged.
+                    && !dbContext.TenantSubscriptions.Any(s =>
+                        s.TenantId == t.Id
+                        && s.EndedAt == null
+                        && (s.Status == SubscriptionStatuses.Active
+                            || s.Status == SubscriptionStatuses.PastDue)))
                 .Select(t => t.Id)
                 .ToListAsync(cancellationToken);
 

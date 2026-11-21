@@ -598,11 +598,157 @@ public sealed class TrialOnboardingInviteTests
         Assert.Empty(harness.Auth.Created);
     }
 
+    [Fact]
+    public async Task Trial_signup_starts_a_trialing_profissional_subscription_with_30_and_90_day_dates()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var plans = BillingTestData.AddCatalog(harness.Db);
+        await harness.Db.SaveChangesAsync();
+        var before = DateTimeOffset.UtcNow;
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("pkg-default@club.test", "11977770001"), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status201Created, Status(result));
+        var tenantId = Body<CreateTenantResponse>(result).TenantId;
+        var tenant = await harness.Db.Tenants.SingleAsync(t => t.Id == tenantId);
+        Assert.InRange(tenant.TrialEndsAt!.Value, before.AddDays(30), DateTimeOffset.UtcNow.AddDays(30));
+        Assert.InRange(tenant.TrialPurgeAt!.Value, before.AddDays(90), DateTimeOffset.UtcNow.AddDays(90));
+        var subscription = await harness.Db.TenantSubscriptions.SingleAsync(s => s.TenantId == tenantId);
+        var plan = plans.Single(p => p.Id == subscription.PlanCatalogId);
+        // The default trial modules mix rentals and maintenance: ambiguous, so reservas.
+        Assert.Equal(("reservas", "profissional"), (plan.PackageKey, plan.PlanKey));
+        Assert.Equal(SubscriptionStatuses.Trialing, subscription.Status);
+        Assert.Equal(BillingModes.Provider, subscription.BillingMode);
+        Assert.False(subscription.LimitsUnlimited);
+        Assert.Equal(tenant.TrialEndsAt, subscription.CurrentPeriodEnd);
+        Assert.Equal(
+            SubscriptionEventTypes.Created,
+            (await harness.Db.SubscriptionEvents.SingleAsync(e => e.SubscriptionId == subscription.Id)).Type);
+        var modules = await harness.Db.TenantModules.IgnoreQueryFilters()
+            .Where(m => m.TenantId == tenantId).Select(m => m.ModuleName).ToListAsync();
+        Assert.Equal(
+            CreateTenantHandler.TrialModules.Order(StringComparer.Ordinal),
+            modules.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Trial_signup_on_a_chosen_package_uses_its_modules_and_profissional_plan()
+    {
+        await using var harness = await Harness.CreateAsync();
+        BillingTestData.AddCatalog(harness.Db);
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("pkg-maint@club.test", "11977770002", packageKey: " Manutencao "), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status201Created, Status(result));
+        var tenantId = Body<CreateTenantResponse>(result).TenantId;
+        var subscription = await harness.Db.TenantSubscriptions.SingleAsync(s => s.TenantId == tenantId);
+        var plan = await harness.Db.PlanCatalogs.SingleAsync(p => p.Id == subscription.PlanCatalogId);
+        Assert.Equal(("manutencao", "profissional"), (plan.PackageKey, plan.PlanKey));
+        var modules = await harness.Db.TenantModules.IgnoreQueryFilters()
+            .Where(m => m.TenantId == tenantId).Select(m => m.ModuleName).ToListAsync();
+        Assert.Equal(
+            new[] { "inventory", "os", "pmoc" },
+            modules.Order(StringComparer.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("enterprise")]
+    [InlineData("reservas; drop table")]
+    public async Task Trial_signup_rejects_an_unknown_package_before_creating_anything(string packageKey)
+    {
+        await using var harness = await Harness.CreateAsync();
+        BillingTestData.AddCatalog(harness.Db);
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("pkg-bad@club.test", "11977770003", packageKey: packageKey), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Status(result));
+        Assert.Empty(await harness.Db.Tenants.ToListAsync());
+        Assert.Empty(await harness.Db.TrialSignupClaims.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Trial_signup_rejects_a_known_package_whose_plan_is_inactive()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var plans = BillingTestData.AddCatalog(harness.Db);
+        plans.Single(p => p.PackageKey == "locacao" && p.PlanKey == "profissional").IsActive = false;
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("pkg-off@club.test", "11977770004", packageKey: "locacao"), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Status(result));
+        Assert.Empty(await harness.Db.Tenants.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Trial_signup_without_a_seeded_catalog_still_succeeds_without_a_subscription()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var result = await harness.Handler.HandleAsync(
+            TrialRequest("no-catalog@club.test", "11977770005"), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status201Created, Status(result));
+        Assert.Empty(await harness.Db.TenantSubscriptions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Trial_signup_stores_valid_lead_fields_and_silently_drops_invalid_ones()
+    {
+        await using var harness = await Harness.CreateAsync();
+
+        var valid = await harness.Handler.HandleAsync(
+            TrialRequest("lead-ok@club.test", "11977770006", leadSource: "google", leadCampaign: "arenas_2026-12.v1"),
+            CancellationToken.None);
+        var invalid = await harness.Handler.HandleAsync(
+            TrialRequest("lead-bad@club.test", "11977770007", leadSource: "<script>alert(1)</script>", leadCampaign: new string('a', 101)),
+            CancellationToken.None);
+
+        var ok = await harness.Db.Tenants.SingleAsync(t => t.Id == Body<CreateTenantResponse>(valid).TenantId);
+        Assert.Equal("google", ok.LeadSource);
+        Assert.Equal("arenas_2026-12.v1", ok.LeadCampaign);
+        Assert.Equal(StatusCodes.Status201Created, Status(invalid));
+        var bad = await harness.Db.Tenants.SingleAsync(t => t.Id == Body<CreateTenantResponse>(invalid).TenantId);
+        Assert.Null(bad.LeadSource);
+        Assert.Null(bad.LeadCampaign);
+    }
+
+    [Theory]
+    [InlineData("google", "google")]
+    [InlineData("  utm-source.1_x  ", "utm-source.1_x")]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData(null, null)]
+    [InlineData("a b", null)]
+    [InlineData("a/b", null)]
+    [InlineData("caf\u00e9", null)]
+    [InlineData("<b>", null)]
+    public void SanitizeLeadValue_keeps_only_short_safe_values(string? input, string? expected)
+    {
+        Assert.Equal(expected, Tenant.SanitizeLeadValue(input));
+    }
+
+    [Fact]
+    public void SanitizeLeadValue_accepts_100_characters_and_rejects_101()
+    {
+        Assert.Equal(new string('x', 100), Tenant.SanitizeLeadValue(new string('x', 100)));
+        Assert.Null(Tenant.SanitizeLeadValue(new string('x', 101)));
+    }
+
     private static CreateTenantRequest TrialRequest(
         string email,
         string phone,
         string? password = null,
-        string? legalName = null)
+        string? legalName = null,
+        string? packageKey = null,
+        string? leadSource = null,
+        string? leadCampaign = null)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         return new CreateTenantRequest(
@@ -615,7 +761,10 @@ public sealed class TrialOnboardingInviteTests
             email,
             password,
             phone,
-            IsTrial: true);
+            IsTrial: true,
+            PackageKey: packageKey,
+            LeadSource: leadSource,
+            LeadCampaign: leadCampaign);
     }
 
     private static int Status(IResult result) =>
