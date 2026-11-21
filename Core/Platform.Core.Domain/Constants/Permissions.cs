@@ -26,6 +26,13 @@ public static class Permissions
         public const string NotificationsRead = "core.notifications.read";
         public const string NotificationsWrite = "core.notifications.write";
         public const string NotificationsResend = "core.notifications.resend";
+
+        /// <summary>
+        /// Plan and billing of the tenant (staff endpoints arrive with slice B3). The spec calls it
+        /// <c>settings.billing</c>; the catalog prefix is the module key, "settings" is not a module, so it is
+        /// registered as a core key (null module) like the other tenant settings permissions.
+        /// </summary>
+        public const string SettingsBilling = "core.settings.billing";
     }
 
     public static class Inventory

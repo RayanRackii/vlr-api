@@ -1,5 +1,14 @@
 # ROADMAP — vlr-api
 
+### Planos, preços e cobrança — B1: planos, limites e assinatura (2026-11-21, feat/billing-b1-plans-limits)
+
+- [x] Schema `billing` (migration aditiva `AddBillingPlansAndSubscriptions`): `plan_catalog` com 9 linhas (3 pacotes x 3 planos; preços, módulos e limites como dados), `tenant_subscriptions`, `subscription_events`; `core.tenants.lead_source` / `lead_campaign`.
+- [x] Backfill: trial vira `trialing` no Profissional do pacote que casa com os módulos; os demais viram `active`, `billing_mode=manual`, `limits_unlimited`, desconto 100% (ambíguo = Reservas Completo). Nenhum tenant existente fica limitado, bloqueado nem entra no MRR.
+- [x] `TrialGuard` virou `PlanGuard` (`IPlanGuard`) e `IPlanLimits`: limites de ativos, recursos alugáveis, usuários e unidades pelo plano; estouro responde `409` `plan.limit_reached` `{limit,current,max,planKey}`. Somente leitura = trial vencido OU assinatura `read_only` de cobrança `provider`. Sem assinatura = sem limite. Trial 30 dias, exclusão aos 90 (só trials novos).
+- [x] `GET /api/public/plans` (anônimo), `GET/PUT /api/admin/tenants/{id}/subscription`, `GET /api/admin/billing/summary` (MRR). Admin ativar a assinatura tira o tenant do ciclo de trial (`Tenant.ConvertFromTrial`); `TrialLifecycleJob` nunca exclui tenant com assinatura `active`/`past_due`.
+- [x] Onboarding aceita `packageKey`, `leadSource`, `leadCampaign` (lead validado: `[A-Za-z0-9._-]`, até 100, senão descartado).
+- [ ] Limite conhecido: a checagem de limite não é atômica com a criação (duas criações simultâneas no último lugar podem passar). Próximo: B2 (web), B3 (Asaas).
+
 ### Evolução segura do schema de famílias de ativo (2026-11-19, feat/asset-family-schema-evolution)
 
 - [x] `PUT /api/admin/asset-families/{id}` nunca perde valores: campo omitido é arquivado quando algum ativo tem valor (removido só se nenhum tem); troca de tipo só passa se todo valor guardado passa em `TryCoerce` + `TryConstrain` (senão 409 com contagem e até 5 exemplos), inclusive ao arquivar, ao adicionar como arquivado sobre valores órfãos e ao restaurar (restaurar sempre exige o formato; limites só avisam em `constraintViolationCount`). Campo novo obrigatório vale só na criação.

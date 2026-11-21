@@ -77,6 +77,14 @@ public class Tenant : Entity
 
     public DateTimeOffset? TrialPurgeAt { get; private set; }
 
+    public const int LeadFieldMaxLength = 100;
+
+    /// <summary>Marketing channel the signup came from (sanitized, see <see cref="SanitizeLeadValue"/>).</summary>
+    public string? LeadSource { get; private set; }
+
+    /// <summary>Marketing campaign the signup came from (sanitized, see <see cref="SanitizeLeadValue"/>).</summary>
+    public string? LeadCampaign { get; private set; }
+
     /// <summary>When true, WhatsApp / non-email notification channels stay off.</summary>
     public bool NotificationsEmailOnly { get; private set; }
 
@@ -298,6 +306,61 @@ public class Tenant : Entity
         TrialPurgeAt = createdAt.AddDays(TrialLimits.PurgeDays);
         NotificationsEmailOnly = true;
         MarkAsUpdated();
+    }
+
+    /// <summary>
+    /// Ends the trial lifecycle when the tenant becomes a paying (or manually billed) customer: clears
+    /// the trial flag and both trial dates so neither the read-only mode nor the purge job can apply.
+    /// No-op for a tenant that is not a trial. Notification channel restrictions are left untouched.
+    /// </summary>
+    public void ConvertFromTrial()
+    {
+        if (!IsTrial && TrialEndsAt is null && TrialPurgeAt is null)
+        {
+            return;
+        }
+
+        IsTrial = false;
+        TrialEndsAt = null;
+        TrialPurgeAt = null;
+        MarkAsUpdated();
+    }
+
+    /// <summary>
+    /// Stores the marketing lead fields captured at signup. Each value is passed through
+    /// <see cref="SanitizeLeadValue"/>, so an invalid value is dropped silently.
+    /// </summary>
+    public void SetLead(string? source, string? campaign)
+    {
+        LeadSource = SanitizeLeadValue(source);
+        LeadCampaign = SanitizeLeadValue(campaign);
+        MarkAsUpdated();
+    }
+
+    /// <summary>
+    /// Lead values come from the public signup (utm_source, utm_campaign, ref). Only trimmed values of
+    /// at most <see cref="LeadFieldMaxLength"/> characters made of letters, digits, '.', '_' and '-'
+    /// are kept; anything else returns null. Never render the value as HTML.
+    /// </summary>
+    public static string? SanitizeLeadValue(string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed) || trimmed.Length > LeadFieldMaxLength)
+        {
+            return null;
+        }
+
+        foreach (var c in trimmed)
+        {
+            var allowed = c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9')
+                or '.' or '_' or '-';
+            if (!allowed)
+            {
+                return null;
+            }
+        }
+
+        return trimmed;
     }
 
     /// <summary>

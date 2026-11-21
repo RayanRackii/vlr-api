@@ -8,7 +8,7 @@ public sealed record PermissionDefinition(
     string Resource);
 
 /// <summary>
-/// System-defined permission catalog (65 keys). Tenants cannot create keys.
+/// System-defined permission catalog (66 keys). Tenants cannot create keys.
 /// </summary>
 public static class PermissionCatalog
 {
@@ -33,6 +33,7 @@ public static class PermissionCatalog
         Define(Permissions.Core.NotificationsRead, "Read notification settings", "List notification channel configuration and delivery history."),
         Define(Permissions.Core.NotificationsWrite, "Write notification settings", "Update tenant notification channel configuration."),
         Define(Permissions.Core.NotificationsResend, "Resend notifications", "Resend a failed notification delivery."),
+        Define(Permissions.Core.SettingsBilling, "Manage plan and billing", "View and change the tenant plan, billing data and payment history."),
         Define(Permissions.Inventory.AssetsRead, "Read assets", "List and view inventory assets."),
         Define(Permissions.Inventory.AssetsWrite, "Write assets", "Create, update, and delete inventory assets."),
         Define(Permissions.Inventory.CategoriesRead, "Read asset categories", "List and view asset categories."),
