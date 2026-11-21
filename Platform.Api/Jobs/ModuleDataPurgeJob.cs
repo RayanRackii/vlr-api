@@ -148,7 +148,7 @@ public sealed class ModuleDataPurgeJob(
             }
             finally
             {
-                dbContext.Database.SetCommandTimeout((TimeSpan?)null);
+                dbContext.Database.SetCommandTimeout((int?)null);
             }
         }
 
