@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using Platform.Api.Modules.Admin.Dtos;
 using Platform.Api.Services.Tenancy;
 using Platform.Core.Domain.Constants;
@@ -22,18 +23,59 @@ public interface IModuleDataPurgeService
         Guid tenantId,
         string? module,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Schedules the purge 30 days ahead. Throws <see cref="ModuleDataPurgeRequestException"/> (bad module
+    /// or confirmation), <see cref="KeyNotFoundException"/> (unknown tenant),
+    /// <see cref="ModuleDataPurgeBlockedException"/> (blockers; carries the preview) and
+    /// <see cref="ModuleDataPurgeConflictException"/> (already pending).
+    /// </summary>
+    Task<ModuleDataPurgeScheduledDto> ScheduleAsync(
+        Guid tenantId,
+        string? module,
+        string? confirm,
+        string? actor,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Cancels the pending purge and records who/when/why on its row. Throws
+    /// <see cref="KeyNotFoundException"/> when the tenant or the pending purge does not exist.
+    /// </summary>
+    Task CancelAsync(
+        Guid tenantId,
+        string? module,
+        string? reason,
+        string? actor,
+        CancellationToken cancellationToken);
 }
 
-/// <summary>The module key cannot be purged; <see cref="Code"/> is <c>module.unknown</c> or <c>module.not_purgeable</c>.</summary>
+/// <summary>
+/// The request is invalid; <see cref="Code"/> is <c>module.unknown</c>, <c>module.not_purgeable</c>,
+/// <c>confirm.mismatch</c> or <c>reason.too_long</c>.
+/// </summary>
 public sealed class ModuleDataPurgeRequestException(string code, string message) : Exception(message)
 {
     public string Code { get; } = code;
 }
 
+/// <summary>The purge cannot be scheduled right now; <see cref="Preview"/> lists why.</summary>
+public sealed class ModuleDataPurgeBlockedException(ModuleDataPurgePreviewDto preview)
+    : Exception("The module data purge is blocked.")
+{
+    public ModuleDataPurgePreviewDto Preview { get; } = preview;
+}
+
+/// <summary>A purge is already pending for this tenant and module (<c>purge.already_pending</c>).</summary>
+public sealed class ModuleDataPurgeConflictException(string code, string message) : Exception(message)
+{
+    public string Code { get; } = code;
+}
+
 /// <summary>
-/// Read-only module data purge preview (spec slice API-2). Counts use raw SQL generated from the EF
-/// model with an explicit tenant parameter, so they never depend on the ambient tenant query filter
-/// (same SQL builder as <see cref="TenantPurger"/>) and never log or return row contents.
+/// Module data purge: read-only preview (slice API-2), schedule and cancel (slice API-3). Counts use raw
+/// SQL generated from the EF model with an explicit tenant parameter, so they never depend on the
+/// ambient tenant query filter (same SQL builder as <see cref="TenantPurger"/>) and never log or return
+/// row contents. The daily <c>ModuleDataPurgeJob</c> executes what is scheduled here.
 /// </summary>
 public sealed class ModuleDataPurgeService(
     AppDbContext dbContext,
@@ -41,7 +83,11 @@ public sealed class ModuleDataPurgeService(
 {
     public const string ModuleActiveCode = "module.active";
     public const string ForeignKeyRestrictCode = "fk.restrict";
+    public const string ForeignKeyCascadeCode = "fk.cascade";
     public const string UnreleasedAllocationsCode = "allocations.unreleased";
+    public const string ConfirmMismatchCode = "confirm.mismatch";
+    public const string ReasonTooLongCode = "reason.too_long";
+    public const string AlreadyPendingCode = "purge.already_pending";
 
     private static readonly AllocationStatus[] UnreleasedStatuses =
     [
@@ -55,6 +101,155 @@ public sealed class ModuleDataPurgeService(
         string? module,
         CancellationToken cancellationToken)
     {
+        var canonical = ResolveOrThrow(module);
+
+        using var _ = PlatformScope.Begin(logger, "module-data-purge-preview");
+
+        await EnsureTenantExistsAsync(tenantId, cancellationToken);
+        return await BuildPreviewAsync(tenantId, canonical, cancellationToken);
+    }
+
+    public async Task<ModuleDataPurgeScheduledDto> ScheduleAsync(
+        Guid tenantId,
+        string? module,
+        string? confirm,
+        string? actor,
+        CancellationToken cancellationToken)
+    {
+        var canonical = ResolveOrThrow(module);
+        if (!string.Equals(confirm?.Trim(), canonical, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ModuleDataPurgeRequestException(
+                ConfirmMismatchCode,
+                "Type the module key to confirm the purge.");
+        }
+
+        using var _ = PlatformScope.Begin(logger, "module-data-purge-schedule");
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await TenantModuleLocks.LockAsync(dbContext, tenantId, cancellationToken);
+            await EnsureTenantExistsAsync(tenantId, cancellationToken);
+
+            // Re-read everything under the lock: a re-enable or another schedule may have just committed.
+            var preview = await BuildPreviewAsync(tenantId, canonical, cancellationToken);
+            if (preview.Pending is not null)
+            {
+                throw new ModuleDataPurgeConflictException(
+                    AlreadyPendingCode,
+                    "A purge is already scheduled for this module.");
+            }
+
+            if (preview.Blockers.Count > 0)
+                throw new ModuleDataPurgeBlockedException(preview);
+
+            var now = DateTimeOffset.UtcNow;
+            var purge = new TenantModuleDataPurge
+            {
+                TenantId = tenantId,
+                Module = canonical,
+                RequestedByUserId = Trim(actor, TenantModuleDataPurge.ActorMaxLength),
+                RequestedAt = now,
+                ScheduledFor = now + TenantModuleDataPurge.GracePeriod,
+            };
+            dbContext.TenantModuleDataPurges.Add(purge);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            logger.LogInformation(
+                "Module data purge {PurgeId} scheduled for tenant {TenantId}, module {Module}, at {ScheduledFor}.",
+                purge.Id,
+                tenantId,
+                canonical,
+                purge.ScheduledFor);
+            return new ModuleDataPurgeScheduledDto(purge.Id, canonical, purge.RequestedAt, purge.ScheduledFor);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // The partial unique index is the last line of defence against a concurrent schedule.
+            throw new ModuleDataPurgeConflictException(
+                AlreadyPendingCode,
+                "A purge is already scheduled for this module.");
+        }
+    }
+
+    public async Task CancelAsync(
+        Guid tenantId,
+        string? module,
+        string? reason,
+        string? actor,
+        CancellationToken cancellationToken)
+    {
+        var canonical = ResolveOrThrow(module);
+        var normalizedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (normalizedReason is { Length: > TenantModuleDataPurge.CancelReasonMaxLength })
+        {
+            throw new ModuleDataPurgeRequestException(
+                ReasonTooLongCode,
+                $"The reason can have at most {TenantModuleDataPurge.CancelReasonMaxLength} characters.");
+        }
+
+        using var _ = PlatformScope.Begin(logger, "module-data-purge-cancel");
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await TenantModuleLocks.LockAsync(dbContext, tenantId, cancellationToken);
+        await EnsureTenantExistsAsync(tenantId, cancellationToken);
+
+        var purge = await dbContext.TenantModuleDataPurges
+            .AsTracking()
+            .FirstOrDefaultAsync(
+                p => p.TenantId == tenantId
+                    && p.Module == canonical
+                    && p.CancelledAt == null
+                    && p.ExecutedAt == null,
+                cancellationToken)
+            ?? throw new KeyNotFoundException("No pending purge for this module.");
+
+        purge.Cancel(DateTimeOffset.UtcNow, Trim(actor, TenantModuleDataPurge.ActorMaxLength), normalizedReason);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Module data purge {PurgeId} cancelled for tenant {TenantId}, module {Module}.",
+            purge.Id,
+            tenantId,
+            canonical);
+    }
+
+    /// <summary>
+    /// Cancels every pending purge of the tenant for the given modules, with a system reason, in the
+    /// caller's transaction (the caller saves). Used when a module is switched back on. The caller must
+    /// hold <see cref="TenantModuleLocks"/> so a job cannot start deleting meanwhile.
+    /// </summary>
+    internal static async Task<int> CancelPendingAsync(
+        AppDbContext dbContext,
+        Guid tenantId,
+        IEnumerable<string> modules,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var canonical = modules
+            .Select(module => PlatformModules.TryNormalize(module, out var key) ? key : module)
+            .ToList();
+        if (canonical.Count == 0)
+            return 0;
+
+        var pending = await dbContext.TenantModuleDataPurges
+            .AsTracking()
+            .Where(p => p.TenantId == tenantId
+                && p.CancelledAt == null
+                && p.ExecutedAt == null
+                && canonical.Contains(p.Module))
+            .ToListAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var purge in pending)
+            purge.Cancel(now, null, reason);
+        return pending.Count;
+    }
+
+    private static string ResolveOrThrow(string? module)
+    {
         var (canonical, errorCode) = ModuleDataScope.Resolve(module);
         if (canonical is null || errorCode is not null)
         {
@@ -66,14 +261,46 @@ public sealed class ModuleDataPurgeService(
                     : "Unknown module.");
         }
 
-        using var _ = PlatformScope.Begin(logger, "module-data-purge-preview");
+        return canonical;
+    }
 
+    private static string? Trim(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+                return true;
+        }
+
+        return false;
+    }
+
+    private async Task EnsureTenantExistsAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
         var tenantExists = await dbContext.Tenants
             .AsNoTracking()
             .AnyAsync(t => t.Id == tenantId, cancellationToken);
         if (!tenantExists)
             throw new KeyNotFoundException("Tenant not found.");
+    }
 
+    /// <summary>
+    /// The preview for an already resolved module key, run on the caller's connection and transaction
+    /// (the job calls it under the tenant lock). Does not check that the tenant exists.
+    /// </summary>
+    internal async Task<ModuleDataPurgePreviewDto> BuildPreviewAsync(
+        Guid tenantId,
+        string canonical,
+        CancellationToken cancellationToken)
+    {
         var model = dbContext.Model;
         var sql = new TenantScopedSql(dbContext.GetService<ISqlGenerationHelper>());
         var plan = ModuleDataScope.PlanFor(model, canonical);
@@ -106,7 +333,16 @@ public sealed class ModuleDataPurgeService(
         blockers.AddRange(await ForeignKeyBlockersAsync(model, sql, plan, tenantId, cancellationToken));
         blockers.AddRange(await UnreleasedAllocationBlockersAsync(sql, plan, canonical, tenantId, cancellationToken));
 
-        return new ModuleDataPurgePreviewDto(canonical, moduleActive, tables, storageObjects, blockers);
+        var pending = await dbContext.TenantModuleDataPurges
+            .AsNoTracking()
+            .Where(p => p.TenantId == tenantId
+                && p.Module == canonical
+                && p.CancelledAt == null
+                && p.ExecutedAt == null)
+            .Select(p => new ModuleDataPurgePendingDto(p.Id, p.ScheduledFor))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new ModuleDataPurgePreviewDto(canonical, moduleActive, tables, storageObjects, blockers, pending);
     }
 
     private async Task<bool> IsModuleActiveAsync(
@@ -142,9 +378,8 @@ public sealed class ModuleDataPurgeService(
         Guid tenantId,
         CancellationToken cancellationToken)
     {
-        Type[] fileTypes = [typeof(CatalogProductFile), typeof(ProductRequestFile), typeof(WorkOrderTaskFile)];
         long total = 0;
-        foreach (var entry in plan.Where(e => fileTypes.Contains(e.Entity.ClrType)))
+        foreach (var entry in plan.Where(e => ModuleDataPurgeStorage.FileTypes.Contains(e.Entity.ClrType)))
         {
             var key = sql.Column(entry.Entity, Property(entry.Entity, "StorageKey"));
             total += await ScalarAsync(
@@ -160,7 +395,9 @@ public sealed class ModuleDataPurgeService(
 
     /// <summary>
     /// Rows outside the purge scope whose foreign key into the scope would make the database refuse
-    /// the delete (anything but Cascade/SetNull). Borrowed planning rows count as in scope.
+    /// the delete (anything but Cascade/SetNull: <c>fk.restrict</c>) or would silently delete them with
+    /// the purge (a Cascade from outside the scope: <c>fk.cascade</c>). Borrowed planning rows count as
+    /// in scope only for the rows the module owns.
     /// </summary>
     private async Task<IReadOnlyList<ModuleDataPurgeBlockerDto>> ForeignKeyBlockersAsync(
         IModel model,
@@ -179,44 +416,56 @@ public sealed class ModuleDataPurgeService(
             if (child.GetTableName() is null || !TenantScopedSql.HasTenantAncestor(child))
                 continue;
 
-            var references = new List<string>();
+            var restrictReferences = new List<string>();
+            var cascadeReferences = new List<string>();
             foreach (var foreignKey in child.GetForeignKeys())
             {
                 if (!inPlan.TryGetValue(foreignKey.PrincipalEntityType, out var principal))
                     continue;
-                if (foreignKey.DeleteBehavior is DeleteBehavior.Cascade or DeleteBehavior.SetNull)
+                if (foreignKey.DeleteBehavior == DeleteBehavior.SetNull)
                     continue;
 
                 var linked = string.Join(
                     " AND ",
                     foreignKey.Properties.Select(property => $"child.{sql.Column(child, property)} IS NOT NULL"));
                 var principalFilter = FilterPredicate(sql, principal.Entity, principal.RowFilter, "pr");
-                references.Add(principalFilter is null
+                var reference = principalFilter is null
                     ? $"({linked})"
                     : $"({linked} AND EXISTS (SELECT 1 FROM {sql.Table(principal.Entity)} AS pr "
-                        + $"WHERE {sql.Join(foreignKey, "child", "pr")} AND {principalFilter}))");
+                        + $"WHERE {sql.Join(foreignKey, "child", "pr")} AND {principalFilter}))";
+                if (foreignKey.DeleteBehavior == DeleteBehavior.Cascade)
+                    cascadeReferences.Add(reference);
+                else
+                    restrictReferences.Add(reference);
             }
 
-            if (references.Count == 0)
-                continue;
-
-            var where = sql.Scope(child, "child");
-            if (childEntry is not null)
+            foreach (var (code, references) in new[]
+                     {
+                         (ForeignKeyRestrictCode, restrictReferences),
+                         (ForeignKeyCascadeCode, cascadeReferences),
+                     })
             {
-                var own = FilterPredicate(sql, child, childEntry.RowFilter, "child");
-                if (own is not null)
-                    where += $" AND NOT ({own})";
-            }
+                if (references.Count == 0)
+                    continue;
 
-            where += $" AND ({string.Join(" OR ", references)})";
-            var rows = await ScalarAsync(
-                sql,
-                "COUNT(*)",
-                $"{sql.Table(child)} AS child WHERE {where}",
-                cancellationToken,
-                tenantId);
-            if (rows > 0)
-                blockers.Add(new ModuleDataPurgeBlockerDto(ForeignKeyRestrictCode, QualifiedName(child), rows));
+                var where = sql.Scope(child, "child");
+                if (childEntry is not null)
+                {
+                    var own = FilterPredicate(sql, child, childEntry.RowFilter, "child");
+                    if (own is not null)
+                        where += $" AND NOT ({own})";
+                }
+
+                where += $" AND ({string.Join(" OR ", references)})";
+                var rows = await ScalarAsync(
+                    sql,
+                    "COUNT(*)",
+                    $"{sql.Table(child)} AS child WHERE {where}",
+                    cancellationToken,
+                    tenantId);
+                if (rows > 0)
+                    blockers.Add(new ModuleDataPurgeBlockerDto(code, QualifiedName(child), rows));
+            }
         }
 
         return blockers;
@@ -277,7 +526,7 @@ public sealed class ModuleDataPurgeService(
     /// SQL predicate (on <paramref name="alias"/>) selecting the planning rows a module owns;
     /// null when the module owns every row of the entity.
     /// </summary>
-    private static string? FilterPredicate(
+    internal static string? FilterPredicate(
         TenantScopedSql sql,
         IEntityType entity,
         PlanningRowFilter filter,
@@ -298,11 +547,11 @@ public sealed class ModuleDataPurgeService(
         }
     }
 
-    private static IProperty Property(IEntityType entity, string name) =>
+    internal static IProperty Property(IEntityType entity, string name) =>
         entity.FindProperty(name)
         ?? throw new InvalidOperationException($"{entity.Name} has no property {name}.");
 
-    private static string QualifiedName(IEntityType entity) =>
+    internal static string QualifiedName(IEntityType entity) =>
         entity.GetSchema() is { } schema
             ? $"{schema}.{entity.GetTableName()}"
             : entity.GetTableName()!;
@@ -326,4 +575,11 @@ public sealed class ModuleDataPurgeService(
             .SingleAsync(cancellationToken);
 #pragma warning restore EF1002
     }
+}
+
+/// <summary>The file entities whose <c>StorageKey</c> points at a storage object (spec 3.2).</summary>
+internal static class ModuleDataPurgeStorage
+{
+    internal static readonly Type[] FileTypes =
+        [typeof(CatalogProductFile), typeof(ProductRequestFile), typeof(WorkOrderTaskFile)];
 }

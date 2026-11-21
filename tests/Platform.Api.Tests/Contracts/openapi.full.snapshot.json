@@ -4505,6 +4505,20 @@
         },
         "type": "object"
       },
+      "ModuleDataPurgePendingDto": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "scheduledFor": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ModuleDataPurgePreviewDto": {
         "additionalProperties": false,
         "properties": {
@@ -4522,6 +4536,9 @@
           "moduleActive": {
             "type": "boolean"
           },
+          "pending": {
+            "$ref": "#/components/schemas/ModuleDataPurgePendingDto"
+          },
           "storageObjects": {
             "format": "int64",
             "type": "integer"
@@ -4532,6 +4549,28 @@
             },
             "nullable": true,
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ModuleDataPurgeScheduledDto": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "module": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scheduledFor": {
+            "format": "date-time",
+            "type": "string"
           }
         },
         "type": "object"
@@ -7172,6 +7211,16 @@
           "takenColor",
           "unavailableColor"
         ],
+        "type": "object"
+      },
+      "ScheduleModuleDataPurgeRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "SchedulePolicy": {
@@ -10878,6 +10927,109 @@
         },
         "tags": [
           "AdminTenants"
+        ]
+      }
+    },
+    "/api/admin/tenants/{id}/modules/{module}/data-purge": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "module",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminModuleDataPurge"
+        ]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "module",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/*\u002Bjson": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleModuleDataPurgeRequestDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleModuleDataPurgeRequestDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleModuleDataPurgeRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleDataPurgeScheduledDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleDataPurgeScheduledDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleDataPurgeScheduledDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "AdminModuleDataPurge"
         ]
       }
     },

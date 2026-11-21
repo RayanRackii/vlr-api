@@ -322,6 +322,34 @@ public sealed class AdminTenantModuleDisableGuardTests
             () => harness.UpdateModulesAsync(a, [PlatformModules.Catalog, PlatformModules.Rentals]));
     }
 
+    [Fact]
+    public async Task Enabling_a_module_again_cancels_only_its_pending_data_purge()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (a, b) = await harness.CreatePairAsync();
+        await harness.UpdateModulesAsync(a, [PlatformModules.Rentals, PlatformModules.ResourcePlanning]);
+        var catalogPurge = await harness.AddPendingPurgeAsync(a.Id, PlatformModules.Catalog);
+        var rentalsPurge = await harness.AddPendingPurgeAsync(a.Id, PlatformModules.Rentals);
+        var otherTenantPurge = await harness.AddPendingPurgeAsync(b.Id, PlatformModules.Catalog);
+
+        // A save that does not touch catalog leaves every purge alone.
+        await harness.UpdateModulesAsync(a, [PlatformModules.Rentals, PlatformModules.ResourcePlanning]);
+        Assert.All(
+            await harness.PurgesAsync(),
+            purge => Assert.Null(purge.CancelledAt));
+
+        await harness.UpdateModulesAsync(a, AllThree);
+
+        var purges = (await harness.PurgesAsync()).ToDictionary(purge => purge.Id);
+        Assert.NotNull(purges[catalogPurge].CancelledAt);
+        Assert.Equal("module.reenabled", purges[catalogPurge].CancelReason);
+        Assert.Null(purges[catalogPurge].CancelledByUserId);
+        Assert.Null(purges[catalogPurge].ExecutedAt);
+        // rentals never went off, and the other tenant keeps its purge.
+        Assert.Null(purges[rentalsPurge].CancelledAt);
+        Assert.Null(purges[otherTenantPurge].CancelledAt);
+    }
+
     private sealed class Harness : IAsyncDisposable
     {
         private Harness(AppDbContext db, FakeTenantProvider tenantProvider, AdminTenantService service)
@@ -435,6 +463,25 @@ public sealed class AdminTenantModuleDisableGuardTests
             await Db.SaveChangesAsync();
             TenantProvider.TenantId = previous;
         }
+
+        public async Task<Guid> AddPendingPurgeAsync(Guid tenantId, string module)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var purge = new TenantModuleDataPurge
+            {
+                TenantId = tenantId,
+                Module = module,
+                RequestedByUserId = "admin-sub",
+                RequestedAt = now,
+                ScheduledFor = now.AddDays(30),
+            };
+            Db.TenantModuleDataPurges.Add(purge);
+            await Db.SaveChangesAsync();
+            return purge.Id;
+        }
+
+        public Task<List<TenantModuleDataPurge>> PurgesAsync() =>
+            Db.TenantModuleDataPurges.AsNoTracking().ToListAsync();
 
         public Task<TenantAdminResponseDto> UpdateModulesAsync(
             TenantAdminResponseDto tenant,
