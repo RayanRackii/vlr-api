@@ -220,3 +220,34 @@ A read-only card: date, orphan count, size, sample keys.
 4. **Orphan report:** unknown `{tenantN}/` prefixes are counted as "unclassified", never as orphan; the job lists at
    most 10.000 objects per bucket per run (paging budget) and records whether it was truncated.
 5. **Web:** the per-module preview on the admin page is loaded lazily (on expanding the module row), not on page load.
+
+6. **7.6 FK reality check result (API-2, 2026-11-21).** Derived from the EF configuration (no .NET SDK in the authoring
+   session), and re-checked on every CI run by `ModuleDataPurgePreviewPostgresTests` (seeds a gammera-like tenant next
+   to an identical one, previews each purgeable module with the other tenant as the ambient tenant, writes the observed
+   tables/blockers and the real `pg_constraint` list to the test output). Findings:
+   - **`assets.*` has no foreign key into any module schema.** `Asset` points at `units`, `asset_categories` and
+     `asset_families` only. The link is the other way round: `rentals.rental_assets.AssetId -> assets.assets`
+     (Cascade, rental asset is the dependent). So purging `rentals` never needs to null or delete anything on `assets`,
+     and the assets themselves always stay. No "rental-owned link rows on assets" exist. A test fails if one appears.
+   - Foreign keys from outside a module into it (anything but Cascade/SetNull blocks, so these are the `fk.restrict`
+     blockers):
+     | Purged module | Blocking table (outside the scope) | Points at |
+     |---|---|---|
+     | `rentals` | `catalog.order_item_resource_allocations` | `rentals.reservation_items`, `rentals.rental_assets` |
+     | `rentals` | `catalog.product_resource_requirements`, `catalog.order_item_resource_requirements` | `rentals.rental_assets` |
+     | `catalog` | none once the catalog-sourced planning rows are purged with it | |
+     | `os` | none once the work-order-sourced planning rows are purged with it | |
+     | `pmoc` | `os.work_orders` | `pmoc.maintenance_plans` (Restrict) |
+     | `resource-planning` | `catalog.order_item_resource_allocations` | `planning.asset_allocations` |
+     `core.tenant_module_menu_items.RentalAssetId` and `os.work_order_tasks.PlanTaskId` are SetNull: allowed, they null out.
+     Consequence for API-3: purge order `catalog` and `os` before `rentals`, `os` before `pmoc`, `catalog` before
+     `resource-planning`; the preview says which one blocks.
+   - **Planning rows are borrowed, not owned** (amendment 7.1): `planning.asset_allocations` is counted and purged only
+     for the purged module's sources: `Source = CatalogOrder` (catalog), rows with `ReservationItemId` (rentals),
+     `Source = WorkOrder` (os); the `resource-planning` module owns the whole planning schema. Deletion order inside
+     catalog: `order_item_resource_allocations` -> `asset_allocations` -> `catalog_order_items`.
+   - No Cascade foreign key points from outside a module schema into it (checked by reading the configuration; the
+     CI output of the `pg_constraint` query is the proof). If one appears, the purge would silently delete another
+     module's rows through the database cascade, so API-3 must treat it as a blocker before it ships.
+   - Storage counts (distinct keys): catalog = `CatalogProductFile` + `ProductRequestFile`, os = `WorkOrderTaskFile`.
+   - The preview lists only tables that hold rows, as `schema.table`; blockers carry the same name.
