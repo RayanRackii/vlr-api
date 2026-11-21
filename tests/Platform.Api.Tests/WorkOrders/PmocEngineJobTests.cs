@@ -622,6 +622,25 @@ public sealed class PmocEngineJobTests
     }
 
     [Fact]
+    public async Task A_poisoned_plan_does_not_abort_the_sweep_for_healthy_plans()
+    {
+        await using var harness = await BulkCreateAssetsHarness.CreateAsync();
+        var poisoned = await SeedPlanAsync(harness, intervalDays: 0, firstDueDate: AsOf, name: "Poisoned");
+        var healthy = await SeedPlanAsync(harness, intervalDays: 30, firstDueDate: AsOf, name: "Healthy");
+        await AddAssetAsync(harness, "POISON");
+
+        var report = await RunAsync(harness);
+
+        var poisonedReport = Assert.Single(report.Plans, item => item.PlanId == poisoned.Id);
+        Assert.True(poisonedReport.Failed >= 1);
+        Assert.Equal(0, poisonedReport.Created);
+        var healthyReport = Assert.Single(report.Plans, item => item.PlanId == healthy.Id);
+        Assert.Equal(0, healthyReport.Failed);
+        Assert.Equal(1, healthyReport.Created);
+        Assert.Equal(healthy.Id, Assert.Single(await harness.Db.WorkOrders.ToListAsync()).MaintenancePlanId);
+    }
+
+    [Fact]
     public void Hangfire_schedule_remains_once_per_brazil_civil_day()
     {
         var hangfire = File.ReadAllText(FindRepoFile(Path.Combine("Platform.Api", "Jobs", "HangfireExtensions.cs")));
