@@ -10,7 +10,7 @@ Rolvix has no payment code. A deposit counts as paid when staff click Confirm, `
 2. **Money flow.** Each tenant gets its own Asaas subaccount, created by Rolvix through the API from the tenant profile (`Tenant.TaxId`, name, e-mail, address). Charges are created with that subaccount's API key, so the tenant is the merchant and the money lands in the tenant's balance. Rolvix never holds or moves customer money.
 3. **Platform fee.** A charge may carry an Asaas `split` to Rolvix's own wallet (`Payments:Asaas:PlatformWalletId`). The fee is a per-tenant setting and starts at 0%. With 0% no split is sent.
 4. **Secrets.**
-   - The root Asaas key is a Fly secret (`Payments__Asaas__RootApiKey`). It is used only to create subaccounts.
+   - The root Asaas key is a Fly secret (`Payments__Asaas__RootApiKey`). It creates subaccounts and, as of the plans and billing work (B3), bills tenants for their Rolvix plan (`IPlatformBillingGateway`: customer, subscription, payments). `Payments__Asaas__BillingWebhookToken` is the shared secret of the separate Rolvix billing webhook (`POST api/webhooks/payments/asaas/billing`). Neither is ever logged or returned.
    - Each subaccount's API key is stored encrypted with AES-256-GCM. The encryption key is a versioned Fly secret (`Payments__EncryptionKeys__v{n}`), and the tenant id is bound as associated data.
    - ASP.NET Data Protection is not used, because its key ring would sit in the same database as the ciphertext, and a subaccount key can move tenant money.
    - The key is never returned by an endpoint, never logged and never sent to the web.
