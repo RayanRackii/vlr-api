@@ -293,14 +293,14 @@ public sealed class ModuleDataPurgePreviewPostgresTests : IClassFixture<Postgres
             .ToListAsync();
     }
 
-    private sealed record Dataset(
+    internal sealed record Dataset(
         Guid TenantId,
         Guid CatalogPlanningId,
         Guid ManualPlanningId,
         Guid WorkOrderPlanningId,
         Guid CatalogAllocationId);
 
-    private static async Task<Guid> SeedEmptyTenantAsync(PostgresAppDbFactory factory)
+    internal static async Task<Guid> SeedEmptyTenantAsync(PostgresAppDbFactory factory)
     {
         await using var db = factory.Create(new FakeTenantProvider());
         var tenant = new Tenant(
@@ -316,7 +316,7 @@ public sealed class ModuleDataPurgePreviewPostgresTests : IClassFixture<Postgres
     /// One gammera-like tenant. Foreign key triggers are off for the seeding session only (needs the
     /// superuser the test container and the local test database use): the ids still line up.
     /// </summary>
-    private static async Task<Dataset> SeedAsync(PostgresAppDbFactory factory, bool modulesActive)
+    internal static async Task<Dataset> SeedAsync(PostgresAppDbFactory factory, bool modulesActive)
     {
         await using var db = factory.Create(new FakeTenantProvider());
         await db.Database.OpenConnectionAsync();

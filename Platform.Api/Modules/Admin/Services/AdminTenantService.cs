@@ -22,6 +22,9 @@ public sealed class AdminTenantService(
     ITenantProvisioner tenantProvisioner,
     ITenantPurger tenantPurger) : IAdminTenantService
 {
+    /// <summary>Cancel reason written on a pending module data purge when its module is enabled again.</summary>
+    public const string ModuleReenabledReason = "module.reenabled";
+
     // Scheduled/Running/Cleaning are "not yet physically released"; Released and Cancelled are
     // terminal and never block a module disable.
     private static readonly AllocationStatus[] UnreleasedAllocationStatuses =
@@ -257,6 +260,10 @@ public sealed class AdminTenantService(
         try
         {
             await LockTenantModulesAsync(id, cancellationToken);
+            // Same lock order as the module data purge (schedule, cancel, daily job): advisory lock, then the
+            // tenant row. A pending purge is re-read under it, so a job cannot start deleting a module
+            // that this update is switching back on.
+            await TenantModuleLocks.LockTenantRowAsync(dbContext, id, cancellationToken);
 
             var tenant = await TenantsIncludingModules()
                 .Include(t => t.ModuleMenuItems)
@@ -319,6 +326,14 @@ public sealed class AdminTenantService(
             ApplyCompanyContact(tenant, request);
 
             var enabledModules = SyncTenantModules(tenant, modules);
+
+            // Switching a module back on withdraws its pending data purge, in this same transaction.
+            await ModuleDataPurgeService.CancelPendingAsync(
+                dbContext,
+                tenant.Id,
+                enabledModules,
+                ModuleReenabledReason,
+                cancellationToken);
             if (await DefaultRentalsMenuWouldPublishUnpricedAsync(dbContext, tenant.Id, cancellationToken))
             {
                 enabledModules.RemoveAll(module =>

@@ -33,6 +33,9 @@ public class AppDbContext : DbContext
 
     public DbSet<TenantModule> TenantModules => Set<TenantModule>();
 
+    /// <summary>Platform data (not tenant scoped): always filter by an explicit TenantId.</summary>
+    public DbSet<TenantModuleDataPurge> TenantModuleDataPurges => Set<TenantModuleDataPurge>();
+
     public DbSet<TenantSetting> TenantSettings => Set<TenantSetting>();
 
     public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
