@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Platform.Api.Common;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Rentals.Dtos;
 using Platform.Api.Notifications;
@@ -21,7 +22,8 @@ public sealed class ReservationService(
     IDomainEventDispatcher<ReservationEvent> domainEvents,
     INotificationOutboxScheduler outboxScheduler,
     TimeProvider timeProvider,
-    PolicyResolver? policyResolver = null) : IReservationService
+    PolicyResolver? policyResolver = null,
+    IHttpContextAccessor? httpContextAccessor = null) : IReservationService
 {
     private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
 
@@ -807,7 +809,12 @@ public sealed class ReservationService(
 
         var reservations = await query
             .OrderByDescending(r => r.StartDateTime)
+            .Take(ListCap.MaxRows)
             .ToListAsync(cancellationToken);
+        await ListCap.PublishTotalAsync(
+            httpContextAccessor,
+            reservations.Count,
+            () => query.CountAsync(cancellationToken));
 
         var tenantPolicy = await policies.ReadTenantAsync(EnsureTenantContext(), cancellationToken);
         var categories = await policies.ReadCategoriesAsync(EnsureTenantContext(), cancellationToken);

@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Platform.Api.Services.Billing;
 
 namespace Platform.Api.Authentication;
@@ -12,6 +14,14 @@ public static class PlatformExceptionHandler
             errorApp.Run(WriteAsync);
         });
     }
+
+    public const string ConcurrencyConflictCode = "concurrency.conflict";
+
+    // EF optimistic concurrency, plus PostgreSQL serialization_failure (40001) and deadlock_detected (40P01).
+    private static bool IsConcurrencyConflict(Exception? exception) =>
+        exception is DbUpdateConcurrencyException
+        || exception is PostgresException { SqlState: "40001" or "40P01" }
+        || exception is DbUpdateException { InnerException: PostgresException { SqlState: "40001" or "40P01" } };
 
     private static async Task WriteAsync(HttpContext context)
     {
@@ -42,6 +52,31 @@ public static class PlatformExceptionHandler
                 current = planLimit.Current,
                 max = planLimit.Max,
                 planKey = planLimit.PlanKey,
+            });
+            return;
+        }
+
+        if (exception is KeyNotFoundException)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "Resource not found.", code = "resource.not_found" });
+            return;
+        }
+
+        if (exception is ArgumentException or FormatException)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { error = "Invalid request.", code = "request.invalid" });
+            return;
+        }
+
+        if (IsConcurrencyConflict(exception))
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "The resource was changed by another request. Retry.",
+                code = ConcurrencyConflictCode,
             });
             return;
         }

@@ -82,6 +82,10 @@ public sealed class CatalogPortalController(
                 location: null,
                 cancellationToken);
         }
+        catch (CurrencyMismatchException ex)
+        {
+            return BadRequest(new { error = ex.Message, code = CurrencyMismatchException.Code });
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });

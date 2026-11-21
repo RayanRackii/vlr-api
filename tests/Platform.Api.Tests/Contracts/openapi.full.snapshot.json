@@ -501,6 +501,10 @@
             "nullable": true,
             "type": "string"
           },
+          "labelKey": {
+            "nullable": true,
+            "type": "string"
+          },
           "schemaVersion": {
             "format": "int32",
             "type": "integer"
@@ -536,6 +540,10 @@
             "type": "string"
           },
           "label": {
+            "nullable": true,
+            "type": "string"
+          },
+          "labelKey": {
             "nullable": true,
             "type": "string"
           },
@@ -1792,6 +1800,17 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "messageKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "messageParams": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
           },
           "reason": {
             "nullable": true,

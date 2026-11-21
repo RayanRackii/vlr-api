@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Common;
 using Platform.Api.DomainEvents;
 using Platform.Api.Modules.Catalog.Dtos;
 using Platform.Api.Modules.Rentals.Contracts;
@@ -95,7 +96,12 @@ public sealed class CatalogOrderService(
 
         var list = await orders
             .OrderByDescending(o => o.CreatedAt)
+            .Take(ListCap.MaxRows)
             .ToListAsync(cancellationToken);
+        await ListCap.PublishTotalAsync(
+            httpContextAccessor,
+            list.Count,
+            () => orders.CountAsync(cancellationToken));
 
         return await CatalogOrderPlanningMapper.EnrichAsync(dbContext, list, includeAllocationDetail: true, cancellationToken);
     }
@@ -189,7 +195,12 @@ public sealed class CatalogOrderService(
             .Include(r => r.Files)
             .Include(r => r.Customer)
             .OrderByDescending(r => r.CreatedAt)
+            .Take(ListCap.MaxRows)
             .ToListAsync(cancellationToken);
+        await ListCap.PublishTotalAsync(
+            httpContextAccessor,
+            requests.Count,
+            () => dbContext.ProductRequests.AsNoTracking().CountAsync(cancellationToken));
 
         return requests.Select(MapProductRequest).ToList();
     }
@@ -318,13 +329,7 @@ public sealed class CatalogOrderService(
                 .ToList(),
             order.History
                 .OrderBy(h => h.CreatedAt)
-                .Select(h => new CatalogOrderHistoryResponse(
-                    h.Id,
-                    h.Status,
-                    h.ActorType,
-                    h.ActorId,
-                    h.Reason,
-                    h.CreatedAt))
+                .Select(CatalogOrderHistoryMessages.ToResponse)
                 .ToList(),
             Convert.ToBase64String(order.RowVersion),
             order.PlanningRevision,

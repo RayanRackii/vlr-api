@@ -657,7 +657,8 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             .Where(f => includeArchived || !f.Archived)
             .Select(f => new AssetFamilyFieldDto(
                 f.Key, f.Type, f.Required, f.Label, f.Help, f.Unit, f.Min, f.Max,
-                f.Decimals, f.Options, f.MaxLength, f.Group, f.Archived))
+                f.Decimals, f.Options, f.MaxLength, f.Group, f.Archived,
+                SeededAssetFamilyLabels.FieldKey(family.Key, f.Key, f.Label)))
             .ToList();
 
         return new AssetFamilyDetailResponse(
@@ -667,6 +668,7 @@ public sealed class AssetFamilyService(AppDbContext dbContext) : IAssetFamilySer
             fields,
             family.SortOrder,
             family.IsActive,
-            schema.Version);
+            schema.Version,
+            SeededAssetFamilyLabels.FamilyKey(family.Key, family.Label));
     }
 }

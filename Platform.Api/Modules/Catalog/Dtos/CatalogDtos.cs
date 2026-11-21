@@ -252,6 +252,15 @@ public sealed record CatalogOrderHistoryResponse(
     /// Resolved tenant-scoped during enrichment (staff reads only).
     /// </summary>
     public string? ActorName { get; init; }
+
+    /// <summary>
+    /// Translation key of the timeline entry (for example <c>catalog.order.history.approved</c>),
+    /// additive to <see cref="Reason"/>. Always set by the API.
+    /// </summary>
+    public string? MessageKey { get; init; }
+
+    /// <summary>Interpolation values for <see cref="MessageKey"/> (for example <c>reason</c>); null when none.</summary>
+    public IReadOnlyDictionary<string, string>? MessageParams { get; init; }
 }
 
 // --- Agenda (read-only schedule) ---
