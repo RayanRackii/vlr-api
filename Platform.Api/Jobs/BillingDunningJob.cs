@@ -189,8 +189,8 @@ public sealed class BillingDunningJob(
     private async Task<List<Candidate>> TrialCandidatesAsync(DateOnly today, CancellationToken cancellationToken)
     {
         // Trial ends today..today+5 (D0, D-1, D-5). A tenant that already started a checkout is not nagged.
-        var from = BrazilTimeZone.StartOfCivilDay(today);
-        var to = BrazilTimeZone.StartOfCivilDay(today.AddDays(6));
+        var trialFrom = BrazilTimeZone.StartOfCivilDay(today);
+        var trialTo = BrazilTimeZone.StartOfCivilDay(today.AddDays(6));
 
         var rows = await (
                 from subscription in dbContext.TenantSubscriptions.AsNoTracking()
@@ -201,8 +201,8 @@ public sealed class BillingDunningJob(
                     && tenant.IsTrial
                     && tenant.IsActive
                     && tenant.TrialEndsAt != null
-                    && tenant.TrialEndsAt >= from
-                    && tenant.TrialEndsAt < to
+                    && tenant.TrialEndsAt >= trialFrom
+                    && tenant.TrialEndsAt < trialTo
                 orderby tenant.TrialEndsAt
                 select new { subscription.Id, subscription.TenantId, tenant.TrialEndsAt })
             .Take(BatchSize)
