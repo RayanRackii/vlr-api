@@ -26,8 +26,10 @@ internal sealed class CatalogHarness : IAsyncDisposable
         NotificationOutboxProcessor processor,
         RecordingOutboxScheduler scheduler,
         FakePermissionResolver permissionResolver,
-        DevWhatsAppRecorder whatsApp)
+        DevWhatsAppRecorder whatsApp,
+        FakeHttpContextAccessor http)
     {
+        Http = http;
         Db = db;
         TenantProvider = tenantProvider;
         Tenant = tenant;
@@ -43,6 +45,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
     }
 
     public AppDbContext Db { get; }
+
+    public FakeHttpContextAccessor Http { get; }
 
     public FakeTenantProvider TenantProvider { get; }
 
@@ -121,7 +125,8 @@ internal sealed class CatalogHarness : IAsyncDisposable
             processor,
             scheduler,
             permissions,
-            whatsApp);
+            whatsApp,
+            http);
     }
 
     public Customer AddCustomer(string name = "Ana", Guid? id = null)

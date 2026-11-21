@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Common;
 using Platform.Core.Domain.Entities;
 using Platform.Core.Infrastructure.Persistence;
 
@@ -24,7 +25,8 @@ public interface INotificationDeliveryService
 public sealed class NotificationDeliveryService(
     AppDbContext dbContext,
     ITenantProvider tenantProvider,
-    INotificationOutboxProcessor outboxProcessor) : INotificationDeliveryService
+    INotificationOutboxProcessor outboxProcessor,
+    IHttpContextAccessor? httpContextAccessor = null) : INotificationDeliveryService
 {
     public async Task<NotificationDeliveryPageResponse> ListPageAsync(
         NotificationDeliveryFilter filter,
@@ -60,10 +62,15 @@ public sealed class NotificationDeliveryService(
         var items = await Filtered(filter)
             .OrderByDescending(delivery => delivery.CreatedAt)
             .ThenByDescending(delivery => delivery.Id)
+            .Take(ListCap.MaxRows)
             .Include(delivery => delivery.Notification)
             .Include(delivery => delivery.Attempts)
             .AsSplitQuery()
             .ToListAsync(cancellationToken);
+        await ListCap.PublishTotalAsync(
+            httpContextAccessor,
+            items.Count,
+            () => Filtered(filter).CountAsync(cancellationToken));
         return items.Select(Map).ToList();
     }
 

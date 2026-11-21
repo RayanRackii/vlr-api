@@ -134,7 +134,8 @@ try
             policy.WithOrigins(allowedOrigins)
                 .SetIsOriginAllowedToAllowWildcardSubdomains()
                 .AllowAnyHeader()
-                .AllowAnyMethod();
+                .AllowAnyMethod()
+                .WithExposedHeaders(ListCap.TotalCountHeader);
         });
     });
 

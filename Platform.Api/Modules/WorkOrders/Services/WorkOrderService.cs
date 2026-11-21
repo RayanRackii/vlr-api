@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Platform.Api.Common;
 using Platform.Api.Authorization;
 using Platform.Api.Jobs;
 using Platform.Api.Modules.Users.Dtos;
@@ -53,7 +54,12 @@ public sealed class WorkOrderService(
         var workOrders = await query
             .OrderByDescending(w => w.ScheduledDate)
             .ThenByDescending(w => w.CreatedAt)
+            .Take(ListCap.MaxRows)
             .ToListAsync(cancellationToken);
+        await ListCap.PublishTotalAsync(
+            httpContextAccessor,
+            workOrders.Count,
+            () => query.CountAsync(cancellationToken));
 
         return workOrders.Select(WorkOrderResponseMapper.ToResponse).ToList();
     }
