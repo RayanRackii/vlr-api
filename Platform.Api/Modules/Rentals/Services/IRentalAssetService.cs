@@ -7,6 +7,13 @@ public interface IRentalAssetService
 {
     Task<IReadOnlyList<RentalAssetResponse>> ListRentableAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Customer-facing catalog: only assets that can actually be booked (see BookableRentalAssets).
+    /// Defaults to the full list so existing implementations keep compiling.
+    /// </summary>
+    Task<IReadOnlyList<RentalAssetResponse>> ListBookableAsync(CancellationToken cancellationToken) =>
+        ListRentableAsync(cancellationToken);
+
     Task<RentalAssetResponse?> GetByAssetIdAsync(Guid assetId, CancellationToken cancellationToken);
 
     Task<RentalAssetResponse> UpdateSchedulePolicyAsync(

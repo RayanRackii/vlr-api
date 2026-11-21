@@ -16,18 +16,30 @@ public sealed class RentalAssetService(
 {
     private readonly PolicyResolver policies = policyResolver ?? new(dbContext);
 
-    public async Task<IReadOnlyList<RentalAssetResponse>> ListRentableAsync(
+    public Task<IReadOnlyList<RentalAssetResponse>> ListRentableAsync(
+        CancellationToken cancellationToken) =>
+        ListAsync(bookableOnly: false, cancellationToken);
+
+    public Task<IReadOnlyList<RentalAssetResponse>> ListBookableAsync(
+        CancellationToken cancellationToken) =>
+        ListAsync(bookableOnly: true, cancellationToken);
+
+    private async Task<IReadOnlyList<RentalAssetResponse>> ListAsync(
+        bool bookableOnly,
         CancellationToken cancellationToken)
     {
         var tenantId = EnsureTenantContext();
         var tenantPolicy = await policies.ReadTenantAsync(tenantId, cancellationToken);
         var categories = await policies.ReadCategoriesAsync(tenantId, cancellationToken);
 
-        var configs = await dbContext.RentalAssets
+        var query = dbContext.RentalAssets
             .AsNoTracking()
             .Include(r => r.Asset)
                 .ThenInclude(a => a.Category)
-            .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.IsActive && r.Asset.IsRentable && r.Asset.Status != Platform.Core.Domain.Enums.AssetStatus.Inactive)
+            .Where(r => r.TenantId == tenantId && r.Asset.TenantId == tenantId && r.IsActive && r.Asset.IsRentable && r.Asset.Status != Platform.Core.Domain.Enums.AssetStatus.Inactive);
+        if (bookableOnly)
+            query = query.WhereBookable();
+        var configs = await query
             .OrderBy(r => r.Asset.Name)
             .ToListAsync(cancellationToken);
 
