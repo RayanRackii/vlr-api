@@ -120,7 +120,8 @@ try
         {
             options.JsonSerializerOptions.Converters.Add(
                 new System.Text.Json.Serialization.JsonStringEnumConverter());
-        });
+        })
+        .AddSanitizedModelStateErrors();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(JsonOptionalOpenApi.Configure);
 
