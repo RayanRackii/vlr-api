@@ -64,7 +64,7 @@ public sealed class ReservationsController(
         try
         {
             await publicTenantBinder.BindFromSubdomainAsync(subdomain, cancellationToken);
-            var assets = await rentalAssetService.ListRentableAsync(cancellationToken);
+            var assets = await rentalAssetService.ListBookableAsync(cancellationToken);
             // The registry tag and family attributes are staff data; keep them off the public listing.
             return Ok(assets.Select(asset => asset with { Tag = null, Attributes = null }).ToList());
         }

@@ -117,7 +117,12 @@ internal sealed class NotificationDeliveryGateHostedService(
         if (isProduction && whatsAppEnabled && !appSecretConfigured)
         {
             logger.LogError(
-                "WhatsApp:AppSecret is not configured in Production. Webhook signature validation is skipped; treat PROD WhatsApp as BLOCKED until AppSecret is set.");
+                "WhatsApp:AppSecret is not configured in Production. The WhatsApp webhook rejects every payload (401); treat PROD WhatsApp as BLOCKED until AppSecret is set.");
+        }
+        else if (!appSecretConfigured)
+        {
+            logger.LogWarning(
+                "WhatsApp:AppSecret is not configured. The WhatsApp webhook rejects unsigned payloads outside Development and Testing.");
         }
 
         if (whatsAppGate && !whatsAppEnabled)

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Platform.Api.Modules.Webhooks.Services;
 using Platform.Api.Notifications.Providers.Meta;
@@ -13,6 +14,7 @@ namespace Platform.Api.Modules.Webhooks.Controllers;
 public sealed class WhatsAppWebhookController(
     IOptions<MetaWhatsAppOptions> options,
     IWhatsAppWebhookProcessor processor,
+    IHostEnvironment environment,
     ILogger<WhatsAppWebhookController> logger) : ControllerBase
 {
     private const string SignatureHeader = "X-Hub-Signature-256";
@@ -81,15 +83,31 @@ public sealed class WhatsAppWebhookController(
         return Ok();
     }
 
+    /// <summary>
+    /// Without <c>WhatsApp:AppSecret</c> the payload cannot be authenticated, so the webhook fails
+    /// closed. Development and Testing keep the unsigned path for local tooling and tests.
+    /// </summary>
+    internal static bool AllowsUnsignedPayloads(IHostEnvironment environment) =>
+        environment.IsDevelopment() || environment.IsEnvironment("Testing");
+
     private bool HasValidSignature(string payload)
     {
         var appSecret = options.Value.AppSecret;
 
         if (string.IsNullOrWhiteSpace(appSecret))
         {
-            logger.LogWarning(
-                "WhatsApp:AppSecret is not configured; skipping webhook signature validation.");
-            return true;
+            if (AllowsUnsignedPayloads(environment))
+            {
+                logger.LogWarning(
+                    "WhatsApp:AppSecret is not configured; skipping webhook signature validation ({Environment}).",
+                    environment.EnvironmentName);
+                return true;
+            }
+
+            logger.LogError(
+                "WhatsApp:AppSecret is not configured; rejecting the webhook payload ({Environment}).",
+                environment.EnvironmentName);
+            return false;
         }
 
         var signatureHeader = Request.Headers[SignatureHeader].ToString();

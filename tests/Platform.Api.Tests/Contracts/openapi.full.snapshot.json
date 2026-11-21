@@ -5339,8 +5339,16 @@
             "format": "date-time",
             "type": "string"
           },
+          "customerEmail": {
+            "nullable": true,
+            "type": "string"
+          },
           "customerId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "customerName": {
+            "nullable": true,
             "type": "string"
           },
           "description": {
